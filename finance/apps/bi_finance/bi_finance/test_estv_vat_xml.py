@@ -59,6 +59,13 @@ class UidTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             estv_vat_xml.uid_of(None)
 
+    def test_only_the_grouped_che_number_is_read(self):
+        # the grouping is part of the check: an ungrouped or prefixed number is refused, not read
+        self.assertEqual(estv_vat_xml.uid_of("CHE-123.456.789"), "123456789")
+        for other in ("CHE-123456789 MWST", "123.456.789", "CHE 123.456.789 MWST", "CHE-123.456.789 MWST 2"):
+            with self.assertRaises(ValueError, msg=other):
+                estv_vat_xml.uid_of(other)
+
 
 class StructureTest(unittest.TestCase):
     """The order and the names of the elements are ESTV's (its example file), so a wrong order fails here."""

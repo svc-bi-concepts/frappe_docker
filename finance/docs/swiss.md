@@ -49,7 +49,7 @@ Pinned in `finance/apps.json`:
 | Need | erpnextswiss v16 | Evidence |
 | --- | --- | --- |
 | QR-bill on sales invoices | Yes, with a caveat | Print format `qr_sales_invoice`, and `templates/qrr_invoice`. The QR image is rendered by an external server (see Risks). |
-| MWST declaration, effective method | Partly | `doctype/vat_declaration` with `vat_type` `effective` or `flat`, and effective-method rates on the net amount (not tested here). The VAT accounts per quarter agree with bexio, and the form's rows per rate compare with bexio's per quarter on the payment basis with explained differences only (see below); the filing itself is not built yet. |
+| MWST declaration, effective method | Partly | `doctype/vat_declaration` with `vat_type` `effective` or `flat`, and effective-method rates on the net amount (not tested here). The VAT accounts per quarter agree with bexio, and the form's rows per rate compare with bexio's per quarter on the payment basis with explained differences only (see below). The XML for the ESTV upload (eCH-0217 2.0.0) and a payment-basis fill of the draft are built (see "The VAT Declaration" below); the filing is Benchi's. |
 | MWST figures per period (`mwst_report.py`) | Partly | `--basis posting` (default) counts invoices by posting date. `--basis payment` (vereinnahmte Entgelte) counts each Payment Entry by its posting date, and splits it over the invoices it pays by allocated / grand total: their net and each tax row times that share, so a receipt is split over the rates of its invoices; a payment with no invoice reference splits no tax. Journal Entries' VAT rows are read on both bases by posting date (see "What the figures read" below). |
 | MWST declaration, received | Partly | Report `kontrolle_mwst` and the Swiss MWST page (`kt_swiss_route_schweizer_mwst`). Not tested here. |
 | Swiss chart of accounts | Yes | `erpnextswiss/coa_import/accounts_template.csv`, 180 rows. Root groups follow the KMU numbering: 1 Aktiven, 2 Passiven, 3 Betriebsertrag, 4 Aufwand Material/Waren/Dienstleistungen, 5 Personalaufwand, 6 Sonstiger Betriebsaufwand, 7 Nebenerfolg, 9 Abschluss. Not tested against our data. |
@@ -261,6 +261,39 @@ not read; they would show any correction made in the form itself.
 Left out: the GL rows of other accounts, except the one net row that gives a sales
 tax its base; the Umsatz rows 220 to 299 and the Abzüge (not checked); and
 cancelled entries and other companies.
+
+### The VAT Declaration: the payment-basis fill and the ESTV upload
+
+- **Rules.** `bi_finance/mwst_payment.py` (stdlib) holds the payment basis above: the
+  payment documents, the tax rows by template, the journal part and the form's
+  fields. `mwst_report.py --basis payment` and the fill both use it; the reading of
+  the rows is the only difference (REST for the report, `frappe.db` for the fill).
+- **Fill.** `bi_finance.vat_declaration.fill_payment_basis(company, period, dry_run=0)`
+  (whitelisted, POST) creates the draft VAT Declaration of the period (title
+  `MWST <period>`, VAT type effective), or updates the one draft of it. It refuses when
+  a submitted declaration exists for the period, when a tax row has no template, when
+  tax sits on Ziffer 410, 415 or 420 (the form's figure for them is not decided), and
+  when the company's Tax ID is not `CHE-ddd.ddd.ddd` with or without ` MWST` (a dry run
+  does not need it). Nothing is submitted; Benchi files.
+- **What the fill sets.** Ziffer 200; the rate rows 302, 303, 312, 313, 342 and 343 with
+  their rates; 382 and 383 (base and tax as booked); 400 and 405 (tax as booked); 410,
+  415 and 420 at zero. The totals follow the form's own arithmetic (erpnextswiss's
+  `vat_declaration.js`): a rate row's tax is its base times its rate, and 399, 479 and
+  500 are sums of those. The rate rows' tax is therefore the form's, to the rappen,
+  not the report's exact tax per invoice; the comparison with bexio allows for that.
+- **What it leaves.** The Umsatz rows 220 to 235 and the Abzüge are not filled: the
+  report does not check them yet, so an export or an exempt supply does not reach
+  them. Do not file a declaration with such revenue before that is settled.
+- **The form's Get values** button reads the invoice basis from the views and would
+  overwrite a payment-basis draft. Do not press it there. Recalculate is safe.
+- **The dry run.** `python3 finance/bexio/mwst_report.py --period 2026Q3 --basis payment
+  --fields <private>/fields-2026Q3.csv` writes the fields the fill would set, to a
+  private file, and writes nothing to ERPNext.
+- **The XML.** `create_transfer_file` writes eCH-0217 version 2.0.0
+  (`estv_vat_xml.py`), the only version the ESTV portal takes now; erpnextswiss renders
+  version 1.0. formOfReporting is 2 (vereinnahmt), grossOrNet 1 (netto), and the 3.7 %
+  rate of Ziffer 342 is the old Sondersatz. The UID is the Company's Tax ID with its
+  nine digits; any other form is refused, not read.
 
 ## Alternatives
 

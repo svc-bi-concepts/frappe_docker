@@ -421,6 +421,26 @@ class ReportRun(unittest.TestCase):
         self.assertIn("MWST 2026Q3 (2026-07-01 to 2026-09-30, payment basis): 1 payments, 0 of them pay no invoice", out)
         self.assertIn("303,Normalsatz 8.1 %,1000.00,81.00", report)
 
+    def test_fields_flag_writes_the_declaration_fields_of_the_payment_basis(self):
+        folder = tempfile.mkdtemp()
+        try:
+            fields = os.path.join(folder, "fields.csv")
+            with mock.patch.object(mr.im.Erp, "from_file", return_value=self.fake()), contextlib.redirect_stdout(io.StringIO()):
+                code = mr.main(["--period", "2026Q3", "--basis", "payment", "--report", os.path.join(folder, "mwst.csv"),
+                                "--fields", fields])
+            with open(fields, encoding="utf-8") as f:
+                text = f.read()
+        finally:
+            shutil.rmtree(folder)
+        self.assertEqual(code, 0)
+        self.assertIn("normal_amount_2024,1000.00\n", text)
+        self.assertIn("normal_tax_2024,81.00\n", text)
+        self.assertIn("payable_tax,81.00\n", text)
+
+    def test_fields_flag_is_for_the_payment_basis_only(self):
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+            mr.main(["--period", "2026Q3", "--fields", "/nonexistent/fields.csv"])
+
 
 # Invented accounts and Journal Entries (vouchers J1 to ...): the VAT accounts and the ones the net sits on.
 ACCOUNTS = [{"name": "{} - BI".format(n), "account_number": n, "company": mr.COMPANY}

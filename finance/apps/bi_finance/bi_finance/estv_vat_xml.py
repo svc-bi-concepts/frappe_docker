@@ -46,12 +46,17 @@ INPUT_TAX_ROWS = [("inputTaxMaterialAndServices", "400"), ("inputTaxInvestments"
 ACQUISITION_RATE_CHANGE = datetime.date(2024, 1, 1)
 
 
+# The company's Tax ID as ERPNext holds it: CHE-123.456.789, with or without the ' MWST' suffix of the VAT registration.
+UID_PATTERN = re.compile(r"CHE-\d{3}\.\d{3}\.\d{3}( MWST)?")
+
+
 def uid_of(tax_id):
-    """The nine digits of the company's UID (CHE-123.456.789 MWST): eCH-0108 takes CHE and the number only."""
-    digits = re.sub(r"\D", "", tax_id or "")
-    if len(digits) != 9:
-        raise ValueError("the company's UID has {} digits, ESTV needs the nine of CHE-123.456.789".format(len(digits)))
-    return digits
+    """The nine digits of the company's UID (CHE-123.456.789 MWST): eCH-0108 takes CHE and the number only.
+
+    Any other form is refused, not read: digits in another form may be a number of another kind."""
+    if not UID_PATTERN.fullmatch((tax_id or "").strip()):
+        raise ValueError("the company's Tax ID is not CHE-123.456.789 (with or without MWST), ESTV needs the UID")
+    return re.sub(r"\D", "", tax_id)
 
 
 def _amount(value):
