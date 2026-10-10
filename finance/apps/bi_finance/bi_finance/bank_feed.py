@@ -4,12 +4,17 @@ A row is the dict wise_client.feed_rows gives: transaction_id, date, deposit, wi
 reference_number. Its transaction_id is the external id. A Bank Transaction with that id is left alone on every later
 run, so a second run writes nothing.
 
-A period already imported by bexio has no transaction_id, so a row is matched to it by account, date and amount instead.
-Each such Bank Transaction takes one feed row, so the feed does not write a movement twice. The count matters: two
-movements of the same amount on the same day are both kept. The reference is not compared, because bexio's lines have
-none.
+A period already imported by bexio has no transaction_id, so a row is matched to it by account, amount and date window
+instead: a bexio line matches a feed row of the same amount whose date falls in the window from the row's date to the
+line's date, later or equal (MATCH_WINDOW_DAYS, the authorisation day to the settlement day), once each; when several
+pair, the nearest date wins. A card payment may settle within the FX spread of Wise's debit: it also matches within
+FX_TOLERANCE when the two descriptions name a merchant word in common, else it stays unmatched and is listed. Each such
+Bank Transaction takes one feed row, so the feed does not write a movement twice. The count matters: two movements of
+the same amount near the same day are both kept, one line each. The reference is not compared, because bexio's lines
+have none.
 
-The matching is in new_rows, which reads nothing, so it is tested without a database. plan and write are the frappe side.
+The matching is in match_new and new_rows, which read nothing, so they are tested without a database. plan and write are
+the frappe side.
 
 The rates the conversion to CHF needs are in load_rates: ERPNext's configured source (frankfurter.dev v2), asked once
 per currency and range. fetch_rates, rate_days, carry_forward and fetch_start are pure and tested without a database.
@@ -18,6 +23,7 @@ per currency and range. fetch_rates, rate_days, carry_forward and fetch_start ar
 import collections
 import datetime
 import json
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -33,20 +39,78 @@ RATE_TIMEOUT_SECONDS = 60
 
 ONE_DAY = datetime.timedelta(days=1)
 
+# the days a bexio line may fall after its feed row and still be the same movement: a card payment carries Wise's
+# authorisation date and bexio's statement line its settlement date, a few days later
+MATCH_WINDOW_DAYS = 4
+
+# a card payment in a foreign currency may settle within this relative spread of Wise's debit (the FX spread), when the
+# descriptions name the same merchant
+FX_TOLERANCE = 0.01
+
+# the words of a description that name no merchant: the generic card, fee and transfer words and the currency codes
+GENERIC_WORDS = frozenset(
+    "card transaction issued charges charge fee fees wise topped account sent money payment transfer deposit withdrawal "
+    "chf eur usd gbp".split()
+)
+
 
 class RateError(Exception):
     """The rate source gave no usable answer. The message names the status or the error class, never the body."""
 
 
-def new_rows(rows, fed_ids, imported):
-    """The rows that are not yet in ERPNext: (create, summary). Pure: fed_ids and imported are read by the caller.
+def match_new(rows, lines, window_days=MATCH_WINDOW_DAYS):
+    """How feed rows pair with bexio lines: (create, matched, unmatched_lines). Pure, both lists are only read.
 
-    fed_ids: the transaction_ids already on the account. imported: a Counter of (date, deposit, withdrawal) of the
-    account's Bank Transactions that no feed wrote (bexio's). It is consumed here, so the caller's copy is not reused.
+    rows: feed rows (date, deposit, withdrawal, description, kind). lines: the Bank Transactions that no feed wrote
+    (bexio's: no transaction_id, no kind). A line matches a row of the same amount and direction whose date falls in the
+    window from the row's date to the line's date, later or equal, window_days long, once each; when several pair, the
+    nearest date wins, the other line stays. A CARD_PAYMENT row may also match within the FX tolerance of its amount
+    when the two descriptions name a merchant word in common; otherwise it stays unmatched and is listed. matched is a
+    list of (row, line, gap in days, within tolerance); the rows of no pair come back as create, the lines of no pair as
+    unmatched_lines. Amounts are compared to the cent.
     """
-    create = []
-    summary = {"rows": len(rows), "already_fed": 0, "already_imported": 0}
+    pairs = []
+    for r_index, row in enumerate(rows):
+        day = _day(row["date"])
+        net = _net(row)
+        for l_index, line in enumerate(lines):
+            gap = (_day(line["date"]) - day).days
+            if not 0 <= gap <= window_days:
+                continue
+            difference = abs(_net(line) - net)
+            if difference <= 0.005:
+                pairs.append((gap, 0, r_index, l_index))
+            elif (
+                row.get("kind") == "CARD_PAYMENT"
+                and difference <= FX_TOLERANCE * abs(net) + 0.005
+                and same_merchant(row.get("description"), line.get("description"))
+            ):
+                pairs.append((gap, 1, r_index, l_index))
+    # nearest date first, the same amount before the tolerance, then the lists' order: the assignment is one to one
+    pairs.sort()
+    taken_rows, taken_lines = set(), set()
+    matched = []
+    for gap, tolerance, r_index, l_index in pairs:
+        if r_index in taken_rows or l_index in taken_lines:
+            continue
+        taken_rows.add(r_index)
+        taken_lines.add(l_index)
+        matched.append((rows[r_index], lines[l_index], gap, bool(tolerance)))
+    create = [row for index, row in enumerate(rows) if index not in taken_rows]
+    unmatched = [line for index, line in enumerate(lines) if index not in taken_lines]
+    return create, matched, unmatched
+
+
+def new_rows(rows, fed_ids, lines, window_days=MATCH_WINDOW_DAYS):
+    """The rows that are not yet in ERPNext: (create, summary). Pure: fed_ids and lines are read by the caller.
+
+    fed_ids: the transaction_ids already on the account. lines: the account's Bank Transactions that no feed wrote
+    (bexio's), as match_new takes them. A row whose transaction_id is fed is skipped; the rest are matched to a line once
+    each (match_new) or created. The summary counts each rule apart, so a dry run shows how the rows were matched.
+    """
+    summary = {"rows": len(rows), "already_fed": 0}
     seen = set()
+    unseen = []
     for row in rows:
         # a movement on the edge of two statement windows comes back in both; the first one counts, as write() would
         if row["transaction_id"] in seen:
@@ -56,12 +120,12 @@ def new_rows(rows, fed_ids, imported):
         if row["transaction_id"] in fed_ids:
             summary["already_fed"] += 1
             continue
-        key = _key(row)
-        if imported[key] > 0:
-            imported[key] -= 1
-            summary["already_imported"] += 1
-            continue
-        create.append(row)
+        unseen.append(row)
+    create, matched, _ = match_new(unseen, lines, window_days)
+    summary["already_imported"] = len(matched)
+    summary["matched_exact"] = sum(1 for _, _, _, tolerance in matched if not tolerance)
+    summary["matched_fx"] = sum(1 for _, _, _, tolerance in matched if tolerance)
+    summary["matched_by_gap"] = dict(sorted(collections.Counter(str(gap) for _, _, gap, _ in matched).items()))
     summary["create"] = len(create)
     return create, summary
 
@@ -72,15 +136,18 @@ def plan(bank_account, rows):
     An account that does not exist yet has no transactions, so every row is new.
     """
     if not frappe.db.exists("Bank Account", bank_account):
-        return rows, {"rows": len(rows), "already_fed": 0, "already_imported": 0, "create": len(rows)}
+        return rows, {
+            "rows": len(rows), "already_fed": 0, "already_imported": 0,
+            "matched_exact": 0, "matched_fx": 0, "matched_by_gap": {}, "create": len(rows),
+        }
     existing = frappe.get_all(
         "Bank Transaction",
         filters={"bank_account": bank_account, "docstatus": ["<", 2]},
-        fields=["transaction_id", "date", "deposit", "withdrawal"],
+        fields=["transaction_id", "date", "deposit", "withdrawal", "description"],
     )
     fed_ids = {r["transaction_id"] for r in existing if r["transaction_id"]}
-    imported = collections.Counter(_key(r) for r in existing if not r["transaction_id"])
-    return new_rows(rows, fed_ids, imported)
+    lines = [r for r in existing if not r["transaction_id"]]
+    return new_rows(rows, fed_ids, lines)
 
 
 def bank_account_name(prefix, currency, bank):
@@ -164,8 +231,27 @@ def write(bank_account, rows):
     return written
 
 
-def _key(row):
-    return (str(row["date"]), round(float(row["deposit"] or 0), 2), round(float(row["withdrawal"] or 0), 2))
+def _net(row):
+    """A row's or a line's amount, signed, to the cent: the deposit less the withdrawal."""
+    return round(float(row["deposit"] or 0) - float(row["withdrawal"] or 0), 2)
+
+
+def _day(date):
+    """A date or a string that starts with one, as a date: a feed row's 'YYYY-MM-DD' or a Bank Transaction's date."""
+    return datetime.date.fromisoformat(str(date)[:10])
+
+
+def merchant_words(text):
+    """The words of a description that can name a merchant: alphabetic words of three letters or more, without the
+    generic card, fee and transfer words and the currency codes."""
+    return {word for word in re.findall(r"[a-z]+", (text or "").lower()) if len(word) >= 3 and word not in GENERIC_WORDS}
+
+
+def same_merchant(row_text, line_text):
+    """Whether two descriptions name a merchant word in common. The FX tolerance trusts it; an exact amount needs it
+    not, so a generic title never turns a near amount into a match."""
+    words = merchant_words(row_text)
+    return bool(words and words & merchant_words(line_text))
 
 
 def load_rates(currency, start, end, dry_run, opener=urllib.request.urlopen):

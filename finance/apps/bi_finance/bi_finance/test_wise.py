@@ -59,47 +59,141 @@ class Dedupe(unittest.TestCase):
     def row(self, tid, date="2026-03-04", deposit=0.0, withdrawal=50.0):
         return {"transaction_id": tid, "date": date, "deposit": deposit, "withdrawal": withdrawal}
 
-    def imported(self, *keys):
-        return collections.Counter(bank_feed._key(row) for row in keys)
+    def line(self, date="2026-03-04", deposit=0.0, withdrawal=50.0):
+        return {"date": date, "deposit": deposit, "withdrawal": withdrawal}
 
     def test_a_fed_id_is_not_written_again(self):
-        create, summary = bank_feed.new_rows([self.row("wise:activity:9")], {"wise:activity:9"}, self.imported())
+        create, summary = bank_feed.new_rows([self.row("wise:activity:9")], {"wise:activity:9"}, [])
         self.assertEqual(create, [])
         self.assertEqual(summary["already_fed"], 1)
 
     def test_a_row_matching_an_imported_line_is_skipped(self):
-        create, summary = bank_feed.new_rows([self.row("wise:activity:9")], set(), self.imported(self.row("")))
+        create, summary = bank_feed.new_rows([self.row("wise:activity:9")], set(), [self.line()])
         self.assertEqual(create, [])
         self.assertEqual(summary["already_imported"], 1)
 
     def test_two_same_amount_movements_one_imported_keeps_one(self):
         rows = [self.row("wise:activity:9"), self.row("wise:activity:10")]
-        create, summary = bank_feed.new_rows(rows, set(), self.imported(self.row("")))
+        create, summary = bank_feed.new_rows(rows, set(), [self.line()])
         self.assertEqual([r["transaction_id"] for r in create], ["wise:activity:10"])
         self.assertEqual(summary["already_imported"], 1)
 
     def test_a_row_seen_twice_in_one_run_counts_once(self):
         rows = [self.row("wise:transfer:5"), self.row("wise:transfer:5"), self.row("wise:activity:9")]
-        create, summary = bank_feed.new_rows(rows, set(), self.imported())
+        create, summary = bank_feed.new_rows(rows, set(), [])
         self.assertEqual([r["transaction_id"] for r in create], ["wise:transfer:5", "wise:activity:9"])
         self.assertEqual((summary["rows"], summary["create"]), (2, 2))
 
     def test_second_run_creates_nothing(self):
         rows = [self.row("wise:activity:9"), self.row("wise:activity:10", deposit=10.0, withdrawal=0.0)]
-        first, _ = bank_feed.new_rows(rows, set(), self.imported())
+        first, _ = bank_feed.new_rows(rows, set(), [])
         self.assertEqual(len(first), 2)
         fed = {r["transaction_id"] for r in first}
-        second, summary = bank_feed.new_rows(rows, fed, self.imported())
+        second, summary = bank_feed.new_rows(rows, fed, [])
         self.assertEqual(second, [])
         self.assertEqual(summary["already_fed"], 2)
 
 
-class Unmatched(unittest.TestCase):
-    # invented: a feed row, a Bank Transaction the feed wrote, and bexio's lines (no transaction_id) of the same date and amount
-    FEED = {"transaction_id": "wise:activity:1", "date": "2026-03-04", "deposit": 0.0, "withdrawal": 50.0}
+class Match(unittest.TestCase):
+    """The date window and the FX tolerance of bank_feed.match_new, on invented rows and lines."""
 
-    def bt(self, tid, date="2026-03-04", withdrawal=50.0):
-        return {"transaction_id": tid, "date": datetime.date.fromisoformat(date), "deposit": 0.0, "withdrawal": withdrawal}
+    def row(self, date="2026-03-04", deposit=0.0, withdrawal=50.0, description="", kind="CARD_PAYMENT"):
+        return {"transaction_id": "wise:activity:1", "date": date, "deposit": deposit, "withdrawal": withdrawal,
+                "description": description, "kind": kind}
+
+    def line(self, date="2026-03-04", deposit=0.0, withdrawal=50.0, description=""):
+        return {"date": date, "deposit": deposit, "withdrawal": withdrawal, "description": description}
+
+    def test_the_same_day_and_amount_matches(self):
+        create, matched, unmatched = bank_feed.match_new([self.row()], [self.line()])
+        self.assertEqual((create, unmatched), ([], []))
+        self.assertEqual((len(matched), matched[0][2], matched[0][3]), (1, 0, False))
+
+    def test_a_line_three_days_later_matches_in_the_window(self):
+        create, matched, unmatched = bank_feed.match_new([self.row()], [self.line(date="2026-03-07")])
+        self.assertEqual((create, unmatched), ([], []))
+        self.assertEqual(matched[0][2], 3)
+
+    def test_a_line_on_the_fourth_day_matches_a_line_on_the_fifth_does_not(self):
+        create, matched, _ = bank_feed.match_new([self.row()], [self.line(date="2026-03-08")])
+        self.assertEqual((create, matched[0][2]), ([], 4))
+        create, matched, unmatched = bank_feed.match_new([self.row()], [self.line(date="2026-03-09")])
+        self.assertEqual((len(create), unmatched), (1, [self.line(date="2026-03-09")]))
+
+    def test_a_line_earlier_than_the_row_never_matches(self):
+        create, matched, unmatched = bank_feed.match_new([self.row()], [self.line(date="2026-03-03")])
+        self.assertEqual((len(create), matched, len(unmatched)), (1, [], 1))
+
+    def test_two_candidates_the_nearest_wins_the_other_stays(self):
+        near, far = self.line(date="2026-03-05"), self.line(date="2026-03-07")
+        create, matched, unmatched = bank_feed.match_new([self.row()], [far, near])
+        self.assertEqual((create, [matched[0][1]], unmatched), ([], [near], [far]))
+        self.assertEqual(matched[0][2], 1)
+
+    def test_an_exact_line_beats_a_tolerance_line_at_the_same_gap(self):
+        exact = self.line(date="2026-03-06", withdrawal=50.0)
+        near = self.line(date="2026-03-06", withdrawal=50.4, description="Card of 48 USD by Acme Store")
+        row = self.row(description="Card at Acme Store")
+        create, matched, unmatched = bank_feed.match_new([row], [near, exact])
+        self.assertEqual((create, [m[1] for m in matched], unmatched), ([], [exact], [near]))
+
+    def test_a_tolerance_line_wins_by_its_nearest_date(self):
+        row = self.row(description="Card at Acme Store")
+        nearest = self.line(date="2026-03-05", withdrawal=50.4, description="Card of 48 USD by Acme Store")
+        exact = self.line(date="2026-03-08", withdrawal=50.0)
+        create, matched, unmatched = bank_feed.match_new([row], [exact, nearest])
+        self.assertEqual((create, [m[1] for m in matched], unmatched), ([], [nearest], [exact]))
+        self.assertTrue(matched[0][3])
+
+    def test_the_tolerance_matches_within_one_percent_of_the_row(self):
+        row = self.row(withdrawal=100.0, description="Card at Acme Store")
+        line = self.line(withdrawal=100.9, description="Card of 92 USD by Acme Store")
+        create, matched, unmatched = bank_feed.match_new([row], [line])
+        self.assertEqual((create, unmatched, matched[0][3]), ([], [], True))
+
+    def test_a_row_over_one_percent_off_stays_unmatched(self):
+        row = self.row(withdrawal=100.0, description="Card at Acme Store")
+        line = self.line(withdrawal=101.2, description="Card of 93 USD by Acme Store")
+        create, matched, unmatched = bank_feed.match_new([row], [line])
+        self.assertEqual((len(create), matched, len(unmatched)), (1, [], 1))
+
+    def test_the_tolerance_needs_a_merchant_word_in_common(self):
+        row = self.row(withdrawal=100.0, description="Card at Acme Store")
+        line = self.line(withdrawal=100.5, description="Card of 92 USD by Other Shop")
+        create, matched, unmatched = bank_feed.match_new([row], [line])
+        self.assertEqual((len(create), matched, len(unmatched)), (1, [], 1))
+
+    def test_a_row_with_a_generic_title_never_matches_by_tolerance(self):
+        row = self.row(withdrawal=100.0, description="Card transaction")
+        line = self.line(withdrawal=100.5, description="Card transaction of 92 USD")
+        create, matched, unmatched = bank_feed.match_new([row], [line])
+        self.assertEqual((len(create), matched, len(unmatched)), (1, [], 1))
+
+    def test_the_tolerance_is_a_card_payment_only(self):
+        row = self.row(withdrawal=100.0, kind="TRANSFER", description="Sent to Acme Store")
+        line = self.line(withdrawal=100.5, description="Sent to Acme Store")
+        create, matched, unmatched = bank_feed.match_new([row], [line])
+        self.assertEqual((len(create), matched, len(unmatched)), (1, [], 1))
+
+    def test_a_deposit_never_matches_a_withdrawal_of_the_same_size(self):
+        create, matched, unmatched = bank_feed.match_new([self.row(deposit=50.0, withdrawal=0.0)], [self.line()])
+        self.assertEqual((len(create), matched, len(unmatched)), (1, [], 1))
+
+    def test_two_rows_two_lines_pair_one_to_one(self):
+        first, second = self.row(date="2026-03-04"), self.row(date="2026-03-05")
+        lines = [self.line(date="2026-03-05"), self.line(date="2026-03-06")]
+        create, matched, unmatched = bank_feed.match_new([first, second], lines)
+        self.assertEqual((create, unmatched, len(matched)), ([], [], 2))
+
+
+class Unmatched(unittest.TestCase):
+    # invented: a feed row, a Bank Transaction the feed wrote, and bexio's lines (no transaction_id) of the same amount
+    FEED = {"transaction_id": "wise:activity:1", "date": "2026-03-04", "deposit": 0.0, "withdrawal": 50.0,
+            "description": "Card at Acme Store", "kind": "CARD_PAYMENT"}
+
+    def bt(self, tid, date="2026-03-04", withdrawal=50.0, description=""):
+        return {"transaction_id": tid, "date": datetime.date.fromisoformat(date), "deposit": 0.0, "withdrawal": withdrawal,
+                "description": description}
 
     def test_a_bank_transaction_the_feed_carries_is_matched(self):
         self.assertEqual(wise.unmatched_by_month([self.bt("wise:activity:1")], [self.FEED]), {})
@@ -110,12 +204,88 @@ class Unmatched(unittest.TestCase):
     def test_a_bexio_line_of_the_same_day_and_amount_is_matched(self):
         self.assertEqual(wise.unmatched_by_month([self.bt("")], [self.FEED]), {})
 
+    def test_a_bexio_line_within_the_window_is_matched(self):
+        self.assertEqual(wise.unmatched_by_month([self.bt("", date="2026-03-06")], [self.FEED]), {})
+
+    def test_a_bexio_line_outside_the_window_is_counted(self):
+        self.assertEqual(wise.unmatched_by_month([self.bt("", date="2026-03-10")], [self.FEED]), {"2026-03": 1})
+
+    def test_a_bexio_line_of_the_same_merchant_within_the_tolerance_is_matched(self):
+        line = self.bt("", date="2026-03-06", withdrawal=50.4, description="Card of 48 EUR by Acme Store")
+        self.assertEqual(wise.unmatched_by_month([line], [self.FEED]), {})
+
+    def test_a_bexio_line_of_another_merchant_stays_unmatched(self):
+        line = self.bt("", date="2026-03-06", withdrawal=50.4, description="Card of 48 EUR by Other Shop")
+        self.assertEqual(wise.unmatched_by_month([line], [self.FEED]), {"2026-03": 1})
+
     def test_two_bexio_lines_for_one_row_leave_one_unmatched(self):
         self.assertEqual(wise.unmatched_by_month([self.bt(""), self.bt("")], [self.FEED]), {"2026-03": 1})
 
     def test_a_bexio_line_with_no_row_is_counted_per_month_sorted(self):
         existing = [self.bt("", "2026-07-02"), self.bt("", "2026-06-30")]
         self.assertEqual(wise.unmatched_by_month(existing, []), {"2026-06": 1, "2026-07": 1})
+
+
+class MatchReport(unittest.TestCase):
+    # invented: the per-month counts and sums of match_report, the dry-run listing's core
+    ROW = {"transaction_id": "wise:activity:1", "date": "2026-03-04", "deposit": 0.0, "withdrawal": 50.0,
+           "description": "Card at Acme Store", "kind": "CARD_PAYMENT"}
+
+    def bt(self, date, withdrawal, description="", tid=""):
+        return {"transaction_id": tid, "date": datetime.date.fromisoformat(date), "deposit": 0.0,
+                "withdrawal": withdrawal, "description": description}
+
+    def test_the_counts_and_sums_of_one_matched_month(self):
+        existing = [self.bt("2026-03-05", 50.0)]
+        report = wise.match_report(existing, [self.ROW])
+        self.assertEqual(
+            report,
+            {"2026-03": {"rows": 1, "matched": 1, "by_gap": {"1": 1}, "by_tolerance": 0, "create": 0,
+                         "matched_net": -50.0, "create_net": 0.0, "lines": 1, "unmatched_lines": 0,
+                         "unmatched_net": 0.0}},
+        )
+
+    def test_a_tolerance_match_is_counted_apart(self):
+        existing = [self.bt("2026-03-05", 50.4, "Card of 48 EUR by Acme Store")]
+        report = wise.match_report(existing, [self.ROW])
+        self.assertEqual((report["2026-03"]["matched"], report["2026-03"]["by_tolerance"]), (1, 1))
+
+    def test_created_rows_and_unmatched_lines_carry_their_sums(self):
+        existing = [self.bt("2026-03-10", 70.0)]
+        rows = [self.ROW, dict(self.ROW, transaction_id="wise:activity:2", date="2026-04-01", withdrawal=10.0)]
+        report = wise.match_report(existing, rows)
+        self.assertEqual(
+            report,
+            {
+                "2026-03": {"rows": 1, "matched": 0, "by_gap": {}, "by_tolerance": 0, "create": 1,
+                            "matched_net": 0.0, "create_net": -50.0, "lines": 1, "unmatched_lines": 1,
+                            "unmatched_net": -70.0},
+                "2026-04": {"rows": 1, "matched": 0, "by_gap": {}, "by_tolerance": 0, "create": 1,
+                            "matched_net": 0.0, "create_net": -10.0, "lines": 0, "unmatched_lines": 0,
+                            "unmatched_net": 0.0},
+            },
+        )
+
+    def test_a_row_already_carried_by_its_id_is_neither_matched_nor_created(self):
+        existing = [self.bt("2026-03-04", 50.0, tid="wise:activity:1")]
+        report = wise.match_report(existing, [self.ROW])
+        self.assertEqual((report["2026-03"]["matched"], report["2026-03"]["create"], report["2026-03"]["rows"]), (0, 0, 1))
+
+
+class Window(unittest.TestCase):
+    # invented: the one-off window's arguments and its row bound
+    def test_a_start_argument_is_read_as_a_day_or_a_datetime(self):
+        self.assertEqual(wise._moment("2026-02-01"), datetime.datetime(2026, 2, 1))
+        self.assertEqual(wise._moment("2026-02-01 12:30:00"), datetime.datetime(2026, 2, 1, 12, 30))
+        self.assertIsNone(wise._moment(None))
+
+    def test_rows_after_the_end_day_are_left_out(self):
+        rows = [
+            {"date": "2026-09-30", "deposit": 0.0, "withdrawal": 1.0},
+            {"date": "2026-10-01", "deposit": 0.0, "withdrawal": 2.0},
+        ]
+        kept = wise.within_end(rows, datetime.datetime(2026, 9, 30, 23, 59))
+        self.assertEqual([row["date"] for row in kept], ["2026-09-30"])
 
 
 class Chf(unittest.TestCase):

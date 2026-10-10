@@ -51,13 +51,24 @@ def test_connection():
 
 
 @frappe.whitelist()
-def sync_now(dry_run=True):
-    """Sync every balance now. dry_run, the default, reports what would be written; a live run writes it."""
+def sync_now(dry_run=True, start=None, end=None):
+    """Sync every balance now. dry_run, the default, reports what would be written; a live run writes it.
+
+    start and end bound a one-off run (the backfill), as YYYY-MM-DD or a datetime, both optional. A dry run with an
+    explicit start reads from that moment and touches nothing: no Wise Settings field, no stored rate. A live run writes
+    last_sync as every sync does, to now: forward, never backwards, whatever the window was; backfill_from is not read
+    and not changed.
+    """
     dry_run = frappe.parse_json(dry_run) if isinstance(dry_run, str) else bool(dry_run)
-    report = run(dry_run=dry_run)
+    report = run(dry_run=dry_run, start=_moment(start), end=_moment(end))
     frappe.msgprint(_("{0} account(s) {1}.").format(len(report["accounts"]), _("planned") if dry_run else _("synced")))
     frappe.msgprint("<br>".join(_summary_lines(report)))
     return report
+
+
+def _moment(value):
+    """An optional command argument as a naive datetime (a date means its midnight), or None when it is not given."""
+    return frappe.utils.get_datetime(value) if value else None
 
 
 def sync_scheduled():
@@ -68,22 +79,25 @@ def sync_scheduled():
     run(dry_run=False)
 
 
-def run(dry_run):
+def run(dry_run, start=None, end=None):
     """One pass over the profile's activities, payouts and balances. Returns the report of each currency and the totals.
 
     Every amount is shown in its own currency and in CHF: the CHF the source gave where it did, else at the rate of the
-    day it falls on. Nothing is written when dry_run.
+    day it falls on. Nothing is written when dry_run. start and end bound the run when given (a one-off backfill); a row
+    after the end day waits for the runs that cover it.
     """
     settings, token = _settings()
     now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
-    start = _start(settings, now)
+    start = start or _start(settings, now)
+    end = end or now
     profile = settings.profile_id
     balances = _balances(wise_client.balances(token, profile))
     activity_items = wise_client.activities(token, profile, start)
-    transfer_items = wise_client.transfers(token, profile, start, now)
+    transfer_items = wise_client.transfers(token, profile, start, end)
     fees, no_fee_option = _fees(token, profile, transfer_items)
     recipients = wise_client.payout_recipients(token, transfer_items)
     rows, skipped = wise_client.feed_rows(activity_items, transfer_items, fees)
+    rows = within_end(rows, end)
     rates = {}
     accounts = []
     for currency in sorted(set(balances) | {row["currency"] for row in rows}):
@@ -133,6 +147,12 @@ def _balances(items):
     return {currency: round(amount, 2) for currency, amount in out.items()}
 
 
+def within_end(rows, end):
+    """The rows that fall on or before the run's end day: a one-off window does not take later rows."""
+    last = str(end.date())
+    return [row for row in rows if row["date"] <= last]
+
+
 def _fees(token, profile, transfer_items):
     """The CHF fee of each completed payout that has a quote: {transfer id: fee}, and the count of quotes with no balance fee."""
     fees = {}
@@ -179,6 +199,8 @@ def _account_report(currency, bank_account, rows, create, summary, balance, now,
         "parsed_by_kind": _by_kind(rows),
         "matched_by_kind": _by_kind([row for row in rows if id(row) not in created_ids]),
         "by_month": _by_month_check(rows, erp_by_day),
+        # per month, how the run's rows and the account's bexio lines pair: the counts and the window each match used
+        "match_by_month": _match_by_month(bank_account, rows),
         # the Bank Transactions no feed row matches, per month (counts): bexio's Wise lines that the feed does not cover
         "unmatched_bank_transactions": _unmatched_by_month(bank_account, rows),
         **summary,
@@ -388,7 +410,7 @@ def _unmatched_by_month(bank_account, rows):
     existing = frappe.get_all(
         "Bank Transaction",
         filters={"bank_account": bank_account, "docstatus": ["<", 2]},
-        fields=["transaction_id", "date", "deposit", "withdrawal"],
+        fields=["transaction_id", "date", "deposit", "withdrawal", "description"],
     )
     return unmatched_by_month(existing, rows)
 
@@ -396,21 +418,74 @@ def _unmatched_by_month(bank_account, rows):
 def unmatched_by_month(existing, rows):
     """Per month (YYYY-MM): the Bank Transactions no feed row matches, as counts. Pure: the caller reads both lists.
 
-    existing: the account's Bank Transactions (transaction_id, date, deposit, withdrawal). A Bank Transaction matches a row
-    by transaction_id; a bexio line, which has none, matches a row of the same date and amount, once each, as
-    bank_feed.new_rows does. Only the counts are returned: the amounts stay out of the report.
+    existing: the account's Bank Transactions (transaction_id, date, deposit, withdrawal, description). A Bank
+    Transaction with a transaction_id a row carries is matched; a bexio line, which has none, is matched as
+    bank_feed.match_new matches rows to lines, window and tolerance included. Only the counts are returned: the amounts
+    stay out of the report.
     """
     fed = {row["transaction_id"] for row in rows}
-    # the rows that no Bank Transaction carries by id: their date and amount are what a bexio line is matched on
     carried = {t["transaction_id"] for t in existing if t["transaction_id"] in fed}
-    wanted = collections.Counter(bank_feed._key(row) for row in rows if row["transaction_id"] not in carried)
-    unmatched = collections.Counter()
-    for t in existing:
-        if t["transaction_id"]:
-            if t["transaction_id"] not in fed:
-                unmatched[str(t["date"])[:7]] += 1
-        elif wanted[bank_feed._key(t)] > 0:
-            wanted[bank_feed._key(t)] -= 1
-        else:
-            unmatched[str(t["date"])[:7]] += 1
-    return dict(sorted(unmatched.items()))
+    lines = [t for t in existing if not t["transaction_id"]]
+    _, _, unmatched = bank_feed.match_new([row for row in rows if row["transaction_id"] not in carried], lines)
+    counts = collections.Counter(str(t["date"])[:7] for t in existing if t["transaction_id"] and t["transaction_id"] not in fed)
+    counts.update(str(line["date"])[:7] for line in unmatched)
+    return dict(sorted(counts.items()))
+
+
+def _match_by_month(bank_account, rows):
+    if not frappe.db.exists("Bank Account", bank_account):
+        return {}
+    existing = frappe.get_all(
+        "Bank Transaction",
+        filters={"bank_account": bank_account, "docstatus": ["<", 2]},
+        fields=["transaction_id", "date", "deposit", "withdrawal", "description"],
+    )
+    return match_report(existing, rows)
+
+
+def match_report(existing, rows):
+    """Per month (YYYY-MM): how the run's feed rows and the account's bexio lines pair, as counts and CHF sums.
+
+    The matcher is bank_feed.match_new, the same one plan writes by. A row already carried by a Bank Transaction of its
+    id is neither matched nor created. Per month: the run's rows and the bexio lines of the month, how many rows matched
+    (by the days between the row's date and the line's, and apart how many by the tolerance), how many rows are to
+    create, how many lines stay unmatched, and the CHF net of each group. The sums go to the private dry-run file; a
+    note gives counts only.
+    """
+    fed = {row["transaction_id"] for row in rows}
+    carried = {t["transaction_id"] for t in existing if t["transaction_id"] in fed}
+    lines = [t for t in existing if not t["transaction_id"]]
+    unfed = [row for row in rows if row["transaction_id"] not in carried]
+    create, matched, unmatched = bank_feed.match_new(unfed, lines)
+    report = {}
+
+    def bucket(month):
+        return report.setdefault(
+            month,
+            {"rows": 0, "matched": 0, "by_gap": {}, "by_tolerance": 0, "create": 0,
+             "matched_net": 0.0, "create_net": 0.0, "lines": 0, "unmatched_lines": 0, "unmatched_net": 0.0},
+        )
+
+    gaps = collections.defaultdict(collections.Counter)
+    for row, line, gap, tolerance in matched:
+        month = str(row["date"])[:7]
+        bucket(month)["matched"] += 1
+        bucket(month)["matched_net"] = round(bucket(month)["matched_net"] + bank_feed._net(row), 2)
+        gaps[month][str(gap)] += 1
+        if tolerance:
+            bucket(month)["by_tolerance"] += 1
+    for row in create:
+        month = str(row["date"])[:7]
+        bucket(month)["create"] += 1
+        bucket(month)["create_net"] = round(bucket(month)["create_net"] + bank_feed._net(row), 2)
+    for line in unmatched:
+        month = str(line["date"])[:7]
+        bucket(month)["unmatched_lines"] += 1
+        bucket(month)["unmatched_net"] = round(bucket(month)["unmatched_net"] + bank_feed._net(line), 2)
+    for row in rows:
+        bucket(str(row["date"])[:7])["rows"] += 1
+    for line in lines:
+        bucket(str(line["date"])[:7])["lines"] += 1
+    for month in report:
+        report[month]["by_gap"] = dict(sorted(gaps[month].items()))
+    return dict(sorted(report.items()))
