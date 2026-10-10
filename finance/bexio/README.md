@@ -389,6 +389,29 @@ against the lines, the GL per account and year against bexio's lines, the posted
 (for the manual entries and bank bead, erp-fd93 and erp-7avs), and any missing or differing line to
 `<private>/bexio-payroll-live-differences.txt`.
 
+## Paystub figures (pdftotext, host only)
+
+`parse_paystubs.py` reads the paystub PDFs that `export.py --payroll` downloaded to
+`private/bexio-payroll/paystubs/` (one per employee and month) into one private figures table for the
+payroll setup: it runs `pdftotext -layout` on each PDF on the host (no docker, no live call) and takes
+every wage-type line bexio prints with its number — 1000/1001 monthly salary, 5010 AHV/IV/EO, 5020
+ALV, 5040 NBU, 5050 BVG/PP, 5060 withholding tax, any other 5xxx deduction — plus the totals (5000
+gross, 5900 total deductions, 6500 net, 6600 paid out), with base, rate and amount where the line
+prints them (Swiss apostrophes, deductions negative; a line after the first column header only, so
+the addresses' postal codes are not taken as wage types).
+
+    python3 finance/bexio/parse_paystubs.py
+    python3 finance/bexio/parse_paystubs.py --check   # exits 2 when a file fails
+
+The CSV goes to `<private>/payroll/paystub-figures.csv` (mode 600), one row per wage-type line per
+paystub: `employee_id, year, month, wage_type, label, base, rate, amount`. `--check` verifies per file
+that the printed 5xxx deductions sum to gross minus net within 5 rappen; the per-file problems (empty
+pdftotext output — a scanned PDF, a missing line, a failed check) go to
+`<private>/payroll/paystub-figures-report.txt`, stdout prints counts only. Payslips are the most
+sensitive documents of the company and the repository is public: no figure, name or line of a real
+paystub reaches the repo, a commit or a note — the test fixture is an invented text in bexio's layout
+(`fixtures/paystub-invented*.txt`), and pdftotext's output goes to stdout, never into a worktree.
+
 ## Manual entries (Journal Entries)
 
 `import_manual_entries.py` maps each bexio manual entry (single, compound, group, banking and untyped) to one

@@ -1,0 +1,30 @@
+BI Concepts - Musterweg 1 - 8000 Musterstadt
+
+
+
+
+Muster Maria
+Musterstrasse 1
+8001 Musterdorf
+                                                                         BI Concepts
+                                                                         Musterweg 1
+                                                                         8000 Musterstadt
+
+
+Wage slip for October 2026
+AHV number: 756.0000.0000.00                                                     Musterstadt, 30. October 2026
+Wages and allowances
+Wage type      Description                            Share/Base     Percent        Rate              Amount CHF
+1218           Commission                             10'000.00      12.000%                            1'200.00
+5000           Gross wages                                                                               1'200.00
+Deductions
+Wage type      Description                            Share/Base     Percent        Rate              Amount CHF
+5010           AHV/IV/EO contribution                 1'200.00       5.300%                              -63.60
+5020           ALV contribution                       1'200.00       1.100%                              -13.20
+5900           Total deductions                                                                            -76.80
+6500           Net salary                                                                                 1'123.20
+6600           Amount paid out                                                                            1'123.20
+
+
+
+The amount of CHF 1'123.20 will be remitted onto the following account: CH00 0000 0000 0000 0000 0 (Musterbank)

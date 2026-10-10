@@ -1,0 +1,48 @@
+BI Concepts - Musterweg 1 - 8000 Musterstadt
+
+
+
+
+Muster Maria
+Musterstrasse 1
+                                                                         BI Concepts
+8000 Musterstadt                                                         Musterweg 1
+                                                                         8000 Musterstadt
+
+
+Lohnabrechnung für September 2026
+AHV-Nummer: 756.0000.0000.00                                                     Musterstadt, 28. September 2026
+
+
+Lohn und Zulagen
+Lohnart         Bezeichnung                            Anteil/Basis    Prozent        Ansatz            Betrag CHF
+1000            Monthly salary                         100.000%                                            5'000.00
+1001            Monthly salary 2                                                                           500.00
+5000            Gross wages                                                                               5'500.00
+
+
+
+Abzüge
+Lohnart         Bezeichnung                            Anteil/Basis    Prozent        Ansatz            Betrag CHF
+5010            AHV/IV/EO contribution                 5'500.00       5.300%                             -291.50
+5020            ALV contribution                       5'500.00       1.100%                              -60.50
+5040            NBU contribution A1                    5'500.00       0.544%                              -29.92
+5050            BVG contribution                                                                         -440.00
+5060            Withholding tax                        5'500.00       5.740%                             -315.70
+5070            Other deduction                                                                            -12.38
+5900            Total deductions                                                                        -1'150.00
+
+
+6500            Net salary                                                                                4'350.00
+
+
+Sonstige Zulagen und Abzüge
+Lohnart         Bezeichnung                            Anteil/Basis    Prozent        Ansatz            Betrag CHF
+6300.1          Rent                                                                                     -1'000.00
+
+
+6600            Amount paid out                                                                          3'350.00
+
+
+
+Der Betrag von CHF 3'350.00 wird auf folgendes Konto überwiesen: CH00 0000 0000 0000 0000 0 (Musterbank)

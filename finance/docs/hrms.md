@@ -130,6 +130,10 @@ the bead asks for. Counts come with that export. Nothing below has been read fro
 | Absences per employee and business year | Leave Application (or a Leave Allocation balance) | Only for the open year, or as a balance. Per-day history is not needed for the Lohnausweis |
 | Payroll journal lines (booked) | Journal Entry (already loaded by `import_payroll.py`, bexio_id `journal-<id>`) | Stays as the GL |
 
+The figures of the exported paystub PDFs (monthly salary, BVG, the Quellensteuer base and rate, the
+AHV/ALV/NBU rates) are parsed into one private table by `finance/bexio/parse_paystubs.py`, so the
+per-employee setup reads them without opening the PDFs again.
+
 ### History: Salary Slips, not new GL
 
 The GL already holds the history: `import_payroll.py` loads the payroll journal lines as
