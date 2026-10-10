@@ -60,15 +60,21 @@ def sync_now(dry_run=True, start=None, end=None):
     and not changed.
     """
     dry_run = frappe.parse_json(dry_run) if isinstance(dry_run, str) else bool(dry_run)
-    report = run(dry_run=dry_run, start=_moment(start), end=_moment(end))
+    report = run(dry_run=dry_run, start=_moment(start), end=_moment(end, last=True))
     frappe.msgprint(_("{0} account(s) {1}.").format(len(report["accounts"]), _("planned") if dry_run else _("synced")))
     frappe.msgprint("<br>".join(_summary_lines(report)))
     return report
 
 
-def _moment(value):
-    """An optional command argument as a naive datetime (a date means its midnight), or None when it is not given."""
-    return frappe.utils.get_datetime(value) if value else None
+def _moment(value, last=False):
+    """An optional command argument as a naive datetime (a date means its midnight, or with last its final second, so
+    the end day's own transfers are fetched), or None when it is not given."""
+    if not value:
+        return None
+    moment = frappe.utils.get_datetime(value)
+    if last and len(str(value).strip()) <= 10:
+        moment = moment.replace(hour=23, minute=59, second=59)
+    return moment
 
 
 def sync_scheduled():

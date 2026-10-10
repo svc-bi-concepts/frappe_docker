@@ -279,6 +279,10 @@ class Window(unittest.TestCase):
         self.assertEqual(wise._moment("2026-02-01 12:30:00"), datetime.datetime(2026, 2, 1, 12, 30))
         self.assertIsNone(wise._moment(None))
 
+    def test_an_end_day_means_its_last_second_so_its_transfers_are_fetched(self):
+        self.assertEqual(wise._moment("2026-06-30", last=True), datetime.datetime(2026, 6, 30, 23, 59, 59))
+        self.assertEqual(wise._moment("2026-06-30 12:00:00", last=True), datetime.datetime(2026, 6, 30, 12, 0))
+
     def test_rows_after_the_end_day_are_left_out(self):
         rows = [
             {"date": "2026-09-30", "deposit": 0.0, "withdrawal": 1.0},
