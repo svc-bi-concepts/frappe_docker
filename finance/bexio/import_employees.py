@@ -222,19 +222,19 @@ class Counts:
         self.created = self.updated = self.unchanged = self.failed = 0
         self.existing = 0
 
-    def line(self):
-        return "to create: {}  already there: {}  updated: {}  unchanged: {}  failed: {}".format(
-            self.created, self.existing, self.updated, self.unchanged, self.failed)
+    def line(self, dry_run):
+        return "{} {}  already there: {}  {}: {}  unchanged: {}  failed: {}".format(
+            "to create:" if dry_run else "created:", self.created, self.existing,
+            "to update" if dry_run else "updated", self.updated, self.unchanged, self.failed)
 
 
 class EmployeeImporter:
-    """The upsert keyed by bexio_id, the counts and the problems; no names or numbers in either."""
+    """The upsert keyed by bexio_id, the counts and the problems; no names, ids or numbers in either (a problem names the record by its position in the export)."""
 
     def __init__(self, erp, dry_run=True):
         self.erp = erp
         self.dry_run = dry_run
         self.counts = Counts()
-        self.counts.existing = 0
         self.problems = []
         self.needs_dates = []
         self._index = None
@@ -248,18 +248,18 @@ class EmployeeImporter:
     def run(self, plan):
         ids = {str(emp["id"]) for emp, _doc, _reason in plan}
         self.counts.existing = len(set(self.index()) & ids)
-        for emp, doc, reason in plan:
+        for position, (emp, doc, reason) in enumerate(plan, start=1):
             if doc is None:
                 if reason == "needs joining date":
                     self.needs_dates.append(emp)
                 else:
                     self.counts.failed += 1
-                    self.problems.append("employee {}: {}".format(emp["id"], reason))
+                    self.problems.append("record {}: {}".format(position, reason))
                 continue
-            self.upsert(str(emp["id"]), doc)
+            self.upsert(str(emp["id"]), doc, position)
         return self.counts
 
-    def upsert(self, bexio_id, doc):
+    def upsert(self, bexio_id, doc, position):
         doc = dict(doc, bexio_id=bexio_id)
         known = self.index()
         try:
@@ -279,7 +279,7 @@ class EmployeeImporter:
                 self.counts.created += 1
         except ErpError as err:
             self.counts.failed += 1
-            self.problems.append("employee {}: {}".format(bexio_id, err))
+            self.problems.append("record {}: write refused ({})".format(position, type(err).__name__))
 
 
 # ---- output ----
@@ -307,7 +307,7 @@ def report(importer, plan, dry_run):
         if doc:
             status[doc["status"]] += 1
     print("records: {}".format(len(plan)))
-    print(importer.counts.line())
+    print(importer.counts.line(dry_run))
     print("fields filled: " + ", ".join("{}/{}".format(label, count) for label, count in fill_counts(employees)))
     unknown = sum(1 for _emp, doc, reason in plan if doc is None and reason.startswith("unknown gender"))
     print("unknown gender: {}  needs joining date: {}".format(unknown, len(importer.needs_dates)))

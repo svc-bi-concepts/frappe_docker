@@ -233,6 +233,7 @@ class PlanTest(unittest.TestCase):
         self.assertEqual(importer.counts.created, 0)
         self.assertEqual(importer.counts.failed, 1)
         self.assertIn("unknown gender", importer.problems[0])
+        self.assertNotIn("test-emp", importer.problems[0])
 
     def test_a_missing_gender_is_reported_too(self):
         importer = import_all(FakeErp(), [invented_employee(gender=None)], stubs([(2025, 1)]))
@@ -288,6 +289,30 @@ class UpsertTest(unittest.TestCase):
         self.assertEqual(gone["date_of_joining"], "2019-08-01")
         self.assertEqual(gone["relieving_date"], "2026-03-31")
         self.assertEqual(gone["status"], "Left")
+
+
+class FailingErp(FakeErp):
+    def insert(self, doctype, doc):
+        raise ie.ErpError(409, "insert Employee")
+
+
+class WriteFailureTest(unittest.TestCase):
+    def test_a_refused_write_is_counted_and_the_problem_carries_no_values(self):
+        erp = FailingErp()
+        importer = import_all(erp, [invented_employee(), invented_employee(id="test-emp-2")],
+                              stubs([(2025, 1)], [(2025, 1)]))
+        self.assertEqual(importer.counts.failed, 2)
+        self.assertEqual(importer.counts.created, 0)
+        self.assertEqual(len(importer.problems), 2)
+        for problem in importer.problems:
+            for value in ("Ada", "Musterfrau", "test-emp"):
+                self.assertNotIn(value, problem)
+
+    def test_the_count_line_says_what_was_done(self):
+        counts = ie.Counts()
+        counts.created = 2
+        self.assertTrue(counts.line(True).startswith("to create: 2"))
+        self.assertTrue(counts.line(False).startswith("created: 2"))
 
 
 class CsvTest(unittest.TestCase):
