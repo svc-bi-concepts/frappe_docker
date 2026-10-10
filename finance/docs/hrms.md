@@ -171,6 +171,17 @@ slot that ledgerdemain gives (`erpnext-setup.md`).
    `python3 finance/bexio/import_employees.py --dry-run` and `--apply`: 9 Employees on live
    (3 Active, 6 Left), rerun 0 new, nobody without a joining date (`private/payroll/needs-dates.txt`
    says 0). Counts only here; the importer prints counts only.
+4b. **Payroll inputs from the paystubs** (erp-y4yf, `finance/bexio/import_assignments.py`). Derived from the
+   parsed figures (`parse_paystubs.py`): one submitted Salary Structure Assignment per Active employee on
+   the "Swiss Monthly" structure, base = the 1001 monthly salary of the latest paystub month, from its first
+   day; the Quellensteuer canton (the bexio address, where a 5060 line exists) and tariff code (the QST
+   Tariff row of the canton that holds the gross's bracket at the printed 5060 rate, unique only); the
+   employee rates 5010, 5020 and 5040 in Payroll Swiss Settings, when empty. Left employees get no
+   assignment (their figures stay for the history). **Stays manual:** the employer rates (AHV, ALV, UVG,
+   KTG, FAK: the insurers' sheets), KTG (printed on no paystub), and the BVG plan: the band rates are
+   placeholders, so no BVG insured salary is derived until the fund's plan sheet is in
+   (`BVG_RATES_ARE_PLACEHOLDERS` in the importer, then the rates in the settings). The QST Tariff rows are
+   loaded by `bi_payroll.swiss_payroll.load_tariff` from the ESTV file before the codes resolve.
 5. **History loader.** One submitted Salary Slip per employee and month, `payroll_entry`
    empty, PDF attached. Check: no new GL (`make_accrual_jv_entry` is not
    called on these), and the GL per account and year equals before the load.

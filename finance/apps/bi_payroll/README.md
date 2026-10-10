@@ -55,5 +55,13 @@ migrate on any site.
   change has empty formulas and computes 0 for every component; the live structure (erp-2s3c) was one of them.
 - `bi_payroll/test_layout.py`: the layout and stamp guard, copied from `bi_finance`:
   `python3 -m unittest bi_payroll.test_layout`.
+- Payroll inputs from the paystubs (`finance/bexio/import_assignments.py`, not in this app: it runs on the host through
+  the API user): per Active Employee with paystubs, a submitted Salary Structure Assignment (base = the latest
+  month's 1001 from its first day); the Employee's `swiss_qst_canton` (the bexio address canton) and
+  `swiss_qst_code` (the one QST Tariff code of the canton that holds the gross's bracket at the printed 5060 rate;
+  several candidates are reported, not guessed); the empty settings' employee rates (5010, 5020, 5040). The BVG
+  insured salary is inverted from the 5050 through the band rate by the BVG Employee formula
+  (`coordination + 1200 * amount / rate`), and not written while the band rates are placeholders.
+  `python3 -m unittest test_import_assignments` in `finance/bexio`.
 - `finance/images/bi_payroll.Containerfile`: the layer on the image with bi_finance (live and copy), built by
   `finance/scripts/build-image.sh`.
