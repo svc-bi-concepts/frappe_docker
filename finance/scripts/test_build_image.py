@@ -112,6 +112,28 @@ class BuildImageModes(unittest.TestCase):
         self.assertIn("--build-arg BASE=frappe-finance-custom:t1-finance --tag frappe-finance-custom:t1 ", builds[2])
         self.assertIn("--file finance/images/bi_payroll.Containerfile", builds[2])
 
+    def test_node_heap_defaults_to_900_and_follows_node_heap_mb(self):
+        hrms = [{"url": "https://github.com/frappe/hrms", "branch": "v16.50.0"}]
+        code, err, calls = self.run_in_layout({"apps.json": hrms}, tag="t1", env_extra={"NODE_HEAP_MB": "600"})
+        self.assertEqual(code, 0, err)
+        builds = [line for line in calls.splitlines() if line.startswith("buildx build ")]
+        self.assertIn("--build-arg NODE_OPTIONS=--max-old-space-size=600 ", builds[0])
+        code, err, calls = self.run_in_layout({"apps.json": hrms}, tag="t1")
+        self.assertEqual(code, 0, err)
+        builds = [line for line in calls.splitlines() if line.startswith("buildx build ")]
+        self.assertIn("--build-arg NODE_OPTIONS=--max-old-space-size=900 ", builds[0])
+
+    def test_a_node_heap_that_is_not_a_number_is_refused_before_docker(self):
+        hrms = [{"url": "https://github.com/frappe/hrms", "branch": "v16.50.0"}]
+        for bad in ("1.5G", "900 --inspect", "-1", "0x10"):
+            with self.subTest(bad=bad):
+                code, err, calls = self.run_in_layout(
+                    {"apps.json": hrms}, tag="t1", env_extra={"NODE_HEAP_MB": bad}
+                )
+                self.assertEqual(code, 2)
+                self.assertIn("NODE_HEAP_MB must be a number", err)
+                self.assertEqual(calls, "")
+
     def test_refuses_an_existing_finance_layer_tag(self):
         erpnext = [{"url": "https://github.com/frappe/erpnext", "branch": "v16.50.0"}]
         code, err, calls = self.run_in_layout(

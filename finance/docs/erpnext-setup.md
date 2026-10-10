@@ -227,9 +227,12 @@ at another builder — on a machine without IT's setup, name that machine's own 
 builder, never the default.
 
 If docker itself answers nothing, the socket is gone: run IT's colima-sock-fix, then
-retry. The asset build's node heap is capped with `NODE_OPTIONS=--max-old-space-size=900`
-(the script passes it into `images/custom/Containerfile`), so a build stays inside the
-builder's budget. The script needs free disk for the scratch layouts (about the size of
+retry. The asset build's node heap is capped with `NODE_OPTIONS=--max-old-space-size=$NODE_HEAP_MB`
+(the script passes it into `images/custom/Containerfile`); `NODE_HEAP_MB` defaults to 900. The
+cap bounds only the V8 heap, so the whole node process has to fit the builder's budget: on
+2026-10-11 bi14 was SIGKILLed (status 137) at the hrms vite step with 900 and with 1536. A
+different value is an env setting, `NODE_HEAP_MB=600 finance/scripts/build-image.sh live <tag>`,
+and must be a number. The script needs free disk for the scratch layouts (about the size of
 the image, twice).
 
 ## Switching the stack to a new image

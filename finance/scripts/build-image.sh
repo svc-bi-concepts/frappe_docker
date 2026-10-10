@@ -16,6 +16,11 @@
 # stack and OOM-killed the live containers twice on 2026-10-11. The app list goes in
 # as a secret, not a build arg, so nothing from it ends up in image metadata.
 #
+# NODE_HEAP_MB caps the V8 heap of the asset build (default 900). The cap bounds the heap
+# only: esbuild and the rest of the node process sit outside it, so the value has to leave
+# room under the builder's cap. A bi14 build died with status 137 (SIGKILL) at the hrms
+# vite step under 900 and under 1536.
+#
 # The capped builder (docker-container driver) cannot see the local image store, so the
 # bi_finance and bi_payroll layers cannot FROM the layer before by its tag: each build
 # also writes its image as an OCI layout in a scratch directory, and the next build gets
@@ -41,6 +46,12 @@ fi
 MODE="$1"
 TAG="$2"
 FRAPPE_TAG=v16.51.0
+
+# The asset build's V8 heap cap in MB (see the header). A number only: it goes into a flag.
+NODE_HEAP_MB="${NODE_HEAP_MB:-900}"
+case "$NODE_HEAP_MB" in
+  ''|*[!0-9]*) echo "refused: NODE_HEAP_MB must be a number of MB, not '$NODE_HEAP_MB'" >&2; exit 2 ;;
+esac
 
 # Compose files live at the repo root, two levels up from this script.
 cd "$(dirname "$0")/../.."
@@ -105,7 +116,7 @@ docker buildx build \
   --no-cache \
   --build-arg FRAPPE_PATH=https://github.com/frappe/frappe \
   --build-arg FRAPPE_BRANCH="$FRAPPE_TAG" \
-  --build-arg NODE_OPTIONS=--max-old-space-size=900 \
+  --build-arg NODE_OPTIONS=--max-old-space-size="$NODE_HEAP_MB" \
   --secret id=apps_json,src="$APPS" \
   --tag "frappe-finance-custom:$TAG-base" \
   --file images/custom/Containerfile .
