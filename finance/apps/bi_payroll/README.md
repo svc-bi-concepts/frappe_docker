@@ -69,8 +69,7 @@ migrate on any site.
   bexio address canton) and `swiss_qst_code` (the one QST Tariff code of the canton that holds the gross's bracket at
   the printed 5060 rate; several candidates are reported, not guessed). An employee whose latest paystub prints no
   5060 has QST ended: no canton, no code (the apply clears a canton set earlier); the empty settings' employee rates
-  (5010, 5020,
-  5040), filled only when the Active employees' latest paystubs agree on one rate. The BVG insured salary is a
+  (5010, 5020, 5040), filled only when the Active employees' latest paystubs agree on one rate. The BVG insured salary is a
   calibration: inverted from the 5050 through the band rate by the BVG Employee formula
   (`coordination + 1200 * amount / rate`, to the franc), so the formula reproduces the latest paystub until the fund's
   sheet replaces the band rates and the insured salaries. Each one is listed in `private/payroll/bvg-calibration.txt`.
