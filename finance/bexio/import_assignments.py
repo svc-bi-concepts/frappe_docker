@@ -19,7 +19,9 @@ employees.json (the export), the Employees are those import_employees.py wrote (
   against the Select's options; the postcode table of the Swiss Post is not used, because 169 postcodes lie on a
   cantonal border). swiss_qst_code is the tariff code of that canton, valid in the latest month with a 5060 line,
   whose bracket holds that month's gross and whose rate is the printed 5060 rate. Unique: set; else reported with the
-  count of candidates. The QST Tariff rows must be loaded first (bi_payroll.swiss_payroll.load_tariff).
+  count of candidates. An employee whose latest paystub month prints no 5060 has QST ended: no canton, no code (the
+  apply clears a canton an earlier run wrote; the tariffs of today cannot apply, and withhold_qst deducts nothing
+  without a code). The QST Tariff rows must be loaded first (bi_payroll.swiss_payroll.load_tariff).
 - The employee rates 5010 (AHV), 5020 (ALV) and 5040 (NBU) are read from the Active employees' latest paystubs. An empty
   setting is filled when those agree on one rate; they disagreeing, the setting stays empty and the rates with the ids
   are reported (the one-rate model cannot carry two). A different setting is reported, never overwritten. Employer
@@ -240,6 +242,15 @@ def _quellensteuer(plan, entry, rows, latest, emp, tariffs_for):
     withholding = [row for row in rows if row["wage_type"] == QST_TYPE]
     if not withholding:
         plan.counts["no QST (no 5060)"] += 1
+        return
+    if line(rows, latest, QST_TYPE) is None:
+        # The 5060 stopped before the latest paystub: the withholding has ended. The tariffs of today cannot apply
+        # (the lookup would read the last 5060 month into the wrong tariff year), and withhold_qst deducts nothing
+        # without a code. No canton, no code: the apply clears a canton an earlier run wrote, else the set canton
+        # says the employee is QST-liable and invites a hand-filled code that would deduct again.
+        plan.counts["QST ended"] += 1
+        entry["fields"]["swiss_qst_canton"] = ""
+        entry["fields"]["swiss_qst_code"] = ""
         return
     canton = (emp.get("address") or {}).get("canton") or ""
     if canton not in CANTONS:

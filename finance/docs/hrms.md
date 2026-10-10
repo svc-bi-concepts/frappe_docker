@@ -176,7 +176,8 @@ slot that ledgerdemain gives (`erpnext-setup.md`).
    the "Swiss Monthly" structure, base = the monthly salary (1001 up to 2025, 1000 from 2025) of the latest
    paystub month, from its first day; the Quellensteuer canton (the bexio address, where a 5060 line exists) and
    tariff code (the QST Tariff row of the canton that holds the gross's bracket at the printed 5060 rate, unique
-   only); the employee rates 5010, 5020 and 5040 in Payroll Swiss Settings, when empty and when the Active
+   only). An employee whose latest paystub prints no 5060 has QST ended: no canton, no code (the apply clears a
+   canton written earlier); the employee rates 5010, 5020 and 5040 in Payroll Swiss Settings, when empty and when the Active
    employees' latest paystubs agree. Left employees get no assignment (their figures stay for the history).
    **The BVG insured salary is a calibration, not the fund's figure** (ledgerdemain, 2026-10-11): the band rates
    are placeholders, so the insured salary is worked back from the paystub's 5050 through them, to reproduce

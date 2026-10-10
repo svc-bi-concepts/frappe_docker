@@ -265,6 +265,15 @@ class TestQuellensteuer(Base):
         self.assertEqual(plan.entries[0]["fields"], {})
         self.assertEqual(plan.counts["no QST (no 5060)"], 1)
 
+    def test_qst_ended_clears_and_is_counted_not_reported(self):
+        # the 5060 stopped before the latest paystub: the fields are cleared for the apply, the tariffs of today
+        # are not looked up (empty tariff list), no problem
+        rows = invented_rows() + [figure(2026, 1, "5060", base=4500.0, rate=4.0, amount=-180.0)]
+        plan = run_plan(invented_employee(), rows, tariffs=[])
+        self.assertEqual(plan.entries[0]["fields"], {"swiss_qst_canton": "", "swiss_qst_code": ""})
+        self.assertEqual(plan.counts["QST ended"], 1)
+        self.assertEqual(plan.problems, [])
+
     def test_canton_missing_from_the_address_is_reported(self):
         plan = run_plan(invented_employee(canton=None), invented_rows(qst=4.0, gross=5000.0))
         self.assertNotIn("swiss_qst_canton", plan.entries[0]["fields"])
@@ -408,6 +417,24 @@ class TestWrites(Base):
         self.assertEqual(len(erp.updated), 1)
         self.assertEqual(len(erp.filled), 1)
         self.assertEqual(writer2.counts["assignments made"], 0)
+
+    def test_qst_ended_clears_a_written_canton_and_the_rerun_writes_nothing(self):
+        live = erp_employee(status="Left", qst_canton="ZH", qst_code=None)
+        rows = invented_rows() + [figure(2026, 1, "5060", base=4500.0, rate=4.0, amount=-180.0)]
+        plan = run_plan(invented_employee(), rows, erp_row=live)
+        self.assertEqual(plan.entries[0]["fields"], {"swiss_qst_canton": "", "swiss_qst_code": ""})
+        erp = FakeErp(employees=[live])
+        writer = ia.Writer(erp, dry_run=False)
+        writer.run(plan, {}, {"test-emp-1": live})
+        self.assertEqual(erp.updated, [("HR-EMP-0001", {"swiss_qst_canton": "", "swiss_qst_code": ""})])
+        self.assertEqual(writer.failures, [])
+        # the rerun: the Employee holds the empty values now, the write is skipped
+        cleared = dict(erp.employees["HR-EMP-0001"])
+        again = run_plan(invented_employee(), rows, erp_row=cleared)
+        writer2 = ia.Writer(erp, dry_run=False)
+        writer2.run(again, {}, {"test-emp-1": cleared})
+        self.assertEqual(len(erp.updated), 1)
+        self.assertEqual(writer2.counts["Employee fields unchanged"], 1)
 
     def test_a_refused_write_is_counted_and_not_fatal(self):
         erp = self.erp()
