@@ -32,6 +32,11 @@ class Start(unittest.TestCase):
         settings = types.SimpleNamespace(last_sync=datetime.datetime(2026, 10, 1, 12), backfill_from="2015-01-01")
         self.assertEqual(wise._start(settings, datetime.datetime(2026, 10, 10)), datetime.datetime(2026, 9, 24, 12))
 
+    def test_later_sync_reads_last_sync_as_stored_text(self):
+        # a Datetime single comes back as its stored string after the first live sync: "str - timedelta" must not raise
+        settings = types.SimpleNamespace(last_sync="2026-10-11 00:05:00", backfill_from="2015-01-01")
+        self.assertEqual(wise._start(settings, datetime.datetime(2026, 10, 11, 1)), datetime.datetime(2026, 10, 4, 0, 5))
+
 
 class Balances(unittest.TestCase):
     def test_the_standard_and_savings_amounts_of_a_currency_add_up(self):
