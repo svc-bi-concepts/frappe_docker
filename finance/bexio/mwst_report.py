@@ -94,20 +94,6 @@ LABELS = {
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def csv_rows(totals):
     """One line per form row, base and tax, and under it the part that came from Journal Entries, for the private CSV."""
     rows, _saldo = form_totals(totals)
@@ -190,8 +176,6 @@ def fetch(erp, start, end):
     return out
 
 
-
-
 def fetch_payments(erp, start, end):
     """The submitted Payment Entries of the period with their references, and the invoices they pay (read only).
     Returns the payments, and (doctype, name) -> the invoice as ERPNext has it."""
@@ -209,12 +193,6 @@ def fetch_payments(erp, start, end):
             "references": references,
         })
     return payments, invoices
-
-
-
-
-
-
 
 
 def fetch_journal_lines(erp, start, end):
@@ -239,14 +217,6 @@ def fetch_journal_lines(erp, start, end):
             "key": keys.get(e["voucher_no"]),
         })
     return lines
-
-
-
-
-
-
-
-
 
 
 def templates_by_name(erp):

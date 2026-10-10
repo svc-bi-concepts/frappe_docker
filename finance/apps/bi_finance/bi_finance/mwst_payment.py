@@ -412,7 +412,7 @@ def declaration_fields(totals):
         total_tax += tax(ziffer)
     fields["pretax_material"] = tax("400")
     fields["pretax_investments"] = tax("405")
-    for ziffer, field in (("410", "missing_pretax"), ("415", "pretax_correction_mixed"), ("420", "pretax_correction_other")):
+    for field in ("missing_pretax", "pretax_correction_mixed", "pretax_correction_other"):
         fields[field] = ZERO
     pretax = fields["pretax_material"] + fields["pretax_investments"]
     fields["total_tax"] = total_tax

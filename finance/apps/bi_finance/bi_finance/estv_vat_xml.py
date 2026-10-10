@@ -36,8 +36,8 @@ TURNOVER_ROWS = [("totalConsideration", "200"), ("suppliesToForeignCountries", "
                  ("transferNotificationProcedure", "225"), ("suppliesExemptFromTax", "230"),
                  ("reductionOfConsideration", "235")]
 
-# The input tax of effectiveReportingMethod, with its Ziffer. 420 goes to inputTaxReductions as erpnextswiss has it;
-# the report's 420 is the total of the Vorsteuern, so the figure that fills 420 must be checked against the form.
+# The input tax of effectiveReportingMethod, with its Ziffer. 420 is the form's Vorsteuerkürzungen (inputTaxReductions);
+# the total of the Vorsteuern is 479, which the file does not carry.
 INPUT_TAX_ROWS = [("inputTaxMaterialAndServices", "400"), ("inputTaxInvestments", "405"),
                   ("subsequentInputTaxDeduction", "410"), ("inputTaxCorrections", "415"),
                   ("inputTaxReductions", "420")]
