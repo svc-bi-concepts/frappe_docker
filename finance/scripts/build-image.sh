@@ -15,6 +15,11 @@
 # 'docker build' on the default builder shares the colima VM's memory with the live
 # stack and OOM-killed the live containers twice on 2026-10-11. The app list goes in
 # as a secret, not a build arg, so nothing from it ends up in image metadata.
+#
+# The capped builder (docker-container driver) cannot see the local image store, so the
+# bi_finance and bi_payroll layers cannot FROM the layer before by its tag: each build
+# also writes its image as an OCI layout in a scratch directory, and the next build gets
+# that as the named context for its BASE.
 set -eu
 
 usage() {
@@ -87,11 +92,16 @@ for app in json.load(open(sys.argv[1])):
     print(f"pinned: {app['url']} {app['branch']} @ {pinned}")
 PY
 
+# OCI layouts of the base and finance layers, for the next build's BASE (see the header).
+OCI="$(mktemp -d)"
+trap 'rm -rf "$OCI"' EXIT
+
 # --no-cache: a secret is not part of the layer cache key, so a cached bench init
 # layer would keep the apps from an earlier apps list.
 docker buildx build \
   --builder "$BUILDER" \
   --load \
+  --output "type=oci,tar=false,dest=$OCI/base" \
   --no-cache \
   --build-arg FRAPPE_PATH=https://github.com/frappe/frappe \
   --build-arg FRAPPE_BRANCH="$FRAPPE_TAG" \
@@ -105,6 +115,8 @@ docker buildx build \
 docker buildx build \
   --builder "$BUILDER" \
   --load \
+  --output "type=oci,tar=false,dest=$OCI/finance" \
+  --build-context "frappe-finance-custom:$TAG-base=oci-layout://$OCI/base:$TAG-base" \
   --build-arg BASE="frappe-finance-custom:$TAG-base" \
   --tag "frappe-finance-custom:$TAG-finance" \
   --file finance/images/bi_finance.Containerfile .
@@ -112,6 +124,7 @@ docker buildx build \
 docker buildx build \
   --builder "$BUILDER" \
   --load \
+  --build-context "frappe-finance-custom:$TAG-finance=oci-layout://$OCI/finance:$TAG-finance" \
   --build-arg BASE="frappe-finance-custom:$TAG-finance" \
   --tag "frappe-finance-custom:$TAG" \
   --file finance/images/bi_payroll.Containerfile .

@@ -99,6 +99,14 @@ class BuildImageModes(unittest.TestCase):
         # The asset build's node heap cap, and the app list as a BuildKit secret.
         self.assertIn("--build-arg NODE_OPTIONS=--max-old-space-size=900 ", builds[0])
         self.assertIn("--secret id=apps_json,src=", builds[0])
+        # The capped builder cannot read the local image store: each layer's BASE comes
+        # from the OCI layout the build before wrote, as a named context.
+        self.assertIn("--output type=oci,tar=false,dest=", builds[0])
+        self.assertIn("--build-context frappe-finance-custom:t1-base=oci-layout://", builds[1])
+        self.assertIn(":t1-base ", builds[1])
+        self.assertIn("--output type=oci,tar=false,dest=", builds[1])
+        self.assertIn("--build-context frappe-finance-custom:t1-finance=oci-layout://", builds[2])
+        self.assertIn(":t1-finance ", builds[2])
         self.assertIn("--build-arg BASE=frappe-finance-custom:t1-base --tag frappe-finance-custom:t1-finance ", builds[1])
         self.assertIn("--file finance/images/bi_finance.Containerfile", builds[1])
         self.assertIn("--build-arg BASE=frappe-finance-custom:t1-finance --tag frappe-finance-custom:t1 ", builds[2])

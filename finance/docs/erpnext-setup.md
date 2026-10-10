@@ -229,7 +229,8 @@ builder, never the default.
 If docker itself answers nothing, the socket is gone: run IT's colima-sock-fix, then
 retry. The asset build's node heap is capped with `NODE_OPTIONS=--max-old-space-size=900`
 (the script passes it into `images/custom/Containerfile`), so a build stays inside the
-builder's budget.
+builder's budget. The script needs free disk for the scratch layouts (about the size of
+the image, twice).
 
 ## Switching the stack to a new image
 
@@ -265,16 +266,11 @@ removes the base. A switch-free build (a copy for a test, say) is removed by han
 once it is no longer needed: `docker rmi frappe-finance-custom:<tag>` and
 `frappe-finance-custom:<tag>-base`.
 
-To change only the `bi_finance` layer, build that layer on the base image while the
-base still exists (the build's `-base` tag, before a switch removes it), under a
-new tag, then point `finance-local.yml` at it. A switch removes the base, so after
-one of those a change to `bi_finance` needs the full build:
-
-```sh
-docker buildx build --builder capped --load \
-    --build-arg BASE=frappe-finance-custom:<tag>-base \
-    --tag frappe-finance-custom:<new-tag> --file finance/images/bi_finance.Containerfile .
-```
+A change to `bi_finance` needs the full build (`build-image.sh`, a new tag). There is no
+one-layer shortcut: IT's capped builder cannot read the local image store, so a layer
+cannot be built `FROM` a tag that exists only there. The script gets around that inside
+one run, writing each layer as an OCI layout in a scratch directory (removed at the end)
+that the next layer takes as its base.
 
 ## Redo on a fresh site
 
