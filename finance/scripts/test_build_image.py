@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 SCRIPT = os.path.join(ROOT, "finance", "scripts", "build-image.sh")
@@ -195,6 +196,23 @@ class BuildImageModes(unittest.TestCase):
 
 APPLY = os.path.join(ROOT, "finance", "scripts", "apply-patches.sh")
 PATCH_DIR = os.path.join(ROOT, "finance", "patches", "erpnextswiss")
+FRAPPE_PATCH_DIR = os.path.join(ROOT, "finance", "patches", "frappe")
+CONTAINERFILE = os.path.join(ROOT, "images", "custom", "Containerfile")
+
+# The lines of frappe bundler.py at v16.51.0 around get_node_env (its line 296): the context of
+# the real patch, so the patch applies to this file as to the app. The body is the upstream one.
+BUNDLER = """\
+def check_node_executable():
+	pass
+
+
+def get_node_env():
+	return {"NODE_OPTIONS": f"--max_old_space_size={get_safe_max_old_space_size()}"}
+
+
+def get_safe_max_old_space_size():
+	return 2928
+"""
 
 # The lines of erpnextswiss item_tools.py at the pin around the stray comma (its line 43):
 # the context of the real patch, so the patch applies to this invented file as to the app.
@@ -305,6 +323,28 @@ class PatchStep(unittest.TestCase):
         run = subprocess.run(["sh", APPLY, PATCH_DIR, self.app], capture_output=True, text=True)
         self.assertEqual(run.returncode, 0, run.stderr)
         compile(self.read(path), path, "exec")
+
+    def test_our_bundler_patch_keeps_the_node_options_the_build_was_given(self):
+        # Regression: frappe's bundler replaced NODE_OPTIONS with 75% of the RAM it sees, so the heap
+        # cap of build-image.sh never reached the vite build and the capped builder SIGKILLed it.
+        path = "frappe/bundler.py"
+        self.commit(path, BUNDLER)
+        run = subprocess.run(["sh", APPLY, FRAPPE_PATCH_DIR, self.app], capture_output=True, text=True)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        scope = {"os": os}
+        exec(self.read(path), scope)
+        with mock.patch.dict(os.environ, {"NODE_OPTIONS": "--max-old-space-size=900"}):
+            self.assertEqual(scope["get_node_env"](), {"NODE_OPTIONS": "--max-old-space-size=900"})
+        with mock.patch.dict(os.environ):
+            os.environ.pop("NODE_OPTIONS", None)
+            self.assertEqual(scope["get_node_env"](), {"NODE_OPTIONS": "--max_old_space_size=2928"})
+
+    def test_the_containerfile_builds_assets_after_the_frappe_patch(self):
+        with open(CONTAINERFILE) as f:
+            text = f.read()
+        self.assertIn("--skip-assets", text)
+        patched = text.index("apply-patches.sh /home/frappe/patches/frappe apps/frappe")
+        self.assertLess(patched, text.index("bench build --production"))
 
 
 if __name__ == "__main__":

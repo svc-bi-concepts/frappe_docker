@@ -17,9 +17,10 @@
 # as a secret, not a build arg, so nothing from it ends up in image metadata.
 #
 # NODE_HEAP_MB caps the V8 heap of the asset build (default 900). The cap bounds the heap
-# only: esbuild and the rest of the node process sit outside it, so the value has to leave
-# room under the builder's cap. A bi14 build died with status 137 (SIGKILL) at the hrms
-# vite step under 900 and under 1536.
+# only, so esbuild and the rest of the node process need room under the builder's cap too.
+# It only counted after finance/patches/frappe: frappe's bundler used to replace the
+# NODE_OPTIONS it was given with 75% of the RAM it sees (about 2.9G in the builder VM), and
+# a bi14 build died with status 137 (SIGKILL) at the hrms vite step under 900 and under 1536.
 #
 # The capped builder (docker-container driver) cannot see the local image store, so the
 # bi_finance and bi_payroll layers cannot FROM the layer before by its tag: each build

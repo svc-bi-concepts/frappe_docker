@@ -1,0 +1,14 @@
+diff --git a/frappe/bundler.py b/frappe/bundler.py
+index f388ef2..8dc6c13 100644
+--- a/frappe/bundler.py
++++ b/frappe/bundler.py
+@@ -294,7 +294,8 @@ def check_node_executable():
+ 
+ 
+ def get_node_env():
+-	return {"NODE_OPTIONS": f"--max_old_space_size={get_safe_max_old_space_size()}"}
++	# A NODE_OPTIONS the build was given (a capped builder sets one) is kept, not replaced by 75% of RAM.
++	return {"NODE_OPTIONS": os.environ.get("NODE_OPTIONS") or f"--max_old_space_size={get_safe_max_old_space_size()}"}
+ 
+ 
+ def get_safe_max_old_space_size():
