@@ -20,8 +20,12 @@ bank charges) split no tax and are counted apart.
 Journal Entries count on both bases by their posting date: the VAT rows of the
 direct bank and card entries (1170, 1171), the sales tax booked by hand (2200,
 with its base from the net row of the same voucher) and the Bezugsteuer (2203).
-The mirror and transit vouchers (2202 to 2200, 1172 to 1171/1170, the settlement
-with 2201) are not counted by their VAT rows. See journal_totals().
+The journal part selects by the voucher's bexio_id key, not by account pair: a
+voucher keyed vatfix-invoice-, vatfix-credit- or vatfix-bill- (the mirror of a
+document-date posting) is never counted, a voucher keyed manual-<id> or
+vatfix-manual-<id> counts every VAT row, the moves (keyed by bexio
+journal line id) and any other voucher count by the account pairs, and the
+settlement (a voucher with 2201) stays out. See journal_totals().
 
 The base of a tax row is derived from its tax (tax / rate), because the import
 does not carry the net per row. At 8.1 % one rappen of tax is about 0.06 of
@@ -164,6 +168,8 @@ class Totals:
         self.by_code = {}
         self.journal = {}
         self.rate_unknown = ZERO
+        self.skipped_mirrors = []   # the bexio_id keys of the vatfix-* vouchers the journal part skips
+        self.other_keys = []        # the keys (or '(no bexio_id)') of vouchers the pair rule counts
 
     def add(self, row, base, tax):
         acc = self.rows.setdefault(row, [ZERO, ZERO])
@@ -278,6 +284,13 @@ def write_csv(path, totals):
         writer.writerow(["unmapped_template", "rows"])
         for name, count in sorted(_count(totals.unmapped).items()):
             writer.writerow([name, count])
+        writer.writerow([])
+        writer.writerow(["skipped mirrors", "vouchers"])
+        writer.writerow(["invoice/credit/bill vatfix-*", len(totals.skipped_mirrors)])
+        writer.writerow([])
+        writer.writerow(["other journal keys (pair rule)", "vouchers"])
+        for key, count in sorted(_count(totals.other_keys).items()):
+            writer.writerow([key, count])
 
 
 def _count(items):
@@ -375,13 +388,22 @@ VAT_ACCOUNTS = {"1170", "1171", "1172", "2200", "2201", "2202", "2203"}
 RATE_ROWS = {Decimal("7.7"): "302", Decimal("8.1"): "303", Decimal("2.5"): "312",
              Decimal("2.6"): "313", Decimal("3.7"): "342", Decimal("3.8"): "343"}
 RATE_TOLERANCE = Decimal("0.05")
+# The keys of the document-date mirrors: a vatfix voucher of an invoice, a credit note or a bill books the VAT on the
+# document's date, which the payment basis does not read — the payment-day moves are vouchers keyed by journal line.
+# vatfix-manual- is not here: it corrects a bexio manual entry on the entry's posting date, which both bases read.
+MIRROR_KEYS = ("vatfix-invoice-", "vatfix-credit-", "vatfix-bill-")
 
 
 def fetch_journal_lines(erp, start, end):
     """The GL rows of the submitted Journal Entries of the period (read only): voucher, posting date, account
-    number, and debit minus credit. The rows of every account are read, the base of a sales tax is one of them.
+    number, and debit minus credit, each line with its voucher's bexio_id key ('key', None when it has none;
+    journal_totals() selects by it). The rows of every account are read, the base of a sales tax is one of them.
     A row whose account is not in the company's chart comes back with account None."""
     numbers = {a["name"]: a["account_number"] for a in erp.list("Account", [["company", "=", COMPANY]], ["name", "account_number"])}
+    keys = {e["name"]: (e.get("bexio_id") or None)
+            for e in erp.list("Journal Entry", [["company", "=", COMPANY], ["docstatus", "=", 1],
+                                                ["posting_date", "between", [str(start), str(end)]]],
+                              ["name", "bexio_id"])}
     filters = [["company", "=", COMPANY], ["voucher_type", "=", "Journal Entry"], ["is_cancelled", "=", 0],
                ["posting_date", "between", [str(start), str(end)]]]
     lines = []
@@ -391,6 +413,7 @@ def fetch_journal_lines(erp, start, end):
             "posting_date": datetime.date.fromisoformat(str(e["posting_date"])),
             "account": numbers.get(e["account"]),
             "amount": Decimal(str(e["debit"])) - Decimal(str(e["credit"])),
+            "key": keys.get(e["voucher_no"]),
         })
     return lines
 
@@ -404,14 +427,21 @@ def _rate_row(rate):
 
 def journal_totals(lines, totals):
     """Journal Entries' VAT rows into the Ziffern, by posting date: the same on both bases (a bank or card entry is
-    dated by the payment). fetch_journal_lines() gives the lines.
+    dated by the payment). fetch_journal_lines() gives the lines, each with its voucher's bexio_id key.
 
-    Per voucher, by the accounts it touches. Not counted by its VAT rows: a voucher with 2201 (the settlement, whose
-    1171 row is the period's moves and direct lines in one), a 2200 row with 2202 (the sales tax moved from 2202), and
-    a 1170/1171 row with 1172 (the bill payment moves, which the payment basis counts through the Payment Entries).
-    Counted: 1170 -> 400 and 1171 -> 405 by the net debit; 2203 -> 382/383 by the Bezugsteuer rule; 2200 by the net
-    credit, in the row of its rate. The rate comes from the one non-VAT row of the voucher with the same sign (the
-    net); a sales tax without it, or at a rate not in the form, is counted apart in rate_unknown."""
+    Per voucher, by the accounts it touches. The settlement stays out (a voucher with 2201, whose 1171 row is the
+    period's moves and direct lines in one). The rest decides by key, not by account pair: a voucher keyed
+    vatfix-invoice-, vatfix-credit- or vatfix-bill- is the mirror of a document-date posting — the payment basis
+    reads the payment-day moves instead, which are vouchers of their own keyed by bexio journal line id — and is
+    skipped, counted in the CSV's skipped mirrors. A voucher keyed manual-<id> is a bexio manual entry, and a
+    vatfix-manual-<id> voucher is the VAT fix of one: both hold the entry's VAT on the entry's posting date, so
+    every VAT row counts (1170 -> 400, 1171 -> 405, 2203 -> 382/383 by the Bezugsteuer rule, 2200 by the net credit
+    in the row of its rate); a 2202 or 1172 row is a reverse-charge transit, not a Ziffer. A move (keyed by journal
+    line id) and any other voucher count by the account pairs as before: a 1170/1171 row with 1172 and a 2200 row
+    with 2202 are the moves the Payment Entries already hold, not counted; 2200 alone is the sales tax booked by
+    hand. A voucher of no known kind (or with no key) is listed in the CSV, so a new voucher kind shows. The rate
+    comes from the one non-VAT row of the voucher with the same sign (the net); a sales tax without it, or at a
+    rate not in the form, is counted apart in rate_unknown."""
     vouchers = {}
     for line in lines:
         if line["account"] is not None:
@@ -422,13 +452,20 @@ def journal_totals(lines, totals):
             net[line["account"]] = net.get(line["account"], ZERO) + line["amount"]
         if "2201" in net:
             continue
+        key = rows[0].get("key")
+        if key and key.startswith(MIRROR_KEYS):
+            totals.skipped_mirrors.append(key)
+            continue
+        manual = bool(key) and (key.startswith("manual-") or key.startswith("vatfix-manual-"))
+        if not manual and not (key and key.isdigit()) and any(account in VAT_ACCOUNTS for account in net):
+            totals.other_keys.append(key or "(no bexio_id)")
         posting_date = rows[0]["posting_date"]
         for account, row in JOURNAL_INPUT.items():
-            if net.get(account) and "1172" not in net:
+            if net.get(account) and (manual or "1172" not in net):
                 totals.add_journal(row, None, net[account])
         if net.get("2203"):
             totals.add_journal(owed_row(posting_date), None, -net["2203"])
-        if net.get("2200") and "2202" not in net:
+        if net.get("2200") and (manual or "2202" not in net):
             sales_tax = -net["2200"]
             bases = [-amount for account, amount in net.items()
                      if account not in VAT_ACCOUNTS and -amount * sales_tax > 0]

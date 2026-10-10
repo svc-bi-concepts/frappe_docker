@@ -413,23 +413,30 @@ ACCOUNTS = [{"name": "{} - BI".format(n), "account_number": n, "company": mr.COM
             for n in ("1020", "1100", "1170", "1171", "1172", "2200", "2201", "2202", "2203", "3200", "6570")]
 
 
-def journal(entries):
+def journal(entries, keys=None):
     """The Journal Entries of the period as fetch_journal_lines() reads them. entries: (voucher, date, [(account
-    number, debit, credit)])."""
+    number, debit, credit)]). keys maps a voucher to its Journal Entry's bexio_id."""
     rows = []
     for voucher, day, lines in entries:
         for number, debit, credit in lines:
             rows.append({"voucher_no": voucher, "posting_date": day, "account": "{} - BI".format(number),
                          "debit": debit, "credit": credit, "company": mr.COMPANY, "voucher_type": "Journal Entry",
                          "is_cancelled": 0})
-    erp = FakeErp({"Account": ACCOUNTS, "GL Entry": rows}, {})
-    return mr.fetch_journal_lines(erp, datetime.date(2026, 7, 1), datetime.date(2026, 9, 30))
+    entries = [{"name": voucher, "bexio_id": (keys or {}).get(voucher), "company": mr.COMPANY,
+                "docstatus": 1, "posting_date": day}
+               for voucher, day, _lines in entries if voucher in (keys or {})]
+    erp = FakeErp({"Account": ACCOUNTS, "Journal Entry": entries, "GL Entry": rows}, {})
+    lines = mr.fetch_journal_lines(erp, datetime.date(2026, 7, 1), datetime.date(2026, 9, 30))
+    if keys:
+        by_voucher = {line["voucher"]: line["key"] for line in lines}
+        assert by_voucher == keys, "fetch_journal_lines lost a bexio_id: {} vs {}".format(by_voucher, keys)
+    return lines
 
 
-def booked(entries):
+def booked(entries, keys=None):
     """The totals of the given Journal Entries, as journal_totals() adds them up."""
     totals = mr.Totals()
-    mr.journal_totals(journal(entries), totals)
+    mr.journal_totals(journal(entries, keys), totals)
     return totals
 
 
@@ -490,6 +497,107 @@ class JournalEntries(unittest.TestCase):
     def test_csv_shows_the_entries_under_the_ziffer(self):
         t = booked([("E1", "2026-08-03", [("1171", "8.10", "0"), ("1020", "0", "8.10")])])
         self.assertIn(["405", "journal entries (by account)", "0.00", "8.10"], list(mr.csv_rows(t)))
+
+    def test_vatfix_bill_bezugsteuer_mirror_is_skipped(self):
+        t = booked([("V1", "2026-08-03", [("1170", "81.00", "0"), ("2203", "0", "81.00")])],
+                   {"V1": "vatfix-bill-9f61"})
+        self.assertEqual(t.tax_of("383"), D("0"))
+        self.assertEqual(t.tax_of("400"), D("0"))
+        self.assertEqual(t.skipped_mirrors, ["vatfix-bill-9f61"])
+        self.assertEqual(t.other_keys, [])
+
+    def test_vatfix_invoice_sales_mirror_is_skipped(self):
+        t = booked([("V2", "2026-08-03", [("2200", "0", "81.00"), ("3200", "0", "81.00")])],
+                   {"V2": "vatfix-invoice-417"})
+        self.assertEqual(t.rows, {})
+        self.assertEqual(t.skipped_mirrors, ["vatfix-invoice-417"])
+
+    def test_vatfix_manual_correction_counts_like_a_manual_entry(self):
+        # it corrects a manual entry on the entry's posting date, which both bases read: its VAT rows count
+        t = booked([("V3", "2026-08-03", [("1171", "8.10", "0"), ("6570", "0", "8.10")])],
+                   {"V3": "vatfix-manual-55"})
+        self.assertEqual(t.tax_of("405"), D("8.10"))
+        self.assertEqual(t.skipped_mirrors, [])
+        self.assertEqual(t.other_keys, [])
+
+    def test_manual_entry_counts_its_2203_next_to_a_2202_row(self):
+        # a reverse-charge manual entry: the expense and its Vorsteuer on 1171, the Bezugsteuer on 2203
+        # against the 2202 transit, the bank pays the gross
+        t = booked([("MA1", "2026-08-10", [("6570", "100.00", "0"), ("1171", "8.10", "0"),
+                                            ("2202", "8.10", "0"), ("2203", "0", "8.10"),
+                                            ("1020", "0", "116.20")])], {"MA1": "manual-55"})
+        self.assertEqual(t.tax_of("383"), D("8.10"))
+        self.assertEqual(t.tax_of("405"), D("8.10"))
+        self.assertEqual(t.skipped_mirrors, [])
+        self.assertEqual(t.other_keys, [])
+
+    def test_manual_entry_counts_its_input_tax_next_to_a_1172_transit(self):
+        t = booked([("MA2", "2026-08-10", [("1171", "8.10", "0"), ("1172", "0", "8.10"),
+                                            ("6570", "100.00", "0"), ("1020", "0", "108.10")])],
+                   {"MA2": "manual-56"})
+        self.assertEqual(t.tax_of("405"), D("8.10"))
+
+    def test_manual_entry_counts_its_sales_tax_next_to_a_2202_transit(self):
+        t = booked([("MA3", "2026-08-10", [("1100", "108.10", "0"), ("3200", "0", "100.00"),
+                                            ("2202", "0", "8.10"), ("2200", "0", "8.10")])],
+                   {"MA3": "manual-57"})
+        self.assertEqual(t.tax_of("303"), D("8.10"))
+        self.assertEqual(t.base_of("303"), D("100.00"))
+
+    def test_a_move_keyed_by_journal_line_is_not_counted_and_not_listed(self):
+        t = booked([("M3", "2026-08-03", [("1171", "50.00", "0"), ("1172", "0", "50.00")])],
+                   {"M3": "90123"})
+        self.assertEqual(t.tax_of("405"), D("0"))
+        self.assertEqual(t.skipped_mirrors, [])
+        self.assertEqual(t.other_keys, [])
+
+    def test_a_direct_entry_keyed_by_journal_line_counts_as_today(self):
+        t = booked([("M4", "2026-08-03", [("1171", "8.10", "0"), ("6570", "100.00", "0"),
+                                           ("1020", "0", "108.10")])], {"M4": "90124"})
+        self.assertEqual(t.tax_of("405"), D("8.10"))
+        self.assertEqual(t.other_keys, [])
+
+    def test_settlement_is_skipped_whatever_its_key(self):
+        t = booked([("S2", "2026-09-30", [("2201", "500.00", "0"), ("1171", "0", "500.00")])],
+                   {"S2": "manual-58"})
+        self.assertEqual(t.tax_of("405"), D("0"))
+        self.assertEqual(t.journal, {})
+        self.assertEqual(t.skipped_mirrors, [])
+        self.assertEqual(t.other_keys, [])
+
+    def test_an_unknown_key_falls_back_to_the_pair_rule_and_is_listed(self):
+        t = booked([("U1", "2026-08-03", [("1171", "50.00", "0"), ("1172", "0", "50.00")])],
+                   {"U1": "journal-1042"})
+        self.assertEqual(t.tax_of("405"), D("0"))
+        self.assertEqual(t.other_keys, ["journal-1042"])
+
+    def test_a_voucher_without_a_key_falls_back_to_the_pair_rule_and_is_listed(self):
+        t = booked([("U2", "2026-08-03", [("1171", "50.00", "0"), ("1172", "0", "50.00")])])
+        self.assertEqual(t.tax_of("405"), D("0"))
+        self.assertEqual(t.other_keys, ["(no bexio_id)"])
+
+    def test_a_voucher_off_the_vat_accounts_is_not_listed(self):
+        t = booked([("U3", "2026-08-03", [("6570", "50.00", "0"), ("1020", "0", "50.00")])],
+                   {"U3": "journal-1043"})
+        self.assertEqual(t.other_keys, [])
+
+    def test_csv_lists_the_skipped_mirrors_and_the_other_keys(self):
+        t = booked([("V1", "2026-08-03", [("1170", "81.00", "0"), ("2203", "0", "81.00")]),
+                    ("U1", "2026-08-04", [("1171", "50.00", "0"), ("1172", "0", "50.00")])],
+                   {"V1": "vatfix-bill-9f61", "U1": "journal-1042"})
+        folder = tempfile.mkdtemp()
+        try:
+            path = os.path.join(folder, "mwst.csv")
+            mr.write_csv(path, t)
+            with open(path, encoding="utf-8") as f:
+                report = f.read()
+        finally:
+            shutil.rmtree(folder)
+        self.assertIn("skipped mirrors,vouchers", report)
+        self.assertIn("invoice/credit/bill vatfix-*,1", report)
+        self.assertIn("other journal keys (pair rule),vouchers", report)
+        self.assertIn("journal-1042,1", report)
+        self.assertNotIn("(no bexio_id)", report)
 
 
 class JournalRun(unittest.TestCase):
