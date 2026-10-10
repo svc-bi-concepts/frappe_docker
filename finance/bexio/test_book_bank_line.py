@@ -23,10 +23,10 @@ LINE = {"name": "ACC-BTN-TEST-0001", "docstatus": 1, "date": "2026-09-07", "desc
 
 # the earlier lines of the same merchant, and one of another merchant; their vouchers are Journal Entries
 EARLIER = [
-    {"name": "ACC-BTN-TEST-0002", "description": "Card transaction of 12.00 EUR issued by Testshop Alpha 01-08-2026", "status": "Reconciled"},
-    {"name": "ACC-BTN-TEST-0003", "description": "Card transaction of 9.50 EUR issued by Testshop Alpha 03-08-2026", "status": "Reconciled"},
-    {"name": "ACC-BTN-TEST-0004", "description": "Card transaction of 9.50 EUR issued by Other Beta 04-08-2026", "status": "Reconciled"},
-    {"name": "ACC-BTN-TEST-0005", "description": "Card transaction of 5.00 EUR issued by Testshop Alpha 05-08-2026", "status": "Unreconciled"},
+    {"name": "ACC-BTN-TEST-0002", "description": "Card transaction of 12.00 EUR issued by Testshop Alpha 01-08-2026", "status": "Reconciled", "docstatus": 1},
+    {"name": "ACC-BTN-TEST-0003", "description": "Card transaction of 9.50 EUR issued by Testshop Alpha 03-08-2026", "status": "Reconciled", "docstatus": 1},
+    {"name": "ACC-BTN-TEST-0004", "description": "Card transaction of 9.50 EUR issued by Other Beta 04-08-2026", "status": "Reconciled", "docstatus": 1},
+    {"name": "ACC-BTN-TEST-0005", "description": "Card transaction of 5.00 EUR issued by Testshop Alpha 05-08-2026", "status": "Unreconciled", "docstatus": 1},
 ]
 
 
@@ -154,6 +154,18 @@ class TreatmentTest(unittest.TestCase):
         with self.assertRaises(bb.Refused) as caught:
             bb.treatment([{"vouchers": [plain]}, {"vouchers": [taxed]}], BANK_GL, TAX_ACCOUNTS)
         self.assertIn("2 VAT treatments", str(caught.exception))
+
+
+class HistoryTest(unittest.TestCase):
+    def test_a_cancelled_line_is_no_booking_and_does_not_count(self):
+        erp = history_erp()
+        erp.earlier = erp.earlier + [{"name": "ACC-BTN-TEST-0006", "docstatus": 2, "status": "Cancelled",
+                                      "description": "Card transaction of 7.00 EUR issued by Testshop Alpha 06-08-2026"}]
+        erp.allocations["ACC-BTN-TEST-0006"] = [{"payment_document": "Journal Entry", "payment_entry": "JE-OLD-4"}]
+        erp.gl += gl_rows("JE-OLD-4", OTHER_EXPENSE, 7)
+        plan, counts = bb.decide(erp, erp.line, BANK_GL)
+        self.assertEqual(plan["account"], EXPENSE)
+        self.assertEqual(counts, {"earlier lines": 3, "with a reconciled voucher": 2})
 
 
 class PlanTest(unittest.TestCase):

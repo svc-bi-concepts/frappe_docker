@@ -129,12 +129,13 @@ def journal_entry(line, bank_gl, plan):
 
 
 def history_of(erp, line, account):
-    """The earlier Bank Transactions of the account that name the merchant: (count, [entry]) where each entry carries the GL rows
-    of its reconciled vouchers, by voucher. Lines without a reconciled voucher count, but give no entry."""
+    """The earlier submitted Bank Transactions of the account that name the merchant: (count, [entry]) where each entry carries the
+    GL rows of its reconciled vouchers, by voucher. Lines without a reconciled voucher count, but give no entry; a cancelled
+    line is no booking and does not count."""
     words = merchant_words(line["description"])
     others = erp.list("Bank Transaction", [["bank_account", "=", account], ["name", "!=", line["name"]]],
-                      ["name", "description", "status"])
-    named = [o for o in others if names_merchant(o["description"], words)]
+                      ["name", "description", "status", "docstatus"])
+    named = [o for o in others if o["docstatus"] == 1 and names_merchant(o["description"], words)]
     allocations = {o["name"]: erp.get("Bank Transaction", o["name"]).get("payment_entries") or [] for o in named}
     vouchers = [(p["payment_document"], p["payment_entry"]) for rows in allocations.values() for p in rows]
     gl = collections.defaultdict(list)
