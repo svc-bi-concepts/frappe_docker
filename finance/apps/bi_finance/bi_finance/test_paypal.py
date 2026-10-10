@@ -1,22 +1,24 @@
-"""Offline tests for the PayPal feed: the HTTP calls (a fake opener, no network), the transaction rows, and the window limit.
+"""Offline tests for the PayPal feed: the HTTP calls (a fake opener, no network), the transaction rows, the window limit
+and the sync start.
 
-Invented data only: made-up ids, amounts and dates, no real transaction, balance or credential. The client has no frappe
-import, so it runs without the image:
+Invented data only: made-up ids, amounts and dates, no real transaction, balance or credential. The module imports
+frappe (paypal.py's _start), so the file runs in the image, as test_wise is run (see finance/docs/erpnext-setup.md):
 
-    cd finance/apps/bi_finance && python3 -m unittest -v bi_finance.test_paypal
-
-The frappe side (paypal.py) runs in the image, as test_wise is run (see finance/docs/erpnext-setup.md).
+    docker run --rm -v "$PWD/finance/apps/bi_finance:/home/frappe/bi_finance_src:ro" \
+        frappe-finance-custom:v16.51.0-swiss-bi13 \
+        sh -c 'cd /home/frappe/bi_finance_src && ../frappe-bench/env/bin/python -m unittest -v bi_finance.test_paypal'
 """
 
 import base64
 import datetime
 import io
 import json
+import types
 import unittest
 import urllib.error
 import urllib.parse
 
-from bi_finance import paypal_client
+from bi_finance import paypal, paypal_client
 
 CLIENT_ID = "invented-client-id"
 SECRET = "invented-secret-0000"
@@ -135,6 +137,29 @@ class Windows(unittest.TestCase):
     def test_no_window_for_an_empty_range(self):
         moment = datetime.datetime(2026, 1, 1)
         self.assertEqual(paypal_client.windows(moment, moment), [])
+
+
+class Start(unittest.TestCase):
+    # the settings' dates sit inside PayPal's three-year history, so _start's history floor does not mask them
+    def test_first_sync_starts_at_backfill_from_read_as_stored_text(self):
+        # a Date single comes back as "2026-07-01", not a date: the first run must still start at that midnight
+        settings = types.SimpleNamespace(last_sync=None, backfill_from="2026-07-01")
+        self.assertEqual(paypal._start(settings, datetime.datetime(2026, 10, 11)), datetime.datetime(2026, 7, 1))
+
+    def test_first_sync_starts_at_backfill_from_when_it_is_a_date(self):
+        settings = types.SimpleNamespace(last_sync=None, backfill_from=datetime.date(2026, 7, 1))
+        self.assertEqual(paypal._start(settings, datetime.datetime(2026, 10, 11)), datetime.datetime(2026, 7, 1))
+
+    def test_later_sync_reads_last_sync_as_stored_text(self):
+        # a Datetime single comes back as its stored string after the first live sync: "str - timedelta" must not raise
+        settings = types.SimpleNamespace(last_sync="2026-10-11 00:05:00.123456", backfill_from="2026-07-01")
+        self.assertEqual(
+            paypal._start(settings, datetime.datetime(2026, 10, 11, 1)), datetime.datetime(2026, 10, 4, 0, 5, 0, 123456)
+        )
+
+    def test_later_sync_reads_last_sync_when_it_is_a_datetime(self):
+        settings = types.SimpleNamespace(last_sync=datetime.datetime(2026, 10, 11, 0, 5), backfill_from="2026-07-01")
+        self.assertEqual(paypal._start(settings, datetime.datetime(2026, 10, 11, 1)), datetime.datetime(2026, 10, 4, 0, 5))
 
 
 class FeedRows(unittest.TestCase):

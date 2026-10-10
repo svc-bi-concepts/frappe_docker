@@ -161,5 +161,7 @@ def _start(settings, now):
     """The first moment to read: the last sync less the overlap, else the backfill date, never before PayPal's history."""
     earliest = now - datetime.timedelta(days=paypal_client.HISTORY_DAYS)
     if settings.last_sync:
-        return max(settings.last_sync - OVERLAP, earliest)
-    return max(datetime.datetime.combine(settings.backfill_from, datetime.time.min), earliest)
+        # last_sync is stored as a string too: every sync after the first live one failed on "str - timedelta"
+        return max(frappe.utils.get_datetime(settings.last_sync) - OVERLAP, earliest)
+    # a Date single comes back as its stored string, not a date: the first sync failed on datetime.combine with it
+    return max(datetime.datetime.combine(frappe.utils.getdate(settings.backfill_from), datetime.time.min), earliest)
