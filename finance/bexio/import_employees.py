@@ -41,7 +41,7 @@ import json
 import os
 import sys
 
-from import_master import COMPANY, Erp, ErpError, PRIVATE, differs
+from import_master import COMPANY, Erp, ErpError, PRIVATE, TOKEN_FILE, differs
 
 PAYROLL_DIR = os.path.join(PRIVATE, "bexio-payroll")
 DATES_CSV = os.path.join(PRIVATE, "payroll", "employee-dates.csv")
@@ -320,7 +320,7 @@ def main(argv):
     parser = argparse.ArgumentParser(description="Import the bexio payroll employees into ERPNext Employee.")
     parser.add_argument("--dry-run", action="store_true", help="read ERPNext, write nothing but the needs-dates list (default)")
     parser.add_argument("--apply", action="store_true", help="create and update the Employees through the API user")
-    parser.add_argument("--token-file", default=None, help="API keys file (default: the master importer's)")
+    parser.add_argument("--token-file", default=TOKEN_FILE, help="API keys file (default: the master importer's)")
     args = parser.parse_args(argv)
     if args.dry_run and args.apply:
         parser.error("--dry-run and --apply are mutually exclusive")
