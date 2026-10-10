@@ -15,7 +15,7 @@ not used for live invoices.
 Pinned in `finance/apps.json`:
 
 - ERPNext `v16.50.0` (tag, commit `7474d9e`, the same tag the running stack uses)
-- Frappe `v16.51.0` (tag, commit `6b450a1`, passed as `FRAPPE_BRANCH`; bi13, the live site runs 16.50.0 until its deploy)
+- Frappe `v16.51.0` (tag, commit `6b450a1`, passed as `FRAPPE_BRANCH`; bi13, live since 2026-10-11)
 - erpnextswiss branch `v16` at commit `5d85c45b48f4774cda6ba84ab75f138ad45a55c3`
   (2026-10-07)
 
