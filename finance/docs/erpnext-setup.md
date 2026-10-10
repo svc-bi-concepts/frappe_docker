@@ -234,8 +234,8 @@ counts since `finance/patches/frappe`: frappe's bundler replaced any `NODE_OPTIO
 the RAM it sees, which on 2026-10-11 got the bi14 hrms vite step SIGKILLed (status 137) on the
 capped builders. The Containerfile therefore runs `bench init --skip-assets`, applies that patch
 and then `bench build --production`. A different value is an env setting,
-`NODE_HEAP_MB=1536 finance/scripts/build-image.sh live <tag>`, and must be a number. The script needs free disk for the scratch layouts (about the size
-of the image, twice).
+`NODE_HEAP_MB=1536 finance/scripts/build-image.sh live <tag>`, and must be a number.
+The script needs free disk for the scratch layouts (about the size of the image, twice).
 
 ## Switching the stack to a new image
 
