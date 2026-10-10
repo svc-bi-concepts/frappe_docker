@@ -184,7 +184,8 @@ slot that ledgerdemain gives (`erpnext-setup.md`).
    value is listed in `private/payroll/bvg-calibration.txt`; both are replaced when the fund's plan sheet arrives.
    **Stays manual:** the employer rates (AHV, ALV, UVG, KTG, FAK: the insurers' sheets), KTG (printed on no
    paystub), and the BVG plan (the band rates in the settings, then the insured salaries with them). The QST
-   Tariff rows are loaded by `bi_payroll.swiss_payroll.load_tariff` from the ESTV file before the codes resolve.
+   Tariff rows are loaded by `bi_payroll.swiss_payroll.load_tariff` from the ESTV file before the codes resolve; the
+   Employee's code is picked from the QST Tariff Code list of its canton (erp-wvbn), and the loader makes those codes.
 5. **Payslip history as reference** (erp-2c3a, `finance/bexio/import_paystubs.py`). Replaces the
    earlier plan of one submitted Salary Slip per employee and month (Decision, ledgerdemain, 2026-10-10).
    No Salary Slips for the history: the export holds no figures per slip (bexio's paystub overview

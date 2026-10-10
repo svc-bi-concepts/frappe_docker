@@ -79,6 +79,7 @@ class FakeSlip(dict):
 def fake_frappe(db):
     frappe = types.ModuleType("frappe")
     frappe.db = db
+    frappe.whitelist = lambda *args, **kwargs: (lambda function: function)  # swiss_payroll's query methods
 
     def throw(message):
         raise Thrown(message)

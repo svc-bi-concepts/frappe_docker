@@ -16,10 +16,20 @@ doc_events = {
         # after HRMS's validate, which computes the gross the withholding tax is worked out from
         "validate": "bi_payroll.swiss_payroll.withhold_qst",
     },
+    "Employee": {
+        "validate": "bi_payroll.swiss_payroll.validate_qst_fields",
+    },
 }
 
+# the Employee form's Quellensteuer code dropdown and its canton filter (public/js/employee.js)
+doctype_js = {"Employee": "public/js/employee.js"}
+
 after_install = "bi_payroll.swiss_payroll.ensure_structure"
-after_migrate = "bi_payroll.swiss_payroll.ensure_structure"
+after_migrate = [
+    "bi_payroll.swiss_payroll.ensure_structure",
+    # after the custom field update: the codes the tariff rows carry, so a stored code is a valid link
+    "bi_payroll.swiss_payroll.ensure_tariff_codes",
+]
 
 # The components and the slip fields are fixtures/ (exported with bench export-fixtures); the structure
 # is made by ensure_structure, because it names a company.

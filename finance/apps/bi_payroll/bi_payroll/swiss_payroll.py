@@ -5,6 +5,7 @@ names. HRMS's formula context has no way to read a settings doctype, so the rate
 validate, and the slip keeps the rates it was computed with.
 """
 
+import json
 from decimal import Decimal
 
 import frappe
@@ -154,5 +155,59 @@ def load_tariff(path):
     })
     for row in rows:
         frappe.get_doc({"doctype": "QST Tariff", **row}).insert(ignore_permissions=True)
+    create_tariff_codes(row["tariff_code"] for row in rows)
     frappe.db.commit()
     return len(rows)
+
+
+def create_tariff_codes(codes):
+    # One QST Tariff Code per distinct code: the Employee's code is a link to them. A code that exists is kept, so a rerun
+    # creates none. Returns the number made.
+    made = 0
+    for code in sorted(set(codes)):
+        if not frappe.db.exists("QST Tariff Code", code):
+            frappe.get_doc({"doctype": "QST Tariff Code", "code": code}).insert(ignore_permissions=True)
+            made += 1
+    return made
+
+
+def ensure_tariff_codes():
+    # after_migrate: a site with tariffs loaded before the QST Tariff Code doctype existed gets its codes on the next migrate
+    create_tariff_codes(frappe.get_all("QST Tariff", fields=["tariff_code"], group_by="tariff_code", pluck="tariff_code"))
+
+
+@frappe.whitelist()
+def qst_codes_for_canton(canton=None):
+    # the codes an Employee of the canton may carry, all of them when no canton is set (the form's dropdown)
+    filters = {"canton": canton} if canton else {}
+    return frappe.get_all(
+        "QST Tariff", filters=filters, fields=["tariff_code"], group_by="tariff_code", order_by="tariff_code asc",
+        pluck="tariff_code",
+    )
+
+
+@frappe.whitelist()
+def search_qst_codes(doctype, txt, searchfield, start, page_len, filters, as_dict=False):
+    # the Link query of Employee's swiss_qst_code (client script public/js/employee.js): frappe passes the Link's filters,
+    # which carry the canton, and the typed text, which narrows the codes
+    if isinstance(filters, str):
+        filters = json.loads(filters)
+    codes = qst_codes_for_canton((filters or {}).get("swiss_qst_canton"))
+    start, page_len = int(start or 0), int(page_len or 10)
+    return [(code,) for code in codes if (txt or "").upper() in code][start:start + page_len]
+
+
+def validate_qst_fields(doc, method=None):
+    # a code is only ever saved with its canton and with a row of the canton carrying it. A canton alone passes: it is what
+    # the importer writes for an employee whose code cannot be told, and an employee without a resolved code has no code.
+    code = doc.get("swiss_qst_code")
+    if not code:
+        return
+    canton = doc.get("swiss_qst_canton")
+    if not canton:
+        frappe.throw(f"The Quellensteuer tariff code {code} needs its canton. Pick the canton, or clear the code.")
+    if not frappe.db.exists("QST Tariff", {"canton": canton, "tariff_code": code}):
+        frappe.throw(
+            f"There is no QST Tariff {code} for the canton {canton}. Load the canton's tariff file with "
+            "bi_payroll.swiss_payroll.load_tariff (README, Quellensteuer), or pick another code."
+        )

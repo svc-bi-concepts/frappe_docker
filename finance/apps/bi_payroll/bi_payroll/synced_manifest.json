@@ -10,5 +10,9 @@
  "bi_payroll/doctype/qst_tariff/qst_tariff.json": {
   "modified": "2026-10-10 15:00:00.000000",
   "sha": "5c7d29275b7bca2a86427f490e0252eb7b99ba7175f8ed1591f1e1fc5d5f9e8e"
+ },
+ "bi_payroll/doctype/qst_tariff_code/qst_tariff_code.json": {
+  "modified": "2026-10-11 10:00:00.000000",
+  "sha": "8420f392880988e51b4ab1c5ff0147545e49193499f912887a7d751faaa38573"
  }
 }

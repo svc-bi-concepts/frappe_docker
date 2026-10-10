@@ -37,8 +37,16 @@ migrate on any site.
 - `bi_payroll/bi_payroll/doctype/qst_tariff`: the tariff rows (data, one per record). `swiss_payroll.load_tariff(path)`
   reloads a canton's file: the rows of its valid-from dates are replaced. Employees carry `swiss_qst_canton` and
   `swiss_qst_code` (Employee custom fields, fixtures).
+- Tariff code (erp-wvbn): `swiss_qst_code` is a Link to `QST Tariff Code` (one record per ESTV code, named by the code).
+  The loader makes the records of its file, and `after_migrate` (`ensure_tariff_codes`) makes those of every QST Tariff
+  row, so a rerun or a migrate makes none twice. The form offers the codes of the canton (`search_qst_codes`, the Link
+  query in `public/js/employee.js`); changing the canton clears a code it does not carry. On save, `validate_qst_fields`
+  refuses a code without a canton and a canton/code pair that no QST Tariff row carries. A canton alone passes. The
+  codes of a canton with no loaded tariff are missing: load the file first.
 - `bi_payroll/test_quellensteuer.py`: offline tests with invented rows in the ESTV format:
   `python3 -m unittest bi_payroll.test_quellensteuer`.
+- `bi_payroll/test_qst_codes.py`: offline tests of the code records, the form's codes and the save check, with a stand-in
+  for frappe: `python3 -m unittest bi_payroll.test_qst_codes`.
 - Salary Structure: `ensure_structure` makes the "Swiss Monthly" structure only when the company has none. A structure
   that no slip and no Salary Structure Assignment names (unused) and that is defective (a component missing, or a row
   whose component has a formula but which has none of its own) is cancelled if submitted, deleted and made again by
