@@ -173,15 +173,18 @@ slot that ledgerdemain gives (`erpnext-setup.md`).
    says 0). Counts only here; the importer prints counts only.
 4b. **Payroll inputs from the paystubs** (erp-y4yf, `finance/bexio/import_assignments.py`). Derived from the
    parsed figures (`parse_paystubs.py`): one submitted Salary Structure Assignment per Active employee on
-   the "Swiss Monthly" structure, base = the 1001 monthly salary of the latest paystub month, from its first
-   day; the Quellensteuer canton (the bexio address, where a 5060 line exists) and tariff code (the QST
-   Tariff row of the canton that holds the gross's bracket at the printed 5060 rate, unique only); the
-   employee rates 5010, 5020 and 5040 in Payroll Swiss Settings, when empty. Left employees get no
-   assignment (their figures stay for the history). **Stays manual:** the employer rates (AHV, ALV, UVG,
-   KTG, FAK: the insurers' sheets), KTG (printed on no paystub), and the BVG plan: the band rates are
-   placeholders, so no BVG insured salary is derived until the fund's plan sheet is in
-   (`BVG_RATES_ARE_PLACEHOLDERS` in the importer, then the rates in the settings). The QST Tariff rows are
-   loaded by `bi_payroll.swiss_payroll.load_tariff` from the ESTV file before the codes resolve.
+   the "Swiss Monthly" structure, base = the monthly salary (1001 up to 2025, 1000 from 2025) of the latest
+   paystub month, from its first day; the Quellensteuer canton (the bexio address, where a 5060 line exists) and
+   tariff code (the QST Tariff row of the canton that holds the gross's bracket at the printed 5060 rate, unique
+   only); the employee rates 5010, 5020 and 5040 in Payroll Swiss Settings, when empty and when the Active
+   employees' latest paystubs agree. Left employees get no assignment (their figures stay for the history).
+   **The BVG insured salary is a calibration, not the fund's figure** (ledgerdemain, 2026-10-11): the band rates
+   are placeholders, so the insured salary is worked back from the paystub's 5050 through them, to reproduce
+   that amount in the BVG Employee formula. Without it the first payroll would deduct no BVG. Each calibrated
+   value is listed in `private/payroll/bvg-calibration.txt`; both are replaced when the fund's plan sheet arrives.
+   **Stays manual:** the employer rates (AHV, ALV, UVG, KTG, FAK: the insurers' sheets), KTG (printed on no
+   paystub), and the BVG plan (the band rates in the settings, then the insured salaries with them). The QST
+   Tariff rows are loaded by `bi_payroll.swiss_payroll.load_tariff` from the ESTV file before the codes resolve.
 5. **History loader.** One submitted Salary Slip per employee and month, `payroll_entry`
    empty, PDF attached. Check: no new GL (`make_accrual_jv_entry` is not
    called on these), and the GL per account and year equals before the load.

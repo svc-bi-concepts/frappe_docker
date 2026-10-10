@@ -5,22 +5,25 @@ the same figures creates nothing.
 The figures are private/payroll/paystub-figures.csv (parse_paystubs.py), the employees private/bexio-payroll/
 employees.json (the export), the Employees are those import_employees.py wrote (keyed by bexio_id).
 
-- The assignment's base is the monthly salary (1001) of the employee's latest paystub month, from that month's first
-  day, on the company's "Swiss Monthly" structure. Only Active Employees get one; Left ones keep their figures for
-  the history (ledgerdemain, 2026-10-11).
-- swiss_bvg_insured_salary is worked back from the BVG employee contribution (5050) through the age band's employee
-  rate in Payroll Swiss Settings. It inverts the BVG Employee formula (fixtures/salary_component.json): the monthly
-  amount is (insured - coordination) / 12 * rate / 100, so insured = coordination + 1200 * amount / rate. It is left
-  empty and reported when the band rate is a placeholder (BVG_RATES_ARE_PLACEHOLDERS), when no band applies, or when
-  the result is not within 1 CHF of a multiple of 10.
+- The assignment's base is the monthly salary (1000 or 1001, as parse_paystubs reads them: 1001 up to 2025, 1000
+  from 2025 on) of the employee's latest paystub month, from that month's first day, on the company's "Swiss Monthly"
+  structure. Only Active Employees get one; Left ones keep their figures for the history (ledgerdemain, 2026-10-11).
+- swiss_bvg_insured_salary is a calibration, not the fund's figure (ledgerdemain, 2026-10-11): worked back from the
+  BVG employee contribution (5050) through the age band's employee rate in Payroll Swiss Settings, so the BVG Employee
+  formula reproduces the latest paystub's amount. It inverts that formula (fixtures/salary_component.json): the monthly
+  amount is (insured - coordination) / 12 * rate / 100, so insured = coordination + 1200 * amount / rate, rounded to the
+  franc. The band rates are placeholders until the fund's sheet; the value is then replaced with the fund's figure. It is
+  left empty and reported only when no band applies or the settings hold no rate for it. Each one is recorded in
+  private/payroll/bvg-calibration.txt.
 - Quellensteuer, for employees with a 5060 line: swiss_qst_canton is the canton of the bexio address (it is checked
   against the Select's options; the postcode table of the Swiss Post is not used, because 169 postcodes lie on a
   cantonal border). swiss_qst_code is the tariff code of that canton, valid in the latest month with a 5060 line,
   whose bracket holds that month's gross and whose rate is the printed 5060 rate. Unique: set; else reported with the
   count of candidates. The QST Tariff rows must be loaded first (bi_payroll.swiss_payroll.load_tariff).
-- The employee rates 5010 (AHV), 5020 (ALV) and 5040 (NBU) fill an empty setting from the most recent paystub that
-  prints them; a different setting is reported, never overwritten. Employer rates, KTG and the BVG plan are not on a
-  paystub: reported as needing the insurer's or the fund's sheet.
+- The employee rates 5010 (AHV), 5020 (ALV) and 5040 (NBU) are read from the Active employees' latest paystubs. An empty
+  setting is filled when those agree on one rate; they disagreeing, the setting stays empty and the rates with the ids
+  are reported (the one-rate model cannot carry two). A different setting is reported, never overwritten. Employer
+  rates, KTG and the BVG plan are not on a paystub: reported as needing the insurer's or the fund's sheet.
 
 PRIVACY: payroll data is the company's most sensitive data and this repo is public. The importer reads private/ by
 absolute path and prints counts only. Per-employee problems go to private/payroll/assignment-problems.txt (mode 600),
@@ -44,6 +47,7 @@ from import_master import COMPANY, Erp, ErpError, PRIVATE, TOKEN_FILE, differs
 
 FIGURES_CSV = os.path.join(PRIVATE, "payroll", "paystub-figures.csv")
 PROBLEMS_TXT = os.path.join(PRIVATE, "payroll", "assignment-problems.txt")
+CALIBRATION_TXT = os.path.join(PRIVATE, "payroll", "bvg-calibration.txt")
 
 SETTINGS = "Payroll Swiss Settings"
 STRUCTURE_PREFIX = "Swiss Monthly"
@@ -54,7 +58,8 @@ CANTONS = {
     "SO", "TG", "TI", "UR", "VD", "VS", "ZG", "ZH",
 }
 
-SALARY_TYPE = "1001"
+# the monthly salary: 1001 up to 2025, 1000 from 2025 on (parse_paystubs.SALARY_TYPES); a paystub prints one of them
+SALARY_TYPES = ("1001", "1000")
 GROSS_TYPE = "5000"
 BVG_TYPE = "5050"
 QST_TYPE = "5060"
@@ -65,10 +70,6 @@ INSURER_FIELDS = ["swiss_ahv_ag", "swiss_alv_ag", "swiss_uvg_ag", "swiss_ktg_ee"
 # the BVG band rates (age 25 to 64) of Payroll Swiss Settings: (from age, to age, field), the formula's bands
 BVG_BANDS = [(25, 35, "swiss_bvg_ee_25"), (35, 45, "swiss_bvg_ee_35"), (45, 55, "swiss_bvg_ee_45"), (55, 65, "swiss_bvg_ee_55")]
 BVG_FIELDS = [field for _low, _high, field in BVG_BANDS] + ["swiss_bvg_ag_25", "swiss_bvg_ag_35", "swiss_bvg_ag_45", "swiss_bvg_ag_55"]
-# The band rates are placeholders (half the statutory minimum) until the fund's plan sheet is in: an insured salary
-# worked back from them would be invented, so none is written and each one is reported. Set to False with the plan rates.
-BVG_RATES_ARE_PLACEHOLDERS = True
-INSURED_ROUND = 10  # the insured salary is a round-ish figure: within 1 CHF of a multiple of this
 RATE_TOLERANCE = 0.005  # percent: the printed rates have two decimals at most
 
 
@@ -122,11 +123,8 @@ def bvg_band_field(age):
 
 
 def insured_salary(monthly, rate, coordination):
-    """The yearly insured salary whose monthly BVG Employee amount is the given one at the rate, or None when it is not
-    a round-ish figure (within 1 CHF of a multiple of INSURED_ROUND)."""
-    raw = coordination + 1200.0 * monthly / rate
-    rounded = round(raw / INSURED_ROUND) * INSURED_ROUND
-    return rounded if abs(raw - rounded) <= 1 else None
+    """The yearly insured salary whose monthly BVG Employee amount is the given one at the rate, to the franc."""
+    return round(coordination + 1200.0 * monthly / rate)
 
 
 def qst_codes(tariffs, canton, gross, rate, on):
@@ -152,6 +150,7 @@ class Plan:
         self.entries = []
         self.counts = collections.Counter()
         self.problems = []  # (position, text): stderr gets the position, the file the name too
+        self.calibrations = []  # (employee name, paystub month, insured salary): the BVG calibration file
 
     def add(self, position, name, text):
         """A problem of a record (position, name), or of the settings when position is None."""
@@ -200,9 +199,10 @@ def _assignment(plan, entry, rows, latest, emp, settings, coordination, structur
     if (entry["name"], from_date) in existing:
         plan.counts["assignments already made"] += 1
         return
-    salary = line(rows, latest, SALARY_TYPE)
+    salaries = [line(rows, latest, wage_type) for wage_type in SALARY_TYPES]
+    salary = next((row for row in salaries if row is not None), None)
     if salary is None or salary["amount"] is None:
-        plan.add(entry["position"], entry["name"], "no monthly salary (1001) in the latest paystub month")
+        plan.add(entry["position"], entry["name"], "no monthly salary (1000/1001) in the latest paystub month")
         return
     assignment = {
         "employee": entry["name"], "salary_structure": structure, "from_date": from_date,
@@ -216,18 +216,14 @@ def _assignment(plan, entry, rows, latest, emp, settings, coordination, structur
         rate = settings.get(field) if field else None
         if field is None:
             plan.add(entry["position"], entry["name"], "BVG insured salary unresolved: no BVG band at this age")
-        elif BVG_RATES_ARE_PLACEHOLDERS:
-            plan.add(entry["position"], entry["name"], "BVG insured salary unresolved: the band rate is a placeholder")
         elif not rate:
             plan.add(entry["position"], entry["name"], "BVG insured salary unresolved: no band rate in the settings")
         else:
             insured = insured_salary(abs(bvg["amount"]), rate, coordination)
-            if insured is None:
-                plan.add(entry["position"], entry["name"], "BVG insured salary unresolved: not a round-ish figure")
-            else:
-                assignment["swiss_bvg_insured_salary"] = insured
+            assignment["swiss_bvg_insured_salary"] = insured
+            plan.calibrations.append((entry["name"], "{:04d}-{:02d}".format(*latest), insured))
     if insured is not None:
-        plan.counts["BVG insured salary resolved"] += 1
+        plan.counts["BVG insured salary calibrated"] += 1
     entry["assignment"] = assignment
     plan.counts["assignments to make"] += 1
 
@@ -258,21 +254,26 @@ def _quellensteuer(plan, entry, rows, latest, emp, tariffs_for):
         plan.add(entry["position"], entry["name"], f"Quellensteuer code unresolved: {reason}")
 
 
-def rate_report(plan, figures, settings):
-    """Per paystub rate: the settings to fill (empty ones) and the differences; the employer rates are only listed."""
+def rate_report(plan, figures, settings, active):
+    """Per paystub rate: the settings to fill (empty ones) and the differences; the employer rates are only listed.
+    The rates are read from the Active employees' latest paystubs (active: their bexio ids); a Left employee's
+    paystub does not decide the setting."""
     fills = {}
     for wage_type, field in PAYSTUB_RATES:
-        found = [latest_line(rows, wage_type) for rows in figures.values()]
-        found = [row for row in found if row is not None]
+        found = [(bexio_id, latest_line(figures[bexio_id], wage_type)) for bexio_id in sorted(active) if bexio_id in figures]
+        found = [(bexio_id, row) for bexio_id, row in found if row is not None and row["rate"] is not None]
         if not found:
-            plan.add(None, "", f"rate {field}: not on any paystub")
+            plan.add(None, "", f"rate {field}: not on any active employee's paystub")
             continue
-        newest = max((row["year"], row["month"]) for row in found)
-        rates = {row["rate"] for row in found if (row["year"], row["month"]) == newest}
-        if len(rates) != 1:
-            plan.add(None, "", f"rate {field}: the latest paystubs print {len(rates)} rates, not filled")
+        by_rate = collections.defaultdict(list)
+        for bexio_id, row in found:
+            by_rate[row["rate"]].append(bexio_id)
+        if len(by_rate) != 1:
+            detail = "; ".join("{} for {}".format(rate, ", ".join(ids)) for rate, ids in sorted(by_rate.items()))
+            plan.add(None, "", f"rate {field}: the active employees' latest paystubs print {len(by_rate)} rates, "
+                               f"not filled: {detail}")
             continue
-        rate = rates.pop()
+        rate = next(iter(by_rate))
         have = settings.get(field)
         if not have:
             fills[field] = rate
@@ -375,13 +376,28 @@ def tariff_reader(erp):
     return tariffs_for
 
 
+def write_private(path, lines):
+    """A file of private figures: mode 600, replaced on each run."""
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+
+
 def write_problems(path, plan):
     lines = ["# assignment problems: {}".format(len(plan.problems))]
     for position, name, text in plan.problems:
         lines.append("{}  {}  {}".format(Plan.where(position), name, text).rstrip())
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines) + "\n")
+    write_private(path, lines)
+
+
+def write_calibration(path, plan):
+    """The BVG insured salaries worked back from the paystubs with the placeholder band rates: until the fund's sheet
+    replaces them, they are a calibration of the formula, not the fund's figure."""
+    lines = ["# BVG insured salary calibrated from the paystub 5050 at the settings' band rate: {}".format(
+        len(plan.calibrations)), "# employee  paystub month  insured salary"]
+    for name, month, insured in plan.calibrations:
+        lines.append("{}  {}  {}".format(name, month, insured))
+    write_private(path, lines)
 
 
 def report(plan, writer, fills, dry_run):
@@ -393,6 +409,7 @@ def report(plan, writer, fills, dry_run):
     print("insurer sheet fields: " + ", ".join(INSURER_FIELDS))
     print("dry run: nothing was written" if dry_run else "written to ERPNext")
     print("problems list: {}".format(PROBLEMS_TXT))
+    print("BVG calibration list: {}".format(CALIBRATION_TXT))
 
 
 def main(argv):
@@ -417,10 +434,12 @@ def main(argv):
         print("aborted: {}".format(err), file=sys.stderr)
         return 2
     plan = build_plan(employees, figures, erp_employees, settings, structure, tariff_reader(erp), existing)
-    fills = rate_report(plan, figures, settings)
+    active = {bexio_id for bexio_id, row in erp_employees.items() if row["status"] == STATUS_ACTIVE}
+    fills = rate_report(plan, figures, settings, active)
     writer = Writer(erp, dry_run)
     writer.run(plan, fills, erp_employees)
     write_problems(PROBLEMS_TXT, plan)
+    write_calibration(CALIBRATION_TXT, plan)
     report(plan, writer, fills, dry_run)
     for position, _name, text in plan.problems:
         print("  problem: {}: {}".format(Plan.where(position), text), file=sys.stderr)

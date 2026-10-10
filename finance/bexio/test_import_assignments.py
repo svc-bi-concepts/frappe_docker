@@ -11,7 +11,6 @@ import os
 import stat
 import tempfile
 import unittest
-from unittest import mock
 
 import import_assignments as ia
 from import_master import ErpError
@@ -157,23 +156,34 @@ class TestFigures(unittest.TestCase):
 
 
 class TestBvg(Base):
-    def test_placeholder_rates_leave_the_insured_salary_empty(self):
-        rows = invented_rows(bvg=600.0)
-        plan = run_plan(invented_employee(), rows)
-        self.assertNotIn("swiss_bvg_insured_salary", plan.entries[0]["assignment"])
-        self.assertProblem(plan, "BVG insured salary unresolved: the band rate is a placeholder")
-
-    def test_formula_inverse_resolves_a_round_figure(self):
+    def test_the_formula_inverse_calibrates_the_insured_salary(self):
         # insured 60000: (60000 - 26460) / 12 * 10 / 100 = 279.5; the band 35 to 44 rate of 10 percent
-        with mock.patch.object(ia, "BVG_RATES_ARE_PLACEHOLDERS", False):
-            plan = run_plan(invented_employee(dob="1985-06-01"), invented_rows(bvg=279.5))
+        plan = run_plan(invented_employee(dob="1985-06-01"), invented_rows(bvg=279.5))
         self.assertEqual(plan.entries[0]["assignment"]["swiss_bvg_insured_salary"], 60000)
+        self.assertEqual(plan.counts["BVG insured salary calibrated"], 1)
+        self.assertEqual(plan.calibrations, [("HR-EMP-0001", "2026-02", 60000)])
 
-    def test_a_figure_off_the_round_is_unresolved(self):
-        with mock.patch.object(ia, "BVG_RATES_ARE_PLACEHOLDERS", False):
-            plan = run_plan(invented_employee(dob="1985-06-01"), invented_rows(bvg=280.3))
+    def test_the_insured_salary_is_rounded_to_the_franc(self):
+        # 26460 + 1200 * 280.33 / 10 = 60099.6
+        plan = run_plan(invented_employee(dob="1985-06-01"), invented_rows(bvg=280.33))
+        self.assertEqual(plan.entries[0]["assignment"]["swiss_bvg_insured_salary"], 60100)
+        self.assertNotIn("unresolved", " ".join(text for _p, _n, text in plan.problems))
+
+    def test_no_band_rate_in_the_settings_is_reported(self):
+        plan = run_plan(invented_employee(dob="1985-06-01"), invented_rows(bvg=279.5),
+                        settings_values={"swiss_bvg_ee_35": None})
         self.assertNotIn("swiss_bvg_insured_salary", plan.entries[0]["assignment"])
-        self.assertProblem(plan, "not a round-ish figure")
+        self.assertProblem(plan, "BVG insured salary unresolved: no band rate in the settings")
+        self.assertEqual(plan.calibrations, [])
+
+    def test_calibration_file_is_mode_600_and_names_the_employee(self):
+        plan = run_plan(invented_employee(dob="1985-06-01"), invented_rows(bvg=279.5))
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "bvg-calibration.txt")
+            ia.write_calibration(path, plan)
+            self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o600)
+            with open(path, encoding="utf-8") as f:
+                self.assertIn("HR-EMP-0001  2026-02  60000", f.read())
 
     def test_age_bands_and_no_bvg_outside_25_to_64(self):
         on = datetime.date(2026, 2, 28)
@@ -257,11 +267,19 @@ class TestAssignments(Base):
         self.assertIsNone(plan.entries[0]["assignment"])
         self.assertEqual(plan.counts["assignments already made"], 1)
 
+    def test_the_salary_line_1000_is_the_base_too(self):
+        # 1001 up to 2025, 1000 from 2025 on: a paystub prints one of them, the base is that one
+        rows = [figure(2025, 12, "1001", amount=4000.0), figure(2026, 2, "1000", amount=4200.0),
+                figure(2026, 2, "5010", amount=-222.6, rate=5.3)]
+        plan = run_plan(invented_employee(), rows)
+        self.assertEqual(plan.entries[0]["assignment"]["base"], 4200.0)
+        self.assertEqual(plan.entries[0]["assignment"]["from_date"], "2026-02-01")
+
     def test_no_salary_line_in_the_latest_month_is_reported(self):
         rows = [figure(2026, 1, "1001", amount=5000.0), figure(2026, 2, "5010", amount=-265.0, rate=5.3)]
         plan = run_plan(invented_employee(), rows)
         self.assertIsNone(plan.entries[0]["assignment"])
-        self.assertProblem(plan, "no monthly salary (1001)")
+        self.assertProblem(plan, "no monthly salary (1000/1001)")
 
     def test_employee_without_an_erp_row_is_reported(self):
         plan = ia.build_plan([invented_employee()], figures_of(invented_rows()), {}, settings(), STRUCTURE,
@@ -269,30 +287,55 @@ class TestAssignments(Base):
         self.assertProblem(plan, "no Employee for the bexio id")
 
 
+def nbu_line(rate):
+    """A 5040 line of the latest month (the NBU amount is not used by the rates)."""
+    return [figure(2026, 2, "5040", amount=-1.0, rate=rate)]
+
+
 class TestRates(Base):
     def test_setting_already_equal_is_not_filled(self):
         plan = ia.Plan()
-        fills = ia.rate_report(plan, figures_of(invented_rows(ahv_rate=5.3)), settings(swiss_ahv_ee=5.3))
+        fills = ia.rate_report(plan, figures_of(invented_rows(ahv_rate=5.3)), settings(swiss_ahv_ee=5.3), {"test-emp-1"})
         self.assertNotIn("swiss_ahv_ee", fills)
         self.assertEqual(plan.counts["rates equal"], 1)
 
     def test_differing_setting_is_reported_not_overwritten(self):
         plan = ia.Plan()
         figs = figures_of(invented_rows(ahv_rate=5.3))
-        fills = ia.rate_report(plan, figs, settings(swiss_ahv_ee=4.9))
+        fills = ia.rate_report(plan, figs, settings(swiss_ahv_ee=4.9), {"test-emp-1"})
         self.assertNotIn("swiss_ahv_ee", fills)
         self.assertProblem(plan, "rate swiss_ahv_ee: the setting differs")
 
     def test_empty_setting_is_filled(self):
         plan = ia.Plan()
         figs = figures_of(invented_rows(ahv_rate=5.3))
-        fills = ia.rate_report(plan, figs, settings(swiss_ahv_ee=None))
+        fills = ia.rate_report(plan, figs, settings(swiss_ahv_ee=None), {"test-emp-1"})
         self.assertEqual(fills, {"swiss_ahv_ee": 5.3})
 
     def test_employer_rates_are_listed_for_the_insurer(self):
         plan = ia.Plan()
-        ia.rate_report(plan, figures_of(invented_rows()), settings())
+        ia.rate_report(plan, figures_of(invented_rows()), settings(), {"test-emp-1"})
         self.assertEqual(plan.counts["rates needing insurer sheet"], len(ia.INSURER_FIELDS))
+
+    def test_nbu_is_filled_when_the_active_employees_agree(self):
+        plan = ia.Plan()
+        figs = {"test-emp-1": nbu_line(0.5), "test-emp-2": nbu_line(0.5)}
+        fills = ia.rate_report(plan, figs, settings(swiss_nbu_ee=None), {"test-emp-1", "test-emp-2"})
+        self.assertEqual(fills["swiss_nbu_ee"], 0.5)
+
+    def test_nbu_disagreeing_among_the_active_is_not_filled_and_names_the_ids(self):
+        plan = ia.Plan()
+        figs = {"test-emp-1": nbu_line(0.5), "test-emp-2": nbu_line(0.8)}
+        fills = ia.rate_report(plan, figs, settings(swiss_nbu_ee=None), {"test-emp-1", "test-emp-2"})
+        self.assertNotIn("swiss_nbu_ee", fills)
+        self.assertProblem(plan, "rate swiss_nbu_ee: the active employees' latest paystubs print 2 rates, not filled: "
+                                 "0.5 for test-emp-1; 0.8 for test-emp-2")
+
+    def test_a_left_employee_does_not_decide_the_nbu_rate(self):
+        plan = ia.Plan()
+        figs = {"test-emp-1": nbu_line(0.5), "test-emp-3": nbu_line(0.8)}
+        fills = ia.rate_report(plan, figs, settings(swiss_nbu_ee=None), {"test-emp-1"})
+        self.assertEqual(fills["swiss_nbu_ee"], 0.5)
 
 
 class TestWrites(Base):
@@ -304,7 +347,8 @@ class TestWrites(Base):
         erp = self.erp()
         plan = run_plan(invented_employee(), invented_rows(qst=4.0, gross=5000.0),
                         tariffs=[tariff_row("AAA", 4.0, step=10000)])
-        fills = ia.rate_report(plan, figures_of(invented_rows(qst=4.0, gross=5000.0)), settings(swiss_ahv_ee=None))
+        fills = ia.rate_report(plan, figures_of(invented_rows(qst=4.0, gross=5000.0)), settings(swiss_ahv_ee=None),
+                               {"test-emp-1"})
         writer = ia.Writer(erp, dry_run=True)
         writer.run(plan, fills, {"test-emp-1": erp_employee()})
         self.assertEqual(erp.assignments, [])
@@ -316,7 +360,7 @@ class TestWrites(Base):
         figs = invented_rows(qst=4.0, gross=5000.0)
         tariffs = [tariff_row("AAA", 4.0, step=10000)]
         plan = run_plan(invented_employee(), figs, tariffs=tariffs)
-        fills = ia.rate_report(plan, figures_of(figs), settings(swiss_ahv_ee=None))
+        fills = ia.rate_report(plan, figures_of(figs), settings(swiss_ahv_ee=None), {"test-emp-1"})
         writer = ia.Writer(erp, dry_run=False)
         writer.run(plan, fills, {"test-emp-1": erp_employee()})
         self.assertEqual(len(erp.submitted), 1)
@@ -330,7 +374,7 @@ class TestWrites(Base):
         again = ia.build_plan([invented_employee()], figures_of(figs), {"test-emp-1": erp_employee(
             qst_canton="ZH", qst_code="AAA")}, settings(swiss_ahv_ee=5.3), STRUCTURE, lambda c: tariffs,
             ia.existing_assignments(erp))
-        fills_again = ia.rate_report(again, figures_of(figs), settings(swiss_ahv_ee=5.3))
+        fills_again = ia.rate_report(again, figures_of(figs), settings(swiss_ahv_ee=5.3), {"test-emp-1"})
         writer2 = ia.Writer(erp, dry_run=False)
         writer2.run(again, fills_again, {"test-emp-1": erp_employee(qst_canton="ZH", qst_code="AAA")})
         self.assertEqual(len(erp.submitted), 1)
