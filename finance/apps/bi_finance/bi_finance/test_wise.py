@@ -37,6 +37,13 @@ class Start(unittest.TestCase):
         settings = types.SimpleNamespace(last_sync="2026-10-11 00:05:00", backfill_from="2015-01-01")
         self.assertEqual(wise._start(settings, datetime.datetime(2026, 10, 11, 1)), datetime.datetime(2026, 10, 4, 0, 5))
 
+    def test_later_sync_reads_stored_text_with_microseconds(self):
+        # the live site stores last_sync with microseconds
+        settings = types.SimpleNamespace(last_sync="2026-10-11 00:05:00.479118", backfill_from="2015-01-01")
+        self.assertEqual(
+            wise._start(settings, datetime.datetime(2026, 10, 11, 1)), datetime.datetime(2026, 10, 4, 0, 5, 0, 479118)
+        )
+
 
 class Balances(unittest.TestCase):
     def test_the_standard_and_savings_amounts_of_a_currency_add_up(self):
