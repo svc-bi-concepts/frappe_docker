@@ -15,7 +15,7 @@ not used for live invoices.
 Pinned in `finance/apps.json`:
 
 - ERPNext `v16.50.0` (tag, commit `7474d9e`, the same tag the running stack uses)
-- Frappe `v16.50.0` (tag, commit `f20f92d`, passed as `FRAPPE_BRANCH`)
+- Frappe `v16.51.0` (tag, commit `6b450a1`, passed as `FRAPPE_BRANCH`; bi13, the live site runs 16.50.0 until its deploy)
 - erpnextswiss branch `v16` at commit `5d85c45b48f4774cda6ba84ab75f138ad45a55c3`
   (2026-10-07)
 
@@ -248,7 +248,7 @@ The script:
    exists, so a build never overwrites a tag in use. Pick a new tag.
 3. Checks that the `v16` branch of erpnextswiss still points at the commit in the list
    (`git ls-remote`). It stops if the branch has moved.
-4. Runs `docker build` with `--secret id=apps_json`, `FRAPPE_BRANCH=v16.50.0`,
+4. Runs `docker build` with `--secret id=apps_json`, `FRAPPE_BRANCH=v16.51.0`,
    and `--no-cache`. The cache is off on purpose: a secret is not part of the
    layer cache key, so a cached `bench init` layer would keep the old apps.
 5. Builds the `bi_finance` layer on top.

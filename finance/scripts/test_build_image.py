@@ -85,6 +85,8 @@ class BuildImageModes(unittest.TestCase):
         builds = [line for line in calls.splitlines() if line.startswith("build ")]
         self.assertEqual(len(builds), 3, calls)
         self.assertIn("--tag frappe-finance-custom:t1-base ", builds[0])
+        # Frappe is one tag for the whole image; ERPNext and HRMS declare frappe >=16.50.0,<17.0.0.
+        self.assertIn("--build-arg FRAPPE_BRANCH=v16.51.0 ", builds[0])
         self.assertIn("--build-arg BASE=frappe-finance-custom:t1-base --tag frappe-finance-custom:t1-finance ", builds[1])
         self.assertIn("--file finance/images/bi_finance.Containerfile", builds[1])
         self.assertIn("--build-arg BASE=frappe-finance-custom:t1-finance --tag frappe-finance-custom:t1 ", builds[2])

@@ -33,7 +33,7 @@ if [ $# -ne 2 ]; then
 fi
 MODE="$1"
 TAG="$2"
-FRAPPE_TAG=v16.50.0
+FRAPPE_TAG=v16.51.0
 
 # Compose files live at the repo root, two levels up from this script.
 cd "$(dirname "$0")/../.."
