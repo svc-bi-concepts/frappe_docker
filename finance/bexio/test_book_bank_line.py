@@ -220,6 +220,12 @@ class OverrideTest(unittest.TestCase):
             bb.decide(erp, erp.line, BANK_GL, ("6670", "event"))
         self.assertIn("0 accounts named 6670", str(caught.exception))
 
+    def test_an_account_argument_with_a_wildcard_is_refused(self):
+        erp = FakeErp([], {}, [])
+        with self.assertRaises(bb.Refused) as caught:
+            bb.decide(erp, erp.line, BANK_GL, ("66%", "event"))
+        self.assertIn("is not an account number", str(caught.exception))
+
     def test_the_journal_entry_remark_says_the_account_is_Benchis_choice(self):
         erp = FakeErp([], {}, [])
         plan, _ = bb.decide(erp, erp.line, BANK_GL, self.OVERRIDE)

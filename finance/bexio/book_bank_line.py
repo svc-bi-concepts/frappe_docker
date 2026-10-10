@@ -160,6 +160,8 @@ def history_of(erp, line, account):
 
 def account_named(erp, number):
     """The GL account of the company whose name starts with the number ('6641 - Name - X'); exactly one, else refused."""
+    if not number.isdigit():
+        raise Refused("{!r} is not an account number".format(number))
     found = erp.list("Account", [["company", "=", im.COMPANY], ["name", "like", "{} - %".format(number)]], ["name"])
     if len(found) != 1:
         raise Refused("{} accounts named {}, want one".format(len(found), number))
