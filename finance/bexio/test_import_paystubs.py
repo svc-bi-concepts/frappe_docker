@@ -103,6 +103,11 @@ class PlanTest(unittest.TestCase):
                          contents={"{}-2024-03.pdf".format(EMP_A): DATA + b"-more"})
         self.assertEqual(rows[0]["outcome"], "size differs")
 
+    def test_the_same_employee_and_month_twice_is_a_problem_not_two_uploads(self):
+        rows = self.plan([record(EMP_A, 2024, 3), record(EMP_A, 2024, 3)], employees=[employee("HR-EMP-0001", EMP_A)],
+                         contents={"{}-2024-03.pdf".format(EMP_A): DATA})
+        self.assertEqual([r["outcome"] for r in rows], [ips.ATTACH, "duplicate"])
+
     def test_the_employee_id_is_matched_as_text(self):
         rows = self.plan([record(EMP_A, 2024, 3)], employees=[employee("HR-EMP-0001", EMP_A)],
                          contents={"{}-2024-03.pdf".format(EMP_A): DATA})

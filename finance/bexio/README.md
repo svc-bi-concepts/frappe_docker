@@ -451,7 +451,7 @@ the export has no figures per slip (see `finance/docs/hrms.md`, step 5). The Fil
     python3 finance/bexio/import_paystubs.py --dry-run    # counts only, nothing written
     python3 finance/bexio/import_paystubs.py --apply      # uploads the PDFs marked attach
 
-The records it cannot place (no Employee, a PDF missing or of another size) go by position to
+The records it cannot place (no Employee, a PDF missing, of another size or listed twice) go by position to
 `<private>/bexio-paystubs-dry-run.txt`; the screen shows counts only.
 
 ## Manual entries (Journal Entries)

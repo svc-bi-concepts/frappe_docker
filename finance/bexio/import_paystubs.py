@@ -19,7 +19,7 @@ whose File is not there yet:
 The dry run prints counts only. The records it cannot place (no Employee with their employee_id, a PDF that is
 missing or of another size than the export's) are listed by their position in paystubs.json in
 <private>/bexio-paystubs-dry-run.txt, never on the screen. A record whose Employee is missing is counted and not
-uploaded; a PDF that is missing or of another size makes the run fail.
+uploaded; a PDF that is missing, of another size or listed twice for one employee and month makes the run fail.
 
 Standard library only, apart from import_files.py, import_master.py and import_purchase.py.
 """
@@ -40,7 +40,7 @@ DOCTYPE = "Employee"
 KEY_PREFIX = "paystub-"
 
 ATTACH, ATTACHED, NO_EMPLOYEE = "attach", "attached", "no employee"
-PROBLEMS = ("no content", "size differs")
+PROBLEMS = ("no content", "size differs", "duplicate")
 
 
 def file_key(record):
@@ -84,11 +84,14 @@ def content_path(paystubs_dir, record):
 def plan(records, lookups, paystubs_dir):
     """One row per record of paystubs.json: its outcome, the Employee it goes to, and its File key and name."""
     rows = []
+    seen = set()
     for position, record in enumerate(records, 1):
         key = file_key(record)
         employee = lookups.employees.get(str(record["employee_id"]))
         outcome = None
-        if key in lookups.keys:
+        if key in seen:
+            outcome = "duplicate"  # the same employee and month twice: one upload each would attach it twice
+        elif key in lookups.keys:
             outcome = ATTACHED
         elif employee is None:
             outcome = NO_EMPLOYEE
@@ -100,6 +103,7 @@ def plan(records, lookups, paystubs_dir):
                 outcome = "size differs"
             else:
                 outcome = ATTACH
+        seen.add(key)
         rows.append({"position": position, "key": key, "name": file_name(record), "file": record["file"],
                      "employee_id": str(record["employee_id"]), "employee": employee,
                      "year": record["year"], "month": record["month"], "bytes": record["bytes"], "outcome": outcome})
