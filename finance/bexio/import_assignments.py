@@ -167,7 +167,7 @@ def build_plan(employees, figures, erp_employees, settings, structure, tariffs_f
 
     employees: the export's records; figures: read_figures(); erp_employees: {bexio id: Employee row} from ERPNext;
     settings: Payroll Swiss Settings as ERPNext gives it; tariffs_for(canton) -> the QST Tariff rows of the canton;
-    existing: {(employee name, from date)} of the Salary Structure Assignments already made.
+    existing: {(employee name, from date): docstatus} of the Salary Structure Assignments already made.
     """
     plan = Plan()
     coordination = settings.get("swiss_bvg_coordination") or 0
@@ -197,7 +197,10 @@ def build_plan(employees, figures, erp_employees, settings, structure, tariffs_f
 def _assignment(plan, entry, rows, latest, emp, settings, coordination, structure, existing):
     from_date = month_start(latest)
     if (entry["name"], from_date) in existing:
-        plan.counts["assignments already made"] += 1
+        if existing[(entry["name"], from_date)] == 0:
+            plan.add(entry["position"], entry["name"], "assignment exists as a draft: submit it by hand")
+        else:
+            plan.counts["assignments already made"] += 1
         return
     salaries = [line(rows, latest, wage_type) for wage_type in SALARY_TYPES]
     salary = next((row for row in salaries if row is not None), None)
@@ -216,12 +219,17 @@ def _assignment(plan, entry, rows, latest, emp, settings, coordination, structur
         rate = settings.get(field) if field else None
         if field is None:
             plan.add(entry["position"], entry["name"], "BVG insured salary unresolved: no BVG band at this age")
-        elif not rate:
-            plan.add(entry["position"], entry["name"], "BVG insured salary unresolved: no band rate in the settings")
+        elif not rate or not coordination:
+            plan.add(entry["position"], entry["name"], "BVG insured salary unresolved: no band rate or coordination in the settings")
         else:
-            insured = insured_salary(abs(bvg["amount"]), rate, coordination)
-            assignment["swiss_bvg_insured_salary"] = insured
-            plan.calibrations.append((entry["name"], "{:04d}-{:02d}".format(*latest), insured))
+            value = insured_salary(abs(bvg["amount"]), rate, coordination)
+            if value < (settings.get("swiss_bvg_threshold") or 0):
+                # the BVG formulas give 0 below the entry threshold, so this value would not reproduce the paystub
+                plan.add(entry["position"], entry["name"], "BVG insured salary unresolved: below the entry threshold")
+            else:
+                insured = value
+                assignment["swiss_bvg_insured_salary"] = insured
+                plan.calibrations.append((entry["name"], "{:04d}-{:02d}".format(*latest), insured))
     if insured is not None:
         plan.counts["BVG insured salary calibrated"] += 1
     entry["assignment"] = assignment
@@ -361,8 +369,8 @@ def structure_name(erp):
 
 
 def existing_assignments(erp):
-    rows = erp.list("Salary Structure Assignment", filters=[["docstatus", "<", 2]], fields=["employee", "from_date"])
-    return {(row["employee"], row["from_date"]) for row in rows}
+    rows = erp.list("Salary Structure Assignment", filters=[["docstatus", "<", 2]], fields=["employee", "from_date", "docstatus"])
+    return {(row["employee"], row["from_date"]): row["docstatus"] for row in rows}
 
 
 def tariff_reader(erp):
@@ -392,7 +400,10 @@ def write_problems(path, plan):
 
 def write_calibration(path, plan):
     """The BVG insured salaries worked back from the paystubs with the placeholder band rates: until the fund's sheet
-    replaces them, they are a calibration of the formula, not the fund's figure."""
+    replaces them, they are a calibration of the formula, not the fund's figure. A run that calibrates none (the rerun
+    after --apply) leaves the file of the run that did."""
+    if not plan.calibrations:
+        return
     lines = ["# BVG insured salary calibrated from the paystub 5050 at the settings' band rate: {}".format(
         len(plan.calibrations)), "# employee  paystub month  insured salary"]
     for name, month, insured in plan.calibrations:
