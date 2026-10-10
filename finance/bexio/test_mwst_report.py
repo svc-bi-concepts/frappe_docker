@@ -142,7 +142,7 @@ class Sales(unittest.TestCase):
             tax("Vorsteuer Import", "8.10", "Add"),
         ])], {"Vorsteuer Import": "7"})
         self.assertEqual(t.unchecked_tax, D("8.10"))
-        self.assertEqual(mr.form_totals(t)[0]["420"][1], D("0"))
+        self.assertEqual(mr.form_totals(t)[0]["479"][1], D("0"))
 
     def test_credit_note_is_negative_and_reduces_the_row(self):
         t = mr.plan([
@@ -161,8 +161,20 @@ class Purchases(unittest.TestCase):
         rows, saldo = mr.form_totals(t)
         self.assertEqual(rows["400"][1], D("40.50"))
         self.assertEqual(rows["405"][1], D("13.00"))
-        self.assertEqual(rows["420"][1], D("53.50"))
+        self.assertEqual(rows["479"][1], D("53.50"))
         self.assertEqual(saldo, D("-53.50"))
+
+    def test_a_reduction_row_sits_in_420_and_reduces_the_479_total(self):
+        # Ziffer 420 is Vorsteuerkürzungen on the form, not the total; no reduction row is known today,
+        # so the row is only ever filled here, from an invented Totals
+        t = mr.plan([], [doc(datetime.date(2026, 8, 3), D("500"), [
+            tax("VM81 8.1% Normalsatz Material/DL", "40.50", "Add"),
+        ])], TEMPLATE_NAMES)
+        t.add("420", None, D("5.00"))
+        rows, saldo = mr.form_totals(t)
+        self.assertEqual(rows["420"][1], D("5.00"))
+        self.assertEqual(rows["479"][1], D("35.50"))
+        self.assertEqual(saldo, D("-35.50"))  # no owed tax: the input tax minus the reduction
 
     def test_reverse_charge_is_vorsteuer_and_owed_in_the_same_amount(self):
         t = mr.plan([], [doc(datetime.date(2026, 8, 3), D("1000"), [
@@ -180,11 +192,13 @@ class Purchases(unittest.TestCase):
         ])], TEMPLATE_NAMES)
         self.assertEqual(mr.form_totals(t)[0]["382"][1], D("81.00"))
 
-    def test_correction_goes_to_415(self):
+    def test_correction_goes_to_415_and_into_the_479_total(self):
         t = mr.plan([], [doc(datetime.date(2026, 8, 3), D("0"), [
             tax("VES 8.1% Vorsteuerkorrektur nachträglich", "-4.00", "Add"),
         ])], TEMPLATE_NAMES)
-        self.assertEqual(mr.form_totals(t)[0]["415"][1], D("-4.00"))
+        rows, _saldo = mr.form_totals(t)
+        self.assertEqual(rows["415"][1], D("-4.00"))
+        self.assertEqual(rows["479"][1], D("-4.00"))
 
     def test_deduct_on_a_plain_purchase_is_unmapped(self):
         t = mr.plan([], [doc(datetime.date(2026, 8, 3), D("100"), [
@@ -320,7 +334,7 @@ class PaymentBasis(unittest.TestCase):
     def test_purchase_invoice_paid_goes_to_400(self):
         rows, _ = paid([pay(datetime.date(2026, 8, 3), [("Purchase Invoice", "P1", D("540.50"))])])
         self.assertEqual(rows["400"][1], D("40.50"))
-        self.assertEqual(rows["420"][1], D("40.50"))
+        self.assertEqual(rows["479"][1], D("40.50"))
 
     def test_payment_without_an_invoice_is_counted_apart_and_splits_no_tax(self):
         rows, unallocated = paid([pay(datetime.date(2026, 8, 3), [])])

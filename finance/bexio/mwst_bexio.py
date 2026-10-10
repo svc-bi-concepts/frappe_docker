@@ -427,12 +427,12 @@ def years_without_receipt_moves(journal, accounts):
 
 
 TOTAL_ROWS = {"399": ("302", "303", "312", "313", "342", "343", "382", "383"),
-              "420": ("400", "405", "415")}
+              "479": ("400", "405", "410", "415", "420")}
 
 
 def write_csv(path, quarters, order):
     """One line per quarter and form row with base, tax, the journal part and the tolerances.
-    The totals 399 and 420 carry the sums of their components' journal parts and tolerances,
+    The totals 399 and 479 carry the sums of their components' journal parts and tolerances,
     so a difference of a total names its parts the same way the rows do."""
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:

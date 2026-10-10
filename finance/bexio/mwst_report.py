@@ -32,10 +32,13 @@ does not carry the net per row. At 8.1 % one rappen of tax is about 0.06 of
 base, so the derived bases are approximate; the tax per row is exact.
 
 Ziffern: the table below is the form's row per code. Only the rows that the
-ESTV form confirmed (302/303, 312/313, 342/343, 382/383, 399, 400, 405, 415,
-420) carry a Ziffer. The Umsatz rows 220 to 299 and the Abzüge are not checked
-yet, so the codes that would go there carry None and their tax is reported as
-not in a checked Ziffer. See the note of erp-agpf for the open points.
+ESTV form confirmed (302/303, 312/313, 342/343, 382/383, 399, 400, 405, 410,
+415, 420, 479) carry a Ziffer. On the form 420 is Vorsteuerkürzungen (reductions
+for subsidies and the like; none known, so it stays 0) and the total of the
+Vorsteuern is 479 = 400 + 405 + 410 + 415 - 420, not 420. The Umsatz rows 220
+to 299 and the Abzüge are not checked yet, so the codes that would go there
+carry None and their tax is reported as not in a checked Ziffer. See the note
+of erp-agpf for the open points.
 
 Run it as:
 
@@ -125,8 +128,10 @@ LABELS = {
     "399": "Total der geschuldeten Steuer",
     "400": "Vorsteuer Material- und Dienstleistungsaufwand",
     "405": "Vorsteuer Investitionen und übriger Betriebsaufwand",
+    "410": "Verminderung der Vorsteuer (veränderte Verwendung)",
     "415": "Vorsteuerkorrekturen",
-    "420": "Total der Vorsteuern",
+    "420": "Vorsteuerkürzungen",
+    "479": "Total der Vorsteuern",
 }
 
 
@@ -231,12 +236,14 @@ def _tax_row(totals, row, templates, posting_date, purchase):
 
 
 def form_totals(totals):
-    """The totals of the form rows that the form adds up: 399 owed, 420 Vorsteuer. 479, 500, 510 need data not in bexio."""
+    """The totals of the form rows that the form adds up: 399 owed and 479, the total of the Vorsteuern
+    (400 + 405 + 410 + 415 - 420; 420 is Vorsteuerkürzungen on the form and stays 0, as 410 does,
+    until a reduction row exists). 500 and 510 need data not in bexio."""
     owed = sum((totals.tax_of(r) for r in ("302", "303", "312", "313", "342", "343", "382", "383")), ZERO)
-    vorsteuer = sum((totals.tax_of(r) for r in ("400", "405", "415")), ZERO)
+    vorsteuer = sum((totals.tax_of(r) for r in ("400", "405", "410", "415")), ZERO) - totals.tax_of("420")
     out = dict(totals.rows)
     out["399"] = [ZERO, owed]
-    out["420"] = [ZERO, vorsteuer]
+    out["479"] = [ZERO, vorsteuer]
     return out, owed - vorsteuer
 
 
@@ -256,7 +263,7 @@ def summary_lines(totals):
     """The stdout of a run: totals per form row and what is not in a checked row. No names, no bexio ids."""
     rows, saldo = form_totals(totals)
     lines = ["{:<6}{:<50}{:>16}{:>14}".format("Ziffer", "", "Entgelt", "Steuer")]
-    for row in ("200", "302", "303", "312", "313", "342", "343", "382", "383", "399", "400", "405", "415", "420"):
+    for row in ("200", "302", "303", "312", "313", "342", "343", "382", "383", "399", "400", "405", "410", "415", "420", "479"):
         base, tax = rows.get(row, [ZERO, ZERO])
         if row == "200" or base or tax:
             lines.append("{:<6}{:<50}{:>16,.2f}{:>14,.2f}".format(row, LABELS[row], base, tax))
@@ -587,18 +594,18 @@ def settlement(gl):
 
 
 def reconcile_lines(totals, gl):
-    """Sales tax (Ziffer 399) against the gross credits of 2200, Vorsteuer (420) against the gross debits of 1170 and
+    """Sales tax (Ziffer 399) against the gross credits of 2200, Vorsteuer (479) against the gross debits of 1170 and
     1171, and the settlement of the period against both sums. The net of the accounts is zero in a settled quarter,
     so it is not what is checked here."""
     rows, _ = form_totals(totals)
     owed = rows.get("399", [ZERO, ZERO])[1]
-    vorsteuer = rows.get("420", [ZERO, ZERO])[1]
+    vorsteuer = rows.get("479", [ZERO, ZERO])[1]
     gl_sales = gl_owed(gl)
     gl_input = gl_deductible(gl)
     settled, declared_owed, declared_input = settlement(gl)
     lines = [
         "check against GL: owed on 2200 {:,.2f} vs Ziffer 399 {:,.2f}: difference {:,.2f}".format(gl_sales, owed, gl_sales - owed),
-        "check against GL: input tax on 1170+1171 {:,.2f} vs Ziffer 420 {:,.2f}: difference {:,.2f}".format(gl_input, vorsteuer, gl_input - vorsteuer),
+        "check against GL: input tax on 1170+1171 {:,.2f} vs Ziffer 479 {:,.2f}: difference {:,.2f}".format(gl_input, vorsteuer, gl_input - vorsteuer),
     ]
     if settled:
         lines.append("settlement: settled: yes; 2200 debit {:,.2f} vs owed {:,.2f}: difference {:,.2f}; 1170+1171 credit {:,.2f} vs input tax {:,.2f}: difference {:,.2f}".format(

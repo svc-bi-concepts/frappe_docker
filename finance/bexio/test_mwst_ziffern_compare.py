@@ -63,20 +63,47 @@ class ReasonTest(unittest.TestCase):
     BEXIO = (Decimal("100.00"), Decimal("8.10"), Decimal("10.00"), Decimal("0.81"), Decimal("0.08"), Decimal("0.00"))
 
     def test_equal_rows_have_no_reason(self):
-        self.assertEqual(zc.reason_of(self.BEXIO, (Decimal("100.00"), Decimal("8.10"), Decimal("10.00"), Decimal("0.81"))), "")
+        self.assertEqual(zc.reason_of("303", self.BEXIO, (Decimal("100.00"), Decimal("8.10"), Decimal("10.00"), Decimal("0.81"))), "")
 
     def test_a_base_within_the_tolerance_is_rounding(self):
-        self.assertEqual(zc.reason_of(self.BEXIO, (Decimal("100.05"), Decimal("8.10"), Decimal("10.00"), Decimal("0.81"))), "rounding")
+        self.assertEqual(zc.reason_of("303", self.BEXIO, (Decimal("100.05"), Decimal("8.10"), Decimal("10.00"), Decimal("0.81"))), "rounding")
 
     def test_a_difference_only_of_the_journal_parts_is_the_mirrors(self):
         # the report's journal rows keep the VAT mirrors; bexio's journal part is the manual entries
-        self.assertEqual(zc.reason_of(self.BEXIO, (Decimal("90.00"), Decimal("8.10"), Decimal("0.00"), Decimal("0.81"))), "journal mirrors")
+        self.assertEqual(zc.reason_of("303", self.BEXIO, (Decimal("90.00"), Decimal("8.10"), Decimal("0.00"), Decimal("0.81"))), "journal mirrors")
 
     def test_a_tax_difference_is_unexplained(self):
-        self.assertEqual(zc.reason_of(self.BEXIO, (Decimal("100.00"), Decimal("8.11"), Decimal("10.00"), Decimal("0.81"))), "unexplained")
+        self.assertEqual(zc.reason_of("303", self.BEXIO, (Decimal("100.00"), Decimal("8.11"), Decimal("10.00"), Decimal("0.81"))), "unexplained")
 
     def test_a_larger_base_difference_is_unexplained(self):
-        self.assertEqual(zc.reason_of(self.BEXIO, (Decimal("200.00"), Decimal("8.10"), Decimal("10.00"), Decimal("0.81"))), "unexplained")
+        self.assertEqual(zc.reason_of("303", self.BEXIO, (Decimal("200.00"), Decimal("8.10"), Decimal("10.00"), Decimal("0.81"))), "unexplained")
+
+
+class TaxOnlyReasonTest(unittest.TestCase):
+    """The Vorsteuer Ziffern 400 to 420, 479 and 500/510 are tax amounts on the form: their bases are
+    information and not compared, whatever the journal parts' bases say."""
+
+    BEXIO_405 = (Decimal("120.00"), Decimal("8.10"), Decimal("20.00"), Decimal("8.10"), Decimal("0.00"), Decimal("0.00"))
+
+    def test_a_base_difference_alone_is_no_difference(self):
+        # the tax agrees; the bases differ by the manual entries' nets, whose base the report's journal rows lack
+        erp = (Decimal("0.00"), Decimal("8.10"), Decimal("0.00"), Decimal("0.00"))
+        self.assertEqual(zc.reason_of("405", self.BEXIO_405, erp), "")
+
+    def test_a_tax_difference_within_the_tolerance_with_equal_journal_taxes_is_rounding(self):
+        bexio = (Decimal("0.00"), Decimal("8.10"), Decimal("0.00"), Decimal("0.00"), Decimal("0.00"), Decimal("0.05"))
+        erp = (Decimal("500.00"), Decimal("8.09"), Decimal("0.00"), Decimal("0.00"))
+        self.assertEqual(zc.reason_of("405", bexio, erp), "rounding")
+
+    def test_a_tax_difference_is_unexplained_even_with_equal_journal_parts(self):
+        bexio = (Decimal("0.00"), Decimal("8.10"), Decimal("0.00"), Decimal("0.00"), Decimal("0.00"), Decimal("0.00"))
+        erp = (Decimal("500.00"), Decimal("9.10"), Decimal("0.00"), Decimal("0.00"))
+        self.assertEqual(zc.reason_of("479", bexio, erp), "unexplained")
+
+    def test_a_tax_difference_only_of_the_journal_parts_is_the_mirrors(self):
+        bexio = (Decimal("0.00"), Decimal("8.10"), Decimal("0.00"), Decimal("8.10"), Decimal("0.00"), Decimal("0.00"))
+        erp = (Decimal("0.00"), Decimal("0.00"), Decimal("0.00"), Decimal("0.00"))
+        self.assertEqual(zc.reason_of("405", bexio, erp), "journal mirrors")
 
 
 class CompareTest(unittest.TestCase):
@@ -98,6 +125,16 @@ class CompareTest(unittest.TestCase):
         rows = zc.compare(bexio, erpnext)
         self.assertEqual(zc.differences(rows), [])
         self.assertIn("Ziffern with a difference: 0", zc.summary_lines(rows))
+
+    def test_the_vorsteuer_total_479_is_classified_by_its_parts_journal(self):
+        # the report's CSV holds no journal sub-row for a total, so the parts' journal tax is summed
+        # first: a total whose tax differs only by the parts' journal part is the mirrors' residue
+        bexio = {"2026Q1": {"479": (Decimal("0.00"), Decimal("53.50"), Decimal("0.00"), Decimal("53.50"), Decimal("0.00"), Decimal("0.00"))}}
+        erpnext = {"2026Q1": {"405": (Decimal("100.00"), Decimal("13.00"), Decimal("0.00"), Decimal("13.00")),
+                              "479": (Decimal("0.00"), Decimal("13.00"), Decimal("0.00"), Decimal("0.00"))}}
+        rows = zc.compare(bexio, erpnext)
+        row_479 = [row for row in rows if row[1] == "479"][0]
+        self.assertEqual(row_479[8], "journal mirrors")
 
 
 class MainTest(unittest.TestCase):

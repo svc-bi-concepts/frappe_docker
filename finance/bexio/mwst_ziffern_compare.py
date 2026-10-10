@@ -2,11 +2,12 @@
 
 The two sides are the CSVs: bexio-mwst-ziffern.csv from mwst_bexio.py (the export alone) and
 the mwst-<quarter>-payment.csv files of mwst_report.py --basis payment (ERPNext, read only).
-Per quarter and form row the tax must be equal; the base (Entgelt) may differ within the
-tolerance the bexio CSV carries, because ERPNext derives a document's base from its tax and
-mwst_bexio states that bound per row. A base difference that is exactly the gap between the
-two journal parts is the structural one: the report's journal rows carry no base for the
-input tax (1170, 1171) and the Bezugsteuer (2203), while bexio's manual entries have their
+Per quarter and form row the tax must be equal; the base (Entgelt) is compared only where the
+form has one: base and tax for 200 to 235, 302 to 343 and the Bezugsteuer 382/383, tax only for
+the Vorsteuer Ziffern 400 to 420, their total 479 and 500/510 (the form has no base there; the
+two CSVs keep their base columns as information). A base difference that is exactly the gap
+between the two journal parts is the structural one: the report's journal rows carry no base for
+the input tax (1170, 1171) and the Bezugsteuer (2203), while bexio's manual entries have their
 nets. Everything else is a difference, and the run exits 1 while one stands.
 
 The detail goes to one private CSV under <private>; the stdout shows counts only.
@@ -35,7 +36,10 @@ JOURNAL_LABEL = "journal entries (by account)"
 # a total row's journal part is its components': the report's CSV holds no journal sub-row for
 # the totals, so the comparison sums the components' before it classifies a total
 TOTALS = {"399": ("302", "303", "312", "313", "342", "343", "382", "383"),
-          "420": ("400", "405", "415")}
+          "479": ("400", "405", "410", "415", "420")}
+# the Ziffern the form states as tax amounts only: their base columns are information and are
+# not compared (400 to 420 with the total 479; 500 and 510 have no base on either side)
+TAX_ONLY = {"400", "405", "410", "415", "420", "479", "500", "510"}
 
 
 def money(text):
@@ -82,19 +86,21 @@ def read_erpnext(paths):
     return dict(out)
 
 
-def reason_of(bexio, erp):
+def reason_of(ziffer, bexio, erp):
     """Why the two rows of one Ziffer differ, or '' when they do not.
 
     The comparison is of the form's figures: the document part (the row less its journal part)
     must hold within the tolerances the bexio CSV carries, and what then remains is the
     journal part: bexio's holds only the manual entries' VAT, the report's keeps the net of
     every VAT-account move its exclusions leave in, so a difference there is the mirrors'
-    residue, named for the vouchers that cause it (see finance/docs/swiss.md)."""
-    d_base = erp[0] - bexio[0]
+    residue, named for the vouchers that cause it (see finance/docs/swiss.md). For a Ziffer in
+    TAX_ONLY the form has no base, so the bases and their journal parts are not compared; the
+    row is a difference only when its tax is."""
+    d_base = ZERO if ziffer in TAX_ONLY else erp[0] - bexio[0]
     d_tax = erp[1] - bexio[1]
     if not d_base and not d_tax:
         return ""
-    resid_base = d_base - (erp[2] - bexio[2])
+    resid_base = ZERO if ziffer in TAX_ONLY else d_base - (erp[2] - bexio[2])
     resid_tax = d_tax - (erp[3] - bexio[3])
     if abs(resid_base) > bexio[4] or abs(resid_tax) > bexio[5]:
         return "unexplained"
@@ -134,7 +140,7 @@ def compare(bexio, erpnext):
         for ziffer in sorted(set(b_rows) | set(e_rows)):
             b = b_rows.get(ziffer, (ZERO, ZERO, ZERO, ZERO, ZERO, ZERO))
             e = e_rows.get(ziffer, (ZERO, ZERO, ZERO, ZERO))
-            rows.append((quarter, ziffer, b[0], e[0], b[1], e[1], b[4], b[5], reason_of(b, e)))
+            rows.append((quarter, ziffer, b[0], e[0], b[1], e[1], b[4], b[5], reason_of(ziffer, b, e)))
     return rows
 
 
