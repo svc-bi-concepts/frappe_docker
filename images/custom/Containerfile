@@ -127,6 +127,10 @@ USER frappe
 ARG FRAPPE_BRANCH=version-16
 ARG FRAPPE_PATH=https://github.com/frappe/frappe
 ARG CACHE_BUST=""
+# Node heap cap for the asset build inside bench init (yarn): finance/scripts/build-image.sh
+# passes --max-old-space-size=900, so the build stays inside its capped builder. Empty by
+# default: other users of this Containerfile build unchanged.
+ARG NODE_OPTIONS=""
 
 # Our patches to fetched apps (finance/patches/<app>), applied after bench init and
 # before the .git directories are removed: the patch needs the repository to check against.

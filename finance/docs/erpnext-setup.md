@@ -212,6 +212,25 @@ charts from the module folders. Those folders (`workspace/`, `number_card/`,
 Frappe reads module "BI Finance" from `<package>/bi_finance`. In bi7 they sat one level higher,
 and migrate found no Treasury; bi8 moves them (`test_treasury`, Layout, checks the place).
 
+## Building an image
+
+`finance/scripts/build-image.sh live|copy <tag>` builds the base layer, the `bi_finance`
+layer and the `bi_payroll` layer, each with `docker buildx build --load` on IT's capped
+builder (buildx builder `capped`, a 1.2 GiB hard cap including swap). The capped builder
+only: a plain `docker build` runs on the default builder and shares the mini's memory
+with the live stack — on 2026-10-11 that OOM-killed the live containers twice. IT's rule
+after that: never build with the default builder on the mini.
+
+The script refuses to run when the builder does not exist (it checks `docker buildx
+inspect capped` first); if that check fails, ask IT. `BUILDER=<name>` points the script
+at another builder — on a machine without IT's setup, name that machine's own capped
+builder, never the default.
+
+If docker itself answers nothing, the socket is gone: run IT's colima-sock-fix, then
+retry. The asset build's node heap is capped with `NODE_OPTIONS=--max-old-space-size=900`
+(the script passes it into `images/custom/Containerfile`), so a build stays inside the
+builder's budget.
+
 ## Switching the stack to a new image
 
 Recreating `backend` or the queue containers gives them new IPs. nginx in
@@ -252,7 +271,8 @@ new tag, then point `finance-local.yml` at it. A switch removes the base, so aft
 one of those a change to `bi_finance` needs the full build:
 
 ```sh
-docker build --build-arg BASE=frappe-finance-custom:<tag>-base \
+docker buildx build --builder capped --load \
+    --build-arg BASE=frappe-finance-custom:<tag>-base \
     --tag frappe-finance-custom:<new-tag> --file finance/images/bi_finance.Containerfile .
 ```
 

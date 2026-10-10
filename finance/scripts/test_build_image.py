@@ -46,7 +46,7 @@ class BuildImageModes(unittest.TestCase):
         self.assertIn("live", out)
         self.assertIn("copy", out)
 
-    def run_in_layout(self, files, tag="t1", mode="live", existing_images=()):
+    def run_in_layout(self, files, tag="t1", mode="live", existing_images=(), env_extra=None):
         """Run the script from a scratch layout with a stub docker; return (code, stderr, docker calls)."""
         with tempfile.TemporaryDirectory() as tmp:
             os.makedirs(os.path.join(tmp, "finance", "scripts"))
@@ -63,10 +63,14 @@ class BuildImageModes(unittest.TestCase):
                     'if [ "$1 $2" = "image inspect" ]; then\n'
                     '  case " %s " in *" $3 "*) exit 0 ;; esac\n'
                     "  exit 1\nfi\n"
-                    'if [ "$1" = build ]; then exit 0; fi\nexit 1\n' % (log, " ".join(existing_images))
+                    'if [ "$1 $2" = "buildx inspect" ]; then\n'
+                    '  [ -n "$DOCKER_STUB_NO_BUILDER" ] && exit 1\n'
+                    "  exit 0\nfi\n"
+                    'if [ "$1 $2" = "buildx build" ]; then exit 0; fi\nexit 1\n' % (log, " ".join(existing_images))
                 )
             os.chmod(stub, 0o755)
             env = {"PATH": os.path.join(tmp, "bin") + os.pathsep + os.environ["PATH"]}
+            env.update(env_extra or {})
             run = subprocess.run(
                 ["sh", os.path.join(tmp, "finance", "scripts", "build-image.sh"), mode, tag],
                 capture_output=True, text=True, env=env,
@@ -82,11 +86,19 @@ class BuildImageModes(unittest.TestCase):
         hrms = [{"url": "https://github.com/frappe/hrms", "branch": "v16.50.0"}]
         code, err, calls = self.run_in_layout({"apps.json": hrms}, tag="t1")
         self.assertEqual(code, 0, err)
-        builds = [line for line in calls.splitlines() if line.startswith("build ")]
+        builds = [line for line in calls.splitlines() if line.startswith("buildx build ")]
         self.assertEqual(len(builds), 3, calls)
+        for build in builds:
+            # The capped builder only (the 2026-10-11 OOMs), and --load so the tag
+            # lands in the local store for switch-image.sh.
+            self.assertIn(" --builder capped ", build)
+            self.assertIn(" --load ", build)
         self.assertIn("--tag frappe-finance-custom:t1-base ", builds[0])
         # Frappe is one tag for the whole image; ERPNext and HRMS declare frappe >=16.50.0,<17.0.0.
         self.assertIn("--build-arg FRAPPE_BRANCH=v16.51.0 ", builds[0])
+        # The asset build's node heap cap, and the app list as a BuildKit secret.
+        self.assertIn("--build-arg NODE_OPTIONS=--max-old-space-size=900 ", builds[0])
+        self.assertIn("--secret id=apps_json,src=", builds[0])
         self.assertIn("--build-arg BASE=frappe-finance-custom:t1-base --tag frappe-finance-custom:t1-finance ", builds[1])
         self.assertIn("--file finance/images/bi_finance.Containerfile", builds[1])
         self.assertIn("--build-arg BASE=frappe-finance-custom:t1-finance --tag frappe-finance-custom:t1 ", builds[2])
@@ -99,14 +111,14 @@ class BuildImageModes(unittest.TestCase):
         )
         self.assertEqual(code, 1)
         self.assertIn("already exists", err)
-        self.assertNotIn("build", calls)
+        self.assertNotIn("buildx build", calls)
 
     def test_copy_refuses_a_list_without_hrms(self):
         erpnext = [{"url": "https://github.com/frappe/erpnext", "branch": "v16.50.0"}]
         code, err, calls = self.run_in_layout({"apps-copy.json": erpnext}, mode="copy")
         self.assertNotEqual(code, 0)
         self.assertIn("no hrms", err)
-        self.assertNotIn("build", calls)
+        self.assertNotIn("buildx build", calls)
 
     def test_refuses_an_existing_tag(self):
         erpnext = [{"url": "https://github.com/frappe/erpnext", "branch": "v16.50.0"}]
@@ -115,7 +127,7 @@ class BuildImageModes(unittest.TestCase):
         )
         self.assertEqual(code, 1)
         self.assertIn("already exists", err)
-        self.assertNotIn("build", calls)
+        self.assertNotIn("buildx build", calls)
 
     def test_refuses_an_existing_base_tag(self):
         erpnext = [{"url": "https://github.com/frappe/erpnext", "branch": "v16.50.0"}]
@@ -124,6 +136,26 @@ class BuildImageModes(unittest.TestCase):
         )
         self.assertEqual(code, 1)
         self.assertIn("already exists", err)
+
+    def test_refuses_a_missing_builder(self):
+        # The default builder must never build here: IT's capped builder is missing,
+        # so the script stops before any build and says to ask IT.
+        erpnext = [{"url": "https://github.com/frappe/erpnext", "branch": "v16.50.0"}]
+        code, err, calls = self.run_in_layout(
+            {"apps.json": erpnext}, tag="t1", env_extra={"DOCKER_STUB_NO_BUILDER": "1"}
+        )
+        self.assertEqual(code, 1)
+        self.assertIn("capped", err)
+        self.assertIn("IT", err)
+        self.assertNotIn("buildx build", calls)
+
+    def test_builder_env_override_reaches_the_builds(self):
+        erpnext = [{"url": "https://github.com/frappe/erpnext", "branch": "v16.50.0"}]
+        code, err, calls = self.run_in_layout(
+            {"apps.json": erpnext}, tag="t1", env_extra={"BUILDER": "mine"}
+        )
+        self.assertEqual(code, 0, err)
+        self.assertIn(" --builder mine ", calls)
 
     def test_wrong_arguments_are_a_usage_error(self):
         for args in ([], ["bogus", "t1"], ["live"], ["live", "t1", "x"]):

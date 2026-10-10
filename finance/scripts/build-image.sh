@@ -11,8 +11,10 @@
 # result: frappe-finance-custom:<tag>, refused if that tag (or its -base or -finance
 #         layer) already exists, so a build can never overwrite a tag in use.
 #
-# Needs Docker with the buildx plugin (BuildKit secrets). The app list goes in as a
-# secret, not a build arg, so nothing from it ends up in image metadata.
+# Builds run on the capped buildx builder only (BUILDER, default capped): a plain
+# 'docker build' on the default builder shares the colima VM's memory with the live
+# stack and OOM-killed the live containers twice on 2026-10-11. The app list goes in
+# as a secret, not a build arg, so nothing from it ends up in image metadata.
 set -eu
 
 usage() {
@@ -37,6 +39,14 @@ FRAPPE_TAG=v16.51.0
 
 # Compose files live at the repo root, two levels up from this script.
 cd "$(dirname "$0")/../.."
+
+# The capped builder must exist: builds never run on the default builder (see the
+# header). BUILDER names another builder, for a machine that named its own.
+BUILDER="${BUILDER:-capped}"
+if ! docker buildx inspect "$BUILDER" >/dev/null 2>&1; then
+  echo "refused: buildx builder '$BUILDER' does not exist; ask IT for the capped builder (finance/docs/erpnext-setup.md, Building an image)" >&2
+  exit 1
+fi
 
 # The copy image is built from a list with hrms; a list without it is a mistake.
 python3 - "$APPS" "$MODE" <<'PY'
@@ -79,22 +89,29 @@ PY
 
 # --no-cache: a secret is not part of the layer cache key, so a cached bench init
 # layer would keep the apps from an earlier apps list.
-docker build \
+docker buildx build \
+  --builder "$BUILDER" \
+  --load \
   --no-cache \
   --build-arg FRAPPE_PATH=https://github.com/frappe/frappe \
   --build-arg FRAPPE_BRANCH="$FRAPPE_TAG" \
+  --build-arg NODE_OPTIONS=--max-old-space-size=900 \
   --secret id=apps_json,src="$APPS" \
   --tag "frappe-finance-custom:$TAG-base" \
   --file images/custom/Containerfile .
 
 # bi_finance and bi_payroll are this repo's own apps, not in the app lists: a layer each
 # on the base image. bi_payroll requires hrms, which the base carries.
-docker build \
+docker buildx build \
+  --builder "$BUILDER" \
+  --load \
   --build-arg BASE="frappe-finance-custom:$TAG-base" \
   --tag "frappe-finance-custom:$TAG-finance" \
   --file finance/images/bi_finance.Containerfile .
 
-docker build \
+docker buildx build \
+  --builder "$BUILDER" \
+  --load \
   --build-arg BASE="frappe-finance-custom:$TAG-finance" \
   --tag "frappe-finance-custom:$TAG" \
   --file finance/images/bi_payroll.Containerfile .
