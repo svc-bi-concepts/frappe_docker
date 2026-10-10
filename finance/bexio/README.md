@@ -492,6 +492,22 @@ It prints totals only: years, accounts and rows compared, rows with a difference
 a rappen), and the band of the largest one. The rows go to `<private>/bexio-trial-balance-<date>.csv`.
 Exit status 1 means at least one difference.
 
+## One unbooked card line (book_bank_line.py)
+
+`book_bank_line.py <Bank Transaction> --dry-run` plans a Wise card payment that bexio never booked, from the
+merchant's earlier bookings: the other Bank Transactions of the account whose description names the same merchant
+(the words after `Card transaction of <amount> <currency>`), their reconciled vouchers, and the GL rows of those
+vouchers. One expense account in that history (with one VAT treatment, or none) is booked: `--apply` submits one
+Journal Entry on the line's date, keyed `book-<name>`, and reconciles the line against it. Zero or several accounts,
+or VAT that differs between the earlier bookings, book nothing and need Benchi; the reason names the counts and the
+account numbers. A rerun finds the Journal Entry or the Reconciled line and does nothing.
+
+    python3 finance/bexio/book_bank_line.py <name> --dry-run
+    python3 finance/bexio/book_bank_line.py <name> --apply
+
+The plan goes to `<private>/book-bank-line-<date>.txt`; the output is counts and account numbers only. The merchant
+name is never written to the repository or to a bead note.
+
 ## Import chain and the rerun
 
 The history goes into ERPNext in this order. Each loader is keyed by `bexio_id` and is meant to insert nothing on a
