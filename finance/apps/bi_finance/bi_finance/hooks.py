@@ -8,6 +8,8 @@ required_apps = ["erpnext", "erpnextswiss"]
 # Payment runs: Payment Entries stay drafts until the bank file is downloaded (payment_run.py).
 override_doctype_class = {
     "Payment Proposal": "bi_finance.payment_run.PaymentProposal",
+    # the XML download as ESTV takes it (eCH-0217 2.0.0), see vat_declaration.py
+    "VAT Declaration": "bi_finance.vat_declaration.VATDeclaration",
 }
 override_whitelisted_methods = {
     "erpnextswiss.erpnextswiss.doctype.payment_proposal.payment_proposal.create_payment_proposal": "bi_finance.payment_run.create_payment_proposal",
