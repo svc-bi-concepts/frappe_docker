@@ -126,7 +126,7 @@ the bead asks for. Counts come with that export. Nothing below has been read fro
 | --- | --- | --- |
 | Employees | Employee (ERPNext core) | AHV number to `social_security_number`. Pay data is not on Employee |
 | Salary types and insurance settings | Salary Component, Salary Structure | Set `abbr` to the codes erpnextswiss reads: B, AHV, ALV, NBUV, PK. Without these codes the Lohnausweis sums come out as zero |
-| Paystubs (PDF, per employee, year, month) | Salary Slip, the PDF attached to it | The slip history is the data for the Lohnausweis of past years |
+| Paystubs (PDF, per employee, year, month) | Private File on the Employee (`import_paystubs.py`), no Salary Slip: the export has no figures | Reference only; the Lohnausweis of past years stays bexio's (step 5) |
 | Absences per employee and business year | Leave Application (or a Leave Allocation balance) | Only for the open year, or as a balance. Per-day history is not needed for the Lohnausweis |
 | Payroll journal lines (booked) | Journal Entry (already loaded by `import_payroll.py`, bexio_id `journal-<id>`) | Stays as the GL |
 
@@ -185,9 +185,16 @@ slot that ledgerdemain gives (`erpnext-setup.md`).
    **Stays manual:** the employer rates (AHV, ALV, UVG, KTG, FAK: the insurers' sheets), KTG (printed on no
    paystub), and the BVG plan (the band rates in the settings, then the insured salaries with them). The QST
    Tariff rows are loaded by `bi_payroll.swiss_payroll.load_tariff` from the ESTV file before the codes resolve.
-5. **History loader.** One submitted Salary Slip per employee and month, `payroll_entry`
-   empty, PDF attached. Check: no new GL (`make_accrual_jv_entry` is not
-   called on these), and the GL per account and year equals before the load.
+5. **Payslip history as reference** (erp-2c3a, `finance/bexio/import_paystubs.py`). Replaces the
+   earlier plan of one submitted Salary Slip per employee and month (Decision, ledgerdemain, 2026-10-10).
+   No Salary Slips for the history: the export holds no figures per slip (bexio's paystub overview
+   answers 401, erp-fxa7), and a slip with invented or zero amounts would feed the payroll hand-over
+   report and the Lohnausweis with wrong numbers. The 89 paystub PDFs are private Files on their
+   Employees, named `<year>-<month>-paystub.pdf` and keyed `paystub-<employee>-<year>-<month>`, so a rerun
+   attaches nothing twice. The monthly payroll totals stay in the GL (`import_payroll.py`). The Lohnausweis
+   for years before ERPNext payroll stays bexio's. Check: no Salary Slip exists for these months, and the
+   Files post no GL. Figures per month, should they be wanted later, are a separate decision (every wage
+   type would need a component first).
 6. **Lohnausweis check.** Compare the erpnextswiss Salary Certificate layout with the 2026
    Form 11. Compare one year's output with the bexio paystub totals (counts and totals in
    the note).

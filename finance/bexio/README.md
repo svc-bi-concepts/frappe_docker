@@ -439,6 +439,21 @@ Take a backup first (`bench --site frontend backup --with-files`), and run the d
 apply. Employees post no GL. Payroll data is the company's most sensitive data and this repo is
 public: the importer prints counts only, and tests use invented employees.
 
+## Paystub PDFs (payslip history, as reference)
+
+`import_paystubs.py` attaches the paystub PDFs of `private/bexio-payroll/paystubs/` (listed in
+`paystubs.json`, one per employee and month) to their Employees, as private Files named
+`<year>-<month>-paystub.pdf`. Each File is keyed `paystub-<employee>-<year>-<month>` in `File.bexio_id`,
+so a second run finds it and attaches nothing. It needs the Employees of `import_employees.py` first. A
+paystub whose Employee is missing is counted and not uploaded. No Salary Slip is made for these months:
+the export has no figures per slip (see `finance/docs/hrms.md`, step 5). The Files post no GL.
+
+    python3 finance/bexio/import_paystubs.py --dry-run    # counts only, nothing written
+    python3 finance/bexio/import_paystubs.py --apply      # uploads the PDFs marked attach
+
+The records it cannot place (no Employee, a PDF missing or of another size) go by position to
+`<private>/bexio-paystubs-dry-run.txt`; the screen shows counts only.
+
 ## Manual entries (Journal Entries)
 
 `import_manual_entries.py` maps each bexio manual entry (single, compound, group, banking and untyped) to one
@@ -537,6 +552,7 @@ second run; the dry run of each step is the rerun check (it reads ERPNext and wr
 8. Opening entry: `import_opening.py --dry-run` (no entry is needed when the first business year has no opening lines).
 9. Files: `import_files.py --apply` (attaches the bexio files to the imported documents).
 10. Document PDFs: `import_document_pdfs.py --apply` (attaches the PDF of each sales document, see its section).
+11. Paystub PDFs: `import_paystubs.py --apply` (attaches the payslip history to the Employees, see its section; after the Employees).
 
 For the rerun, run every step's dry run (or `--write` into a private file, and check that the plan is empty
 or only holds documents the loader skips by `bexio_id`), and compare the counts of Sales Invoice, Purchase
