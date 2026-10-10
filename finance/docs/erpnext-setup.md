@@ -8,13 +8,16 @@ app itself: `swiss.md`.
 
 | Item | Count |
 | --- | --- |
-| Image | `frappe-finance-custom:v16.50.0-swiss-bi11` (all eight ERPNext services; the only `frappe-finance-custom` image at rest after the switch on 2026-10-10; older tags are not kept, see "Switching the stack to a new image") |
+| Image | `frappe-finance-custom:v16.51.0-swiss-bi13` (all eight ERPNext services; the only `frappe-finance-custom` image at rest after the switch on 2026-10-11; older tags are not kept, see "Switching the stack to a new image") |
+| Backup before the bi13 switch | `20261011_001334` (`bench --site frontend backup --with-files`, 00:13) |
+| Backup before the bi12 switch | `20261010_234904` (`bench --site frontend backup --with-files`, 23:49) |
 | Backup before the bi11 switch | `20261010_184223` (`bench --site frontend backup --with-files`, 18:42) |
 | Backup before the bi10 switch | `20261010_131236` (`bench --site frontend backup --with-files`, 13:12) |
 | Backup before the bi9 switch | `20261010_122454` (`bench --site frontend backup --with-files`, 12:24) |
 | Backup before the bi8 switch | `20261010_114102` (`bench --site frontend backup --with-files`, 11:41; bi8 carries the Treasury workspace on the module folder) |
 | Backup before the bi7 switch | `20261010_113546` (`bench --site frontend backup --with-files`, 11:35) |
-| Apps | frappe 16.50.0 on the live site (16.51.0 is built into bi13, not yet deployed; `build-image.sh` sets `FRAPPE_TAG=v16.51.0`), erpnext 16.50.0, erpnextswiss 1.34.1, bi_finance 0.0.1, hrms 16.50.0, bi_payroll 0.0.1 (hrms and bi_payroll installed on the live site on 2026-10-10, after the bi11 switch: `install-app` each, `migrate` twice, the second migrate a no-op; Decision 2026-10-10, `hrms.md`) |
+| Apps | frappe 16.51.0 on the live site (bi13, from `build-image.sh` with `FRAPPE_TAG=v16.51.0`), erpnext 16.50.0, erpnextswiss 1.34.1, bi_finance 0.0.1, hrms 16.50.0, bi_payroll 0.0.1 (hrms and bi_payroll installed on the live site on 2026-10-10, after the bi11 switch: `install-app` each, `migrate` twice, the second migrate a no-op; Decision 2026-10-10, `hrms.md`) |
+| Wise sync (`Wise Settings`) | `sync_enabled` 1, so the hourly job `bi_finance.wise.sync_scheduled` runs; `backfill_from` 2026-10-01. Feed rows for 2026-02 to 2026-09 are not fed on purpose: bexio kept those Wise lines and the matcher has no date window or FX tolerance for card payments yet (follow-up erp-hq39). First live sync (bi12, 2026-10-11): 5 Bank Transactions on Wise CHF, all October, GL Entry count unchanged; the rerun creates 0. The balance check does not agree yet, because the months before October are not in the feed; expected until erp-hq39 |
 | Accounts, company BI Concepts | 179 (KMU chart, 9 roots, numbers in the names) |
 | Sales Taxes and Charges Templates | 15 (bexio codes) |
 | Purchase Taxes and Charges Templates | 27 (bexio codes) |
