@@ -2,7 +2,7 @@
 
 The module imports frappe, so run it in the image, as test_wise is run (see test_wise.py for the command):
 
-    ... sh -c 'cd /home/frappe/bi_finance_src && ../frappe-bench/env/bin/python -m unittest -v bi_finance.test_paypal_sync'
+    ... sh -c 'cd /home/frappe/frappe-bench/apps/bi_finance && ../../env/bin/python -m unittest -v bi_finance.test_paypal_sync'
 """
 
 import datetime

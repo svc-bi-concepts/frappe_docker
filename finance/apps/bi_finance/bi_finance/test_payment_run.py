@@ -4,9 +4,9 @@ Invented data only (invented suppliers, bills and bank details; a SIX sample QR-
 QR reference), no database, no network. The module imports frappe and erpnextswiss, so run
 it in the image (finance/docs/payment-runs.md):
 
-    docker run --rm -v "$PWD/finance/apps/bi_finance:/home/frappe/bi_finance_src:ro" \
+    docker run --rm -v "$PWD/finance/apps/bi_finance:/home/frappe/frappe-bench/apps/bi_finance:ro" \
         frappe-finance-custom:v16.50.0-swiss-bi6 \
-        sh -c 'cd /home/frappe/bi_finance_src && ../frappe-bench/env/bin/python -m unittest -v bi_finance.test_payment_run'
+        sh -c 'cd /home/frappe/frappe-bench/apps/bi_finance && ../../env/bin/python -m unittest -v bi_finance.test_payment_run'
 """
 
 import datetime

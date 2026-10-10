@@ -3,9 +3,9 @@
 Reads the JSON files of the app and Frappe's own doctype definitions; no site, no network. Run it in
 the image, as test_qrbill.py does (finance/docs/erpnext-setup.md):
 
-    docker run --rm -v "$PWD/finance/apps/bi_finance:/home/frappe/bi_finance_src:ro" \
+    docker run --rm -v "$PWD/finance/apps/bi_finance:/home/frappe/frappe-bench/apps/bi_finance:ro" \
         frappe-finance-custom:v16.50.0-swiss-bi6 \
-        sh -c 'cd /home/frappe/bi_finance_src && ../frappe-bench/env/bin/python -m unittest -v bi_finance.test_treasury'
+        sh -c 'cd /home/frappe/frappe-bench/apps/bi_finance && ../../env/bin/python -m unittest -v bi_finance.test_treasury'
 """
 
 import json

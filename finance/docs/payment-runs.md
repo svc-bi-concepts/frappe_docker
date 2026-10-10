@@ -72,9 +72,9 @@ drafts, and un-marks the invoices.
 Offline, invented data, in the image (no site, no database):
 
 ```sh
-docker run --rm -v "$PWD/finance/apps/bi_finance:/home/frappe/bi_finance_src:ro" \
+docker run --rm -v "$PWD/finance/apps/bi_finance:/home/frappe/frappe-bench/apps/bi_finance:ro" \
     frappe-finance-custom:v16.50.0-swiss-bi9 \
-    sh -c 'mkdir -p /home/frappe/logs && cd /home/frappe/bi_finance_src && ../frappe-bench/env/bin/python -m unittest -v bi_finance.test_payment_run'
+    sh -c 'mkdir -p /home/frappe/logs && cd /home/frappe/frappe-bench/apps/bi_finance && ../../env/bin/python -m unittest -v bi_finance.test_payment_run'
 ```
 
 They cover the amount rule (skonto), the Payment Entries, the currency refusal, the
