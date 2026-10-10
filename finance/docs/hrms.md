@@ -166,6 +166,11 @@ slot that ledgerdemain gives (`erpnext-setup.md`).
    the BVG threshold (`python3 -m unittest bi_payroll.test_swiss_payroll` in the app folder).
 4. **Employee load from the bexio export.** Offline importer, the same shape as
    `import_master.py`, writing only Employee and the AHV number. Mocked data in tests.
+   Done 2026-10-11 (erp-y909): `swiss-setup.sh fields` (Employee in `BEXIO_DOCTYPES`),
+   `create-api-user.sh` (the API user's HR User role), backup `20261011_001457`, then
+   `python3 finance/bexio/import_employees.py --dry-run` and `--apply`: 9 Employees on live
+   (3 Active, 6 Left), rerun 0 new, nobody without a joining date (`private/payroll/needs-dates.txt`
+   says 0). Counts only here; the importer prints counts only.
 5. **History loader.** One submitted Salary Slip per employee and month, `payroll_entry`
    empty, PDF attached. Check: no new GL (`make_accrual_jv_entry` is not
    called on these), and the GL per account and year equals before the load.
