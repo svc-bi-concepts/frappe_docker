@@ -23,9 +23,13 @@ with its base from the net row of the same voucher) and the Bezugsteuer (2203).
 The journal part selects by the voucher's bexio_id key, not by account pair: a
 voucher keyed vatfix-invoice-, vatfix-credit- or vatfix-bill- (the mirror of a
 document-date posting) is never counted, a voucher keyed manual-<id> or
-vatfix-manual-<id> counts every VAT row, the moves (keyed by bexio
-journal line id) and any other voucher count by the account pairs, and the
-settlement (a voucher with 2201) stays out. See journal_totals().
+vatfix-manual-<id> counts every VAT row — its 2200 row rates from the entry
+group's base row when the voucher's own rows hold only the difference — the
+payment-day moves (keyed by bexio journal line id) count by the account pairs
+except the Bezugsteuer move 2202 -> 2203, which the Payment Entries' shared
+deduct rows already hold, and any other voucher counts by the account pairs and
+is listed; the settlement (a voucher with 2201) stays out. See
+journal_totals().
 
 The base of a tax row is derived from its tax (tax / rate), because the import
 does not carry the net per row. At 8.1 % one rappen of tax is about 0.06 of
@@ -174,6 +178,7 @@ class Totals:
         self.journal = {}
         self.rate_unknown = ZERO
         self.skipped_mirrors = []   # the bexio_id keys of the vatfix-* vouchers the journal part skips
+        self.skipped_moves = []     # the keys of the 2202 -> 2203 moves, which the Payment Entries' shared deduct rows hold
         self.other_keys = []        # the keys (or '(no bexio_id)') of vouchers the pair rule counts
 
     def add(self, row, base, tax):
@@ -294,6 +299,9 @@ def write_csv(path, totals):
         writer.writerow([])
         writer.writerow(["skipped mirrors", "vouchers"])
         writer.writerow(["invoice/credit/bill vatfix-*", len(totals.skipped_mirrors)])
+        writer.writerow([])
+        writer.writerow(["skipped bezug moves", "vouchers"])
+        writer.writerow(["2202 -> 2203 keyed by journal line", len(totals.skipped_moves)])
         writer.writerow([])
         writer.writerow(["other journal keys (pair rule)", "vouchers"])
         for key, count in sorted(_count(totals.other_keys).items()):
@@ -432,6 +440,44 @@ def _rate_row(rate):
     return None
 
 
+def _manual_group(key):
+    """The bexio entry id of a manual key: manual-1099, a correction manual-1099-<suffix> and the
+    VAT fix vatfix-manual-1099 are one group (import_manual_fix.group_of). None for any other key."""
+    for prefix in ("vatfix-manual-", "manual-"):
+        if key and key.startswith(prefix):
+            return key[len(prefix):].split("-")[0]
+    return None
+
+
+def _manual_group_rate(sales_tax, key, vouchers):
+    """The form row and base of a manual sales tax the voucher's own rows cannot rate, from its group.
+
+    import_manual_entries books a manual entry's VAT as its own row on the entry's base account, and
+    import_manual_fix moves it to 2200 in a vatfix-manual voucher of its own whose rows are only the
+    difference, so the rate is not on the voucher. The group's manual-<id> voucher holds the base next
+    to the VAT on the same account: the rate is the tax over that row. Exactly one row of the group
+    may rate the tax, else (None, None) and the tax stays counted apart."""
+    group = _manual_group(key)
+    if group is None:
+        return None, None
+    matches = []
+    for rows in vouchers.values():
+        other = rows[0].get("key") or ""
+        if other == key or not other.startswith("manual-") or _manual_group(other) != group:
+            continue
+        for line in rows:
+            if line["account"] in VAT_ACCOUNTS:
+                continue
+            base = -line["amount"]
+            if base and base * sales_tax > 0 and abs(base) != abs(sales_tax):
+                matched = _rate_row(sales_tax * 100 / base)
+                if matched is not None:
+                    matches.append((matched, base))
+    if len(set(matches)) == 1:
+        return matches[0]
+    return None, None
+
+
 def journal_totals(lines, totals):
     """Journal Entries' VAT rows into the Ziffern, by posting date: the same on both bases (a bank or card entry is
     dated by the payment). fetch_journal_lines() gives the lines, each with its voucher's bexio_id key.
@@ -443,12 +489,16 @@ def journal_totals(lines, totals):
     skipped, counted in the CSV's skipped mirrors. A voucher keyed manual-<id> is a bexio manual entry, and a
     vatfix-manual-<id> voucher is the VAT fix of one: both hold the entry's VAT on the entry's posting date, so
     every VAT row counts (1170 -> 400, 1171 -> 405, 2203 -> 382/383 by the Bezugsteuer rule, 2200 by the net credit
-    in the row of its rate); a 2202 or 1172 row is a reverse-charge transit, not a Ziffer. A move (keyed by journal
-    line id) and any other voucher count by the account pairs as before: a 1170/1171 row with 1172 and a 2200 row
-    with 2202 are the moves the Payment Entries already hold, not counted; 2200 alone is the sales tax booked by
-    hand. A voucher of no known kind (or with no key) is listed in the CSV, so a new voucher kind shows. The rate
-    comes from the one non-VAT row of the voucher with the same sign (the net); a sales tax without it, or at a
-    rate not in the form, is counted apart in rate_unknown."""
+    in the row of its rate); a 2202 or 1172 row is a reverse-charge transit, not a Ziffer. A manual 2200 row the
+    voucher's own rows cannot rate rates from the entry's group (the base row the import booked next to the VAT,
+    see _manual_group_rate). A move (keyed by journal line id) and any other voucher count by the account pairs
+    as before: a 1170/1171 row with 1172 and a 2200 row with 2202 are the moves the Payment Entries already hold,
+    not counted; 2200 alone is the sales tax booked by hand. The Bezugsteuer move (a numeric-keyed voucher's
+    2203 row next to its 2202 debit) is the tax the Payment Entries' shared deduct rows already hold: not counted,
+    listed in the CSV's skipped moves; a 2203 row on a voucher of no other known kind stays uncounted too and is
+    listed, until its origin is named. A voucher of no known kind (or with no key) is listed in the CSV, so a new
+    voucher kind shows. The rate comes from the one non-VAT row of the voucher with the same sign (the net); a
+    sales tax without it, or at a rate not in the form, is counted apart in rate_unknown."""
     vouchers = {}
     for line in lines:
         if line["account"] is not None:
@@ -464,23 +514,33 @@ def journal_totals(lines, totals):
             totals.skipped_mirrors.append(key)
             continue
         manual = bool(key) and (key.startswith("manual-") or key.startswith("vatfix-manual-"))
-        if not manual and not (key and key.isdigit()) and any(account in VAT_ACCOUNTS for account in net):
+        # beyond the manual entries, the known keyed kinds are the payment-day moves: a bare number is
+        # 2202 -> 2200 or 1172 -> 1170/1171, and with 2202 -> 2203 it is the Bezugsteuer move
+        bezug_move = not manual and bool(key) and key.isdigit() and net.get("2203") and "2202" in net
+        if not manual and not bezug_move and (not (key and key.isdigit()) or net.get("2203")) \
+                and any(account in VAT_ACCOUNTS for account in net):
             totals.other_keys.append(key or "(no bexio_id)")
         posting_date = rows[0]["posting_date"]
         for account, row in JOURNAL_INPUT.items():
             if net.get(account) and (manual or "1172" not in net):
                 totals.add_journal(row, None, net[account])
         if net.get("2203"):
-            totals.add_journal(owed_row(posting_date), None, -net["2203"])
+            if manual:
+                totals.add_journal(owed_row(posting_date), None, -net["2203"])
+            elif bezug_move:
+                totals.skipped_moves.append(key)
         if net.get("2200") and (manual or "2202" not in net):
             sales_tax = -net["2200"]
             bases = [-amount for account, amount in net.items()
                      if account not in VAT_ACCOUNTS and -amount * sales_tax > 0]
             row = _rate_row(sales_tax * 100 / bases[0]) if len(bases) == 1 else None
+            base = bases[0] if len(bases) == 1 else None
+            if row is None and manual:
+                row, base = _manual_group_rate(sales_tax, key, vouchers)
             if row is None:
                 totals.rate_unknown += sales_tax
             else:
-                totals.add_journal(row, bases[0], sales_tax)
+                totals.add_journal(row, base, sales_tax)
 
 
 def templates_by_name(erp):

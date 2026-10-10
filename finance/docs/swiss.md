@@ -148,39 +148,71 @@ has no base for the Vorsteuer Ziffern — the base columns of both CSVs stay as
 information. Since erp-vq54 the report's journal part selects by the voucher's
 bexio_id key: the vatfix-invoice/credit/bill mirrors are skipped, manual- and
 vatfix-manual- vouchers count every VAT row, the payment moves count as before,
-the settlement (2201) stays out. Result for the 26 quarters with figures (2020 Q3
-to 2026 Q4; 2020 Q1 and Q2 have none): 137 rows compared; 49 differ, each within
-one of three explained classes; 0 unexplained.
+the settlement (2201) stays out. Since erp-czhx a manual 2200 row the voucher's
+own rows cannot rate rates from the entry group's base row (the import booked
+the VAT next to the net on the same account and the fix moved it to 2200), and
+the Bezugsteuer (2203) counts only on manual and vatfix-manual vouchers: the
+2202 -> 2203 payment-day move is the tax the Payment Entries' shared deduct rows
+already hold and is skipped. Result for the 26 quarters with figures (2020 Q3
+to 2026 Q4; 2020 Q1 and Q2 have none): 137 rows compared; 39 differ, each within
+one of two explained classes; 0 unexplained. Before erp-czhx 49 differed, among
+them the three residual classes of the bead, attributed voucher by voucher in
+private/mwst-residuals-2026-10-11.txt:
 
-- **Rounding (28 rows).** ERPNext splits bexio's gross into net and tax with its
+- **Rounding (33 rows).** ERPNext splits bexio's gross into net and tax with its
   own rounding (the Rounded Total can take a gross down a 5-rappen step, and the
   payment settles the rounded total) and derives a document's base from its tax,
   so bases and single taxes differ within the per-row bounds the bexio CSV
   carries. The largest residuals stay under a franc in the base and under ten
-  rappen in the tax (sizes in the private CSV).
-- **Journal mirrors (21 rows).** The report's journal part keeps the net of every
-  VAT-account move its key rule leaves in, while bexio's form counts only the
-  manual entries' VAT by code. Three residues, all in the GL, not in the figures:
-  the Vorsteuer Ziffer 405 with the total 479 in 2021 Q1, 2021 Q4 and 2024 Q2
-  (6 rows), where a manual entry's input tax is a debit and a credit on 1171 in
-  bexio and the net in the vatfix-manual entry, so the two journal taxes differ
-  within the row's tolerance (the gross-versus-net mechanism of the 1171 gross
-  differences above); the sales tax rows (302 or 303, with their 399 total) in
-  2022 Q4, 2023 Q4, 2024 Q4, 2025 Q2 and 2026 Q2 (9 rows), real gaps whose 2200
-  rows the GL read puts on unkeyed legacy and manual vouchers, not yet attributed
-  voucher by voucher (the rate_unknown drops and the ESTV-refund legs are the
-  candidates); and the Bezugsteuer (383, with the 399 total it shares) in the
-  open quarters 2026 Q2, Q3 and Q4 (6 rows), whose bill-date vatfix-bill legs are
-  skipped now while their counterpart 2203 credits sit on unkeyed and
-  numeric-keyed vouchers the 2203 branch still counts. The voucher-level
-  attribution of the last two residues is bead erp-czhx.
+  rappen in the tax (sizes in the private CSV). The five sales-tax rows and the
+  Bezugsteuer rows that were residues before erp-czhx sit here now: their
+  remaining differences are 2-cent shifts.
+- **Journal mirrors (6 rows).** The Vorsteuer Ziffer 405 with its total 479 in
+  2021 Q1, 2021 Q4 and 2024 Q2 (6 rows), attributed voucher by voucher: the
+  document parts agree and the journal parts differ, because the two sides read
+  different sources for the manual entries. 2021 Q1: one bexio entry is booked
+  under the 0 % VSF code, so bexio's figures hold no VAT for it, while the live
+  entry counts its 1171 row in 405; the quarter's settlement voucher (1171 against
+  2201) is skipped on the report's side and absent on bexio's, so the two
+  omissions net in the row. 2021 Q4: one entry has no tax code on bexio's side
+  and counts its 1171 row live. 2024 Q2: six entries were reversed in the books
+  after the export — the export holds the original, the live group nets the
+  reversal, so bexio's journal part keeps twice the six over ERPNext's nets. The
+  other groups agree in every quarter (6 in 2021 Q1, 13 in 2021 Q4, 8 in
+  2024 Q2). Both sides are right by their source: bexio's export alone, against
+  the live GL. The voucher names and figures are in
+  private/mwst-residuals-2026-10-11.txt.
+
+The two classes erp-czhx fixed, kept for their cause:
+
+- **Sales tax (302/303, with 399) in 2022 Q4, 2023 Q4, 2024 Q4, 2025 Q2 and
+  2026 Q2 (9 rows before).** Each quarter's gap was exactly one vatfix-manual
+  voucher, in 302 twice and in 303 three times, once a reversal:
+  import_manual_entries booked the manual entry's VAT as its own row on the base
+  account and import_manual_fix moved it to 2200 in a voucher of its own whose
+  rows are only the difference, so the report dropped it as rate_unknown — no
+  base row on the voucher itself, no ESTV-refund leg, no unkeyed voucher (the
+  candidates the GL read named, all excluded: every 2200 voucher in the five
+  quarters is keyed mirror, move, manual or settlement). Fixed by the group
+  rate: the rate is the tax over the group's base row.
+- **Bezugsteuer (383, with 399) in the open quarters 2026 Q2, Q3 and Q4 (6 rows
+  before).** The report counted the Bezugsteuer twice: the Payment Entries'
+  shared deduct rows of the reverse-charge bills (which the payment basis reads
+  and whose bases matched bexio's to the cent) and, again, the 2202 -> 2203
+  payment-day move vouchers of import_payments_out (numeric-keyed). The move is
+  now skipped as the held tax; 383 equals bexio in all three quarters, and the
+  move counts agree per quarter (3 in Q2, 3 in Q3, 1 in Q4 on both sides). A
+  2203 row on a voucher of no other known kind is listed, not counted, until its
+  origin is named; the open quarters hold none.
 
 For the filing (erp-fzae): the figures to file are the document parts plus the
 manual VAT by code, which is what the bexio side of this comparison holds; the
 report's journal part is bookkeeping. The known gap of `mwst_report.py` — the
 manual VAT rows its account-pair exclusions dropped — is closed by erp-vq54's
-key rule, and the filing reads Ziffer 479 (not 420) as the total of the
-Vorsteuern; the voucher-level residues are erp-czhx, which blocks the filing.
+key rule, the manual rows its own rows could not rate are closed by erp-czhx's
+group rate, and the filing reads Ziffer 479 (not 420) as the total of the
+Vorsteuern; the remaining differences are the rounding and the attributed
+journal mirrors above.
 
 2020 has no 2202 -> 2200 moves: the year had no taxed sales (its quarters hold
 purchases only), so there was nothing to declare on either basis, and no basis to
@@ -200,20 +232,29 @@ not read; they would show any correction made in the form itself.
   - 2200 (sales tax, Ziffer 399): the net credit, in the row of its rate (302 to
     343). The base is the one non-VAT row of the voucher with the same sign (the
     net revenue). A sales tax with no such row, or at a rate not in the form, is
-    counted apart and named in the report's stdout.
-  - 2203 (Bezugsteuer, Ziffer 382 or 383 by the date): the net credit. Its base is
-    not read, so the Ziffer's base stays zero.
+    counted apart and named in the report's stdout — a manual one rates from its
+    entry group's base row first (the import booked the VAT next to the net on
+    the same account; the vatfix-manual voucher holds only the difference).
+  - 2203 (Bezugsteuer, Ziffer 382 or 383 by the date): the net credit, on a
+    manual or vatfix-manual voucher only. The 2202 -> 2203 payment-day move of a
+    numeric-keyed voucher is the tax the Payment Entries' shared deduct rows
+    already hold: skipped and listed, like a 2203 row on a voucher of no other
+    known kind. Its base is not read, so the Ziffer's base stays zero.
   - Selected by the voucher's bexio_id key since erp-vq54, not by account pair: a
     voucher keyed vatfix-invoice-, vatfix-credit- or vatfix-bill- is the mirror of a
     document-date posting and is skipped (the payment basis reads the payment-day
     moves, which are vouchers of their own keyed by bexio journal line); a voucher
     keyed manual-<id> or vatfix-manual-<id> is a bexio manual entry or its VAT fix
     and counts every VAT row (a 2202 or 1172 row of one is a reverse-charge transit,
-    not a Ziffer); a voucher with 2201 (the settlement) stays out; the payment moves
-    and any other voucher count by the account pairs as before (a 1170/1171 row next
-    to 1172 and a 2200 row next to 2202 are the moves the Payment Entries already
-    hold; 2200 alone is the sales tax booked by hand). A voucher of no known kind is
-    counted the old way and listed in the CSV, so a new kind shows.
+    not a Ziffer; a 2200 row the voucher's own rows cannot rate rates from the
+    entry group's base row since erp-czhx); a voucher with 2201 (the settlement)
+    stays out; the payment moves and any other voucher count by the account pairs
+    as before (a 1170/1171 row next to 1172 and a 2200 row next to 2202 are the
+    moves the Payment Entries already hold; 2200 alone is the sales tax booked by
+    hand; since erp-czhx the 2203 row next to a 2202 debit is the Bezugsteuer move
+    and is skipped and listed, and a 2203 row on a voucher of no other known kind
+    is listed, not counted). A voucher of no other known kind is counted the old
+    way and listed in the CSV, so a new kind shows.
 - The CSV has, under each Ziffer that a Journal Entry touches, a line
   `journal entries (by account)`: the part of the Ziffer that came from entries.
 

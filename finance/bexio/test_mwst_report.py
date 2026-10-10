@@ -503,10 +503,81 @@ class JournalEntries(unittest.TestCase):
         self.assertEqual(t.rate_unknown, D("3.00"))
         self.assertEqual(t.rows, {})
 
-    def test_bezugsteuer_on_2203_is_owed_in_383_for_2026(self):
-        t = booked([("B1", "2026-08-03", [("1170", "81.00", "0"), ("2203", "0", "81.00")])])
+    def test_vatfix_manual_sales_tax_rates_from_the_entry_groups_base_row(self):
+        # import_manual_entries booked the VAT as its own row on the base account and import_manual_fix
+        # moved it to 2200 in a voucher of its own: the rate is the tax over the group's base row
+        t = booked([("ME1", "2026-08-10", [("1020", "0", "648.60"), ("6570", "600.00", "0"), ("6570", "48.60", "0")]),
+                    ("VF1", "2026-08-12", [("2200", "48.60", "0"), ("6570", "0", "48.60")])],
+                   {"ME1": "manual-80", "VF1": "vatfix-manual-80"})
+        self.assertEqual(t.tax_of("303"), D("-48.60"))
+        self.assertEqual(t.base_of("303"), D("-600.00"))
+        self.assertEqual(t.rate_unknown, D("0"))
+
+    def test_vatfix_manual_sales_tax_at_7_7_rated_from_the_group(self):
+        t = booked([("ME2", "2026-08-10", [("1020", "0", "430.80"), ("6570", "0", "400.00"), ("6570", "0", "30.80")]),
+                    ("VF2", "2026-08-12", [("2200", "0", "30.80"), ("6570", "30.80", "0")])],
+                   {"ME2": "manual-81", "VF2": "vatfix-manual-81"})
+        self.assertEqual(t.tax_of("302"), D("30.80"))
+        self.assertEqual(t.base_of("302"), D("400.00"))
+
+    def test_vatfix_manual_sales_tax_with_no_group_voucher_stays_counted_apart(self):
+        t = booked([("VF3", "2026-08-12", [("2200", "0", "30.80"), ("6570", "30.80", "0")])],
+                   {"VF3": "vatfix-manual-82"})
+        self.assertEqual(t.tax_of("302"), D("0"))
+        self.assertEqual(t.rate_unknown, D("30.80"))
+
+    def test_vatfix_manual_sales_tax_with_an_ambiguous_group_stays_counted_apart(self):
+        # two base rows of the group rate the tax within the tolerance: no row is named
+        t = booked([("ME3", "2026-08-10", [("1020", "0", "430.80"), ("6570", "0", "400.00"),
+                                             ("6570", "0", "399.35"), ("6570", "0", "30.80")]),
+                    ("VF4", "2026-08-12", [("2200", "0", "30.80"), ("6570", "30.80", "0")])],
+                   {"ME3": "manual-83", "VF4": "vatfix-manual-83"})
+        self.assertEqual(t.tax_of("302"), D("0"))
+        self.assertEqual(t.rate_unknown, D("30.80"))
+
+    def test_a_vatfix_manual_rate_from_the_group_does_not_touch_other_keys(self):
+        t = booked([("ME4", "2026-08-10", [("1020", "0", "430.80"), ("6570", "0", "400.00"), ("6570", "0", "30.80")]),
+                    ("VF5", "2026-08-12", [("2200", "0", "30.80"), ("6570", "30.80", "0")])],
+                   {"ME4": "manual-84", "VF5": "vatfix-manual-84"})
+        self.assertEqual(t.skipped_moves, [])
+        self.assertEqual(t.other_keys, [])
+        self.assertEqual(t.skipped_mirrors, [])
+
+    def test_bezugsteuer_on_a_manual_entry_is_owed_in_383_for_2026(self):
+        t = booked([("B1", "2026-08-03", [("1170", "81.00", "0"), ("2203", "0", "81.00")])],
+                   {"B1": "manual-70"})
         self.assertEqual(t.tax_of("383"), D("81.00"))
         self.assertEqual(t.tax_of("400"), D("81.00"))
+
+    def test_a_2203_row_on_a_voucher_of_no_known_kind_is_listed_not_counted(self):
+        # until its origin is named, a 2203 credit on an unkeyed voucher is no Ziffer
+        t = booked([("B2", "2026-08-03", [("1170", "81.00", "0"), ("2203", "0", "81.00")])])
+        self.assertEqual(t.tax_of("383"), D("0"))
+        self.assertEqual(t.tax_of("400"), D("81.00"))
+        self.assertEqual(t.other_keys, ["(no bexio_id)"])
+
+    def test_the_bezug_move_2202_to_2203_is_skipped_as_the_payment_entries_hold_it(self):
+        # the payment-day move of import_payments_out: the invoice's shared deduct row is the same tax
+        t = booked([("BM1", "2026-08-03", [("2202", "81.00", "0"), ("2203", "0", "81.00")])],
+                   {"BM1": "6576"})
+        self.assertEqual(t.tax_of("383"), D("0"))
+        self.assertEqual(t.skipped_moves, ["6576"])
+        self.assertEqual(t.other_keys, [])
+
+    def test_a_numeric_voucher_with_2203_and_no_2202_is_listed_not_counted(self):
+        t = booked([("BM2", "2026-08-03", [("2203", "0", "81.00"), ("1020", "81.00", "0")])],
+                   {"BM2": "6577"})
+        self.assertEqual(t.tax_of("383"), D("0"))
+        self.assertEqual(t.skipped_moves, [])
+        self.assertEqual(t.other_keys, ["6577"])
+
+    def test_vatfix_manual_2203_still_counts(self):
+        t = booked([("B3", "2026-08-03", [("1171", "8.10", "0"), ("2202", "8.10", "0"),
+                                            ("2203", "0", "8.10"), ("6570", "100.00", "0")])],
+                   {"B3": "vatfix-manual-71"})
+        self.assertEqual(t.tax_of("383"), D("8.10"))
+        self.assertEqual(t.tax_of("405"), D("8.10"))
+        self.assertEqual(t.other_keys, [])
 
     def test_csv_shows_the_entries_under_the_ziffer(self):
         t = booked([("E1", "2026-08-03", [("1171", "8.10", "0"), ("1020", "0", "8.10")])])
@@ -609,9 +680,24 @@ class JournalEntries(unittest.TestCase):
             shutil.rmtree(folder)
         self.assertIn("skipped mirrors,vouchers", report)
         self.assertIn("invoice/credit/bill vatfix-*,1", report)
+        self.assertIn("skipped bezug moves,vouchers", report)
+        self.assertIn("2202 -> 2203 keyed by journal line,0", report)
         self.assertIn("other journal keys (pair rule),vouchers", report)
         self.assertIn("journal-1042,1", report)
         self.assertNotIn("(no bexio_id)", report)
+
+    def test_csv_lists_the_skipped_moves(self):
+        t = booked([("BM3", "2026-08-03", [("2202", "81.00", "0"), ("2203", "0", "81.00")])],
+                   {"BM3": "6576"})
+        folder = tempfile.mkdtemp()
+        try:
+            path = os.path.join(folder, "mwst.csv")
+            mr.write_csv(path, t)
+            with open(path, encoding="utf-8") as f:
+                report = f.read()
+        finally:
+            shutil.rmtree(folder)
+        self.assertIn("2202 -> 2203 keyed by journal line,1", report)
 
 
 class JournalRun(unittest.TestCase):
