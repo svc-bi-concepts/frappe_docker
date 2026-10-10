@@ -11,11 +11,15 @@ Run it as:
 
     python3 finance/bexio/book_bank_line.py <Bank Transaction name> --dry-run
     python3 finance/bexio/book_bank_line.py <Bank Transaction name> --apply
+    python3 finance/bexio/book_bank_line.py <Bank Transaction name> --account <number> --reason "<why>" --dry-run
 
 --dry-run reads ERPNext and writes nothing there. The merchant words, the account, the VAT treatment and the planned
 Journal Entry rows go to a private file (--plan); only counts and account numbers are printed. --apply writes one Journal
 Entry and one reconciliation. A rerun finds the Journal Entry and the Reconciled line and does nothing. Standard library
 only, plus import_master and import_bank.
+
+--account books the line to the named account, no VAT, when the history has no earlier line of the merchant at all; with
+any earlier line it is refused. Benchi chooses the account, and the reason goes into the Journal Entry's remark.
 """
 
 import argparse
@@ -36,6 +40,7 @@ VOUCHER_TYPES = ("Journal Entry", "Payment Entry")
 KEY = "book-{}"
 RECONCILE = "erpnext.accounts.doctype.bank_reconciliation_tool.bank_reconciliation_tool.reconcile_vouchers"
 RATE_STEP = Decimal("0.001")
+CHOSEN_ON = "2026-10-11"
 
 CARD = re.compile(r"card transaction of\s+\S+\s+[A-Z]{3}\s+(.+)$", re.IGNORECASE)
 REFERENCE = re.compile(r"\s+ref(?:erence)?\b.*$", re.IGNORECASE)
@@ -122,9 +127,13 @@ def plan_for(gross, account, tax_account, rate):
 
 
 def journal_entry(line, bank_gl, plan):
-    """The Journal Entry dict for the line: company, date, remark, bexio key and rows, ready to insert."""
+    """The Journal Entry dict for the line: company, date, remark, bexio key and rows, ready to insert. A plan with a reason
+    is Benchi's choice of account, and the remark says so."""
+    remark = "Wise card payment booked from history, line {}".format(line["name"])
+    if plan.get("reason"):
+        remark = "Wise card payment, account chosen by Benchi {}: {}, line {}".format(CHOSEN_ON, plan["reason"], line["name"])
     return {"doctype": "Journal Entry", "voucher_type": "Journal Entry", "company": im.COMPANY,
-            "posting_date": line["date"], "user_remark": "Wise card payment booked from history, line {}".format(line["name"]),
+            "posting_date": line["date"], "user_remark": remark,
             "bexio_id": KEY.format(line["name"]), "accounts": journal_rows(ib.cents(line["withdrawal"]), plan, bank_gl)}
 
 
@@ -149,14 +158,33 @@ def history_of(erp, line, account):
     return len(named), history
 
 
-def decide(erp, line, bank_gl):
-    """The plan for the line, or a Refused with the reason; counts are returned with it either way."""
+def account_named(erp, number):
+    """The GL account of the company whose name starts with the number ('6641 - Name - X'); exactly one, else refused."""
+    found = erp.list("Account", [["company", "=", im.COMPANY], ["name", "like", "{} - %".format(number)]], ["name"])
+    if len(found) != 1:
+        raise Refused("{} accounts named {}, want one".format(len(found), number))
+    return found[0]["name"]
+
+
+def decide(erp, line, bank_gl, override=None):
+    """The plan for the line, or a Refused with the reason; counts are returned with it either way.
+
+    override: (account number, reason) from Benchi's choice. It books the line with no VAT and only when the history has no
+    earlier line of the merchant; with any earlier line the history decides and the override is refused.
+    """
     if merchant_words(line["description"]) is None:
         raise Refused("the description is not a card transaction")
     account = line["bank_account"]
     earlier, history = history_of(erp, line, account)
-    tax_accounts = {a["name"] for a in erp.list("Account", [["company", "=", im.COMPANY], ["account_type", "=", TAX_TYPE]], ["name"])}
     counts = {"earlier lines": earlier, "with a reconciled voucher": len(history)}
+    if override:
+        number, reason = override
+        if earlier:
+            raise Refused("the --account override is only for a line whose merchant has no earlier line", counts)
+        plan = plan_for(ib.cents(line["withdrawal"]), account_named(erp, number), None, None)
+        plan["reason"] = reason
+        return plan, counts
+    tax_accounts = {a["name"] for a in erp.list("Account", [["company", "=", im.COMPANY], ["account_type", "=", TAX_TYPE]], ["name"])}
     try:
         expense, tax_account, rate = treatment(history, bank_gl, tax_accounts)
     except Refused as err:
@@ -172,11 +200,12 @@ def bank_account_of(erp):
     return accounts[0]["name"], accounts[0]["account"]
 
 
-def book(erp, name, apply):
+def book(erp, name, apply, override=None):
     """Plan the line and, with apply, book and reconcile it. Returns (lines to print, the plan or None).
 
     A line already Reconciled, or a submitted Journal Entry with its key, is left as it is. A draft Journal Entry with the key
     (an earlier run stopped before the submit) is submitted; a line whose Journal Entry exists is only reconciled.
+    override: see decide.
     """
     line = erp.get("Bank Transaction", name)
     if line["docstatus"] != 1:
@@ -193,11 +222,13 @@ def book(erp, name, apply):
         plan = None
         lines = ["{}: a Journal Entry with its key exists ({}), reconciling it".format(name, existing[0]["docstatus"])]
     else:
-        plan, counts = decide(erp, line, bank_gl)
+        plan, counts = decide(erp, line, bank_gl, override)
         plan["bank_gl"] = bank_gl
         lines = ["{}: {}".format(name, ", ".join("{} {}".format(v, k) for k, v in counts.items()))]
         lines.append("{}: account {}, VAT {}".format(name, ib.account_number(plan["account"]),
                                                     "none" if plan["rate"] is None else "at {}".format(plan["rate"])))
+        if plan.get("reason"):
+            lines.append("{}: account chosen by Benchi {}: {}".format(name, CHOSEN_ON, plan["reason"]))
     if not apply:
         lines.append("dry run: nothing was written to ERPNext")
         return lines, plan
@@ -223,13 +254,18 @@ def main(argv):
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--dry-run", action="store_true", help="read ERPNext, write nothing, print the counts and the plan's account")
     mode.add_argument("--apply", action="store_true", help="book one Journal Entry and reconcile the line against it")
+    parser.add_argument("--account", metavar="NUMBER", help="book to this account (e.g. 6641) chosen by Benchi, when the history has no earlier line")
+    parser.add_argument("--reason", help="why Benchi chose the account, for the Journal Entry's remark (required with --account)")
     parser.add_argument("--plan", default=os.path.join(im.PRIVATE, "book-bank-line-{}.txt".format(datetime.date.today().isoformat())),
                         help="private file for the proposal and the planned rows (never the repository)")
     parser.add_argument("--token-file", default=im.TOKEN_FILE)
     args = parser.parse_args(argv)
+    if bool(args.account) != bool(args.reason):
+        parser.error("--account and --reason go together")
+    override = (args.account, args.reason) if args.account else None
     erp = im.Erp.from_file(args.token_file)
     try:
-        lines, plan = book(erp, args.name, args.apply)
+        lines, plan = book(erp, args.name, args.apply, override)
     except im.ErpError as err:
         print("aborted: {}".format(err), file=sys.stderr)
         return 2

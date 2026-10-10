@@ -17,6 +17,8 @@ EXPENSE = "6500 - Testaufwand - X"
 OTHER_EXPENSE = "6510 - Anderer Aufwand - X"
 VAT = "1170 - Vorsteuer - X"
 TAX_ACCOUNTS = {VAT}
+ENTERTAINMENT = "6641 - Testbetreuung - X"
+ACCOUNTS = TAX_ACCOUNTS | {ENTERTAINMENT}
 
 LINE = {"name": "ACC-BTN-TEST-0001", "docstatus": 1, "date": "2026-09-07", "description": "Card transaction of 40.00 EUR issued by Testshop Alpha 07-09-2026",
         "bank_account": "Hauptkonto - Testbank AG", "status": "Unreconciled", "withdrawal": 40.0, "deposit": 0.0, "payment_entries": []}
@@ -59,6 +61,9 @@ class FakeErp:
         if doctype == "GL Entry":
             return [dict(r) for r in self.gl]
         if doctype == "Account":
+            if filters and filters[1][1] == "like":
+                prefix = filters[1][2].rstrip("%")
+                return [{"name": a} for a in ACCOUNTS if a.startswith(prefix)]
             return [{"name": a} for a in TAX_ACCOUNTS]
         if doctype == "Journal Entry":
             key = filters[0][2]
@@ -190,6 +195,55 @@ class PlanTest(unittest.TestCase):
         self.assertEqual(doc["company"], im.COMPANY)
         self.assertEqual(doc["user_remark"], "Wise card payment booked from history, line ACC-BTN-TEST-0001")
         self.assertEqual([r["account"] for r in doc["accounts"]], [EXPENSE, VAT, BANK_GL])
+
+
+class OverrideTest(unittest.TestCase):
+    OVERRIDE = ("6641", "business entertainment with a client")
+
+    def test_without_history_the_override_books_to_the_named_account_without_vat(self):
+        erp = FakeErp([], {}, [])
+        plan, counts = bb.decide(erp, erp.line, BANK_GL, self.OVERRIDE)
+        self.assertEqual((plan["account"], plan["tax_account"], plan["rate"]), (ENTERTAINMENT, None, None))
+        self.assertEqual(plan["net"], Decimal("40.0"))
+        self.assertEqual(counts, {"earlier lines": 0, "with a reconciled voucher": 0})
+
+    def test_with_an_earlier_line_the_override_is_refused_and_the_history_is_named(self):
+        erp = history_erp()
+        with self.assertRaises(bb.Refused) as caught:
+            bb.decide(erp, erp.line, BANK_GL, self.OVERRIDE)
+        self.assertIn("only for a line whose merchant has no earlier line", str(caught.exception))
+        self.assertEqual(caught.exception.counts, {"earlier lines": 3, "with a reconciled voucher": 2})
+
+    def test_an_account_number_that_is_not_one_account_is_refused(self):
+        erp = FakeErp([], {}, [])
+        with self.assertRaises(bb.Refused) as caught:
+            bb.decide(erp, erp.line, BANK_GL, ("6670", "event"))
+        self.assertIn("0 accounts named 6670", str(caught.exception))
+
+    def test_the_journal_entry_remark_says_the_account_is_Benchis_choice(self):
+        erp = FakeErp([], {}, [])
+        plan, _ = bb.decide(erp, erp.line, BANK_GL, self.OVERRIDE)
+        plan["bank_gl"] = BANK_GL
+        doc = bb.journal_entry(dict(LINE, withdrawal=40.0), BANK_GL, plan)
+        self.assertEqual(doc["user_remark"], "Wise card payment, account chosen by Benchi 2026-10-11: "
+                                             "business entertainment with a client, line ACC-BTN-TEST-0001")
+        self.assertEqual([r["account"] for r in doc["accounts"]], [ENTERTAINMENT, BANK_GL])
+
+    def test_a_dry_run_with_the_override_shows_it_and_writes_nothing(self):
+        erp = FakeErp([], {}, [])
+        with contextlib.redirect_stdout(io.StringIO()):
+            lines, plan = bb.book(erp, "ACC-BTN-TEST-0001", False, self.OVERRIDE)
+        self.assertEqual(plan["account"], ENTERTAINMENT)
+        self.assertIn("ACC-BTN-TEST-0001: account chosen by Benchi 2026-10-11: business entertainment with a client", lines)
+        self.assertEqual(erp.writes, [])
+
+    def test_apply_with_the_override_books_and_reconciles_to_the_named_account(self):
+        erp = FakeErp([], {}, [])
+        with contextlib.redirect_stdout(io.StringIO()):
+            bb.book(erp, "ACC-BTN-TEST-0001", True, self.OVERRIDE)
+        self.assertEqual(erp.writes, [("insert", "Journal Entry"), ("call", "frappe.client.submit"), ("call", bb.RECONCILE)])
+        self.assertEqual(erp.line["status"], "Reconciled")
+        self.assertEqual(list(erp.journal.values())[0]["accounts"][0]["account"], ENTERTAINMENT)
 
 
 class BookTest(unittest.TestCase):
