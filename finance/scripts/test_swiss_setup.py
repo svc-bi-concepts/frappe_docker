@@ -81,6 +81,15 @@ class ParseFreezeTest(unittest.TestCase):
             swiss_setup.parse_freeze(["2025-02-30"])
 
 
+class BexioDoctypesTest(unittest.TestCase):
+    def test_employee_is_keyed_by_bexio_id_for_the_payroll_import(self):
+        self.assertIn(("Employee", "employee_name"), swiss_setup.BEXIO_DOCTYPES)
+
+    def test_no_doctype_is_listed_twice(self):
+        doctypes = [dt for dt, _after in swiss_setup.BEXIO_DOCTYPES]
+        self.assertEqual(len(doctypes), len(set(doctypes)))
+
+
 class StepsTest(unittest.TestCase):
     def test_gebuev_is_a_step_and_freeze_is_not(self):
         self.assertIn("gebuev", swiss_setup.STEPS)

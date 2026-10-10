@@ -39,8 +39,11 @@ EMAIL = "api-agent@finance.local"
 # The master managers and Item Manager are what the bexio master-data import
 # needs to create Supplier, Customer/Supplier Group, Item and Item Price. No
 # System Manager: Bank, Currency and Designation stay out of its reach.
+# HR User is for the employee import (import_employees.py): it may write
+# Employee and read the HR master data (Gender, Employment Type).
 ROLES = ["Accounts User", "Sales User", "Purchase User", "Stock User",
-         "Sales Master Manager", "Purchase Master Manager", "Item Manager"]
+         "Sales Master Manager", "Purchase Master Manager", "Item Manager",
+         "HR User"]
 force = sys.argv[1] == "1"
 
 frappe.init(site="frontend", sites_path=".")

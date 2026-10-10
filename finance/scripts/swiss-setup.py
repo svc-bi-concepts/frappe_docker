@@ -109,6 +109,8 @@ BEXIO_DOCTYPES = [
     ("Item Tax Template", "title"),
     # the bexio files attached to Purchase Invoices, keyed by their bexio uuid (import_files.py)
     ("File", "attached_to_name"),
+    # master data of the bexio payroll: the Employee (import_employees.py, erp-y909)
+    ("Employee", "employee_name"),
 ]
 
 # Currencies bexio books in, enabled by the `currencies` step. CHF is paid in

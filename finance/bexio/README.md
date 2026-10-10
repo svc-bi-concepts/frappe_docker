@@ -412,6 +412,33 @@ sensitive documents of the company and the repository is public: no figure, name
 paystub reaches the repo, a commit or a note — the test fixture is an invented text in bexio's layout
 (`fixtures/paystub-invented*.txt`), and pdftotext's output goes to stdout, never into a worktree.
 
+## Employees (payroll export to HRMS)
+
+`import_employees.py` creates one Employee per record of
+`private/bexio-payroll/employees.json` (the `export.py --payroll` run), so payroll can be tested in
+HRMS. Each Employee is keyed by the bexio id in the `bexio_id` custom field (`swiss-setup.sh fields`
+puts it there, and `create-api-user.sh` gives the API user the HR User role it needs to write
+Employee): a second run creates nothing, it updates only what differs. The AHV number goes to
+erpnextswiss's `social_security_number`, the IBAN to `iban`, phone, e-mail and the address to their
+Employee fields, the employment level 100 to the Full-time Employment Type (anything else Part-time).
+Nationality, stay permit category and language have no Employee field and go into the bio. A gender
+value the site's Gender list does not have is reported and the record is not created — never guessed.
+
+Joining and leaving dates come from the paystub months (`paystubs.json`): the first month gives
+`date_of_joining` as its first day, and a last month before the export's last month means `status`
+Left with `relieving_date` on that month's last day. Employees without paystubs are dated only by
+`<private>/payroll/employee-dates.csv` (header row `bexio_id,joined,left`, dates `YYYY-MM-DD`, left
+empty for the still employed); a row there also overrides the derived dates. A record with no joining
+date at all is not created: it is reported and the count is printed, and the list (name, bexio id,
+personal number) goes to `<private>/payroll/needs-dates.txt` (mode 600) for the operator.
+
+    python3 finance/bexio/import_employees.py            # dry run: counts only, nothing written
+    python3 finance/bexio/import_employees.py --apply    # creates and updates the Employees
+
+Take a backup first (`bench --site frontend backup --with-files`), and run the dry run before the
+apply. Employees post no GL. Payroll data is the company's most sensitive data and this repo is
+public: the importer prints counts only, and tests use invented employees.
+
 ## Manual entries (Journal Entries)
 
 `import_manual_entries.py` maps each bexio manual entry (single, compound, group, banking and untyped) to one
