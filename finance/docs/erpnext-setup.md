@@ -148,8 +148,9 @@ both sides of the lines, without the settlement) and the settlement entry (`swis
 "VAT per quarter against bexio").
 The form's figures per rate on that basis are built by `mwst_report.py
 --basis payment`, from the Payment Entries of the period, each split over the
-invoices it pays; the per-rate Ziffern are not compared with bexio yet;
-see `swiss.md`, "VAT per quarter against bexio".
+invoices it pays; the per-rate Ziffern are compared with bexio's per quarter,
+with rounding and journal-mirror differences only
+(see `swiss.md`, "VAT per quarter against bexio").
 
 **fiscal.** Calendar years 2015 to 2026. 2026 existed; the others were added,
 and each gets a row for BI Concepts.

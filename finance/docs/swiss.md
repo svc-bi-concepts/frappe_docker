@@ -49,7 +49,7 @@ Pinned in `finance/apps.json`:
 | Need | erpnextswiss v16 | Evidence |
 | --- | --- | --- |
 | QR-bill on sales invoices | Yes, with a caveat | Print format `qr_sales_invoice`, and `templates/qrr_invoice`. The QR image is rendered by an external server (see Risks). |
-| MWST declaration, effective method | Partly | `doctype/vat_declaration` with `vat_type` `effective` or `flat`, and effective-method rates on the net amount (not tested here). The VAT accounts per quarter agree with bexio, see below; the form's rows per rate do not yet. |
+| MWST declaration, effective method | Partly | `doctype/vat_declaration` with `vat_type` `effective` or `flat`, and effective-method rates on the net amount (not tested here). The VAT accounts per quarter agree with bexio, and the form's rows per rate compare with bexio's per quarter on the payment basis with explained differences only (see below); the filing itself is not built yet. |
 | MWST figures per period (`mwst_report.py`) | Partly | `--basis posting` (default) counts invoices by posting date. `--basis payment` (vereinnahmte Entgelte) counts each Payment Entry by its posting date, and splits it over the invoices it pays by allocated / grand total: their net and each tax row times that share, so a receipt is split over the rates of its invoices; a payment with no invoice reference splits no tax. Journal Entries' VAT rows are read on both bases by posting date (see "What the figures read" below). |
 | MWST declaration, received | Partly | Report `kontrolle_mwst` and the Swiss MWST page (`kt_swiss_route_schweizer_mwst`). Not tested here. |
 | Swiss chart of accounts | Yes | `erpnextswiss/coa_import/accounts_template.csv`, 180 rows. Root groups follow the KMU numbering: 1 Aktiven, 2 Passiven, 3 Betriebsertrag, 4 Aufwand Material/Waren/Dienstleistungen, 5 Personalaufwand, 6 Sonstiger Betriebsaufwand, 7 Nebenerfolg, 9 Abschluss. Not tested against our data. |
@@ -131,11 +131,43 @@ settled quarters, which the first run attributed to the direct input tax; that i
 proven (the payment-mode report reads the direct input tax since erp-9fkd). The settlement's
 sales leg differs in 3, two of them by the same amount in adjacent quarters (2022 Q2 and Q3).
 
-Not compared yet: the form's rows per rate (200, 302 to 343), the base of each
-Ziffer, and the split of the Vorsteuer in 400 and 405. They need each receipt
-split over the VAT rates of its invoices, from bexio's invoices and receipts.
-The filed declarations (bexio's MWST-Abrechnung) are not read; they would show
-any correction made in the form itself.
+Compared since erp-8ndb: the form's rows per rate on the payment basis.
+`finance/bexio/mwst_bexio.py` builds bexio's figures per quarter from the export
+alone: each receipt over the rates of its invoice by its share of the total, a
+credit-voucher offset with the sign over what was paid, bill payments on the
+payment day (import_payments_out's pairing), manual entries by posting date, the
+code to Ziffer table shared with `mwst_report.py`. A foreign-currency invoice is
+taken at the CHF total bexio itself booked. `finance/bexio/mwst_ziffern_compare.py`
+reads that CSV against the `mwst-<quarter>-payment.csv` files of
+`mwst_report.py --basis payment`. Result for the 26 quarters with figures (2020 Q3
+to 2026 Q4; 2020 Q1 and Q2 have none): 138 rows compared; 82 differ, each within
+one of two explained classes; 0 unexplained.
+
+- **Rounding (32 rows).** ERPNext splits bexio's gross into net and tax with its
+  own rounding (the Rounded Total can take a gross down a 5-rappen step, and the
+  payment settles the rounded total) and derives a document's base from its tax,
+  so bases and single taxes differ within the per-row bounds the bexio CSV
+  carries. The largest residuals stay under a franc in the base and under ten
+  rappen in the tax (sizes in the private CSV).
+- **Journal mirrors (50 rows).** The report's journal part keeps the net of every
+  VAT-account move its exclusions leave in, while bexio's form counts only the
+  manual entries' VAT by code. Three causes, all in the GL, not in the figures:
+  the manual VAT whose voucher the report's exclusions catch (a 1172 or 2202
+  co-row) or whose base row is missing (counted apart as rate_unknown); the ESTV
+  refund and its settlement-account reclassification, which carry no VAT code in
+  bexio and of which the report sees one leg; and the bill-date and payment-date
+  mirrors of a reverse-charge bill's Bezugsteuer, which net to a residue when a
+  bill's payment falls in a later quarter than the bill.
+
+For the filing (erp-fzae): the figures to file are the document parts plus the
+manual VAT by code, which is what the bexio side of this comparison holds; the
+report's journal part is bookkeeping, and the manual VAT rows its exclusions drop
+are a known gap of `mwst_report.py` to close before a declaration is filed from it.
+
+2020 has no 2202 -> 2200 moves: the year had no taxed sales (its quarters hold
+purchases only), so there was nothing to declare on either basis, and no basis to
+confirm with Benchi. The filed declarations (bexio's MWST-Abrechnung) are still
+not read; they would show any correction made in the form itself.
 
 ### What the figures read (`mwst_report.py`)
 
