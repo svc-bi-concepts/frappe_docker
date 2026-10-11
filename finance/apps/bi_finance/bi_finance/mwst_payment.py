@@ -94,6 +94,10 @@ def owed_row(posting_date):
     """The Ziffer of Bezugsteuer owed on a document of this date."""
     return "383" if posting_date >= BEZUG_NEW_ROW_FROM else "382"
 
+def bezug_rate(posting_date):
+    """The Bezugsteuer rate of a document of this date, the rate of its owed row: 7.7 % before 2024, 8.1 % from then."""
+    return Decimal("8.1") if posting_date >= BEZUG_NEW_ROW_FROM else Decimal("7.7")
+
 def derived_base(tax, rate):
     """The net of a tax row from its tax: exact only to a few rappen, see the module note."""
     if not rate:
@@ -139,12 +143,14 @@ class Totals:
             acc[0] += base
         acc[1] += tax
 
-    def add_journal(self, row, base, tax):
+    def add_journal(self, row, base, tax, entgelt=True):
         """A tax from a Journal Entry: in the row like a document's, and kept apart for the CSV's entries line. Its base
-        is Entgelt too, so Ziffer 200 takes it as the report does: the rate rows and 200 must agree for the 299 check."""
+        is Entgelt too, so Ziffer 200 takes it as the report does: the rate rows and 200 must agree for the 299 check.
+        A Bezugsteuer's base is not Entgelt (entgelt=False): the purchase side of a reverse charge does not put its base
+        in 200 either (_tax_row), and the 299 check reads the rate rows only, not 382 or 383."""
         self.add(row, base, tax)
         self._keep_journal(row, base, tax)
-        if base is not None:
+        if entgelt and base is not None:
             self.add("200", base, ZERO)
             self._keep_journal("200", base, ZERO)
             self.base_sources[JOURNAL] = self.base_sources.get(JOURNAL, ZERO) + base
@@ -364,10 +370,10 @@ def journal_totals(lines, totals):
     reads the payment-day moves instead, which are vouchers of their own keyed by bexio journal line id — and is
     skipped, counted in the CSV's skipped mirrors. A voucher keyed manual-<id> is a bexio manual entry, and a
     vatfix-manual-<id> voucher is the VAT fix of one: both hold the entry's VAT on the entry's posting date, so
-    every VAT row counts (1170 -> 400, 1171 -> 405, 2203 -> 382/383 by the Bezugsteuer rule, 2200 by the net credit
-    in the row of its rate); a 2202 or 1172 row is a reverse-charge transit, not a Ziffer. A manual 2200 row the
-    voucher's own rows cannot rate rates from the entry's group (the base row the import booked next to the VAT,
-    see _manual_group_rate). A move (keyed by journal line id) and any other voucher count by the account pairs
+    every VAT row counts (1170 -> 400, 1171 -> 405, 2203 -> 382/383 by the Bezugsteuer rule, its base at the period's
+    rate, 2200 by the net credit in the row of its rate); a 2202 or 1172 row is a reverse-charge transit, not a Ziffer.
+    A manual 2200 row the voucher's own rows cannot rate rates from the entry's group (the base row the import booked
+    next to the VAT, see _manual_group_rate). A move (keyed by journal line id) and any other voucher count by the account pairs
     as before: a 1170/1171 row with 1172 and a 2200 row with 2202 are the moves the Payment Entries already hold,
     not counted; 2200 alone is the sales tax booked by hand. The Bezugsteuer move (a numeric-keyed voucher's
     2203 row next to its 2202 debit) is the tax the Payment Entries' shared deduct rows already hold: not counted,
@@ -404,7 +410,10 @@ def journal_totals(lines, totals):
                 totals.add_journal(row, None, net[account])
         if net.get("2203"):
             if manual:
-                totals.add_journal(owed_row(posting_date), None, -net["2203"])
+                # the owed tax gets its base at the period's rate, as a purchase's reverse charge does (_tax_row), so the
+                # XML's acquisitionTax, which carries the base only, declares the whole tax: base times rate is the tax
+                tax = -net["2203"]
+                totals.add_journal(owed_row(posting_date), derived_base(tax, bezug_rate(posting_date)), tax, entgelt=False)
             elif bezug_move:
                 totals.skipped_moves.append(key)
         if net.get("2200") and (manual or "2202" not in net):
@@ -439,6 +448,8 @@ FIELD_BY_ZIFFER = {
     "225": "transfers",
     "230": "non_taxable_services",
     "235": "losses",
+    "289": "total_deductions",
+    "299": "taxable_revenue",
     "302": "normal_amount",
     "303": "normal_amount_2024",
     "312": "reduced_amount",
@@ -481,8 +492,12 @@ DEDUCTION_ROWS = ("220", "221", "225", "230", "235")
 DEDUCTION_TOLERANCE_PER_RATE_ROW = Decimal("0.05")
 
 
-def declaration_fields(totals):
+def declaration_fields(totals, kept=None):
     """The fields of one VAT Declaration for the period, by fieldname, as Decimals.
+
+    kept: the draft's own 280 (misc) and 205 (non_taxable_revenue), which the fill does not set; None is zero. 289 and
+    299 read them as erpnextswiss's form does on save (update_taxable_revenue): 289 is the deductions 220 to 235 and 280,
+    299 is 200 less 205 less 289. The plausibility check below takes the payment basis's rows only, as before.
 
     Refuses (ValueError) what the fill cannot put right: a tax row no template maps, since the declaration would miss
     its tax; a tax on an undecided Ziffer (UNDECIDED_ZIFFERN); and a quarter whose Ziffer 200 less the Umsatz
@@ -541,6 +556,9 @@ def declaration_fields(totals):
         fields[amount_field] = base(ziffer)
         fields[tax_field] = tax(ziffer)
         total_tax += tax(ziffer)
+    kept = kept or {}
+    fields["total_deductions"] = deductions + kept.get("misc", ZERO)
+    fields["taxable_revenue"] = base("200") - kept.get("non_taxable_revenue", ZERO) - fields["total_deductions"]
     fields["pretax_material"] = tax("400")
     fields["pretax_investments"] = tax("405")
     for field in ("missing_pretax", "pretax_correction_mixed", "pretax_correction_other"):

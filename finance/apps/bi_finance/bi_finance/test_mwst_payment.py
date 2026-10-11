@@ -5,8 +5,10 @@ The module imports no frappe, so this runs on the host as part of the depot's li
 
 import datetime
 import unittest
+import xml.etree.ElementTree as ET
 from decimal import Decimal
 
+from bi_finance import estv_vat_xml
 from bi_finance import mwst_payment as mp
 
 D = Decimal
@@ -225,6 +227,93 @@ class JournalBasesTest(unittest.TestCase):
         self.assertIn("5.00", message)
         self.assertIn("UN81 1000.00", message)
         self.assertIn("journal entries 1000.00", message)
+
+
+# invented manual entry with Bezugsteuer: 38.38 of tax owed on 2203 (credit) and input tax on 1170, dated in 2026
+MANUAL_BEZUG = [jline("B1", "1170", "38.38"), jline("B1", "2203", "-38.38")]
+
+
+class JournalBezugsteuerTest(unittest.TestCase):
+    """A manual Journal Entry's Bezugsteuer owed: its base is derived at the period's rate, as a purchase's is, and it is
+    not Entgelt (Ziffer 200 does not take it)."""
+
+    def fields(self, lines=(), kept=None):
+        totals = mp.plan([], [], TEMPLATE_IDS)
+        mp.journal_totals(list(lines), totals)
+        return mp.declaration_fields(totals, kept), totals
+
+    def test_the_owed_tax_gets_its_base_at_the_rate_of_2026(self):
+        fields, totals = self.fields(lines=MANUAL_BEZUG)
+        self.assertEqual(fields["additional_tax_2024"], D("38.38"))
+        self.assertEqual(fields["additional_amount_2024"], D("473.83"))
+        self.assertEqual(fields["total_revenue"], D("0"))
+        self.assertEqual(fields["total_tax"], D("38.38"))
+        self.assertEqual(fields["pretax_material"], D("38.38"))
+        self.assertEqual(fields["payable_tax"], D("0"))
+
+    def test_base_times_rate_is_the_tax_to_the_rappen(self):
+        # invented: 41.16 of tax at 8.1 % is a base of 508.15, and 508.15 at 8.1 % is 41.16 again
+        fields, _ = self.fields(lines=[jline("B2", "1170", "41.16"), jline("B2", "2203", "-41.16")])
+        self.assertEqual(fields["additional_amount_2024"], D("508.15"))
+        self.assertEqual(fields["additional_tax_2024"], D("41.16"))
+        self.assertEqual((fields["additional_amount_2024"] * D("8.1") / 100).quantize(D("0.01")), D("41.16"))
+
+    def test_before_2024_the_base_is_at_the_old_rate_and_in_382(self):
+        # invented: 31.99 of tax owed in 2023 at 7.7 % is a base of 415.45 in Ziffer 382
+        lines = [jline("B3", "1170", "31.99", day=datetime.date(2023, 11, 10)),
+                 jline("B3", "2203", "-31.99", day=datetime.date(2023, 11, 10))]
+        fields, totals = self.fields(lines=lines)
+        self.assertEqual(totals.base_of("382"), D("415.45"))
+        self.assertEqual(totals.tax_of("382"), D("31.99"))
+        self.assertEqual(fields["additional_amount"], D("415.45"))
+        self.assertEqual(fields["additional_tax"], D("31.99"))
+        self.assertEqual(fields["total_revenue"], D("0"))
+
+    def test_the_xml_declares_the_whole_bezugsteuer_as_its_base(self):
+        # the ESTV file carries the base only, at 8.10: its turnover is the base the tax came from
+        fields, _ = self.fields(lines=MANUAL_BEZUG)
+        # as create_transfer_file reads them: a field the fill does not set is zero
+        figures = {ziffer: fields.get(name, D("0")) for ziffer, name in mp.FIELD_BY_ZIFFER.items()}
+        xml = estv_vat_xml.declaration_xml(
+            figures, uid="123456789", company="Invented AG", title="MWST 2026Q3",
+            start_date=datetime.date(2026, 7, 1), end_date=datetime.date(2026, 9, 30),
+            generated=datetime.datetime(2026, 10, 12, 8, 0, tzinfo=datetime.timezone.utc), product_version="1.0")
+        root = ET.fromstring(xml.encode("utf-8"))
+        acquisition = root.find(".//{http://www.ech.ch/xmlns/eCH-0217/2}acquisitionTax")
+        self.assertEqual(acquisition.find("{http://www.ech.ch/xmlns/eCH-0217/2}taxRate").text, "8.10")
+        self.assertEqual(acquisition.find("{http://www.ech.ch/xmlns/eCH-0217/2}turnover").text, "473.83")
+
+
+class FormSumsTest(unittest.TestCase):
+    """289 and 299 as erpnextswiss's form sets them on save: 289 is the deductions and the draft's 280, 299 is 200 less
+    the draft's 205 less 289. Invented figures: 510.49 of 8.1 % sales and 412.37 of export."""
+
+    def fields(self, kept=None):
+        sales = [sale(datetime.date(2026, 8, 3), row("UN81 8.1% Normalsatz", "41.35"), net="510.49"),
+                 sale(datetime.date(2026, 8, 4), row("UEX 0% Export, steuerbefreit", "0"), net="412.37")]
+        totals = mp.plan(sales, [], TEMPLATE_IDS)
+        mp.journal_totals([], totals)
+        return mp.declaration_fields(totals, kept)
+
+    def test_deductions_and_taxable_revenue_without_a_draft_of_280_and_205(self):
+        fields = self.fields()
+        self.assertEqual(fields["total_revenue"], D("922.86"))
+        self.assertEqual(fields["total_deductions"], D("412.37"))
+        self.assertEqual(fields["taxable_revenue"], D("510.49"))
+
+    def test_the_draft_keeps_its_280_in_289_and_its_205_out_of_299(self):
+        # invented: 44.07 of 280 and 43.33 of 205 held on the draft
+        fields = self.fields({"misc": D("44.07"), "non_taxable_revenue": D("43.33")})
+        self.assertEqual(fields["total_deductions"], D("456.44"))
+        self.assertEqual(fields["taxable_revenue"], D("423.09"))
+        self.assertEqual(fields["total_revenue"], D("922.86"))
+
+    def test_an_empty_period_has_zero_in_289_and_299(self):
+        totals = mp.plan([], [], TEMPLATE_IDS)
+        mp.journal_totals([], totals)
+        fields = mp.declaration_fields(totals)
+        self.assertEqual(fields["total_deductions"], D("0"))
+        self.assertEqual(fields["taxable_revenue"], D("0"))
 
 
 if __name__ == "__main__":

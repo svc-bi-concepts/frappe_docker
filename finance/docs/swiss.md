@@ -204,6 +204,13 @@ The two classes erp-czhx fixed, kept for their cause:
   move counts agree per quarter (3 in Q2, 3 in Q3, 1 in Q4 on both sides). A
   2203 row on a voucher of no other known kind is listed, not counted, until its
   origin is named; the open quarters hold none.
+  Since erp-brhd the journal Bezugsteuer has its base too (derived at the period's
+  rate), so the XML declares the whole Bezugsteuer and the tax on 383 is base times
+  8.1 %. Bexio's base holds none of that journal part, so the base is compared as
+  well and differs from bexio's in the quarters with a journal part (2026 Q2 and Q3,
+  the report's base above bexio's by that part); the comparison labels it "journal
+  mirrors", the gap between the two journal parts. The tax equals bexio's in all
+  three quarters, and the base equals bexio's in Q4, which has no journal part.
 
 For the filing (erp-fzae): the figures to file are the document parts plus the
 manual VAT by code, which is what the bexio side of this comparison holds; the
@@ -235,9 +242,13 @@ not read; they would show any correction made in the form itself.
     counted apart and named in the report's stdout — a manual one rates from its
     entry group's base row first (the import booked the VAT next to the net on
     the same account; the vatfix-manual voucher holds only the difference).
-  - 2203 (Bezugsteuer, Ziffer 382 or 383 by the date): the net credit, on a
-    manual or vatfix-manual voucher only. The 2202 -> 2203 payment-day move of a
-    numeric-keyed voucher is the tax the Payment Entries' shared deduct rows
+  - 2203 (Bezugsteuer, Ziffer 382 or 383 by the date): the credit, on a manual or
+    vatfix-manual voucher only. Its tax is counted, and its base is derived from the
+    tax at the period's Bezugsteuer rate (7.7 % before 2024, 8.1 % from then), as a
+    purchase's reverse charge is (erp-brhd): base times rate is the tax, so the XML's
+    acquisitionTax, which carries the base only, declares the whole Bezugsteuer. That
+    base is not Entgelt: Ziffer 200 does not take it. The 2202 -> 2203 payment-day move
+    of a numeric-keyed voucher is the tax the Payment Entries' shared deduct rows
     already hold: skipped and listed, like a 2203 row on a voucher of no other
     known kind. Its base is not read, so the Ziffer's base stays zero.
   - Selected by the voucher's bexio_id key since erp-vq54, not by account pair: a
@@ -276,8 +287,14 @@ cancelled entries and other companies.
   when the company's Tax ID is not `CHE-ddd.ddd.ddd` with or without ` MWST` (a dry run
   does not need it). Nothing is submitted; Benchi files.
 - **What the fill sets.** Ziffer 200; the rate rows 302, 303, 312, 313, 342 and 343 with
-  their rates; the Umsatz deductions 220, 221, 225, 230 and 235; 382 and 383 (base and tax as
-  booked); 400 and 405 (tax as booked); 410, 415 and 420 at zero. The totals follow the form's
+  their rates; the Umsatz deductions 220, 221, 225, 230 and 235; 382 and 383 (base and tax:
+  the tax as booked, the base of a document's reverse charge derived from it, and of a
+  journal Bezugsteuer derived at the period's rate); 400 and 405 (tax as booked); 410, 415
+  and 420 at zero. 289 and 299 the fill sets too, with the form's arithmetic
+  (erpnextswiss's `update_taxable_revenue`): 289 is 220, 221, 225, 230, 235 and the draft's
+  280, 299 is 200 less the draft's 205 less 289; the fill leaves the draft's 205 and 280
+  as they are. A draft written without these would read 0 until Recalculate, since the
+  form computes them only on save. The totals follow the form's
   own arithmetic (erpnextswiss's `vat_declaration.js`): a rate row's tax is its base times its
   rate, and 399, 479 and 500 are sums of those. The rate rows' tax is therefore the form's, to
   the rappen, not the report's exact tax per invoice; the comparison with bexio allows for that.
@@ -291,8 +308,7 @@ cancelled entries and other companies.
   rounding (the bases are derived from the taxes, so each sales row may be off by half a rappen
   of tax; the allowance is the sum of those bounds, at least 0.05 per rate row the period
   uses), or the fill refuses with the difference. A code or net named above refuses whatever
-  the difference. 289 and 299 it does not set: the form computes them from
-  the fields on save. The report fills the same rows (`mwst_report.py --basis payment`);
+  the difference. The report fills the same rows (`mwst_report.py --basis payment`);
   in the comparison with bexio a 220/221/225 figure against bexio's empty row is the expected
   difference, named "deduction rows" — bexio's own declarations never carried one.
 - **What it leaves.** Ziffer 205 (nicht steuerbarer Umsatz), 280 and the other Abzüge: the

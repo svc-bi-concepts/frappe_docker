@@ -7,8 +7,11 @@ form has one: base and tax for 200 to 235, 302 to 343 and the Bezugsteuer 382/38
 the Vorsteuer Ziffern 400 to 420, their total 479 and 500/510 (the form has no base there; the
 two CSVs keep their base columns as information). A base difference that is exactly the gap
 between the two journal parts is the structural one: the report's journal rows carry no base for
-the input tax (1170, 1171) and the Bezugsteuer (2203), while bexio's manual entries have their
-nets. Everything else is a difference, and the run exits 1 while one stands.
+the input tax (1170, 1171), while bexio's manual entries have their nets. The Bezugsteuer (2203)
+of a manual entry has a base in the report, derived from its tax at the period's rate (so the
+XML declares the whole tax); bexio's journal part holds none, so that base is the same gap and
+is labelled "journal mirrors" like the rest. Everything else is a difference, and the run exits 1
+while one stands.
 
 The detail goes to one private CSV under <private>; the stdout shows counts only.
 

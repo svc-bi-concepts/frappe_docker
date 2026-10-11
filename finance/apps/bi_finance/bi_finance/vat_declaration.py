@@ -43,13 +43,14 @@ def fill_payment_basis(company, period, dry_run=0):
     period: '2026Q3' or '2026H1', as mwst_report.py takes it. A declaration of the period that is submitted stops the
     fill; it is never changed. dry_run: compute the fields and return them, write nothing; a write returns the draft's
     name with them. The fill sets Ziffer 200, the rate rows, the Bezugsteuer, the Vorsteuer and the Umsatz deductions
-    220, 221, 225, 230 and 235 from the sales templates (mwst_payment.py); 205 and 280 stay as they are, and 289 and 299 the form computes itself on save
-    (erpnextswiss's vat_declaration.js). A quarter whose 200 less the deductions is off the rate bases beyond
-    rounding is refused, so a draft the ESTV would not take is never written."""
+    220, 221, 225, 230 and 235 from the sales templates (mwst_payment.py), and 289 and 299 from them and the draft's 280
+    and 205, which it leaves as they are; the form would set 289 and 299 only on save in its own page (erpnextswiss's
+    vat_declaration.js), so a draft written here would read 0 until Recalculate. A quarter whose 200 less the deductions
+    is off the rate bases beyond rounding is refused, so a draft the ESTV would not take is never written."""
     frappe.has_permission("VAT Declaration", "write", throw=True)
     start, end = mwst_payment.period_bounds(period)
     try:
-        fields = mwst_payment.declaration_fields(_payment_totals(company, start, end))
+        fields = mwst_payment.declaration_fields(_payment_totals(company, start, end), _draft_kept(company, start, end))
     except ValueError as err:
         frappe.throw(_("The declaration of {0} is not filled: {1}").format(period, err))
     shown = {name: str(value) for name, value in fields.items()}
@@ -78,6 +79,18 @@ def fill_payment_basis(company, period, dry_run=0):
     doc.save()
     # the desk routes to this draft: the new form it was opened from is not saved
     return {"name": doc.name, "fields": shown}
+
+
+def _draft_kept(company, start, end):
+    """The draft's 280 and 205 (misc, non_taxable_revenue), which the fill keeps and 289 and 299 read. None without
+    exactly one draft of the period, as there is nothing to keep then (a second one stops the write)."""
+    drafts = frappe.get_all("VAT Declaration", filters={"company": company, "start_date": start, "end_date": end,
+                                                        "docstatus": ["in", [0, 1]]},
+                            fields=["misc", "non_taxable_revenue"])
+    if len(drafts) != 1:
+        return None
+    return {"misc": Decimal(str(drafts[0].misc or 0)),
+            "non_taxable_revenue": Decimal(str(drafts[0].non_taxable_revenue or 0))}
 
 
 def _payment_totals(company, start, end):
