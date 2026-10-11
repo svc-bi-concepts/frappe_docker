@@ -12,6 +12,14 @@ document that explains the step is in brackets. Conventions for labels and butto
 2. **Bank Statement Upload:** upload the UBS camt file of the month (**Bank Statement Upload**,
    Switzerland card). [`finance/apps/bi_finance/README.md`, bank_statement_upload]
 3. **Unreconciled bank lines:** clear what is left (Treasury shortcut). [`finance/docs/payment-runs.md`, the camt match]
+   After each Wise sync and camt import the matching job reconciles the lines it is certain of (the
+   creditor reference of an open Sales Invoice, a payment run's EndToEndId, one open invoice or bill of
+   the named party within 5 days, a Bank Transaction Rule) and leaves the rest here. It runs only when
+   **Bank Matching Settings** has *enabled* on; rule bookings need *rules_enabled* too (both start off).
+   A payment run of several invoices to one supplier writes their numbers joined into one EndToEndId, so
+   that line is not matched by it and stays for the Bank Reconciliation Tool. The month-end Exchange Rate
+   Revaluation arrives as a draft on the 1st (only when an account has a gain or loss): review and submit
+   it; the 31.12 one needs the ESTV year-end rate entered as a Currency Exchange row dated 31.12 first.
 4. **Bank Reconciliation Tool:** match the remaining lines to Payment Entries (Treasury shortcut).
 5. **Payment Proposal:** create for the due bills (Switzerland card), check the list and the total,
    submit, then **Download bank file**. Upload that file in UBS e-banking; ERPNext sends nothing to a bank.

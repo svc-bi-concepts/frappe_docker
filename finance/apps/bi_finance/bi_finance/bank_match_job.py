@@ -117,10 +117,11 @@ def _open_documents(company, currency):
 
 
 def _open_payments(company, currency, gl_account):
+    # a Payment Entry with a clearance date is already reconciled with a line: it names no second one
     payments = []
     for pe in frappe.get_all(
         "Payment Entry",
-        filters={"company": company, "docstatus": 1, "unallocated_amount": [">", 0]},
+        filters={"company": company, "docstatus": 1, "unallocated_amount": [">", 0], "clearance_date": ["is", "not set"]},
         fields=["name", "payment_type", "reference_no", "unallocated_amount", "posting_date", "party_name",
                 "paid_from", "paid_to", "paid_from_account_currency", "paid_to_account_currency"],
     ):
