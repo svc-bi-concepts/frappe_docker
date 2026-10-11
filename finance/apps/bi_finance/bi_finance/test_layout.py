@@ -13,6 +13,7 @@ to this file, records per synced JSON the sha of its content without 'modified' 
 A changed file must carry a newer stamp; the builder then updates the manifest with it.
 """
 
+import ast
 import glob
 import hashlib
 import json
@@ -90,6 +91,26 @@ class Layout(unittest.TestCase):
                 continue
             stray += [os.path.join(root, d) for d in dirs if d in SYNCED]
         self.assertEqual(stray, [])
+
+
+class Controllers(unittest.TestCase):
+    def test_every_doctype_controller_defines_the_class_frappe_imports(self):
+        # erp-r5e1: frappe's import_controller (frappe/model/base_document.py) looks the controller class up as
+        # the doctype name with spaces and hyphens removed, case kept. A class of another name raises ImportError,
+        # and the migrate's orphan removal then deletes the DocType record and its table (frappe/model/sync.py).
+        missing = []
+        for module in modules():
+            for folder in sorted(glob.glob(os.path.join(PACKAGE, scrub(module), "doctype", "*"))):
+                if not os.path.isdir(folder):
+                    continue
+                name = os.path.basename(folder)
+                with open(os.path.join(folder, name + ".json"), encoding="utf-8") as f:
+                    expected = json.load(f)["name"].replace(" ", "").replace("-", "")
+                with open(os.path.join(folder, name + ".py"), encoding="utf-8") as f:
+                    classes = {node.name for node in ast.parse(f.read()).body if isinstance(node, ast.ClassDef)}
+                if expected not in classes:
+                    missing.append(f"{name}.py defines {sorted(classes)}, frappe imports {expected}")
+        self.assertEqual(missing, [])
 
 
 class Stamps(unittest.TestCase):

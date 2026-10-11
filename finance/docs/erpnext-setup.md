@@ -310,6 +310,7 @@ charts from the module folders. Those folders (`workspace/`, `number_card/`,
 `dashboard_chart/`, `report/`, `doctype/`) sit in `finance/apps/bi_finance/bi_finance/bi_finance/`:
 Frappe reads module "BI Finance" from `<package>/bi_finance`. In bi7 they sat one level higher,
 and migrate found no Treasury; bi8 moves them (`test_treasury`, Layout, checks the place).
+A doctype's controller class is its name with spaces and hyphens removed, case kept (`MWST bexio Ziffer` is `MWSTbexioZiffer`); a class of another name makes migrate delete the doctype, and the layout guard (`Controllers`) checks it.
 
 ## Building an image
 

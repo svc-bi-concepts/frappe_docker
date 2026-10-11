@@ -8,5 +8,5 @@ MWST-BEXIO-<quarter>-<ziffer>, so the pair is unique — a second row of the pai
 from frappe.model.document import Document
 
 
-class MWSTBexioZiffer(Document):
+class MWSTbexioZiffer(Document):
     pass
