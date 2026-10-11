@@ -43,8 +43,8 @@ after_migrate = ["bi_finance.setup.after_migrate"]
 # the default print format. Frappe applies the files in fixtures/ on migrate.
 fixtures = [
     {"dt": "Custom Field", "filters": [["dt", "=", "Bank Transaction"], ["fieldname", "in", ["booking_date", "value_date"]]]},
-    {"dt": "Property Setter", "filters": [["doc_type", "=", "Bank Transaction"], ["property", "in", ["sort_field", "sort_order"]]]},
-    {"dt": "Property Setter", "filters": [["doc_type", "=", "Sales Invoice"], ["property", "=", "default_print_format"]]},
+    # one entry: export-fixtures writes one file per doctype, a second Property Setter entry would overwrite the first
+    {"dt": "Property Setter", "filters": [["doc_type", "in", ["Bank Transaction", "Sales Invoice"]], ["property", "in", ["sort_field", "sort_order", "default_print_format"]]]},
     {"dt": "List View Settings", "filters": [["name", "=", "Bank Transaction"]]},
 ]
 

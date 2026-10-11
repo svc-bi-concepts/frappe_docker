@@ -64,7 +64,7 @@ class Fixtures(unittest.TestCase):
         self.assertEqual([f for f in os.listdir(FIXTURES) if not f.endswith(".json")],
                          ["eCH-0217_V2.0.0_example_effectiveReportingMethod.xml"])
         self.assertEqual(sorted(f["dt"] for f in hooks.fixtures),
-                         ["Custom Field", "List View Settings", "Property Setter", "Property Setter"])
+                         ["Custom Field", "List View Settings", "Property Setter"])
 
     def test_the_custom_fields_are_booking_date_and_value_date_on_bank_transaction(self):
         fields = {f["fieldname"]: f for f in fixture("custom_field.json")}
