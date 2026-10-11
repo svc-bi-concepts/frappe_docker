@@ -346,7 +346,7 @@ def get_component_dynamic(employee, start_date, end_date, componentlist):
 
 
 # The first lines of erpnextswiss print format 605.040.18n_form._11.json at the pin (5d85c45):
-# line 4, the css field, is patch 0005's target line. The html and format_data fields are cut:
+# line 4, the css field, is patch 0007's target line. The html and format_data fields are cut:
 # git apply needs the hunk's context, not the whole file. The cut after "disabled" keeps that
 # line verbatim, comma and all, so the object does not close cleanly and the css line is parsed
 # on its own. Raw string: the css carries the JSON escapes (\n, \") as the two characters they
