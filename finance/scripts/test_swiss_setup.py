@@ -322,6 +322,60 @@ class LohnausweisTest(unittest.TestCase):
         wanted = swiss_setup.lohnausweis_components()
         current = dict(wanted, catering=["Anything"])
         self.assertEqual(swiss_setup.lohnausweis_changes(1, current, wanted), (False, []))
+    def test_expenses_is_a_step(self):
+        self.assertIn("expenses", swiss_setup.STEPS)
+
+
+class ClaimTypeRowsTest(unittest.TestCase):
+    # The five bexio Spesen types (numbers and labels, no company data).
+    WANTED = [
+        ("5811", "Weiterbildung"),
+        ("5820", "Reisespesen"),
+        ("5821", "Verpflegungsspesen"),
+        ("5822", "Übernachtungsspesen"),
+        ("5832", "Pauschalspesen"),
+    ]
+    COMPANY = "Test BI Concepts AG"
+
+    def test_the_five_types_are_58xx_accounts_with_unique_names(self):
+        numbers = [number for number, _name in swiss_setup.EXPENSE_CLAIM_TYPES]
+        names = [name for _number, name in swiss_setup.EXPENSE_CLAIM_TYPES]
+        self.assertEqual(len(swiss_setup.EXPENSE_CLAIM_TYPES), 5)
+        self.assertTrue(all(number.startswith("58") for number in numbers), numbers)
+        self.assertEqual(len(names), len(set(names)))
+        self.assertEqual(swiss_setup.EXPENSE_CLAIM_TYPES, self.WANTED)
+
+    def test_a_fresh_site_wants_every_row(self):
+        rows = swiss_setup.claim_type_rows(self.WANTED, self.COMPANY, set())
+        self.assertEqual(rows, [(name, self.COMPANY, number) for number, name in self.WANTED])
+
+    def test_nothing_missing_when_every_type_points_at_its_account(self):
+        existing = {(name, self.COMPANY, number) for number, name in self.WANTED}
+        self.assertEqual(swiss_setup.claim_type_rows(self.WANTED, self.COMPANY, existing), [])
+
+    def existing_with(self, name, number):
+        """The full site set, with one type's account replaced."""
+        rows = {(n, self.COMPANY, num) for num, n in self.WANTED if n != name}
+        return rows | {(name, self.COMPANY, number)}
+
+    def test_a_type_on_the_wrong_account_is_written_again(self):
+        rows = swiss_setup.claim_type_rows(self.WANTED, self.COMPANY, self.existing_with("Reisespesen", "6900"))
+        self.assertEqual(rows, [("Reisespesen", self.COMPANY, "5820")])
+
+    def test_a_row_of_another_company_is_no_row_of_this_one(self):
+        existing = {(n, "Other AG", number) for number, n in self.WANTED}
+        rows = swiss_setup.claim_type_rows(self.WANTED, self.COMPANY, existing)
+        self.assertEqual(rows, [(name, self.COMPANY, number) for number, name in self.WANTED])
+
+    def test_a_type_without_an_account_number_is_written_again(self):
+        # A claim type whose account row has no account number never matches.
+        rows = swiss_setup.claim_type_rows(self.WANTED, self.COMPANY, self.existing_with("Pauschalspesen", None))
+        self.assertEqual(rows, [("Pauschalspesen", self.COMPANY, "5832")])
+
+    def test_rows_come_in_the_table_s_order(self):
+        # Whatever order the site holds them in, the writes follow EXPENSE_CLAIM_TYPES.
+        rows = swiss_setup.claim_type_rows(self.WANTED, self.COMPANY, self.existing_with("Reisespesen", "6900"))
+        self.assertEqual([name for name, _company, _number in rows], ["Reisespesen"])
 
 
 class LohnausweisSiteTest(unittest.TestCase):

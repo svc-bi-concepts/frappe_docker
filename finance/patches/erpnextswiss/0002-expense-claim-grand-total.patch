@@ -1,0 +1,11 @@
+--- a/erpnextswiss/erpnextswiss/doctype/payment_proposal/payment_proposal.py
++++ b/erpnextswiss/erpnextswiss/doctype/payment_proposal/payment_proposal.py
+@@ -796,7 +796,7 @@
+         expense_claims = frappe.db.sql(
+             """SELECT `name`,
+                   `employee`,
+-                  `total_sanctioned_amount` AS `amount`,
++                  `grand_total` AS `amount`,
+                   `payable_account`
+                 FROM `tabExpense Claim`
+                 WHERE `docstatus` = 1

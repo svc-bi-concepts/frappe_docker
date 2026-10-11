@@ -231,6 +231,40 @@ ITEM_TOOLS = [
     "            as_dict=True)",
 ]
 
+# The lines of erpnextswiss payment_proposal.py at the pin around the expense-claim query
+# (its line 796): the context of the second real patch, same idea as ITEM_TOOLS.
+PAYMENT_PROPOSAL = """\
+    ):
+        expense_claims = frappe.db.sql(
+            \"\"\"SELECT `name`,
+                  `employee`,
+                  `total_sanctioned_amount` AS `amount`,
+                  `payable_account`
+                FROM `tabExpense Claim`
+                WHERE `docstatus` = 1
+                  AND `status` = "Unpaid"
+                  AND `is_proposed` = 0
+                  AND `company` = %(company)s;\"\"\",
+            {"company": company},
+            as_dict=True,
+        )
+"""
+# The lines of erpnextswiss common_functions.py at the pin around get_primary_address's
+# query (its line 69): the context of the third real patch, same idea as ITEM_TOOLS.
+COMMON_FUNCTIONS = "\n".join([
+    "        LEFT JOIN `tabCountry` ON `tabAddress`.`country` = `tabCountry`.`name`",
+    "        WHERE `link_doctype` = %(type)s AND `link_name` = %(name)s",
+    "        ORDER BY `tabAddress`.`is_primary_address` DESC",
+    '        LIMIT 1;\"\"\".format',
+    "    try:",
+    "        return frappe.db.sql(sql_query, ",
+    "            {",
+    "                'type': target_type, ",
+    "                'name': target_name",
+    "            },",
+    "            as_dict=True)[0]",
+]) + "\n"
+
 
 # The lines of erpnextswiss salary_certificate.py at the pin (5d85c45) around the three hunks of the
 # patches 0002-0004: the imports (0004), Pos 11 in fetch_dynamic (0002) and get_component_dynamic (0003).
@@ -339,9 +373,12 @@ class PatchStep(unittest.TestCase):
         git(self.app, "commit", "-q", "-m", "pin")
 
     def commit_pin_sources(self):
-        """The two files our erpnextswiss patches touch, as they read at the pin 5d85c45."""
+        """Every file of erpnextswiss the patches touch, as they read at the pin 5d85c45:
+        the step applies the whole directory in one run, so the tree holds all of them."""
         self.commit("erpnextswiss/scripts/item_tools.py", "\n".join(ITEM_TOOLS) + "\n")
         self.commit(SALARY_CERTIFICATE_PATH, SALARY_CERTIFICATE)
+        self.commit("erpnextswiss/erpnextswiss/doctype/payment_proposal/payment_proposal.py", PAYMENT_PROPOSAL)
+        self.commit("erpnextswiss/erpnextswiss/common_functions.py", COMMON_FUNCTIONS)
 
     def patch(self, name, text):
         with open(os.path.join(self.patches, name), "w") as f:
@@ -401,12 +438,38 @@ class PatchStep(unittest.TestCase):
         source = "\n".join(ITEM_TOOLS) + "\n"
         with self.assertRaises(SyntaxError):
             compile(source, "item_tools.py", "exec")
-        # The patch names the file from the repository root: erpnextswiss/scripts/item_tools.py.
-        path = "erpnextswiss/scripts/item_tools.py"
+        # The patches name their files from the repository root; the step applies every
+        # patch of the directory, so the tree holds every file they touch.
         self.commit_pin_sources()
         run = subprocess.run(["sh", APPLY, PATCH_DIR, self.app], capture_output=True, text=True)
         self.assertEqual(run.returncode, 0, run.stderr)
-        compile(self.read(path), path, "exec")
+        compile(self.read("erpnextswiss/scripts/item_tools.py"), "item_tools.py", "exec")
+
+    def test_our_expense_claim_patch_pays_the_grand_total(self):
+        # Regression: at the pin, the proposal's expense-claim rows carry the sanctioned amount,
+        # so a claim with a VAT row would be paid short by the VAT. The patch reads grand_total.
+        self.commit_pin_sources()
+        path = "erpnextswiss/erpnextswiss/doctype/payment_proposal/payment_proposal.py"
+        self.assertIn("`total_sanctioned_amount` AS `amount`", PAYMENT_PROPOSAL)
+        run = subprocess.run(["sh", APPLY, PATCH_DIR, self.app], capture_output=True, text=True)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        patched = self.read(path)
+        self.assertIn("`grand_total` AS `amount`", patched)
+        self.assertNotIn("`total_sanctioned_amount` AS `amount`", patched)
+
+    def test_our_primary_address_patch_calls_no_format_method(self):
+        # Regression: at the pin, get_primary_address's SQL string ends with `.format`, a
+        # reference to the method instead of a call. The bound method went into frappe.db.sql
+        # as the query and the bare except swallowed the error: the function always returned
+        # None, and every Payment Proposal was refused ("Company address missing").
+        self.commit_pin_sources()
+        path = "erpnextswiss/erpnextswiss/common_functions.py"
+        self.assertIn('LIMIT 1;""".format', COMMON_FUNCTIONS)
+        run = subprocess.run(["sh", APPLY, PATCH_DIR, self.app], capture_output=True, text=True)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        patched = self.read(path)
+        self.assertIn('LIMIT 1;"""\n', patched)
+        self.assertNotIn(".format\n", patched)
 
     def test_our_salary_certificate_patches_fix_net_sql_and_import(self):
         # At the pin, fetch_values msgprints through an unimported _, fetch_dynamic takes the slips'

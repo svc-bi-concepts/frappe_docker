@@ -1,13 +1,13 @@
 """Payment runs: erpnextswiss builds the Payment Proposal and the pain.001 file.
 
-This module adds two things to it. A Payment Entry per paid purchase invoice,
-created as a draft when the proposal is submitted and submitted when the bank
-file is downloaded, so the camt line of the payment reconciles against it. And
+This module adds two things to it. A Payment Entry per paid purchase invoice and per
+expense-claim row, created as a draft when the proposal is submitted and submitted when
+the bank file is downloaded, so the camt line of the payment reconciles against it. And
 a check of the file against SIX's Swiss schema (pain.001.001.09.ch.03), which
 UBS takes, besides the generic schema erpnextswiss validates against.
 
-Expense claims and salaries get no Payment Entry here; erpnextswiss's own
-intermediate account still covers them.
+Salary slips get no Payment Entry here: their net pay is posted by the Payroll Entry's
+bank entry (HRMS), the proposal only carries the bank instruction.
 """
 
 import os
@@ -63,7 +63,7 @@ class PaymentProposal(SwissPaymentProposal):
         self.make_payment_entries()
 
     def check_pay_from_currency(self):
-        if not self.purchase_invoices:
+        if not self.purchase_invoices and not self.expenses:
             return
         if not self.pay_from_account:
             frappe.throw(_("Pay from account is required for a payment run."))
@@ -73,6 +73,11 @@ class PaymentProposal(SwissPaymentProposal):
             if row.currency != account_currency:
                 frappe.throw(_("Purchase Invoice {0} is in {1}, but {2} pays in {3}; a payment run does not cover this yet.").format(
                     row.purchase_invoice, row.currency, self.pay_from_account, account_currency))
+        for row in self.expenses:
+            currency = frappe.db.get_value("Expense Claim", row.expense_claim, "currency")
+            if currency != account_currency:
+                frappe.throw(_("Expense Claim {0} is in {1}, but {2} pays in {3}; a payment run does not cover this yet.").format(
+                    row.expense_claim, currency, self.pay_from_account, account_currency))
 
     def make_payment_entries(self):
         for row in self.purchase_invoices:
@@ -92,12 +97,46 @@ class PaymentProposal(SwissPaymentProposal):
                 "reference_no": row.external_reference or pinv.name,
                 "reference_date": getdate(self.date),
                 "remarks": PAYMENT_REMARKS.format(self.name),
+                # custom_remarks keeps the remarks as set: ERPNext replaces them otherwise,
+                # and the entries of a run are found by their remarks (download, cancel).
+                "custom_remarks": 1,
                 "references": [{
                     "reference_doctype": "Purchase Invoice",
                     "reference_name": pinv.name,
                     "due_date": pinv.due_date,
                     "total_amount": pinv.grand_total,
                     "outstanding_amount": pinv.outstanding_amount,
+                    "allocated_amount": amount,
+                }],
+            }).insert()
+        # The claim rows: one Payment Entry per claim, paid from the same account as the bills,
+        # to the claim's own payable account. The claim's amount is what the proposal row holds
+        # (grand_total, the 0002 patch), so the entry clears the claim in full and HRMS marks
+        # it Paid when the entry is submitted.
+        for row in self.expenses:
+            claim = frappe.db.get_value("Expense Claim", row.expense_claim,
+                                        ["payable_account", "employee"], as_dict=True)
+            amount = flt(row.amount)
+            frappe.get_doc({
+                "doctype": "Payment Entry",
+                "payment_type": "Pay",
+                "company": self.company,
+                "party_type": "Employee",
+                "party": claim.employee,
+                "posting_date": getdate(self.date),
+                "paid_from": self.pay_from_account,
+                "paid_to": claim.payable_account,
+                "paid_amount": amount,
+                "received_amount": amount,
+                "reference_no": row.expense_claim,
+                "reference_date": getdate(self.date),
+                "remarks": PAYMENT_REMARKS.format(self.name),
+                "custom_remarks": 1,
+                "references": [{
+                    "reference_doctype": "Expense Claim",
+                    "reference_name": row.expense_claim,
+                    "total_amount": amount,
+                    "outstanding_amount": amount,
                     "allocated_amount": amount,
                 }],
             }).insert()

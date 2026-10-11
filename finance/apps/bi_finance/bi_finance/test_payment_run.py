@@ -56,12 +56,17 @@ def pinv(name, credit_to="2000 - Kreditoren - Test", currency="CHF", grand_total
     )
 
 
-def proposal(purchase_invoices, date=datetime.date(2026, 11, 5)):
+def claim_row(name="HR-EXP-2026-1", employee="HR-EMP-1", amount=107.15):
+    return frappe._dict(expense_claim=name, employee=employee, amount=amount, payable_account="2003 - Verbindlichkeiten Spesen - Test")
+
+
+def proposal(purchase_invoices, expenses=(), date=datetime.date(2026, 11, 5)):
     # Set the fields directly: building a Document reads its DocType from the database.
     doc = PaymentProposal.__new__(PaymentProposal)
     doc.__dict__.update(
         doctype="Payment Proposal", name="PP-TEST-1", title="Test run", company=COMPANY,
-        pay_from_account=PAY_FROM, date=date, purchase_invoices=purchase_invoices, payments=[],
+        pay_from_account=PAY_FROM, date=date, purchase_invoices=purchase_invoices,
+        expenses=list(expenses), payments=[],
     )
     return doc
 
@@ -117,6 +122,9 @@ class PaymentEntries(unittest.TestCase):
         self.assertEqual(first["paid_amount"], 980.0)
         self.assertEqual(first["reference_no"], "RE-17")
         self.assertEqual(first["remarks"], "From Payment Proposal PP-TEST-1")
+        # custom_remarks keeps the remarks: ERPNext replaces them otherwise, and the
+        # entries of a run are found by their remarks (the download, the cancel).
+        self.assertEqual(first["custom_remarks"], 1)
         self.assertEqual(first["references"][0]["reference_name"], "PINV-1")
         self.assertEqual(first["references"][0]["allocated_amount"], 980.0)
         self.assertEqual(second["paid_to"], "2001 - Kreditoren Ausland - Test")
@@ -127,6 +135,80 @@ class PaymentEntries(unittest.TestCase):
         with mock.patch.object(frappe, "throw", side_effect=RuntimeError("stopped")) as throw:
             with self.assertRaises(RuntimeError):
                 doc.check_pay_from_currency()
+        throw.assert_called_once()
+
+
+class ClaimPaymentEntries(unittest.TestCase):
+    """The claim rows: a Payment Entry per claim, from the pay-from account to the claim's payable."""
+
+    def setUp(self):
+        self.created = []
+
+        def get_doc(*args, **kwargs):
+            if args and isinstance(args[0], dict):
+                entry = mock.MagicMock()
+                entry.insert.return_value = entry
+                self.created.append(args[0])
+                return entry
+            if args[:1] == ("Purchase Invoice",):
+                return frappe._dict(name=args[1], credit_to="2000 - Kreditoren - Test", currency="CHF",
+                                    grand_total=1000.0, outstanding_amount=1000.0,
+                                    due_date=datetime.date(2026, 11, 5), bill_no=None)
+            raise AssertionError(f"unexpected get_doc {args}")
+
+        patcher = mock.patch.object(frappe, "get_doc", side_effect=get_doc)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        patcher = mock.patch.object(frappe, "get_cached_value", return_value="CHF")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        claims = {
+            "HR-EXP-2026-1": frappe._dict(payable_account="2003 - Verbindlichkeiten Spesen - Test", employee="HR-EMP-1"),
+            "HR-EXP-2026-2": frappe._dict(payable_account="2003 - Verbindlichkeiten Spesen - Test", employee="HR-EMP-2"),
+        }
+
+        def get_value(doctype, name, *args, **kwargs):
+            assert doctype == "Expense Claim", (doctype, name)
+            if kwargs.get("as_dict"):
+                return claims[name]
+            return "CHF"
+
+        patcher = mock.patch.object(frappe, "db", mock.MagicMock(get_value=mock.Mock(side_effect=get_value)))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_one_draft_per_claim_with_the_claim_as_its_reference(self):
+        doc = proposal([], expenses=[claim_row("HR-EXP-2026-1", "HR-EMP-1", 107.15)])
+        doc.make_payment_entries()
+        self.assertEqual(len(self.created), 1)
+        entry = self.created[0]
+        self.assertEqual(entry["payment_type"], "Pay")
+        self.assertEqual(entry["party_type"], "Employee")
+        self.assertEqual(entry["party"], "HR-EMP-1")
+        self.assertEqual(entry["paid_from"], PAY_FROM)
+        self.assertEqual(entry["paid_to"], "2003 - Verbindlichkeiten Spesen - Test")
+        self.assertEqual(entry["paid_amount"], 107.15)
+        self.assertEqual(entry["reference_no"], "HR-EXP-2026-1")
+        self.assertEqual(entry["remarks"], "From Payment Proposal PP-TEST-1")
+        self.assertEqual(entry["custom_remarks"], 1)
+        self.assertEqual(entry["references"][0]["reference_doctype"], "Expense Claim")
+        self.assertEqual(entry["references"][0]["allocated_amount"], 107.15)
+
+    def test_claims_and_bills_pay_from_the_same_account_in_one_run(self):
+        doc = proposal([invoice("PINV-1", "Lieferant Alpha AG", 1000.0)],
+                       expenses=[claim_row("HR-EXP-2026-1", "HR-EMP-1", 107.15),
+                                 claim_row("HR-EXP-2026-2", "HR-EMP-2", 59.5)])
+        doc.make_payment_entries()
+        self.assertEqual(len(self.created), 3)
+        self.assertEqual([entry["party_type"] for entry in self.created], ["Supplier", "Employee", "Employee"])
+        self.assertTrue(all(entry["paid_from"] == PAY_FROM for entry in self.created))
+
+    def test_a_foreign_currency_claim_stops_the_run(self):
+        with mock.patch.object(frappe, "db", mock.MagicMock(get_value=mock.Mock(return_value="EUR"))):
+            doc = proposal([], expenses=[claim_row()])
+            with mock.patch.object(frappe, "throw", side_effect=RuntimeError("stopped")) as throw:
+                with self.assertRaises(RuntimeError):
+                    doc.check_pay_from_currency()
         throw.assert_called_once()
 
 

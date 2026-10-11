@@ -21,9 +21,41 @@ document that explains the step is in brackets. Conventions for labels and butto
    Revaluation arrives as a draft on the 1st (only when an account has a gain or loss): review and submit
    it; the 31.12 one needs the ESTV year-end rate entered as a Currency Exchange row dated 31.12 first.
 4. **Bank Reconciliation Tool:** match the remaining lines to Payment Entries (Treasury shortcut).
-5. **Payment Proposal:** create for the due bills (Switzerland card), check the list and the total,
-   submit, then **Download bank file**. Upload that file in UBS e-banking; ERPNext sends nothing to a bank.
-   [`finance/docs/payment-runs.md`, Run]
+5. **Payment Proposal:** create for the due bills and the unpaid expense claims (Switzerland
+   card), check the list and the total, submit, then **Download bank file**. Upload that file in
+   UBS e-banking; ERPNext sends nothing to a bank. [`finance/docs/payment-runs.md`, Run;
+   `finance/docs/operating.md`, Expenses]
+
+## Expenses (on demand)
+
+Employee expenses have two routes. Setup is once: `finance/scripts/swiss-setup.sh expenses`
+creates the five Expense Claim Types on the bexio Spesen accounts (5811 Weiterbildung, 5820
+Reisespesen, 5821 Verpflegungsspesen, 5822 Übernachtungsspesen, 5832 Pauschalspesen), sets the
+Company's default expense-claim payable (2003 Verbindlichkeiten Spesen) and gives Benchi's user
+the Expense Approver role (`HR_USER`). The claim route is for receipts and their VAT; the salary
+route is for flat allowances.
+
+1. **Claim (receipts, VAT):** **Expense Claim** (HR, Expense Claim), New. Employee, one row per
+   receipt: the Expense Claim Type, the date, the amount and what it was; attach the receipts to
+   the claim. With VAT on the receipt, add a tax row: the account 1172 (Vorsteuerausgleich, the
+   receipt's rate, e.g. 8.1 %) — the rows then carry the net, and the claim books the Vorsteuer
+   to 1172 when it is submitted.
+2. **Approve:** Benchi sets Approval Status to Approved; the claimant may not approve their own
+   claim (HRMS refuses it). **Submit** after approving. The claim then posts: the Spesen account
+   of each row is debited, the VAT of the tax row goes to 1172, and 2003 Verbindlichkeiten
+   Spesen holds the employee's payable.
+3. **Pay with the next Payment Proposal:** the create button of the run (Month, step 5) picks
+   the submitted claims with status Unpaid alongside the due bills — one row per claim. Check,
+   submit, download the bank file as usual: each claim gets its Payment Entry, and the claim
+   turns Paid once it is submitted. The employee needs a bank account number and an address on
+   the Employee record, or the proposal refuses.
+
+The salary route: **Additional Salary** (HR, Additional Salary), New, for the employee, an amount
+on an earning Salary Component (one that exists in the Salary Structure; a new component is a
+setup decision, not a desk edit), Pay From/Pay To inside the month. The next payroll picks it
+up and pays it with the net (the salary rows of the same Payment Proposal); it posts through the
+payroll accounts, not the Spesen accounts. No receipts, no VAT: use it for allowances agreed as
+a flat sum, not for reimbursed receipts.
 
 ## Quarter
 

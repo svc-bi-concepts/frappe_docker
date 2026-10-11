@@ -18,22 +18,30 @@ Nothing is sent to a bank by ERPNext or by this code.
 2. `finance/scripts/swiss-setup.sh payments`. It sets the erpnextswiss settings the
    run needs (pain.001.001.09, region CH, unidecode on), makes the IBAN and BIC fixes
    above, and says if the account still lacks an IBAN or BIC. A second run changes nothing.
+3. `finance/scripts/swiss-setup.sh expenses` (once, with `HR_USER` set). It creates the
+   Expense Claim Types the claim route books on (`finance/docs/operating.md`, Expenses) and
+   the approver role; without it the run finds no claims and a claim without a payable
+   account cannot be submitted.
 
 ## Run
 
 1. Payment Proposal list, the create button. It takes the open Purchase Invoices due
-   by the planning date (`planning_days` in ERPNextSwiss Settings) and the pay-from account.
-   Check the list and the total.
+   by the planning date (`planning_days` in ERPNextSwiss Settings), the submitted
+   expense claims with status Unpaid of the company (HRMS), and the pay-from account.
+   Check the list and the total. A claim row holds what the employee is still owed
+   (grand total: the sanctioned amount plus the VAT rows, minus advances).
 2. Submit. Each paid invoice gets a Payment Entry as a **draft** (pay from the UBS
-   account, to the creditor account of the invoice, allocated to that invoice).
-   Invoices are then marked as proposed, so a second run does not pick them up.
+   account, to the creditor account of the invoice, allocated to that invoice), and
+   each claim row one to the claim's payable account (2003 Verbindlichkeiten Spesen).
+   Invoices are then marked as proposed, so a second run does not pick them up; the
+   same for claims.
 3. "Download bank file" on the submitted proposal. The file must pass the Swiss
    schema check or nothing is downloaded. On success the draft Payment Entries are
    **submitted**, dated the day of the download at the latest.
 4. Upload the file in UBS e-banking and approve it there.
 
 Cancelling the proposal cancels its submitted Payment Entries and deletes the
-drafts, and un-marks the invoices.
+drafts, and un-marks the invoices and the claims.
 
 ## The file
 
@@ -43,9 +51,10 @@ drafts, and un-marks the invoices.
   one banks name in their documentation.
 - EndToEndId is what erpnextswiss writes: the supplier's invoice number (`bill_no`, else
   the Purchase Invoice name), cut to 35 characters; the invoices of one supplier in a run
-  are one file row, so their numbers are joined by a space. It is **not** the Payment Entry
-  name. Each Payment Entry carries the same invoice number as its `reference_no`, so the
-  camt import (erp-f5ss) matches a bank line to Payment Entries on that number and the amount.
+  are one file row, so their numbers are joined by a space. An expense-claim row is the
+  claim's name, joined the same way for one employee. It is **not** the Payment Entry
+  name. Each Payment Entry carries the same number as its `reference_no`, so the camt
+  import (erp-f5ss) matches a bank line to Payment Entries on that number and the amount.
 - The company's country code is written upper case (erpnextswiss writes it lower case).
 - An IBAN whose check digits fail (mod 97) stops the file before it is made, naming the
   row; the bank would refuse the file otherwise. An empty IBAN is not checked here.
@@ -62,9 +71,12 @@ drafts, and un-marks the invoices.
   Entries; check that ERPNext's bank reconciliation takes it.
 - Invoices in a currency other than the pay-from account's are refused (a Payment
   Entry needs an exchange rate, not built yet).
-- Expense claims and salaries are left out of a run while the site has no HRMS (no
-  `Expense Claim` table); erpnextswiss's query on them fails without it. They get no
-  Payment Entry from this app (erpnextswiss's intermediate account still covers them).
+- Salaries are left out of the Payment Entries of this app: the net pay is posted by the
+  Payroll Entry's bank entry (HRMS); the proposal only carries the bank instruction.
+- Expense-claim rows take a Payment Entry like a bill (pay from the UBS account, to the
+  claim's payable account), so the camt line of the reimbursement reconciles the same way.
+  The employee needs a bank account number and a two-line address on the Employee record,
+  or the proposal refuses (`bank_ac_no`, `permanent_address`).
 - The Payment Entry is dated on the download day, not on the execution date.
 
 ## Tests
@@ -77,9 +89,9 @@ docker run --rm -v "$PWD/finance/apps/bi_finance:/home/frappe/frappe-bench/apps/
     sh -c 'mkdir -p /home/frappe/logs && cd /home/frappe/frappe-bench/apps/bi_finance && ../../env/bin/python -m unittest -v bi_finance.test_payment_run'
 ```
 
-They cover the amount rule (skonto), the Payment Entries, the currency refusal, the
-submit on download, the cancel, the create button without HRMS, and a rendered file
-that passes both schemas.
+They cover the amount rule (skonto), the Payment Entries for invoices and for expense-claim
+rows, the currency refusal, the submit on download, the cancel, the create button without
+HRMS, and a rendered file that passes both schemas.
 
 The IBAN and BIC rule of the `payments` step is tested offline with the other
 swiss-setup tests: `python3 -m unittest discover -s finance/scripts -p 'test_*.py'`.

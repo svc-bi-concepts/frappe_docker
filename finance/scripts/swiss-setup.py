@@ -1,6 +1,7 @@
 """Swiss setup of company BI Concepts, run inside the backend container by
 swiss-setup.sh. Steps are named on the command line (coa, accounts, vat, fiscal,
-fields, currencies, banks, gebuev, qrbill, payslip, host, payments, hr, payroll_accounts, lohnausweis); each one is re-runnable and skips what
+fields, currencies, banks, gebuev, qrbill, payslip, host, payments, hr, payroll_accounts, lohnausweis,
+expenses); each one is re-runnable and skips what (HR 11 expenses: the claim route as the optional route for employee expenses — the setup step 'expenses' (five Expense Claim Types on bexio's 5811, 5820, 5821, 5822, 5832, the Company's default expense-claim payable 2003, the Expense Approver role on HR_USER), the two routes in operating.md (claim with VAT through the Payment Proposal run, or flat allowances by Additional Salary with the payroll), Payment Entries for claim rows in the payment run (paid from the UBS account, to the claim's payable, submitted on download), the erpnextswiss patches 0002 (the proposal's claim rows pay grand_total, so a VAT claim is not paid short) and 0003 (get_primary_address called .format instead of formatting, every Payment Proposal was refused), offline tests (erp-j9kn))
 already exists. `freeze <date> [--apply]` is a separate command: it closes the
 books up to a date and is a dry run unless --apply is given."""
 import csv
@@ -875,6 +876,92 @@ def gebuev():
     frappe.db.commit()
 
 
+# bexio's Spesen accounts (private/bexio-mapping.md, 58 Übriger Personalaufwand) and the
+# Expense Claim Type each is booked through: the claim route of the employee expenses
+# (finance/docs/operating.md). The account is per company, in the doctype's accounts table.
+EXPENSE_CLAIM_TYPES = [
+    ("5811", "Weiterbildung"),
+    ("5820", "Reisespesen"),
+    ("5821", "Verpflegungsspesen"),
+    ("5822", "Übernachtungsspesen"),
+    ("5832", "Pauschalspesen"),
+]
+# The KK account the claim's payable sits on (bexio 2003 Verbindlichkeiten Spesen); HRMS
+# takes the Company's default_expense_claim_payable_account, with no fallback set today.
+ACC_EXPENSE_PAYABLE = "2003"
+# HRMS's role for who may approve a claim. The user is company data: it comes from the
+# HR_USER environment variable (Benchi's user), never from this file.
+EXPENSE_APPROVER_ROLE = "Expense Approver"
+
+
+def claim_type_rows(wanted, company, existing):
+    """The (expense_type, company, account_number) rows to write, in the wanted order.
+
+    wanted: (account_number, expense_type) pairs; existing: (expense_type, company,
+    account_number) rows as on the site. A row is missing when the type has none for the
+    company, or its account is not the wanted one.
+    """
+    have = set(existing)
+    return [(name, company, number) for number, name in wanted if (name, company, number) not in have]
+
+
+def expenses():
+    # 1. The Expense Claim Types with their account for the company.
+    abbr = frappe.db.get_value("Company", COMPANY, "abbr")
+    existing = {
+        (t.name, a.company, frappe.db.get_value("Account", a.default_account, "account_number"))
+        for t in frappe.get_all("Expense Claim Type", fields=["name"])
+        for a in frappe.get_all("Expense Claim Account", filters={"parent": t.name},
+                                fields=["company", "default_account"])
+    }
+    for name, company, number in claim_type_rows(EXPENSE_CLAIM_TYPES, COMPANY, existing):
+        acc = account(number)
+        if frappe.db.exists("Expense Claim Type", name):
+            doc = frappe.get_doc("Expense Claim Type", name)
+            row = next((a for a in doc.accounts if a.company == company), None)
+            if row:
+                say(f"expenses: {name}: account {row.default_account} -> {acc}")
+                row.default_account = acc
+            else:
+                say(f"expenses: {name}: account {acc} for {company}")
+                doc.append("accounts", {"company": company, "default_account": acc})
+            doc.save()
+        else:
+            frappe.get_doc({
+                "doctype": "Expense Claim Type",
+                "expense_type": name,
+                "accounts": [{"company": company, "default_account": acc}],
+            }).insert()
+            say(f"expenses: {name} created with account {acc}")
+    frappe.db.commit()
+
+    # 2. The account a claim's payable sits on: without it a claim submits no GL.
+    payable = account(ACC_EXPENSE_PAYABLE)
+    if frappe.db.get_value("Company", COMPANY, "default_expense_claim_payable_account") != payable:
+        frappe.db.set_value("Company", COMPANY, "default_expense_claim_payable_account", payable)
+        frappe.db.commit()
+        say(f"expenses: default expense claim payable account set to {payable}")
+    else:
+        say(f"expenses: default expense claim payable account in place ({payable})")
+
+    # 3. The approver. HRMS refuses a claim approved by its claimant, so the approver's user
+    # needs the role, not the employee's.
+    email = os.environ.get("HR_USER", "").strip()
+    if not email:
+        say("expenses: HR_USER not set; the Expense Approver role was set on nobody")
+    elif not frappe.db.exists("User", email):
+        sys.exit(f"expenses: no user {email}; HR_USER must name an existing user")
+    elif EXPENSE_APPROVER_ROLE not in [r.role for r in frappe.get_doc("User", email).roles]:
+        user = frappe.get_doc("User", email)
+        user.append("roles", {"role": EXPENSE_APPROVER_ROLE})
+        user.save()
+        frappe.db.commit()
+        say(f"expenses: {EXPENSE_APPROVER_ROLE} role set on {email}")
+    else:
+        say(f"expenses: {email} has the {EXPENSE_APPROVER_ROLE} role already")
+    say(f"expenses: {len(EXPENSE_CLAIM_TYPES)} expense claim types for {COMPANY} ({abbr})")
+
+
 def freeze(date, apply):
     # Accounts frozen till a date: no posting dated on or before it. The role
     # that may still post there is set by hand, not here. Dry run unless
@@ -962,7 +1049,7 @@ def payroll_accounts():
 
 STEPS = {"coa": coa, "accounts": accounts, "vat": vat, "fiscal": fiscal, "fields": fields, "currencies": currencies,
          "banks": banks, "gebuev": gebuev, "qrbill": qrbill, "payslip": payslip, "host": host, "payments": payments, "hr": hr,
-         "payroll_accounts": payroll_accounts, "lohnausweis": lohnausweis}
+         "payroll_accounts": payroll_accounts, "lohnausweis": lohnausweis, "expenses": expenses}
 
 if __name__ == "__main__":
     args = sys.argv[1:]
