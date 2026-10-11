@@ -21,7 +21,11 @@ BEZUG_NEW_ROW_FROM = datetime.date(2024, 1, 1)
 # Optiert (UO77, UO81) is taxed at the normal rate, so its tax is owed in 302/303 like UN77/UN81.
 # bexio VAT id -> (code, rate %, kind, form row). Kind S = sales, P = purchase, BZ = Bezugsteuer.
 # The form row is where the tax of the template's Add row goes; for BZ the Deduct row
-# (the reverse charge on 2203) is the owed tax, see owed_row(). None = not in a checked Ziffer.
+# (the reverse charge on 2203) is the owed tax, see owed_row(). For a zero-rate sales code the form row is the
+# deduction of Ziffer 200 that its net fills: UEX (Export) 220, ULA (Ausland) 221, MEL (Meldeverfahren) 225 —
+# the rows the ESTV form has for them. None = not in a checked Ziffer: a zero-rate sales code with no row
+# (UNO nicht optimiert, SUB Subventionen, SPE Spenden, U00 Null-Satz) keeps its net out of the deductions and
+# the fill refuses the declaration naming it (declaration_fields), it is never guessed.
 # The ids and codes are those of swiss-setup.py's BEXIO_TAXES; the test checks that they match.
 TEMPLATES = {
     16: ("UN77", 7.7, "S", "302"),
@@ -30,9 +34,9 @@ TEMPLATES = {
     29: ("UR26", 2.6, "S", "313"),
     18: ("US37", 3.7, "S", "342"),
     30: ("US38", 3.8, "S", "343"),
-    3: ("UEX", 0, "S", None),
-    4: ("ULA", 0, "S", None),
-    5: ("MEL", 0, "S", None),
+    3: ("UEX", 0, "S", "220"),
+    4: ("ULA", 0, "S", "221"),
+    5: ("MEL", 0, "S", "225"),
     6: ("UNO", 0, "S", None),
     13: ("SUB", 0, "S", None),
     14: ("SPE", 0, "S", None),
@@ -106,6 +110,8 @@ class Totals:
         self.skipped_mirrors = []   # the bexio_id keys of the vatfix-* vouchers the journal part skips
         self.skipped_moves = []     # the keys of the 2202 -> 2203 moves, which the Payment Entries' shared deduct rows hold
         self.other_keys = []        # the keys (or '(no bexio_id)') of vouchers the pair rule counts
+        self.undeducted_net = {}    # a zero-rate sales code with no deduction row: code -> the net it keeps out of them
+        self.unsplit_net = {}       # a document whose zero-rate codes would share its net between rows: codes -> net
 
     def add(self, row, base, tax):
         acc = self.rows.setdefault(row, [ZERO, ZERO])
@@ -131,23 +137,56 @@ def plan(sales, purchases, templates, totals=None):
     """Add the documents up by form row. sales and purchases are ERPNext documents as dicts:
     posting_date (date), base_net_total, and taxes (rows with description, rate, base_tax_amount,
     tax_amount, add_deduct_tax). templates maps a template name to its bexio id (string).
-    Returns the Totals; unmapped rows are named by their template only."""
+    Returns the Totals; unmapped rows are named by their template only.
+
+    A sales document's zero-rate net (its net less the derived bases of its rated rows) goes to the deduction row
+    of its zero-rate code (_zero_rate_net): the per-row net is not in the data, only the document's."""
     totals = totals or Totals()
     for doc in sales:
-        totals.add("200", Decimal(str(doc["base_net_total"])), ZERO)
+        net = Decimal(str(doc["base_net_total"]))
+        totals.add("200", net, ZERO)
+        rated_base, zero_codes = ZERO, []
         for row in doc["taxes"]:
-            _tax_row(totals, row, templates, doc["posting_date"], purchase=False)
+            code, form_row, base = _tax_row(totals, row, templates, doc["posting_date"], purchase=False)
+            if base is not None:
+                rated_base += base
+            elif code is not None:
+                zero_codes.append((code, form_row))
+        _zero_rate_net(totals, net - rated_base, zero_codes)
     for doc in purchases:
         for row in doc["taxes"]:
             _tax_row(totals, row, templates, doc["posting_date"], purchase=True)
     return totals
 
+def _zero_rate_net(totals, remainder, codes_rows):
+    """A sales document's zero-rate net: its net less the derived bases of its rated rows. The per-row net is not
+    in the data, so the remainder goes whole to the deduction row the document's zero-rate codes share. One that
+    would have to be split between rows — several codes on different rows, or codes with no row beside one with a
+    row — is not split: the fill would guess. It is kept in Totals.undeducted_net (a code with no row, by code) or
+    Totals.unsplit_net (by the codes), so declaration_fields can refuse the declaration naming them."""
+    if not remainder or not codes_rows:
+        return
+    codes = tuple(sorted(code for code, _row in codes_rows))
+    rows = {form_row for _code, form_row in codes_rows}
+    if len(rows) == 1:
+        (row,) = rows
+        if row is not None:
+            totals.add(row, remainder, ZERO)
+            return
+        if len(codes) == 1:
+            totals.undeducted_net[codes[0]] = totals.undeducted_net.get(codes[0], ZERO) + remainder
+            return
+    totals.unsplit_net[codes] = totals.unsplit_net.get(codes, ZERO) + remainder
+
 def _tax_row(totals, row, templates, posting_date, purchase):
+    """Add one tax row of a document to the totals. Returns (code, form row, base): the code and the form row of
+    the row's template (None, None when the row maps to nothing) and the derived base of a rated row (None when
+    the rate is 0, so the base is not on the row and the document's remainder carries it, see _zero_rate_net)."""
     bexio_id = templates.get(row.get("description"))
     entry = TEMPLATES.get(int(bexio_id)) if bexio_id and bexio_id.isdigit() else None
     if entry is None:
         totals.unmapped.append(row.get("description") or "(no template)")
-        return
+        return None, None, None
     code, rate, kind, form_row = entry
     tax = Decimal(str(row.get("base_tax_amount") or row.get("tax_amount") or 0))
     deduct = purchase and row.get("add_deduct_tax") == "Deduct"
@@ -155,13 +194,15 @@ def _tax_row(totals, row, templates, posting_date, purchase):
         # a reverse charge comes back on 2203 as the owed tax; the same amount is the Vorsteuer on the Add row
         if kind != "BZ":
             totals.unmapped.append("Deduct row on {}".format(code))
-            return
+            return code, None, None
         form_row = owed_row(posting_date)
     totals.by_code.setdefault(code, [ZERO, ZERO])[1] += tax
     if form_row is None:
         totals.unchecked_tax += tax
-        return
-    totals.add(form_row, derived_base(tax, rate), tax)
+        return code, None, None
+    base = derived_base(tax, rate)
+    totals.add(form_row, base, tax)
+    return code, form_row, base
 
 def form_totals(totals):
     """The totals of the form rows that the form adds up: 399 owed and 479, the total of the Vorsteuern
@@ -374,15 +415,25 @@ ACQUISITION_FIELDS = [("382", "additional_amount", "additional_tax"),
                       ("383", "additional_amount_2024", "additional_tax_2024")]
 # Ziffern the report does not decide. A tax on one of them is refused, not dropped: the form's figure for them is open.
 UNDECIDED_ZIFFERN = ("410", "415", "420")
+# The deductions of Ziffer 200 on the form: the zero-rate sales rows (225 and 235 only when a code fills them).
+DEDUCTION_ROWS = ("220", "221", "225", "230", "235")
+# The difference the plausibility check allows per rate row the period uses: the base of a rate row is derived from
+# its tax, and one rappen of tax is about 0.12 of base at 8.1 %, so the derived bases are off by a few rappen.
+DEDUCTION_TOLERANCE_PER_RATE_ROW = Decimal("0.05")
 
 
 def declaration_fields(totals):
     """The fields of one VAT Declaration for the period, by fieldname, as Decimals.
 
     Refuses (ValueError) what the fill cannot put right: a tax row no template maps, since the declaration would miss
-    its tax, and a tax on an undecided Ziffer (UNDECIDED_ZIFFERN). Unchecked rows (Umsatz 220 to 299, zero-rate and
-    imports) are not in the fields; the caller reports totals.unchecked_tax. The totals are the form's own: 399 is
-    the sum of the tax rows, 479 the Vorsteuer (400 + 405), 500 what is payable (399 less 479)."""
+    its tax; a tax on an undecided Ziffer (UNDECIDED_ZIFFERN); and a quarter whose Ziffer 200 less the Umsatz
+    deductions 220 to 235 differs from the sum of the rate bases by more than the rounding — the ESTV checks
+    299 (200 less the deductions) against the rate rows at upload, so a declaration off there would not be taken.
+    The deductions are the zero-rate rows: each sales document's net less the derived bases of its rated rows goes
+    to the deduction row of its zero-rate code (UEX 220, ULA 221, MEL 225); a code with no row (UNO, SUB, SPE, U00)
+    or a net that would have to be split between rows is named in the refusal, never guessed. Unchecked taxes
+    (imports, purchases at 0 %) are not in the fields; the caller reports totals.unchecked_tax. The totals are the
+    form's own: 399 is the sum of the tax rows, 479 the Vorsteuer (400 + 405), 500 what is payable (399 less 479)."""
     if totals.unmapped:
         raise ValueError("{} tax rows have no known template, so the declaration would miss their tax".format(
             len(totals.unmapped)))
@@ -397,7 +448,24 @@ def declaration_fields(totals):
     def tax(ziffer):
         return rows.get(ziffer, [ZERO, ZERO])[1]
 
+    deductions = sum((base(ziffer) for ziffer in DEDUCTION_ROWS), ZERO)
+    rate_bases = sum((base(ziffer) for ziffer, *_ in RATE_FIELDS), ZERO)
+    difference = base("200") - deductions - rate_bases
+    rows_used = sum(1 for ziffer, *_ in RATE_FIELDS if base(ziffer) or tax(ziffer))
+    tolerance = DEDUCTION_TOLERANCE_PER_RATE_ROW * (rows_used or 1)
+    if abs(difference) > tolerance:
+        named = ["{} holds a net of {:.2f} with no deduction row".format(code, net)
+                 for code, net in sorted(totals.undeducted_net.items())]
+        named += ["the net of {:.2f} cannot be split between {}".format(net, " and ".join(codes))
+                  for codes, net in sorted(totals.unsplit_net.items())]
+        raise ValueError(
+            "Ziffer 200 less the deductions ({}) differs from the rate bases ({}) by {},"
+            " more than the rounding of {} per rate row{}".format(
+                deductions, rate_bases, difference, tolerance,
+                ": " + "; ".join(named) if named else ""))
     fields = {"total_revenue": base("200")}
+    for ziffer in DEDUCTION_ROWS:
+        fields[FIELD_BY_ZIFFER[ziffer]] = base(ziffer)
     total_tax = ZERO
     for ziffer, amount_field, rate_field, tax_field, rate in RATE_FIELDS:
         rate = Decimal(rate)

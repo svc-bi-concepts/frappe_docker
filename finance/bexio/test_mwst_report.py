@@ -94,7 +94,8 @@ class Table(unittest.TestCase):
 
     def test_form_rows_are_the_confirmed_ones(self):
         rows = {entry[3] for entry in mr.TEMPLATES.values() if entry[3]}
-        self.assertEqual(rows, {"302", "303", "312", "313", "342", "343", "400", "405", "415"})
+        self.assertEqual(rows, {"302", "303", "312", "313", "342", "343", "400", "405", "415",
+                                "220", "221", "225"})
 
 
 class Rows(unittest.TestCase):
@@ -122,12 +123,23 @@ class Sales(unittest.TestCase):
         self.assertEqual(rows["399"][1], D("107.00"))
         self.assertEqual(saldo, D("107.00"))
 
-    def test_exempt_export_is_in_the_net_but_has_no_tax_row(self):
+    def test_exempt_export_net_fills_220_and_has_no_tax_row(self):
         t = mr.plan([doc(datetime.date(2026, 8, 3), D("500.00"), [
             tax("UEX 0% Export, steuerbefreit", "0"),
         ])], [], TEMPLATE_NAMES)
         self.assertEqual(mr.form_totals(t)[0]["200"][0], D("500.00"))
+        self.assertEqual(mr.form_totals(t)[0]["220"], [D("500.00"), D("0")])
         self.assertEqual(t.unchecked_tax, D("0"))
+
+    def test_a_mixed_document_puts_its_zero_rate_net_whole_into_220(self):
+        # the per-row net is not in the data: the document's net less the derived base of its rated row
+        t = mr.plan([doc(datetime.date(2026, 8, 3), D("1081.00"), [
+            tax("UN81 8.1% Normalsatz", "81.00"),
+            tax("UEX 0% Export, steuerbefreit", "0"),
+        ])], [], TEMPLATE_NAMES)
+        rows, _saldo = mr.form_totals(t)
+        self.assertEqual(rows["303"], [D("1000.00"), D("81.00")])
+        self.assertEqual(rows["220"], [D("81.00"), D("0")])
 
     def test_optiert_sale_is_owed_at_the_normal_rate(self):
         t = mr.plan([doc(datetime.date(2026, 8, 3), D("100.00"), [

@@ -276,14 +276,26 @@ cancelled entries and other companies.
   when the company's Tax ID is not `CHE-ddd.ddd.ddd` with or without ` MWST` (a dry run
   does not need it). Nothing is submitted; Benchi files.
 - **What the fill sets.** Ziffer 200; the rate rows 302, 303, 312, 313, 342 and 343 with
-  their rates; 382 and 383 (base and tax as booked); 400 and 405 (tax as booked); 410,
-  415 and 420 at zero. The totals follow the form's own arithmetic (erpnextswiss's
-  `vat_declaration.js`): a rate row's tax is its base times its rate, and 399, 479 and
-  500 are sums of those. The rate rows' tax is therefore the form's, to the rappen,
-  not the report's exact tax per invoice; the comparison with bexio allows for that.
-- **What it leaves.** The Umsatz rows 220 to 235 and the Abzüge are not filled: the
-  report does not check them yet, so an export or an exempt supply does not reach
-  them. Do not file a declaration with such revenue before that is settled.
+  their rates; the Umsatz deductions 220, 221, 225, 230 and 235; 382 and 383 (base and tax as
+  booked); 400 and 405 (tax as booked); 410, 415 and 420 at zero. The totals follow the form's
+  own arithmetic (erpnextswiss's `vat_declaration.js`): a rate row's tax is its base times its
+  rate, and 399, 479 and 500 are sums of those. The rate rows' tax is therefore the form's, to
+  the rappen, not the report's exact tax per invoice; the comparison with bexio allows for that.
+- **The Umsatz deductions and the refusal.** The deductions of 200 are the zero-rate sales
+  rows: UEX (Export) fills 220, ULA (Ausland) 221, MEL (Meldeverfahren) 225; a document's
+  zero-rate net is its net less the derived bases of its rated rows, whole to its code's row.
+  The codes with no row on the form (UNO, SUB, SPE, U00) are never guessed into one: the fill
+  refuses the declaration naming the code and its net, and so does a document whose zero-rate
+  codes would split its net between two rows. After the deductions the fill checks the form's
+  plausibility itself: 200 less the deductions must equal the sum of the rate bases within a
+  rounding of 0.05 per rate row the period uses (the bases are derived from the taxes), or the
+  fill refuses with the difference. 289 and 299 it does not set: the form computes them from
+  the fields on save. The report fills the same rows (`mwst_report.py --basis payment`);
+  in the comparison with bexio a 220/221/225 figure against bexio's empty row is the expected
+  difference, named "deduction rows" — bexio's own declarations never carried one.
+- **What it leaves.** Ziffer 205 (nicht steuerbarer Umsatz), 280 and the other Abzüge: the
+  payment basis has no figure for them. A declaration with such revenue is not fillable from
+  here; the live filing is a bead of its own.
 - **The form's Get values** button reads the invoice basis from the views and would
   overwrite a payment-basis draft. Do not press it there. Recalculate is safe.
 - **The dry run.** `python3 finance/bexio/mwst_report.py --period 2026Q3 --basis payment

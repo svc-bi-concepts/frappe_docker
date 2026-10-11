@@ -40,6 +40,8 @@ TOTALS = {"399": ("302", "303", "312", "313", "342", "343", "382", "383"),
 # the Ziffern the form states as tax amounts only: their base columns are information and are
 # not compared (400 to 420 with the total 479; 500 and 510 have no base on either side)
 TAX_ONLY = {"400", "405", "410", "415", "420", "479", "500", "510"}
+# The deduction rows of Ziffer 200 the report fills and bexio's declarations leave empty.
+DEDUCTION_ROWS = ("220", "221", "225")
 
 
 def money(text):
@@ -95,7 +97,12 @@ def reason_of(ziffer, bexio, erp):
     every VAT-account move its exclusions leave in, so a difference there is the mirrors'
     residue, named for the vouchers that cause it (see finance/docs/swiss.md). For a Ziffer in
     TAX_ONLY the form has no base, so the bases and their journal parts are not compared; the
-    row is a difference only when its tax is."""
+    row is a difference only when its tax is. For a deduction row of 200 (220, 221, 225) a
+    bexio side with no figure at all is the expected difference: bexio's declarations never
+    carried one, the report fills the row from the sales codes (DEDUCTION_ROWS in
+    mwst_payment.py), so it is named and explained, not failed."""
+    if ziffer in DEDUCTION_ROWS and not bexio[0] and not bexio[1] and not bexio[4] and not bexio[5]:
+        return "deduction rows"
     d_base = ZERO if ziffer in TAX_ONLY else erp[0] - bexio[0]
     d_tax = erp[1] - bexio[1]
     if not d_base and not d_tax:
@@ -150,8 +157,10 @@ def differences(rows):
 
 
 # the reasons a difference may carry and still be explained: the rounding the tolerances bound,
-# and the journal mirrors' residue the report's journal rows keep (finance/docs/swiss.md)
-EXPLAINED = ("rounding", "journal mirrors")
+# the journal mirrors' residue the report's journal rows keep, and the deduction rows the report
+# now fills from the sales codes where bexio's declarations never carried a figure
+# (finance/docs/swiss.md)
+EXPLAINED = ("rounding", "journal mirrors", "deduction rows")
 
 
 def unexplained(rows):

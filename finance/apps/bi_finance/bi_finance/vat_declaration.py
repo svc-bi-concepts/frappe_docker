@@ -41,8 +41,11 @@ def fill_payment_basis(company, period, dry_run=0):
     """The draft VAT Declaration of one period on the payment basis: created, or its draft updated.
 
     period: '2026Q3' or '2026H1', as mwst_report.py takes it. A declaration of the period that is submitted stops the
-    fill; it is never changed. dry_run: compute the fields and return them, write nothing. Only the fields of the
-    payment basis are set; the Umsatz rows 220 to 235 stay as they are (not checked yet, see mwst_payment.py)."""
+    fill; it is never changed. dry_run: compute the fields and return them, write nothing. The fill sets Ziffer 200,
+    the rate rows, the Bezugsteuer, the Vorsteuer and the Umsatz deductions 220, 221, 225, 230 and 235 from the sales
+    templates (mwst_payment.py); 205 and 280 stay as they are, and 289 and 299 the form computes itself on save
+    (erpnextswiss's vat_declaration.js). A quarter whose 200 less the deductions is off the rate bases beyond
+    rounding is refused, so a draft the ESTV would not take is never written."""
     frappe.has_permission("VAT Declaration", "write", throw=True)
     start, end = mwst_payment.period_bounds(period)
     try:

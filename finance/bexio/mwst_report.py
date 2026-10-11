@@ -36,14 +36,18 @@ does not carry the net per row. At 8.1 % one rappen of tax is about 0.06 of
 base, so the derived bases are approximate; the tax per row is exact.
 
 Ziffern: the table TEMPLATES (bi_finance's mwst_payment.py, shared with the VAT
-Declaration's fill) is the form's row per code. Only the rows that the ESTV form
-confirmed (302/303, 312/313, 342/343, 382/383, 399, 400, 405, 410, 415, 420, 479)
-carry a Ziffer. On the form 420 is Vorsteuerkürzungen (reductions
-for subsidies and the like; none known, so it stays 0) and the total of the
-Vorsteuern is 479 = 400 + 405 + 410 + 415 - 420, not 420. The Umsatz rows 220
-to 299 and the Abzüge are not checked yet, so the codes that would go there
-carry None and their tax is reported as not in a checked Ziffer. See the note
-of erp-agpf for the open points.
+Declaration's fill) is the form's row per code. The rows the ESTV form confirmed
+for the tax carry a Ziffer (302/303, 312/313, 342/343, 382/383, 399, 400, 405,
+410, 415, 420, 479), and so do the deductions of Ziffer 200 that a zero-rate sales
+code fills: UEX 220, ULA 221, MEL 225. A document's zero-rate net is its net less
+the derived bases of its rated rows, and goes whole to its code's row. The codes
+with no deduction row (UNO, SUB, SPE, U00) carry None; their net is listed in the
+private CSV and the VAT Declaration's fill refuses the period over it, naming
+them. 235 stays 0 (no code fills it) and the Abzüge (280, 289, 299) are the
+form's: erpnextswiss's vat_declaration.js computes 289 and 299 from the fields on
+save. On the form 420 is Vorsteuerkürzungen (reductions for subsidies and the
+like; none known, so it stays 0) and the total of the Vorsteuern is 479 = 400 +
+405 + 410 + 415 - 420, not 420. See the note of erp-agpf for the open points.
 
 Run it as:
 
@@ -91,6 +95,11 @@ LABELS = {
     "415": "Vorsteuerkorrekturen",
     "420": "Vorsteuerkürzungen",
     "479": "Total der Vorsteuern",
+    "220": "Ausfuhren",
+    "221": "Übrige steuerfreie Leistungen",
+    "225": "Meldepflichtige Verfahren (Übergang des Steueranspruchs)",
+    "230": "Von der Steuer ausgenommene Umsätze",
+    "235": "Minderung des Entgelts",
 }
 
 
@@ -110,14 +119,18 @@ def summary_lines(totals):
     """The stdout of a run: totals per form row and what is not in a checked row. No names, no bexio ids."""
     rows, saldo = form_totals(totals)
     lines = ["{:<6}{:<50}{:>16}{:>14}".format("Ziffer", "", "Entgelt", "Steuer")]
-    for row in ("200", "302", "303", "312", "313", "342", "343", "382", "383", "399", "400", "405", "410", "415", "420", "479"):
+    for row in ("200", "220", "221", "225", "230", "235", "302", "303", "312", "313", "342", "343", "382", "383",
+                "399", "400", "405", "410", "415", "420", "479"):
         base, tax = rows.get(row, [ZERO, ZERO])
         if row == "200" or base or tax:
             lines.append("{:<6}{:<50}{:>16,.2f}{:>14,.2f}".format(row, LABELS[row], base, tax))
     lines.append("")
     lines.append("Saldo before Ziffer 479 and Abzüge 280: {:,.2f} (positive: to pay)".format(saldo))
-    lines.append("tax not in a checked Ziffer (Umsatz 220-299, zero-rate, imports): {:,.2f}".format(totals.unchecked_tax))
+    lines.append("tax not in a checked Ziffer (imports and the sales codes with no deduction row): {:,.2f}".format(totals.unchecked_tax))
     lines.append("journal entry sales tax with no base row or no known rate, counted apart: {:,.2f}".format(totals.rate_unknown))
+    nowhere = sum(totals.undeducted_net.values(), ZERO) + sum(totals.unsplit_net.values(), ZERO)
+    if nowhere:
+        lines.append("sales net with no deduction row: {:,.2f} (codes in the private CSV, the fill refuses over it)".format(nowhere))
     if totals.unmapped:
         lines.append("unmapped tax rows: {} (names in the private CSV's log, not here)".format(len(totals.unmapped)))
     return lines
@@ -148,6 +161,13 @@ def write_csv(path, totals):
         writer.writerow(["other journal keys (pair rule)", "vouchers"])
         for key, count in sorted(_count(totals.other_keys).items()):
             writer.writerow([key, count])
+        if totals.undeducted_net or totals.unsplit_net:
+            writer.writerow([])
+            writer.writerow(["code", "net with no deduction row"])
+            for code, net in sorted(totals.undeducted_net.items()):
+                writer.writerow([code, "{:.2f}".format(net)])
+            for codes, net in sorted(totals.unsplit_net.items()):
+                writer.writerow(["/".join(codes), "{:.2f}".format(net)])
 
 
 def _count(items):

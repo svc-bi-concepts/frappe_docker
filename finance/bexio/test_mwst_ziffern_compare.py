@@ -79,6 +79,26 @@ class ReasonTest(unittest.TestCase):
         self.assertEqual(zc.reason_of("303", self.BEXIO, (Decimal("200.00"), Decimal("8.10"), Decimal("10.00"), Decimal("0.81"))), "unexplained")
 
 
+class DeductionReasonTest(unittest.TestCase):
+    """The deduction rows 220, 221 and 225: bexio's declarations never carried a figure in them, the
+    report fills them from the sales codes, so a bexio side with no row is the expected difference."""
+
+    ABSENT = (Decimal("0.00"), Decimal("0.00"), Decimal("0.00"), Decimal("0.00"), Decimal("0.00"), Decimal("0.00"))
+
+    def test_a_filled_deduction_row_over_an_absent_bexio_row_is_explained(self):
+        erp = (Decimal("500.00"), Decimal("0.00"), Decimal("0.00"), Decimal("0.00"))
+        self.assertEqual(zc.reason_of("220", self.ABSENT, erp), "deduction rows")
+
+    def test_a_bexio_figure_in_a_deduction_row_is_compared_as_any_row(self):
+        bexio = (Decimal("0.00"), Decimal("0.00"), Decimal("0.00"), Decimal("0.00"), Decimal("0.10"), Decimal("0.00"))
+        erp = (Decimal("500.00"), Decimal("0.00"), Decimal("0.00"), Decimal("0.00"))
+        self.assertEqual(zc.reason_of("220", bexio, erp), "unexplained")
+
+    def test_a_difference_on_303_is_not_the_deduction_reason(self):
+        erp = (Decimal("500.00"), Decimal("0.00"), Decimal("0.00"), Decimal("0.00"))
+        self.assertNotEqual(zc.reason_of("303", self.ABSENT, erp), "deduction rows")
+
+
 class TaxOnlyReasonTest(unittest.TestCase):
     """The Vorsteuer Ziffern 400 to 420, 479 and 500/510 are tax amounts on the form: their bases are
     information and not compared, whatever the journal parts' bases say."""
