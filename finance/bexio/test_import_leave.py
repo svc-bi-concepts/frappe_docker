@@ -10,7 +10,8 @@ import import_leave as il
 
 class FakeErp:
     def __init__(self):
-        self.docs = {doctype: {} for doctype in ("Holiday List", "Leave Type", "Leave Period", "Employee", "Leave Allocation")}
+        self.docs = {doctype: {} for doctype in ("Holiday List", "Leave Type", "Leave Period", "Employee",
+                                                 "Leave Allocation", "Holiday List Assignment")}
         self.writes = 0
         self.seq = 0
 
@@ -38,8 +39,8 @@ class FakeErp:
     def call(self, method, **args):
         self.writes += 1
         doc = args.get("doc") or {}
-        if doc.get("doctype") == "Leave Allocation":
-            self.docs["Leave Allocation"][doc["name"]]["docstatus"] = 1
+        if doc.get("doctype") in self.docs and doc.get("name") in self.docs[doc["doctype"]]:
+            self.docs[doc["doctype"]][doc["name"]]["docstatus"] = 1
         return args
 
 
@@ -97,7 +98,8 @@ class RepeatabilityTest(unittest.TestCase):
         first = il.LeaveImporter(erp, dry_run=False)
         first.run_employees(plan)
         self.assertEqual(first.counts["created"], 1)
-        self.assertEqual(erp.docs["Leave Allocation"]["test-1"]["new_leaves_allocated"], 22)
+        allocation = next(iter(erp.docs["Leave Allocation"].values()))
+        self.assertEqual(allocation["new_leaves_allocated"], 22)
         second = il.LeaveImporter(erp, dry_run=False)
         second.run_employees(plan)
         self.assertEqual(second.counts["created"], 0)
@@ -129,9 +131,55 @@ class PlanAndAllocationTest(unittest.TestCase):
         plan, _defaults, _problems = il.build_plan([{"id": "8001", "annual_vacation_days_total": 25}], {"8001": employee})
         importer = il.LeaveImporter(erp, dry_run=False)
         importer.run_employees(plan)
-        allocation = erp.docs["Leave Allocation"]["test-1"]
+        allocation = next(iter(erp.docs["Leave Allocation"].values()))
         self.assertEqual(allocation["docstatus"], 1)
         self.assertEqual(erp.docs["Employee"][employee["name"]]["holiday_list"], il.HOLIDAY_LIST)
+
+    def test_assignment_is_created_submitted_and_unchanged_on_rerun(self):
+        erp = FakeErp()
+        employee = active_employee()
+        erp.docs["Employee"][employee["name"]] = copy.deepcopy(employee)
+        plan, _d, _p = il.build_plan([{"id": "8001", "annual_vacation_days_total": 25}], {"8001": employee})
+        first = il.LeaveImporter(erp, dry_run=False)
+        first.run_employees(plan)
+        assignment = next(iter(erp.docs["Holiday List Assignment"].values()))
+        self.assertEqual(assignment["docstatus"], 1)
+        self.assertEqual(assignment["applicable_for"], "Employee")
+        self.assertEqual(assignment["assigned_to"], employee["name"])
+        self.assertEqual((assignment["holiday_list"], assignment["from_date"]), (il.HOLIDAY_LIST, il.FROM_DATE))
+        self.assertEqual((first.counts["assignments planned"], first.counts["assignments created"]), (1, 1))
+        second = il.LeaveImporter(erp, dry_run=False)
+        second.run_employees(plan)
+        self.assertEqual((second.counts["assignments created"], second.counts["assignments unchanged"]), (0, 1))
+        self.assertEqual(len(erp.docs["Holiday List Assignment"]), 1)
+
+    def test_cancelled_assignment_does_not_block_a_new_one(self):
+        erp = FakeErp()
+        employee = active_employee()
+        erp.docs["Employee"][employee["name"]] = copy.deepcopy(employee)
+        erp.docs["Holiday List Assignment"]["old"] = {
+            "name": "old", "doctype": "Holiday List Assignment", "docstatus": 2,
+            "naming_series": il.ASSIGNMENT_SERIES, "applicable_for": "Employee",
+            "assigned_to": employee["name"], "holiday_list": il.HOLIDAY_LIST, "from_date": il.FROM_DATE}
+        plan, _d, _p = il.build_plan([{"id": "8001", "annual_vacation_days_total": 25}], {"8001": employee})
+        importer = il.LeaveImporter(erp, dry_run=False)
+        importer.run_employees(plan)
+        self.assertEqual(importer.counts["assignments created"], 1)
+        self.assertEqual(len(erp.docs["Holiday List Assignment"]), 2)
+
+    def test_zero_days_creates_no_allocation_and_is_counted_not_failed(self):
+        erp = FakeErp()
+        employee = active_employee()
+        erp.docs["Employee"][employee["name"]] = copy.deepcopy(employee)
+        plan, defaults, problems = il.build_plan([{"id": "8001", "annual_vacation_days_total": 0}], {"8001": employee})
+        self.assertEqual((plan[0]["days"], defaults, problems), (0.0, [], []))
+        importer = il.LeaveImporter(erp, dry_run=False)
+        importer.run_employees(plan)
+        self.assertEqual(len(erp.docs["Leave Allocation"]), 0)
+        self.assertEqual(importer.counts["no entitlement"], 1)
+        self.assertEqual(importer.counts["failed"], 0)
+        self.assertEqual(importer.problems, [(1, "no entitlement (0 days)")])
+        self.assertEqual(len(erp.docs["Holiday List Assignment"]), 1)
 
     def test_draft_allocation_is_flagged_not_replaced_and_cancelled_one_does_not_block(self):
         erp = FakeErp()
@@ -159,6 +207,8 @@ class PlanAndAllocationTest(unittest.TestCase):
         importer.run_employees(plan)
         self.assertEqual(erp.writes, 0)
         self.assertEqual(importer.counts["created"], 1)
+        self.assertEqual((importer.counts["assignments planned"], importer.counts["assignments created"]), (1, 1))
+        self.assertEqual(len(erp.docs["Holiday List Assignment"]), 0)
 
     def test_defaults_file_is_private(self):
         import stat

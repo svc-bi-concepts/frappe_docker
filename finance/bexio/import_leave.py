@@ -3,6 +3,9 @@
 Dry run is the default. Apply is intended for the later go-live bead only;
 this child bead must prove its behavior on a copy, not write to the live site.
 Payroll data stays private and output contains counts and record positions only.
+HRMS 16.50 resolves an Employee's holidays through a submitted Holiday List
+Assignment, so one is upserted per Active Employee; an Employee with a 0-day
+entitlement gets no allocation (HRMS refuses 0) and is counted, not failed.
 
 The canton-wide public holidays are from the Kanton Schwyz's 2026 list:
 https://www.sz.ch/public/upload/assets/71606/Kantonale_lokale_und_nationale_Feiertage.pdf
@@ -24,6 +27,7 @@ FROM_DATE = "2026-01-01"
 TO_DATE = "2026-12-31"
 HOLIDAY_LIST = "Schweiz SZ 2026"
 LEAVE_TYPE = "Ferien"
+ASSIGNMENT_SERIES = "HR-HLA-.YYYY.-"
 LEAVE_PERIOD = (FROM_DATE, TO_DATE)
 DEFAULTS_FILE = os.path.join(PRIVATE, "payroll", "leave-defaults.txt")
 
@@ -113,7 +117,11 @@ class LeaveImporter:
     def __init__(self, erp, dry_run=True):
         self.erp = erp
         self.dry_run = dry_run
-        self.counts = {key: 0 for key in ("created", "updated", "unchanged", "failed", "skipped")}
+        self.counts = {key: 0 for key in (
+            "created", "updated", "unchanged", "failed", "skipped", "no entitlement",
+            "assignments planned", "assignments created", "assignments updated",
+            "assignments unchanged", "assignments failed",
+        )}
         self.problems = []
 
     def upsert(self, doctype, key_filters, doc):
@@ -150,11 +158,49 @@ class LeaveImporter:
             "from_date": FROM_DATE, "to_date": TO_DATE, "company": COMPANY, "is_active": 1,
         })
 
+    def run_holiday_assignment(self, entry):
+        """Upsert one Holiday List Assignment per plan employee; HRMS 16.50 payroll
+        resolves holidays through submitted assignments only, never Employee.holiday_list."""
+        employee = entry["employee"]
+        doc = {
+            "naming_series": ASSIGNMENT_SERIES, "applicable_for": "Employee",
+            "assigned_to": employee["name"], "holiday_list": HOLIDAY_LIST, "from_date": FROM_DATE,
+        }
+        filters = [["assigned_to", "=", employee["name"]], ["holiday_list", "=", HOLIDAY_LIST],
+                   ["from_date", "=", FROM_DATE]]
+        found = [row for row in self.erp.list("Holiday List Assignment", filters, ["name", "docstatus"])
+                 if row.get("docstatus") != 2]  # a cancelled assignment does not count
+        if found:
+            name = found[0]["name"]
+            if not differs(self.erp.get("Holiday List Assignment", name), doc):
+                self.counts["assignments unchanged"] += 1
+                return
+            if not self.dry_run:
+                try:
+                    self.erp.update("Holiday List Assignment", name, doc)
+                except ErpError as err:
+                    self.counts["assignments failed"] += 1
+                    self.problems.append((entry["position"], "Holiday List Assignment refused ({})".format(type(err).__name__)))
+                    return
+            self.counts["assignments updated"] += 1
+            return
+        if not self.dry_run:
+            try:
+                created = self.erp.insert("Holiday List Assignment", doc)
+                self.erp.call("frappe.client.submit", doc=self.erp.get("Holiday List Assignment", created["name"]))
+            except ErpError as err:
+                self.counts["assignments failed"] += 1
+                self.problems.append((entry["position"], "Holiday List Assignment refused ({})".format(type(err).__name__)))
+                return
+        self.counts["assignments created"] += 1
+
     def run_employees(self, plan, holiday_list_name=None, leave_period_name=None):
+        self.counts["assignments planned"] = len(plan)
         for entry in plan:
             employee = entry["employee"]
-            # HRMS 16 retains Employee.holiday_list. Leave List Assignment can be a follow-up
-            # if it is enabled on a site; the Company default remains the source of new records.
+            self.run_holiday_assignment(entry)
+            # HRMS 16.50 ignores this field for payroll (the Holiday List Assignment above is
+            # the source); the field still exists on the Employee form, so it is kept filled.
             employee_patch = {"holiday_list": holiday_list_name or HOLIDAY_LIST}
             if differs(employee, employee_patch):
                 if not self.dry_run:
@@ -169,6 +215,12 @@ class LeaveImporter:
                     self.counts["updated"] += 1
             else:
                 self.counts["unchanged"] += 1
+            if entry["days"] == 0:
+                # HRMS refuses an allocation of 0 days ("Total leaves allocated is mandatory");
+                # the Active Employee without entitlement needs Benchi's check before go-live.
+                self.counts["no entitlement"] += 1
+                self.problems.append((entry["position"], "no entitlement (0 days)"))
+                continue
             filters = [["employee", "=", employee["name"]], ["leave_type", "=", LEAVE_TYPE],
                        ["from_date", "=", FROM_DATE], ["to_date", "=", TO_DATE]]
             found = [row for row in self.erp.list("Leave Allocation", filters, ["name", "docstatus"])

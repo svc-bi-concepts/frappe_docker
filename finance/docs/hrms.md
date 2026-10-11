@@ -247,7 +247,11 @@ slot that ledgerdemain gives (`erpnext-setup.md`).
    Employee's code is picked from the QST Tariff Code list of its canton (erp-wvbn), and the loader makes those codes.
 4c. **Leave and holiday setup** (`finance/bexio/import_leave.py`): the 2026 canton-wide SZ public holidays
    from the Kanton Schwyz list, Ferien, the 2026 Leave Period and one submitted allocation per Active Employee.
-   Missing annual days use the OR minimum (20, or 25 under age 20), pro-rated by employment level; the private
+   HRMS 16.50 resolves an Employee's holidays through a submitted Holiday List Assignment, no longer through
+   `Employee.holiday_list`, so the importer upserts one assignment per Active Employee (applicable_for Employee,
+   the 2026 list, from 1 January) next to the still-existing field and keeps the Company default. An entitlement
+   of 0 days gets no allocation (HRMS refuses 0); the run counts and lists it as `no entitlement` for Benchi to
+   check. Missing annual days use the OR minimum (20, or 25 under age 20), pro-rated by employment level; the private
    `leave-defaults.txt` list is for Benchi to check. Absence history stays out because bexio's export is empty.
    Dry run and repeatability are covered by invented-data tests. The train rule reserves all setup and live writes
    for the HR go-live bead; no live write in this child.

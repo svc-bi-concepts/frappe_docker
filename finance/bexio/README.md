@@ -455,6 +455,12 @@ under 20), pro-rated by the employment percentage. The private
 `payroll/leave-defaults.txt` file lists the defaulted Employees for Benchi to
 check. No names or leave balances are printed to the terminal.
 
+HRMS 16.50 resolves an Employee's holidays through a submitted Holiday List
+Assignment, not the Employee's `holiday_list` field, so the importer also
+upserts one assignment per Active Employee (the 2026 list, from 1 January).
+An entitlement of 0 days gets no allocation (HRMS refuses 0); the run counts
+and lists it as `no entitlement` instead of failing.
+
     python3 finance/bexio/import_leave.py            # dry run (default)
     python3 finance/bexio/import_leave.py --apply    # writes HRMS records
 
