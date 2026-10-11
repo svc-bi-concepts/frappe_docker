@@ -269,7 +269,10 @@ slot that ledgerdemain gives (`erpnext-setup.md`).
    the 2026 list, from 1 January) next to the still-existing field and keeps the Company default. An entitlement
    of 0 days gets no allocation (HRMS refuses 0); the run counts it as `no entitlement` (no failure) for Benchi to
    check. Missing annual days use the OR minimum (20, or 25 under age 20), pro-rated by employment level; the private
-   `leave-defaults.txt` list is for Benchi to check. Absence history stays out because bexio's export is empty.
+   `leave-defaults.txt` list is for Benchi to check. Benchi's explicit entitlements are in the private
+   `leave-overrides.txt` (bexio id and days, tab separated, mode 600): an override wins over the export and over the
+   default, 0 means no allocation, and an overridden employee is not listed in `leave-defaults.txt`; a malformed row
+   stops an apply before any write. Absence history stays out because bexio's export is empty.
    Dry run and repeatability are covered by invented-data tests. The train rule reserves all setup and live writes
    for the HR go-live bead; no live write in this child.
    Live (erp-zg4p, 2026-10-11; the yardmaster ran the `--apply`, the builder's write was denied by the auto mode):

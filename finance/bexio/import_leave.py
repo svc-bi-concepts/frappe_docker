@@ -6,6 +6,9 @@ Payroll data stays private and output contains counts and record positions only.
 HRMS v16 resolves an Employee's holidays through a submitted Holiday List
 Assignment, so one is upserted per Active Employee; an Employee with a 0-day
 entitlement gets no allocation (HRMS refuses 0) and is counted, not failed.
+Benchi's explicit entitlements are in private/payroll/leave-overrides.txt
+(bexio id and days, tab separated): an override wins over the export and over
+the default, and 0 means no allocation.
 
 The canton-wide public holidays are from the Kanton Schwyz's 2026 list:
 https://www.sz.ch/public/upload/assets/71606/Kantonale_lokale_und_nationale_Feiertage.pdf
@@ -30,6 +33,7 @@ LEAVE_TYPE = "Ferien"
 ASSIGNMENT_SERIES = "HR-HLA-.YYYY.-"
 LEAVE_PERIOD = (FROM_DATE, TO_DATE)
 DEFAULTS_FILE = os.path.join(PRIVATE, "payroll", "leave-defaults.txt")
+OVERRIDES_FILE = os.path.join(PRIVATE, "payroll", "leave-overrides.txt")
 
 # Canton-wide dates only. Source: Kanton Schwyz, Feiertage 2026 (see docstring).
 PUBLIC_HOLIDAYS = [
@@ -72,8 +76,36 @@ def age_on(dob, on=FROM_DATE):
     return date.year - born.year - ((date.month, date.day) < (born.month, born.day))
 
 
-def allocation_days(employee, export_employee):
-    """(days, used_default): export amount wins; otherwise Swiss minimum pro rata."""
+def read_overrides(path):
+    """({bexio_id: days}, malformed line numbers) from rows 'bexio_id<TAB>days'.
+    A missing file is empty. A malformed row is named by its line number only."""
+    overrides = {}
+    malformed = []
+    if not os.path.exists(path):
+        return overrides, malformed
+    with open(path, encoding="utf-8") as stream:
+        for number, line in enumerate(stream, 1):
+            text = line.strip()
+            if not text or text.startswith("#"):
+                continue
+            fields = line.rstrip("\r\n").split("\t")
+            bexio_id = fields[0].strip()
+            try:
+                days = float(fields[1]) if len(fields) == 2 else -1.0
+            except ValueError:
+                days = -1.0
+            if not bexio_id or bexio_id in overrides or not 0 <= days:
+                malformed.append(number)
+            else:
+                overrides[bexio_id] = days
+    return overrides, malformed
+
+
+def allocation_days(employee, export_employee, override=None):
+    """(days, used_default): an override from Benchi wins, 0 included; then the export
+    amount; otherwise the Swiss minimum pro rata."""
+    if override is not None:
+        return float(override), False
     exported = export_employee.get("annual_vacation_days_total")
     if exported not in (None, ""):
         return float(exported), False
@@ -88,8 +120,9 @@ def allocation_days(employee, export_employee):
     return full_time_minimum * float(level) / 100, True
 
 
-def build_plan(export_employees, erp_employees):
+def build_plan(export_employees, erp_employees, overrides=None):
     """Per-active-employee allocation plan keyed by the bexio id, without printing values."""
+    overrides = overrides or {}
     plan = []
     defaults = []
     problems = []
@@ -101,13 +134,14 @@ def build_plan(export_employees, erp_employees):
             continue
         if employee.get("status") != "Active":
             continue
+        override = overrides.get(bexio_id)
         try:
-            days, is_default = allocation_days(employee, export_emp)
+            days, is_default = allocation_days(employee, export_emp, override)
         except (TypeError, ValueError):
             problems.append((position, "default allocation needs employment level"))
             continue
         plan.append({"position": position, "employee": employee, "bexio_id": bexio_id, "days": days,
-                     "default": is_default})
+                     "default": is_default, "override": override is not None})
         if is_default:
             defaults.append((employee, days))
     return plan, defaults, problems
@@ -120,7 +154,7 @@ class LeaveImporter:
         self.counts = {key: 0 for key in (
             "created", "updated", "unchanged", "failed", "skipped", "no entitlement",
             "assignments planned", "assignments created", "assignments updated",
-            "assignments unchanged", "assignments failed",
+            "assignments unchanged", "assignments failed", "overrides applied",
         )}
         self.problems = []
 
@@ -196,6 +230,7 @@ class LeaveImporter:
 
     def run_employees(self, plan, holiday_list_name=None, leave_period_name=None):
         self.counts["assignments planned"] = len(plan)
+        self.counts["overrides applied"] = sum(1 for entry in plan if entry["override"])
         for entry in plan:
             employee = entry["employee"]
             self.run_holiday_assignment(entry)
@@ -216,7 +251,7 @@ class LeaveImporter:
                 self.counts["unchanged"] += 1
             if entry["days"] == 0:
                 # HRMS refuses an allocation of 0 days ("Total leaves allocated is mandatory").
-                # The export said 0 (a default is never 0), so this is a count, not a problem.
+                # An export or override of 0 gets no allocation: a count, not a problem.
                 self.counts["no entitlement"] += 1
                 continue
             filters = [["employee", "=", employee["name"]], ["leave_type", "=", LEAVE_TYPE],
@@ -270,12 +305,19 @@ def main(argv):
     exports, _paystubs = load_payroll(os.path.join(PRIVATE, "bexio-payroll"))
     erp = Erp.from_file(args.token_file)
     dry_run = not args.apply
+    overrides, malformed = read_overrides(OVERRIDES_FILE)
+    if malformed and not dry_run:
+        # An apply with a row that did not parse would write the default for that employee.
+        print("aborted: {} malformed row(s) in {} (lines {}), nothing written".format(
+            len(malformed), OVERRIDES_FILE, ", ".join(str(number) for number in malformed)), file=sys.stderr)
+        return 2
     importer = LeaveImporter(erp, dry_run=dry_run)
     try:
         all_employees = erp.list("Employee", fields=["name", "bexio_id", "status", "date_of_birth", "swiss_employment_level", "holiday_list", "employee_name"])
         company = erp.get("Company", COMPANY)
         by_id = {str(row.get("bexio_id")): row for row in all_employees if row.get("bexio_id")}
-        plan, defaults, problems = build_plan(exports, by_id)
+        plan, defaults, problems = build_plan(exports, by_id, overrides)
+        problems += [("overrides line {}".format(number), "row malformed, not applied") for number in malformed]
         importer.run_setup()
         importer.run_employees(plan)
         if company.get("default_holiday_list") != HOLIDAY_LIST:
@@ -296,6 +338,7 @@ def main(argv):
     print("holiday dates: {} public, {} total with weekends".format(len(PUBLIC_HOLIDAYS), len(holiday_rows())))
     print("dry run: nothing was written" if dry_run else "written to ERPNext")
     print("private defaults list: {}".format(DEFAULTS_FILE))
+    print("private overrides list: {}".format(OVERRIDES_FILE))
     for position, problem in problems + importer.problems:
         print("record {}: {}".format(position, problem), file=sys.stderr)
     return 1 if importer.counts["failed"] or problems or importer.problems else 0

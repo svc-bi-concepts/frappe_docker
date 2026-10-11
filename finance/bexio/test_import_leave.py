@@ -231,6 +231,87 @@ class PlanAndAllocationTest(unittest.TestCase):
         self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o600)
 
 
+class OverrideTest(unittest.TestCase):
+    def write_overrides(self, text):
+        import tempfile
+        path = os.path.join(tempfile.mkdtemp(), "payroll", "leave-overrides.txt")
+        os.makedirs(os.path.dirname(path))
+        with open(path, "w", encoding="utf-8") as stream:
+            stream.write(text)
+        return path
+
+    def test_zero_override_wins_over_export_and_plans_no_allocation(self):
+        erp = FakeErp()
+        employee = active_employee()
+        erp.docs["Employee"][employee["name"]] = copy.deepcopy(employee)
+        overrides = {"8001": 0.0}
+        plan, defaults, problems = il.build_plan([{"id": "8001", "annual_vacation_days_total": 23}],
+                                                 {"8001": employee}, overrides)
+        self.assertEqual((plan[0]["days"], plan[0]["override"], defaults, problems), (0.0, True, [], []))
+        importer = il.LeaveImporter(erp, dry_run=False)
+        importer.run_employees(plan)
+        self.assertEqual(len(erp.docs["Leave Allocation"]), 0)
+        self.assertEqual((importer.counts["no entitlement"], importer.counts["overrides applied"]), (1, 1))
+        self.assertEqual(importer.counts["failed"], 0)
+
+    def test_positive_override_wins_over_export_and_default_and_is_not_listed(self):
+        employee = active_employee(level=60)
+        export = {"id": "8001", "employment_level": 60, "date_of_birth": "1990-01-01", "annual_vacation_days_total": 22}
+        self.assertEqual(il.allocation_days(employee, export, 15), (15.0, False))
+        plan, defaults, problems = il.build_plan([export], {"8001": employee}, {"8001": 15.0})
+        self.assertEqual((plan[0]["days"], plan[0]["override"], defaults, problems), (15.0, True, [], []))
+        no_export = {"id": "8001", "employment_level": 60, "date_of_birth": "1990-01-01"}
+        plan, defaults, _problems = il.build_plan([no_export], {"8001": employee}, {"8001": 15.0})
+        self.assertEqual((plan[0]["days"], defaults), (15.0, []))
+
+    def test_override_needs_no_employment_level(self):
+        plan, _defaults, problems = il.build_plan([{"id": "8001"}], {"8001": {"name": "HR-EMP-8001", "status": "Active"}},
+                                                  {"8001": 0.0})
+        self.assertEqual((len(plan), problems), (1, []))
+
+    def test_missing_overrides_file_changes_nothing(self):
+        import tempfile
+        path = os.path.join(tempfile.mkdtemp(), "payroll", "leave-overrides.txt")
+        self.assertEqual(il.read_overrides(path), ({}, []))
+        employee = active_employee(level=60)
+        export = [{"id": "8001", "employment_level": 60, "date_of_birth": "1990-01-01"}]
+        with_file = il.build_plan(export, {"8001": employee}, il.read_overrides(path)[0])
+        without = il.build_plan(export, {"8001": employee})
+        self.assertEqual(with_file, without)
+        self.assertEqual(with_file[0][0]["days"], 12.0)
+
+    def test_overrides_file_reads_rows_and_skips_comments_and_blanks(self):
+        path = self.write_overrides("# header\n\n8001\t0\n8002\t15.5\n")
+        self.assertEqual(il.read_overrides(path), ({"8001": 0.0, "8002": 15.5}, []))
+
+    def test_malformed_rows_are_named_by_line_number_only(self):
+        path = self.write_overrides("8001\t0\n8002\n8003\tlots\n8004\t-1\n8001\t3\n\t5\n8005\t2\n")
+        overrides, malformed = il.read_overrides(path)
+        self.assertEqual(overrides, {"8001": 0.0, "8005": 2.0})
+        self.assertEqual(malformed, [2, 3, 4, 5, 6])
+
+    def test_repeat_dry_run_with_override_plans_no_write(self):
+        erp = FakeErp()
+        employees = {"8001": active_employee("HR-EMP-8001"), "8002": active_employee("HR-EMP-8002"),
+                     "8003": active_employee("HR-EMP-8003")}
+        for employee in employees.values():
+            erp.docs["Employee"][employee["name"]] = copy.deepcopy(employee)
+        export = [{"id": "8001", "annual_vacation_days_total": 22}, {"id": "8002"}, {"id": "8003"}]
+        overrides = {"8002": 0.0, "8003": 0.0}
+        plan, _d, _p = il.build_plan(export, employees, overrides)
+        first = il.LeaveImporter(erp, dry_run=False)
+        first.run_employees(plan)
+        self.assertEqual((first.counts["created"], len(erp.docs["Leave Allocation"]), len(erp.docs["Holiday List Assignment"])),
+                         (1, 1, 3))
+        writes = erp.writes
+        dry = il.LeaveImporter(erp, dry_run=True)
+        dry.run_employees(plan)
+        self.assertEqual(erp.writes, writes)
+        self.assertEqual((dry.counts["created"], dry.counts["no entitlement"], dry.counts["overrides applied"]), (0, 2, 2))
+        self.assertEqual((dry.counts["assignments unchanged"], dry.counts["assignments created"]), (3, 0))
+        self.assertEqual(dry.counts["updated"], 0)
+
+
 class FixtureTest(unittest.TestCase):
     def test_custom_fields_exist_in_order_and_hook_filter_covers_them(self):
         root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "apps", "bi_payroll", "bi_payroll"))
