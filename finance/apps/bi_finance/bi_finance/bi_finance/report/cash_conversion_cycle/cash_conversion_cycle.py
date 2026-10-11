@@ -15,7 +15,7 @@ this report only reads the books:
   invoice date); the journal entries that allocate to an invoice are not counted
 
 The days in the rolling values are those of the 12 months, so a leap February counts. The table lists the months
-newest first, from the month the books start; the chart draws the last 24 of them. The message of the report gives
+newest first, from the month the books start; the chart draws the last 12 of them. The message of the report gives
 the formulas, the start of the books and says when there is no stock.
 """
 
@@ -136,7 +136,7 @@ def execute(filters=None):
         messages.append(_("No stock in any month: DIO is 0 days."))
     message = "<br>".join(escape_html(m) for m in messages)
 
-    # The chart draws the last 24 months, whatever the table shows; latest_only (the number cards) is the table's newest row
+    # The chart draws the last 12 months, whatever the table shows; latest_only (the number cards) is the table's newest row
     chart_rows = cc.shown(rows)
     chart = {
         "data": {

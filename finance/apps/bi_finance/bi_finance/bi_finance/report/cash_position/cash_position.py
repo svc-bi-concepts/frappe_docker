@@ -7,7 +7,7 @@ before it. ERPNext fills that table from its rate source (Currency Exchange Sett
 frankfurter.dev); this report only reads it. A missing rate leaves that account's CHF value
 out and says so in the message.
 
-The chart shows the balances at the last 24 month ends up to the as-of date, at the rate of that day; the table
+The chart shows the balances at the last 12 month ends up to the as-of date, at the rate of that day; the table
 and the total keep the balance at the as-of date, whatever the chart shows.
 """
 

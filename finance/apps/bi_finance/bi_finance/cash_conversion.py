@@ -24,8 +24,10 @@ import calendar
 import datetime
 
 ROLLING = 12
-# The trend chart draws this many months: 24 points label as "Sep 26" on a 1150 px chart, 90 do not ("2..")
-CHART_MONTHS = 24
+# The trend chart draws this many months. frappe-charts keeps a label of at most width / points x 0.6 / 7 characters and cuts
+# the rest to "S ..." (a report cannot turn that off: query_report.js overwrites axisOptions). "Sep 26" is 6 characters, so it
+# needs 6 x 7 / 0.6 = 70 px a point: 12 points fit from 840 px, 24 points need 1680 px (at 1100 px they draw "O ...").
+CHART_MONTHS = 12
 # The amounts and balances of a month: a month with none of them is before the books start
 MOVED = ("revenue", "purchases", "cogs", "receivables", "payables", "inventory")
 
@@ -92,7 +94,7 @@ def cash_conversion(dso, dio, dpo):
 
 
 def month_label(day):
-    """The month on a chart axis: "Sep 26", short enough for a label of one of 24 points."""
+    """The month on a chart axis: "Sep 26", short enough for a label of one of CHART_MONTHS points."""
     return day.strftime("%b %y")
 
 

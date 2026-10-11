@@ -245,15 +245,19 @@ class Chart(unittest.TestCase):
         self.assertEqual(cc.month_label(D(2026, 9, 30)), "Sep 26")
         self.assertEqual(cc.month_label(D(2019, 1, 31)), "Jan 19")
 
-    def test_the_chart_draws_the_last_24_months_oldest_first(self):
+    def test_the_chart_draws_the_last_12_months_oldest_first(self):
         months = cc.month_ends(D(2019, 1, 1), D(2021, 6, 30))  # 30 months
         flows, balances = history(months)
         rows = cc.build(months, flows, balances, [], [])
         shown = cc.shown(rows)
         self.assertEqual(len(shown), cc.CHART_MONTHS)
-        self.assertEqual(cc.month_label(shown[0]["month"]), "Jul 19")
+        self.assertEqual(cc.month_label(shown[0]["month"]), "Jul 20")
         self.assertEqual(cc.month_label(shown[-1]["month"]), "Jun 21")
         self.assertEqual(rows[0]["month"], D(2021, 6, 30))  # the table itself keeps all of them
+
+    def test_every_label_fits_its_slot_at_the_narrowest_chart_we_target(self):
+        # frappe-charts cuts a label longer than width / points x 0.6 / 7 characters: 900 px is a laptop with the sidebar open
+        self.assertGreaterEqual(900 / cc.CHART_MONTHS * 0.6 / 7, max(len(cc.month_label(D(2026, m, 28))) for m in range(1, 13)))
 
     def test_a_short_history_is_shown_whole(self):
         months = cc.month_ends(D(2019, 1, 1), D(2019, 6, 30))

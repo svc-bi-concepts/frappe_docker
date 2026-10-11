@@ -842,15 +842,15 @@ class Message(unittest.TestCase):
                 "hrms_payroll": None, "lines": [], "beyond": 0, "weeks": [], "without_history": 0}
 
     def test_the_accounts_without_a_series_are_one_line_at_the_top_and_folded_at_the_end(self):
-        message = cff.forecast_message(self.result({"6570": 4, "6940": 2}), "CHF")
+        message = cff.forecast_message(self.result({"9901": 4, "9902": 2}), "CHF")
         head, _, _rest = message.partition("<br>")
         self.assertEqual(head, "2 accounts have no regular series and are not modelled (details folded at the end of this message).")
         self.assertNotIn("Not modelled, no regular series", head)
         fold = message.index("<details>")
         self.assertLess(message.index("Journal entries are recurring costs"), fold)  # the reading comes first
         self.assertIn("<summary>Accounts not modelled</summary>", message)
-        self.assertIn("Not modelled, no regular series: 4 entries on account 6570.", message[fold:])
-        self.assertIn("Not modelled, no regular series: 2 entries on account 6940.", message[fold:])
+        self.assertIn("Not modelled, no regular series: 4 entries on account 9901.", message[fold:])
+        self.assertIn("Not modelled, no regular series: 2 entries on account 9902.", message[fold:])
         self.assertTrue(message.endswith("</details>"))
 
     def test_no_account_without_a_series_means_no_line_and_no_fold(self):

@@ -106,12 +106,12 @@ class Build(unittest.TestCase):
         self.assertIsNone(datasets[USD_ACCOUNT][0])  # no rate on 2019-01-31
         self.assertEqual(datasets["Total CHF"][0], 1000.0)
 
-    def test_chart_shows_the_last_24_month_ends_and_the_table_the_balance_at_the_as_of_date(self):
+    def test_chart_shows_the_last_12_month_ends_and_the_table_the_balance_at_the_as_of_date(self):
         months = cp.month_ends(D(2019, 1, 1), D(2021, 6, 30))  # 30 month ends
         rows, chart, total, _messages = cp.build(self.accounts, self.movements, self.rates, D(2021, 6, 30), months)
         labels = chart["data"]["labels"]
         self.assertEqual(len(labels), cp.CHART_MONTHS)
-        self.assertEqual((labels[0], labels[-1]), ("Jul 19", "Jun 21"))
+        self.assertEqual((labels[0], labels[-1]), ("Jul 20", "Jun 21"))
         datasets = {d["name"]: d["values"] for d in chart["data"]["datasets"]}
         self.assertEqual(len(datasets["Total CHF"]), cp.CHART_MONTHS)
         # the table and the total are the balance at the as-of date, not the chart's first point
