@@ -31,33 +31,33 @@
   "modified": "2026-10-10 10:00:00.000000",
   "sha": "6af390eb9c9cb4ecc77905094dd93164cda0cc7ae6d5d0d8f08264a6a7dcd0a7"
  },
- "bi_finance/number_card/cash_conversion_ccc/cash_conversion_ccc.json": {
-  "modified": "2026-10-10 09:00:00.000000",
-  "sha": "b83e27464927c7a039347964e1dd2c4ae29bb0a5e42c8d63dbf28f86bc5d3794"
+ "bi_finance/number_card/account_1000/account_1000.json": {
+  "modified": "2026-10-12 09:00:00.000000",
+  "sha": "d8869102441a9439bdeb35ce6c7d450c7fae279747d951411d4d15199af584f2"
  },
- "bi_finance/number_card/cash_conversion_change/cash_conversion_change.json": {
-  "modified": "2026-10-10 09:00:00.000000",
-  "sha": "c7fa5ef055eca15f7d2e99bcd1760c45c8ba5d9444939798fba31f00ec2923c8"
+ "bi_finance/number_card/account_1010/account_1010.json": {
+  "modified": "2026-10-12 09:00:00.000000",
+  "sha": "35c05c8de5161a7b3d3003aad818d7ce3001c16313a1b23cc8591ee0b55df2b7"
  },
- "bi_finance/number_card/cash_position_1000/cash_position_1000.json": {
-  "modified": "2026-10-10 09:00:00.000000",
-  "sha": "9d4f234bf598b5f4763a820cf7b297054797cf6b32c0e6adcde5321e97b69c4d"
+ "bi_finance/number_card/account_1020/account_1020.json": {
+  "modified": "2026-10-12 09:00:00.000000",
+  "sha": "c6d9a4c00940e01c82b26022b4b0b809c370c5e8b97b48be8e1ffac4cefd06b1"
  },
- "bi_finance/number_card/cash_position_1010/cash_position_1010.json": {
-  "modified": "2026-10-10 09:00:00.000000",
-  "sha": "98068e3a916a0e57579b9df1097643d14099033299754de822772f004aa8c726"
+ "bi_finance/number_card/account_1021/account_1021.json": {
+  "modified": "2026-10-12 09:00:00.000000",
+  "sha": "65288252c7b44d300e6bfe887a3309b30cdc6b665c469d1dc0b8d629724fbb59"
  },
- "bi_finance/number_card/cash_position_1020/cash_position_1020.json": {
-  "modified": "2026-10-10 09:00:00.000000",
-  "sha": "dbdb9a3adf3476719cc11af6a9039ab347b41a94c9dde87b678d2ec660113890"
+ "bi_finance/number_card/ccc_change_days/ccc_change_days.json": {
+  "modified": "2026-10-12 09:00:00.000000",
+  "sha": "95ecf1696c945ee14a3cb739227b3658c56bf279723c2d06517ca587925f99f3"
  },
- "bi_finance/number_card/cash_position_1021/cash_position_1021.json": {
-  "modified": "2026-10-10 09:00:00.000000",
-  "sha": "f944071d477faedc3ea28e66bf59eb59e6c3dc1ebffd2243da4e7530538be8fd"
+ "bi_finance/number_card/ccc_days/ccc_days.json": {
+  "modified": "2026-10-12 09:00:00.000000",
+  "sha": "b8b4292bb921dfd20e5dcc9b137065e64c9e990c30e48d8be325111d6a624b0e"
  },
- "bi_finance/number_card/cash_position_total/cash_position_total.json": {
-  "modified": "2026-10-10 09:00:00.000000",
-  "sha": "6b2685f36f49feedb72048a2fbbcb606cb0b6a7e6efe7ec86d39ea298da9398e"
+ "bi_finance/number_card/total_chf/total_chf.json": {
+  "modified": "2026-10-12 09:00:00.000000",
+  "sha": "4d00d1322120a0eaf719f51ea49252b222e871739fe3b778e816404492d499f6"
  },
  "bi_finance/report/cash_conversion_cycle/cash_conversion_cycle.json": {
   "modified": "2026-10-10 09:00:00.000000",
@@ -76,8 +76,8 @@
   "sha": "e97c1cc5a35c712e1ccfb82324513a3af4024cf20c0fc3ca678820094f4492df"
  },
  "bi_finance/workspace/treasury/treasury.json": {
-  "modified": "2026-10-11 23:55:00.000000",
-  "sha": "f98e0ba948334751d698a0823fca648eba248be594ff834acb8ec106f5886fa0"
+  "modified": "2026-10-12 09:00:00.000000",
+  "sha": "5e0f3203ee365b744073ff917a9e91a9cb88bb03ec1b45a2e8a94273c8cdfd39"
  },
  "bi_finance/workspace_sidebar/treasury/treasury.json": {
   "modified": "2026-10-11 15:00:00.000000",

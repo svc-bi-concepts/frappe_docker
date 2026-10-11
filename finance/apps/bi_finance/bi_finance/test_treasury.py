@@ -10,6 +10,7 @@ the image, as test_qrbill.py does (finance/docs/erpnext-setup.md):
 
 import json
 import os
+import re
 import unittest
 from unittest import mock
 
@@ -18,6 +19,7 @@ import frappe
 from bi_finance import hooks
 from bi_finance.bi_finance.report.cash_conversion_cycle import cash_conversion_cycle
 from bi_finance.bi_finance.report.cash_position import cash_position
+from bi_finance.patches import number_card_names
 
 # The module folder: the Treasury files Frappe syncs (see test_layout.py).
 HERE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bi_finance")
@@ -50,9 +52,9 @@ class Layout(unittest.TestCase):
     def test_each_file_sits_in_a_folder_named_after_its_document(self):
         # Frappe's sync reads <doctype folder>/<name>/<name>.json only.
         for folder, filename in [
-            ("number_card", "cash_position_total"),
-            ("number_card", "cash_conversion_ccc"),
-            ("number_card", "cash_conversion_change"),
+            ("number_card", "total_chf"),
+            ("number_card", "ccc_days"),
+            ("number_card", "ccc_change_days"),
             ("dashboard_chart", "cash_position_history"),
             ("dashboard_chart", "cash_conversion_trend"),
             ("workspace", "treasury"),
@@ -63,9 +65,11 @@ class Layout(unittest.TestCase):
         self.assertEqual(hooks.importable_doctypes, ["Number Card", "Dashboard Chart"])
 
     def test_every_number_card_file_is_named_after_its_folder(self):
+        # The folder drops the punctuation of the name: "CCC (days)" is ccc_days. frappe.scrub would keep the
+        # parentheses, and the sync takes the folder as it finds it (it loads <folder>/<folder>.json).
         for name in names("number_card"):
             doc = load("number_card", name, name + ".json")
-            self.assertEqual(doc["name"].lower().replace(" ", "_"), name)
+            self.assertEqual(re.sub(r"[^a-z0-9]+", "_", doc["name"].lower()).strip("_"), name)
 
 
 class Workspace(unittest.TestCase):
@@ -150,7 +154,7 @@ class Cards(unittest.TestCase):
     def test_a_card_filters_on_its_chart_number_only(self):
         for doc in cards_of("Cash Position"):
             filters = json.loads(doc["filters_json"])
-            if doc["name"] == "Cash Position Total":
+            if doc["name"] == "Total CHF":
                 self.assertEqual(filters, {})
             else:
                 self.assertEqual(list(filters), ["account_number"])
@@ -160,6 +164,19 @@ class Cards(unittest.TestCase):
         for name in names("number_card"):
             doc = load("number_card", name, name + ".json")
             self.assertTrue(set(doc) <= fields, set(doc) - fields)
+
+    def test_every_card_is_labelled_with_its_name_and_the_name_fits_column_three(self):
+        """The page prints the workspace row's label and matches the card to its row by it, so label == name.
+
+        20 characters is the limit the brief set for column three at 1440 px. It is not measured on the copy yet:
+        the copy stack is down, so the live read-back after the switch is what measures it.
+        """
+        for name in names("number_card"):
+            doc = load("number_card", name, name + ".json")
+            self.assertEqual(doc["label"], doc["name"])
+            self.assertLessEqual(len(doc["label"]), 20, doc["label"])
+
+
 
     def test_the_charts_fields_exist_in_the_doctype_and_they_use_their_report(self):
         fields = doctype_fields("Dashboard Chart")
@@ -176,6 +193,27 @@ class Cards(unittest.TestCase):
         self.assertEqual(history["timeseries"], 1)
         self.assertEqual(trend["timeseries"], 1)
         self.assertEqual(json.loads(history["filters_json"]), {})
+
+
+class RetiredCards(unittest.TestCase):
+    def test_the_patch_is_listed_after_the_model_sync(self):
+        with open(os.path.join(HERE, "..", "patches.txt"), encoding="utf-8") as f:
+            text = f.read()
+        post = text.split("[post_model_sync]")[1]
+        self.assertIn("bi_finance.patches.number_card_names", post)
+
+    def test_the_patch_deletes_the_seven_old_names_and_no_current_card(self):
+        # the old names are the cards before erp-hs4n; a current card must never be deleted by mistake
+        current = {load("number_card", name, name + ".json")["name"] for name in names("number_card")}
+        with mock.patch.object(frappe, "delete_doc") as delete_doc:
+            number_card_names.execute()
+        deleted = [c.args[1] for c in delete_doc.call_args_list]
+        self.assertEqual(len(deleted), 7)
+        self.assertEqual(set(deleted), set(number_card_names.OLD_NAMES))
+        self.assertFalse(set(deleted) & current)
+        for c in delete_doc.call_args_list:
+            self.assertEqual(c.args[0], "Number Card")
+            self.assertTrue(c.kwargs.get("ignore_missing"))
 
 
 if __name__ == "__main__":
