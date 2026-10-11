@@ -220,12 +220,19 @@ slot that ledgerdemain gives (`erpnext-setup.md`).
    Active employees from the existing ones, the old structure left unused). The accrual JE is proven on the copy
    before go-live.
 4. **Employee load from the bexio export.** Offline importer, the same shape as
-   `import_master.py`, writing only Employee and the AHV number. Mocked data in tests.
+   `import_master.py`, writing Employee fields including the AHV number and BI Payroll's
+   employment level, weekly hours and stay permit fields. Mocked data in tests.
    Done 2026-10-11 (erp-y909): `swiss-setup.sh fields` (Employee in `BEXIO_DOCTYPES`),
    `create-api-user.sh` (the API user's HR User role), backup `20261011_001457`, then
    `python3 finance/bexio/import_employees.py --dry-run` and `--apply`: 9 Employees on live
    (3 Active, 6 Left), rerun 0 new, nobody without a joining date (`private/payroll/needs-dates.txt`
-   says 0). Counts only here; the importer prints counts only.
+   says 0). Counts only here; the importer prints counts and changed field names by row position.
+4c. **Leave and holiday setup** (`finance/bexio/import_leave.py`): the 2026 canton-wide SZ public holidays
+   from the Kanton Schwyz list, Ferien, the 2026 Leave Period and one submitted allocation per Active Employee.
+   Missing annual days use the OR minimum (20, or 25 under age 20), pro-rated by employment level; the private
+   `leave-defaults.txt` list is for Benchi to check. Absence history stays out because bexio's export is empty.
+   Dry run and repeatability are covered by invented-data tests. The train rule reserves all setup and live writes
+   for the HR go-live bead; no live write in this child.
 4b. **Payroll inputs from the paystubs** (erp-y4yf, `finance/bexio/import_assignments.py`). Derived from the
    parsed figures (`parse_paystubs.py`): one submitted Salary Structure Assignment per Active employee on
    the "Swiss Monthly" structure, base = the monthly salary (1001 up to 2025, 1000 from 2025) of the latest

@@ -16,12 +16,13 @@ created; the list goes to private/payroll/needs-dates.txt (mode 600) for the
 operator.
 
 PRIVACY: payroll data is the company's most sensitive data and this repo is
-public. The importer reads private/ by absolute path and prints counts only;
-the needs-dates list is its only written output and stays in private/ (mode
-600). Tests use invented employees.
+public. The importer reads private/ by absolute path and prints counts plus
+changed field names by export position, never values. The needs-dates list is
+its only written output and stays in private/ (mode 600). Tests use invented employees.
 
-The AHV number goes to erpnextswiss's social_security_number; nationality,
-stay permit category and language have no Employee field and go into the bio.
+The AHV number goes to erpnextswiss's social_security_number. Nationality and
+language go into the bio; employment level, hours per week and stay permit use
+the BI Payroll custom fields (installed with the next image).
 Salaries, BVG, Quellensteuer and rates are other beads' work (paystub parser,
 assignments), not this import. hrms.md plan step 4.
 
@@ -64,7 +65,10 @@ FIELD_SOURCES = [
     ("cell_number", "phone_number"), ("personal_email", "email"),
     ("current_address", "address"), ("iban", "iban"),
     ("social_security_number", "ahv_number"), ("employment_type", "employment_level"),
+    ("swiss_employment_level", "employment_level"), ("swiss_hours_per_week", "hours_per_week"),
+    ("swiss_stay_permit", "stay_permit_category"),
 ]
+PERMIT_CATEGORIES = {"B", "C", "G", "L", "Ci", "F", "N", "S"}
 
 
 # ---- the export ----
@@ -135,10 +139,16 @@ def composed_address(addr):
 
 
 def bio_text(emp):
-    """Nationality, stay permit and language have no Employee field; they go into the bio."""
-    rows = [("Nationality", emp.get("nationality")), ("Stay permit", emp.get("stay_permit_category")),
-            ("Language", emp.get("language"))]
+    """Nationality and language have no Employee field; they go into the bio."""
+    rows = [("Nationality", emp.get("nationality")), ("Language", emp.get("language"))]
     return "\n".join("{}: {}".format(label, value) for label, value in rows if value)
+
+
+def stay_permit(value):
+    """A valid Swiss permit category, or empty for Swiss nationals/unknown values."""
+    value = str(value or "").strip()
+    by_lower = {category.lower(): category for category in PERMIT_CATEGORIES}
+    return by_lower.get(value.lower(), "")
 
 
 def dates_for(months, last_month, override=None):
@@ -179,6 +189,9 @@ def employee_doc(emp, gender, joined, left):
         "social_security_number": emp.get("ahv_number") or "",
         "company": COMPANY,
         "employment_type": FULL_TIME if emp.get("employment_level") == FULL_TIME_LEVEL else PART_TIME,
+        "swiss_employment_level": emp.get("employment_level") if emp.get("employment_level") is not None else "",
+        "swiss_hours_per_week": emp.get("hours_per_week") if emp.get("hours_per_week") is not None else "",
+        "swiss_stay_permit": stay_permit(emp.get("stay_permit_category")),
         "bio": bio_text(emp),
         "date_of_joining": joined,
         "status": STATUS_ACTIVE,
@@ -237,6 +250,7 @@ class EmployeeImporter:
         self.counts = Counts()
         self.problems = []
         self.needs_dates = []
+        self.field_writes = {}
         self._index = None
 
     def index(self):
@@ -267,13 +281,17 @@ class EmployeeImporter:
                 name = known[bexio_id]
                 # the naming series only matters on create; an existing Employee keeps its series
                 want = {k: v for k, v in doc.items() if k != "naming_series"}
-                if differs(self.erp.get("Employee", name), want):
+                have = self.erp.get("Employee", name)
+                changed = [key for key, value in want.items() if differs(have, {key: value})]
+                if changed:
+                    self.field_writes[position] = changed
                     if not self.dry_run:
                         self.erp.update("Employee", name, want)
                     self.counts.updated += 1
                 else:
                     self.counts.unchanged += 1
             else:
+                self.field_writes[position] = list(doc)
                 if not self.dry_run:
                     self.erp.insert("Employee", doc)
                 self.counts.created += 1
@@ -312,6 +330,9 @@ def report(importer, plan, dry_run):
     unknown = sum(1 for _emp, doc, reason in plan if doc is None and reason.startswith("unknown gender"))
     print("unknown gender: {}  needs joining date: {}".format(unknown, len(importer.needs_dates)))
     print("status: Active {}, Left {}".format(status["Active"], status["Left"]))
+    if dry_run:
+        for position, fields in sorted(importer.field_writes.items()):
+            print("record {} fields to write: {}".format(position, ", ".join(fields)))
     print("dry run: nothing was written" if dry_run else "written to ERPNext")
     print("needs-dates list: {}".format(NEEDS_DATES))
 

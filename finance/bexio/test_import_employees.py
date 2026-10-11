@@ -131,6 +131,9 @@ class MappingTest(unittest.TestCase):
         self.assertEqual(doc["social_security_number"], "756.0000.0000.01")
         self.assertEqual(doc["company"], ie.COMPANY)
         self.assertEqual(doc["employment_type"], "Full-time")
+        self.assertEqual(doc["swiss_employment_level"], 100)
+        self.assertEqual(doc["swiss_hours_per_week"], 40)
+        self.assertEqual(doc["swiss_stay_permit"], "C")
         self.assertEqual(doc["naming_series"], "HR-EMP-")
         self.assertEqual(doc["bexio_id"], "test-emp-1")
 
@@ -158,7 +161,16 @@ class MappingTest(unittest.TestCase):
         erp = FakeErp()
         import_all(erp, [invented_employee()], stubs([(2025, 1)]))
         bio = erp.docs["Employee"]["HR-EMP-0001"]["bio"]
-        self.assertEqual(bio, "Nationality: xx\nStay permit: C\nLanguage: de")
+        self.assertEqual(bio, "Nationality: xx\nLanguage: de")
+
+    def test_missing_swiss_fields_and_swiss_nationals_stay_empty(self):
+        erp = FakeErp()
+        emp = invented_employee(employment_level=None, hours_per_week=None, stay_permit_category="Swiss")
+        import_all(erp, [emp], stubs([(2025, 1)]))
+        doc = erp.docs["Employee"]["HR-EMP-0001"]
+        self.assertEqual(doc["swiss_employment_level"], "")
+        self.assertEqual(doc["swiss_hours_per_week"], "")
+        self.assertEqual(doc["swiss_stay_permit"], "")
 
     def test_bio_skips_what_the_record_does_not_carry(self):
         erp = FakeErp()
@@ -380,6 +392,8 @@ class ReportTest(unittest.TestCase):
         self.assertIn("records: 2", out)
         self.assertIn("status: Active 1, Left 1", out)
         self.assertIn("needs joining date: 0", out)
+        self.assertIn("record 1 fields to write:", out)
+        self.assertIn("swiss_employment_level", out)
 
     @staticmethod
     def capture(call):

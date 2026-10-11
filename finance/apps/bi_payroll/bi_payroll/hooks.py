@@ -45,5 +45,5 @@ fixtures = [
         ["name", "like", "%Employee"], ["name", "like", "%Employer"], ["name", "in", ["Basic Salary", "Commission", "BVG Age"]]]},
     {"dt": "Custom Field", "filters": [["name", "like", "Salary Slip-swiss_%"]]},
     {"dt": "Custom Field", "filters": [["name", "=", "Salary Structure Assignment-swiss_bvg_insured_salary"]]},
-    {"dt": "Custom Field", "filters": [["name", "like", "Employee-swiss_qst_%"]]},
+    {"dt": "Custom Field", "filters": [["name", "like", "Employee-swiss_%"]]},
 ]

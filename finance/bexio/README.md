@@ -421,7 +421,9 @@ puts it there, and `create-api-user.sh` gives the API user the HR User role it n
 Employee): a second run creates nothing, it updates only what differs. The AHV number goes to
 erpnextswiss's `social_security_number`, the IBAN to `iban`, phone, e-mail and the address to their
 Employee fields, the employment level 100 to the Full-time Employment Type (anything else Part-time).
-Nationality, stay permit category and language have no Employee field and go into the bio. A gender
+BI Payroll's `swiss_employment_level`, `swiss_hours_per_week` and `swiss_stay_permit` fields also
+carry the export values; Swiss nationals and unrecognized permit values stay empty. Nationality and
+language have no Employee field and go into the bio. A gender
 value the site's Gender list does not have is reported and the record is not created — never guessed.
 
 Joining and leaving dates come from the paystub months (`paystubs.json`): the first month gives
@@ -437,7 +439,27 @@ personal number) goes to `<private>/payroll/needs-dates.txt` (mode 600) for the 
 
 Take a backup first (`bench --site frontend backup --with-files`), and run the dry run before the
 apply. Employees post no GL. Payroll data is the company's most sensitive data and this repo is
-public: the importer prints counts only, and tests use invented employees.
+public: the importer prints counts and changed field names by export position (never values), and
+tests use invented employees.
+
+## 2026 leave setup
+
+`import_leave.py` prepares the canton-wide Holiday List `Schweiz SZ 2026`, the
+`Ferien` Leave Type and the 2026 Leave Period, then allocates Ferien to each
+Active Employee. The official canton-wide public holiday dates are embedded
+from the [Kanton Schwyz 2026 list](https://www.sz.ch/public/upload/assets/71606/Kantonale_lokale_und_nationale_Feiertage.pdf);
+municipal holidays and office closures are excluded. Saturday and Sunday are
+included as weekly days off. Exported `annual_vacation_days_total` wins. If it
+is absent, the importer uses the OR annual minimum (20 days, or 25 for people
+under 20), pro-rated by the employment percentage. The private
+`payroll/leave-defaults.txt` file lists the defaulted Employees for Benchi to
+check. No names or leave balances are printed to the terminal.
+
+    python3 finance/bexio/import_leave.py            # dry run (default)
+    python3 finance/bexio/import_leave.py --apply    # writes HRMS records
+
+The train rule keeps this out of live until the HR integration train's go-live
+bead. Back up first, use one writer, and check the second run creates nothing.
 
 ## Paystub PDFs (payslip history, as reference)
 
