@@ -767,7 +767,7 @@ def payslip_default():
 # components of each table; the static one reads the abbrs too, but has no table for line 12. Lines 2 to 7, 10.2 and
 # 13 to 14 are not in payroll (finance/docs/hrms.md, Lohnausweis map), line 15 stays free text.
 LOHNAUSWEIS = {
-    "salary": ["B"],                        # 1 Lohn
+    "salary": ["B", "COMM"],                # 1 Lohn: every Earning fixture (a new Earning joins this list)
     "deduction_ahv": ["AHV", "ALV", "NBUV"],  # 9 AHV/IV/EO, ALV, NBU
     "deduction_pension": ["PK"],            # 10.1 BVG
     "source_tax_deduction": ["QST"],        # 12 Quellensteuer

@@ -286,11 +286,19 @@ class LohnausweisTest(unittest.TestCase):
     def test_each_table_names_the_components_of_its_form_line(self):
         wanted = swiss_setup.lohnausweis_components(self.components)
         self.assertEqual(wanted, {
-            "salary": ["Basic Salary"],
+            "salary": ["Basic Salary", "Commission"],
             "deduction_ahv": ["AHV/IV/EO Employee", "ALV Employee", "NBU Employee"],
             "deduction_pension": ["BVG Employee"],
             "source_tax_deduction": ["Quellensteuer Employee"],
         })
+
+    def test_line_1_names_every_earning_fixture(self):
+        # The Wegleitung's Ziffer 1 (and the view's line 1): every earning of the slip, so a new Earning
+        # component must join the mapping or the certificate's line 1 falls short of the view's.
+        import json
+        with open(PAYROLL_FIXTURES, encoding="utf-8") as f:
+            earnings = {row["salary_component_abbr"] for row in json.load(f) if row["type"] == "Earning"}
+        self.assertEqual(set(swiss_setup.LOHNAUSWEIS["salary"]), earnings)
 
     def test_every_abbr_of_the_mapping_is_a_fixture_component(self):
         for abbrs in swiss_setup.LOHNAUSWEIS.values():

@@ -235,4 +235,3 @@ def _finish_annual(row):
     for key in ANNUAL_BASES + ANNUAL_CONTRIBUTIONS:
         row[key] = round(row[key], 2)
     return row
-

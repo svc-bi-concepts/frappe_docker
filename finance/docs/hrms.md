@@ -373,7 +373,7 @@ The ESTV PDF is kept under `private/payroll/forms/` (not in the repo).
 | G Kantinenverpflegung / Lunch-Checks (box) | Checkbox | `lunch_checks` | yes | **no**, unless Benchi says otherwise. Meal allowances in cash are line 1 (Rz 18), not this box |
 | H Name und Adresse | Employee | print format only | yes | Current residential address (`permanent_address`) |
 | Jahr, Ein-/Austritt | Certificate `year`, `start_date`, `end_date` | `year`, `start_date`, `end_date` | yes | Set on the certificate. The period is printed even for a full year |
-| 1. Lohn / Rente | Salary Component `Basic Salary` (abbr B) | `salary` | yes | `line_1` in the view. **Gap, decided:** the Wegleitung counts every Zulage, commission and Taggeld paid by the employer here (Rz 13-18); the view sums only `Basic Salary`. Every taxable earning goes to line 1 in erp-4yyn |
+| 1. Lohn / Rente | Salary Component `Basic Salary` (abbr B) | `salary` | yes | `line_1` in the view. The Wegleitung counts every Zulage, commission and Taggeld paid by the employer here (Rz 13-18): the view sums every earning row of the slips, and the settings table `salary` names every Earning component (Basic Salary, Commission; a new Earning component joins `LOHNAUSWEIS` in `swiss-setup.py`, a test guards it), erp-4yyn |
 | 2.1 Verpflegung und Unterkunft | none | `catering` | heading | not in payroll; trustee |
 | 2.2 Privatanteil Geschäftsfahrzeug | none | `car` | heading | not in payroll; trustee |
 | 2.3 Weitere Gehaltsnebenleistungen | none | `other_salary` | heading | not in payroll; trustee. Also the commute refund (Rz 17) and a GA without business need (Rz 19) |
@@ -386,7 +386,7 @@ The ESTV PDF is kept under `private/payroll/forms/` (not in the repo).
 | 9. Beiträge AHV/IV/EO/ALV/NBUV | `AHV/IV/EO Employee`, `ALV Employee`, `NBU Employee` (abbr AHV, ALV, NBUV) | `deduction_ahv` | yes | Employee shares only; employer shares are not on the form |
 | 10.1 Ordentliche Beiträge BVG | `BVG Employee` (abbr PK) | `deduction_pension` | yes | Ordinary contributions, as deducted from the gross |
 | 10.2 Beiträge Einkauf BVG | none | `deduction_pension_additional` | heading | not in payroll; trustee (buy-ins are paid by the employee outside payroll, Rz 46) |
-| 11. Nettolohn / Rente | Net pay of the slips (`net_pay`) | `net_salary` (from `net_pay`) | **no** | **Differs from the Wegleitung.** It defines line 11 as line 8 less lines 9 and 10 (Ziffer 11). `net_pay` also subtracts Quellensteuer and any KTG or other deduction. For a Quellensteuer employee the line is too low by the tax. Decided: line 8 less 9 and 10.1, built in erp-4yyn (below) |
+| 11. Nettolohn / Rente | Line 8 less lines 9 and 10.1 (patch 0002; upstream: net pay of the slips) | `net_salary` | **patched** | Upstream differs from the Wegleitung, which defines line 11 as line 8 less lines 9 and 10 (Ziffer 11): `net_pay` also subtracts Quellensteuer and any KTG or other deduction. Our patch 0002 computes it as line 8 less 9 and 10.1 (erp-4yyn, below) |
 | 12. Quellensteuerabzug | `Quellensteuer Employee` (abbr QST), gross tax | `source_tax_deduction` | yes | Only for foreign employees with the tax at source; the tax is set on the slip from the gross per canton tariff (erp-6rrh) |
 | 13.1.1 Effektive Reise-/Verpflegungs-/Übernachtungsspesen | none | `effective_expenses_travel` | heading | not in payroll; trustee. Its box (`effective_expenses_travel_check`) is **no** unless a Spesenreglement is approved (Rz 52) |
 | 13.1.2 Effektive übrige Spesen | none | `effective_other_expenses` | heading | not in payroll; trustee |
@@ -402,10 +402,10 @@ Unentgeltliche Beförderung and Kantinenverpflegung (boxes F and G) are not in p
 The employer shares (AHV, ALV, BVG, UVG, KTG, FAK) are not on the form's lines and stay in the
 hand-over view only.
 
-**Decided (ledgerdemain, 2026-10-11), built in erp-4yyn, not in this step:**
+**Decided (ledgerdemain, 2026-10-11), built in erp-4yyn:**
 
-1. **Line 11** = line 8 less lines 9 and 10.1 (Wegleitung Ziffer 11), not the slip's `net_pay`: the fetch (erpnextswiss `fetch_dynamic`) and the view `Lohnausweis` both change. Until erp-4yyn lands, line 11 differs from the form for every employee with Quellensteuer or a KTG deduction.
-2. **Line 1** = every taxable earning on the slip (Basic Salary, Commission, Zulagen), not `Basic Salary` alone. Until then `salary` and the view sum `Basic Salary` only.
+1. **Line 11** = line 8 less lines 9 and 10.1 (Wegleitung Ziffer 11), not the slip's `net_pay`: the fetch (erpnextswiss `fetch_dynamic`, patch 0002) and the view `Lohnausweis` both follow it.
+2. **Line 1** = every taxable earning on the slip (Basic Salary, Commission, Zulagen), not `Basic Salary` alone. The view sums every earning row; the settings table `salary` names Basic Salary and Commission.
 3. **KTG**: the employee's share goes into line 15 as a remark, not onto a line.
 4. **Rounding**: the certificate prints whole francs (round half up); the view keeps rappen.
 
@@ -421,11 +421,11 @@ Each January, for the year that just closed (the first is 2027, the 2026 certifi
 2. Per employee with submitted slips in the year: a new **Salary Certificate**, the employee, the year, the
    period (1 January to 31 December, or the exit date), certificate type Salary. Then **Werte holen** (fetches the
    lines from the slips by posting date).
-3. Compare the lines with the view: equal per line (after erp-4yyn; before it, lines 1 and 11 differ as described above).
+3. Compare the lines with the view: equal per line (the view with the flag 'Whole francs' for the certificate's francs).
 4. Boxes F and G stay **no**, and the box for 13.1.1 too, unless Benchi says otherwise. Line 15: free text,
    for example a second certificate of the year ("one of two" per Wegleitung Ziffer 15).
 5. Submit, then **PDF** (print format `605.040.18N Form. 11`) and hand the PDFs to the trustee with the view.
-6. The trustee checks lines 2 to 7, 10.2, 13 and 14, the decisions above once erp-4yyn has landed, and the printed layout.
+6. The trustee checks lines 2 to 7, 10.2, 13 and 14, the decisions above, and the printed layout.
 
 An employee who left mid-year gets a certificate for the part of the year paid by us, with the exit date in the
 period. A certificate created in error is cancelled and amended, never deleted.
