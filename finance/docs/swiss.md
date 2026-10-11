@@ -308,6 +308,13 @@ cancelled entries and other companies.
   version 1.0. formOfReporting is 2 (vereinnahmt), grossOrNet 1 (netto), and the 3.7 %
   rate of Ziffer 342 is the old Sondersatz. The UID is the Company's Tax ID with its
   nine digits; any other form is refused, not read.
+- **How-to for a quarter (Benchi files; no agent uploads).**
+  1. Fill: the API call `fill_payment_basis` with `"dry_run": 0` (or the button, once
+     one exists), which makes or updates the draft `MWST <period>`.
+  2. Open the draft in ERPNext and check its figures against bexio's declaration.
+  3. Download its XML from the form, and upload that file to the ESTV ePortal.
+  4. Never press Get values on a payment-basis draft (see "The form's Get values"
+     above); Recalculate is safe.
 
 ## Alternatives
 
