@@ -280,12 +280,10 @@ class LohnausweisTest(unittest.TestCase):
     def setUp(self):
         import json
         with open(PAYROLL_FIXTURES, encoding="utf-8") as f:
-            self.fixtures = {row["salary_component_abbr"]: row["name"] for row in json.load(f)}
-        self.components = dict(self.fixtures)
+            self.fixtures = {row["name"]: row for row in json.load(f)}
 
     def test_each_table_names_the_components_of_its_form_line(self):
-        wanted = swiss_setup.lohnausweis_components(self.components)
-        self.assertEqual(wanted, {
+        self.assertEqual(swiss_setup.lohnausweis_components(), {
             "salary": ["Basic Salary", "Commission"],
             "deduction_ahv": ["AHV/IV/EO Employee", "ALV Employee", "NBU Employee"],
             "deduction_pension": ["BVG Employee"],
@@ -295,40 +293,84 @@ class LohnausweisTest(unittest.TestCase):
     def test_line_1_names_every_earning_fixture(self):
         # The Wegleitung's Ziffer 1 (and the view's line 1): every earning of the slip, so a new Earning
         # component must join the mapping or the certificate's line 1 falls short of the view's.
-        import json
-        with open(PAYROLL_FIXTURES, encoding="utf-8") as f:
-            earnings = {row["salary_component_abbr"] for row in json.load(f) if row["type"] == "Earning"}
-        self.assertEqual(set(swiss_setup.LOHNAUSWEIS["salary"]), earnings)
+        earnings = {name for name, row in self.fixtures.items() if row["type"] == "Earning"}
+        self.assertEqual({name for name, _ in swiss_setup.LOHNAUSWEIS["salary"]}, earnings)
 
-    def test_every_abbr_of_the_mapping_is_a_fixture_component(self):
-        for abbrs in swiss_setup.LOHNAUSWEIS.values():
-            for abbr in abbrs:
-                self.assertIn(abbr, self.fixtures)
-
-    def test_an_abbr_without_a_component_raises(self):
-        with self.assertRaises(KeyError):
-            swiss_setup.lohnausweis_components({"B": "Basic Salary"})
+    def test_every_pair_is_a_fixture_with_that_abbr(self):
+        # The name is what the step matches, the abbr what the collision warning looks for: both must be the fixture's.
+        for pairs in swiss_setup.LOHNAUSWEIS.values():
+            for name, abbr in pairs:
+                self.assertEqual(self.fixtures[name]["salary_component_abbr"], abbr)
 
     def test_fresh_settings_need_the_switch_and_every_table(self):
-        wanted = swiss_setup.lohnausweis_components(self.components)
+        wanted = swiss_setup.lohnausweis_components()
         turn_on, fields = swiss_setup.lohnausweis_changes(0, {}, wanted)
         self.assertTrue(turn_on)
         self.assertEqual(fields, list(wanted))
 
     def test_a_second_run_changes_nothing(self):
-        wanted = swiss_setup.lohnausweis_components(self.components)
+        wanted = swiss_setup.lohnausweis_components()
         self.assertEqual(swiss_setup.lohnausweis_changes(1, wanted, wanted), (False, []))
 
     def test_a_table_changed_by_hand_is_set_back(self):
-        wanted = swiss_setup.lohnausweis_components(self.components)
+        wanted = swiss_setup.lohnausweis_components()
         current = dict(wanted, salary=["Basic Salary", "Some other earning"])
         self.assertEqual(swiss_setup.lohnausweis_changes(1, current, wanted), (False, ["salary"]))
 
     def test_tables_outside_the_mapping_are_not_looked_at(self):
         # Lines the mapping does not fill (2.1, 13 ...) are left as they are: the list of changes names only the four.
-        wanted = swiss_setup.lohnausweis_components(self.components)
+        wanted = swiss_setup.lohnausweis_components()
         current = dict(wanted, catering=["Anything"])
         self.assertEqual(swiss_setup.lohnausweis_changes(1, current, wanted), (False, []))
+
+
+class LohnausweisSiteTest(unittest.TestCase):
+    # The step on a fake site. The live-era component 'Basic' holds abbr B, so the fixture's 'Basic Salary' got B_1.
+    # Invented names and abbrs stand in for the copy's; the tables must name 'Basic Salary' and never 'Basic'.
+    def run_step(self, components, settings_rows=None):
+        # components: name -> abbr of every Salary Component on the site
+        with mock.patch.object(swiss_setup, "frappe") as frappe, mock.patch.object(swiss_setup, "say") as say:
+            frappe.db.exists.side_effect = lambda doctype, name: name in components
+            frappe.db.get_value.side_effect = lambda doctype, name, field: components[name]
+            frappe.get_all.side_effect = lambda doctype, filters, pluck: [
+                name for name, abbr in components.items()
+                if abbr == filters["salary_component_abbr"] and name != filters["name"][1]]
+            frappe.db.sql.return_value = [("ADDRESS-1",)]
+            settings = frappe.get_single.return_value
+            settings.dynamic_config = 0
+            settings.get.side_effect = lambda field: (settings_rows or {}).get(field, [])
+            swiss_setup.lohnausweis()
+        return settings, say
+
+    def fixture_site(self, **overrides):
+        # every fixture component the mapping names, under its fixture abbr, unless overridden
+        site = {name: abbr for pairs in swiss_setup.LOHNAUSWEIS.values() for name, abbr in pairs}
+        site.update(overrides)
+        return site
+
+    def test_the_tables_name_the_fixture_components_not_the_colliding_one(self):
+        site = self.fixture_site(**{"Basic Salary": "B_1", "Basic": "B"})
+        settings, _ = self.run_step(site)
+        salary = [call.args[1] for call in settings.set.call_args_list if call.args[0] == "salary"]
+        self.assertEqual(salary, [[{"component": "Basic Salary"}, {"component": "Commission"}]])
+        for call in settings.set.call_args_list:
+            self.assertNotIn({"component": "Basic"}, call.args[1])
+
+    def test_a_collision_is_printed_with_both_components(self):
+        site = self.fixture_site(**{"Basic Salary": "B_1", "Basic": "B"})
+        _, say = self.run_step(site)
+        say.assert_any_call("lohnausweis: abbr B is held by 'Basic', the fixture's 'Basic Salary' has B_1")
+
+    def test_no_collision_no_warning(self):
+        _, say = self.run_step(self.fixture_site())
+        self.assertFalse(any("is held by" in call.args[0] for call in say.call_args_list))
+
+    def test_missing_fixture_sets_nothing(self):
+        site = self.fixture_site()
+        del site["Commission"]
+        settings, say = self.run_step(site)
+        settings.set.assert_not_called()
+        say.assert_called_once_with("lohnausweis: no Salary Component named Commission; the bi_payroll fixtures are not installed")
 
 
 class NewAccountsTest(unittest.TestCase):

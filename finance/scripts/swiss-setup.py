@@ -763,21 +763,22 @@ def payslip_default():
 
 
 # The Form 11 mapping of erpnextswiss's Salary Certificate Settings (a single doctype): the form field each table
-# fills, and the abbrs of the Salary Components it sums (bi_payroll's fixtures). Dynamic configuration reads the
-# components of each table; the static one reads the abbrs too, but has no table for line 12. Lines 2 to 7, 10.2 and
-# 13 to 14 are not in payroll (finance/docs/hrms.md, Lohnausweis map), line 15 stays free text.
+# fills, and the Salary Components it sums, by name. The names are bi_payroll's fixtures (salary_component.json; the
+# tests check each pair against it). Matching by name, not abbr: the live-era 'Basic' holds B, so the fixture's 'Basic
+# Salary' gets B_1 and an abbr lookup finds the wrong component (see lohnausweis()). The abbr stays in each pair for
+# that warning. Dynamic configuration reads the components of each table; the static one has no table for line 12.
+# Lines 2 to 7, 10.2 and 13 to 14 are not in payroll (finance/docs/hrms.md, Lohnausweis map), line 15 stays free text.
 LOHNAUSWEIS = {
-    "salary": ["B", "COMM"],                # 1 Lohn: every Earning fixture (a new Earning joins this list)
-    "deduction_ahv": ["AHV", "ALV", "NBUV"],  # 9 AHV/IV/EO, ALV, NBU
-    "deduction_pension": ["PK"],            # 10.1 BVG
-    "source_tax_deduction": ["QST"],        # 12 Quellensteuer
+    "salary": [("Basic Salary", "B"), ("Commission", "COMM")],  # 1 Lohn: every Earning fixture (a new Earning joins this)
+    "deduction_ahv": [("AHV/IV/EO Employee", "AHV"), ("ALV Employee", "ALV"), ("NBU Employee", "NBUV")],  # 9
+    "deduction_pension": [("BVG Employee", "PK")],  # 10.1 BVG
+    "source_tax_deduction": [("Quellensteuer Employee", "QST")],  # 12 Quellensteuer
 }
 
 
-def lohnausweis_components(components, mapping=LOHNAUSWEIS):
-    """components: abbr -> the name of its Salary Component. The component names per Settings table; an abbr with no
-    component raises KeyError."""
-    return {field: [components[abbr] for abbr in abbrs] for field, abbrs in mapping.items()}
+def lohnausweis_components(mapping=LOHNAUSWEIS):
+    """The component names per Settings table, in the order the mapping gives them."""
+    return {field: [name for name, _ in pairs] for field, pairs in mapping.items()}
 
 
 def lohnausweis_changes(dynamic_config, current, wanted):
@@ -786,17 +787,25 @@ def lohnausweis_changes(dynamic_config, current, wanted):
     return not dynamic_config, [field for field in wanted if current.get(field, []) != wanted[field]]
 
 
+def lohnausweis_abbr_warnings():
+    # A second Salary Component holding a fixture's abbr. The Settings are set by name, so they stay right, but any
+    # lookup by abbr finds the other one. Said, not changed: which component keeps the abbr is a live decision (erp-zg4p).
+    for name, abbr in sorted({pair for pairs in LOHNAUSWEIS.values() for pair in pairs}):
+        site_abbr = frappe.db.get_value("Salary Component", name, "salary_component_abbr")
+        for other in frappe.get_all("Salary Component", filters={"salary_component_abbr": abbr, "name": ["!=", name]},
+                                    pluck="name"):
+            say(f"lohnausweis: abbr {abbr} is held by '{other}', the fixture's '{name}' has {site_abbr}")
+
+
 def lohnausweis():
     # The company's address on the form is the primary address of the Company record (erpnextswiss's print format reads
     # it through the employee's company): nothing about the company is written here, only checked.
-    components = {}
-    for abbr in sorted({abbr for abbrs in LOHNAUSWEIS.values() for abbr in abbrs}):
-        name = frappe.db.get_value("Salary Component", {"salary_component_abbr": abbr})
-        if not name:
-            say(f"lohnausweis: no Salary Component with abbr {abbr}; the bi_payroll fixtures are not installed")
+    wanted = lohnausweis_components()
+    for name in sorted({name for names in wanted.values() for name in names}):
+        if not frappe.db.exists("Salary Component", name):
+            say(f"lohnausweis: no Salary Component named {name}; the bi_payroll fixtures are not installed")
             return
-        components[abbr] = name
-    wanted = lohnausweis_components(components)
+    lohnausweis_abbr_warnings()
     settings = frappe.get_single("Salary Certificate Settings")
     current = {field: [row.component for row in settings.get(field) or []] for field in wanted}
     turn_on, fields = lohnausweis_changes(settings.dynamic_config, current, wanted)
