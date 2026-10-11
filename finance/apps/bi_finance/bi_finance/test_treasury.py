@@ -176,8 +176,6 @@ class Cards(unittest.TestCase):
             self.assertEqual(doc["label"], doc["name"])
             self.assertLessEqual(len(doc["label"]), 20, doc["label"])
 
-
-
     def test_the_charts_fields_exist_in_the_doctype_and_they_use_their_report(self):
         fields = doctype_fields("Dashboard Chart")
         for name, report in [("cash_position_history", "Cash Position"), ("cash_conversion_trend", "Cash Conversion Cycle")]:
