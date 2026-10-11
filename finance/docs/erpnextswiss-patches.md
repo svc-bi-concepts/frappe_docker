@@ -41,7 +41,7 @@ image build, checked by the gate, never upstream. hrms is pinned by branch in
 
 | Patch | Fixes | Why |
 |-------|-------|-----|
-| `hrms/0001-dock-mounts-on-erpnext.patch` | `hrms/dock/hrms/hrms.json`: adds `"mount_on": "erpnext"` to hrms's shipped dock. | Benchi, 2026-10-12: "add the hr part also in the erp next", one shell, ERPNext. A dock's mount is an app-layer claim: frappe reads it only from the app's own standard dock row, so neither the site nor another app can mount hrms. With the key, the nine HR entries (HR Setup to Tax & Benefits) join ERPNext's rail after Treasury and Swiss Payroll, and hrms loses its own apps-screen tile. |
+| `hrms/0001-dock-mounts-on-erpnext.patch` | `hrms/dock/hrms/hrms.json`: adds `"mount_on": "erpnext"` to hrms's shipped dock, and moves its `modified` stamp from `2026-10-05 12:30:00` to `2026-10-12 01:00:00`. | Benchi, 2026-10-12: "add the hr part also in the erp next", one shell, ERPNext. A dock's mount is an app-layer claim: frappe reads it only from the app's own standard dock row, so neither the site nor another app can mount hrms. With the key, the nine HR entries (HR Setup to Tax & Benefits) join ERPNext's rail after Treasury and Swiss Payroll. The stamp is the part a site notices: frappe's migrate imports a shipped document only when the file's `modified` is newer than the stored row's (`frappe/model/sync.py`), so every site that already holds hrms's dock, live included, kept the old row and never got the mount without a forced import. The newer stamp makes a plain `bench migrate` apply it. The apps screen's hiding of hrms is in `frappe/0002`. |
 
 Check it by hand against the pin:
 
@@ -52,7 +52,27 @@ git apply --check ../finance/patches/hrms/0001-dock-mounts-on-erpnext.patch
 ```
 
 The gate runs the apply step over an invented tree holding the pinned `hrms.json`
-(`finance/scripts/test_build_image.py`, `test_our_hrms_dock_patch_mounts_the_rail_on_erpnext`).
+(`finance/scripts/test_build_image.py`, `test_our_hrms_dock_patch_mounts_the_rail_on_erpnext`,
+which also asserts the stamp is newer than the pin's).
+
+## frappe patches
+
+The patches to frappe (`finance/patches/frappe/`) follow the same rules as the hrms ones.
+
+| Patch | Fixes | Why |
+|-------|-------|-----|
+| `frappe/0002-apps-screen-skips-docked-apps.patch` | `frappe/apps.py`, `get_apps`: an app in `get_docked_apps()` is skipped, right after the `frappe` skip. | frappe's `get_docked_apps` says a mounted app is kept off the apps screen even when it declares `add_to_apps_screen`, but `get_apps` never called it, so hrms's mount hid Frappe HR from the sidebar switcher (`boot.py`, `on_apps_screen`) and left its tile on `/apps`. The one rule covers every mounted app (hrms, and bi_finance and bi_payroll when they carry tiles). An hrms hooks patch that drops `add_to_apps_screen` was the alternative; it would also take hrms's setup-wizard text and route out of frappe's bookkeeping. |
+
+Check it by hand against the pin (frappe is pinned by the image's tag, not by `apps.json`):
+
+```sh
+git clone https://github.com/frappe/frappe && cd frappe
+git checkout v16.51.0
+git apply --check ../finance/patches/frappe/0002-apps-screen-skips-docked-apps.patch
+```
+
+The gate applies the frappe directory over invented trees holding the pinned `bundler.py` and the head of
+`apps.py` (`test_our_apps_screen_patch_skips_the_docked_apps`).
 
 ## How they are applied
 

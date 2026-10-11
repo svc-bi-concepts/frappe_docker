@@ -1,0 +1,14 @@
+diff --git a/frappe/apps.py b/frappe/apps.py
+index b9b1c56..8f9c812 100644
+--- a/frappe/apps.py
++++ b/frappe/apps.py
+@@ -48,6 +48,9 @@ def get_apps():
+ 
+ 		if app == "frappe":
+ 			continue
++		# The mount wins: a docked app is kept off the apps screen, see get_docked_apps.
++		if app in get_docked_apps():
++			continue
+ 		app_details = frappe.get_hooks("add_to_apps_screen", app_name=app)
+ 		if not len(app_details):
+ 			continue

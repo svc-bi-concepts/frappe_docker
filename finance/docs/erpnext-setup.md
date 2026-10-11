@@ -64,6 +64,8 @@ own: bi_finance's Treasury, bi_payroll's Swiss Payroll, and hrms's HR modules (H
 a one-key patch to hrms, `finance/docs/erpnextswiss-patches.md`). They follow ERPNext's entries in the
 order the apps are installed (`sites/apps.txt`: bi_finance, bi_payroll, erpnext, erpnextswiss, frappe, hrms).
 The order, and hiding an entry, is arranged in the Desk with a Workspace Manager (the site layer, no code).
+The apps screen (`/apps`) shows ERPNext and Schweizer Buchhaltung only: a mounted app is kept off it
+(`finance/patches/frappe/0002`), and frappe itself, the Framework, never had a tile there.
 
 BI Finance is a companion of ERPNext, not an app of its own in the apps screen (Benchi, 2026-10-12). Its
 shipped documents are a Dock mounted on erpnext (`dock/bi_finance/bi_finance.json`: one rail entry, Treasury, after

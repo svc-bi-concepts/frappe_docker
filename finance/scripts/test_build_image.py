@@ -453,6 +453,65 @@ HRMS_DOCK_JSON = r'''{
  "user": ""
 }'''
 
+# frappe's apps.py at the pin v16.51.0 (apps/frappe/frappe/apps.py): the head through get_apps's loop, cut
+# after its for line. The patch's context is the lines around the frappe skip; the tabs are upstream's.
+APPS_PY_PATH = "frappe/apps.py"
+APPS_PY = '''# Copyright (c) 2015, Frappe Technologies Pvt. Ltd. and Contributors
+# License: MIT. See LICENSE
+
+import re
+
+import frappe
+from frappe import _
+from frappe.core.doctype.installed_applications.installed_applications import (
+	get_apps_with_incomplete_dependencies,
+	get_setup_wizard_completed_apps,
+	get_setup_wizard_not_required_apps,
+)
+from frappe.utils.caching import request_cache
+
+# check if route is /desk or /desk/* and not /app1 or /app1/*
+DESK_APP_PATTERN = re.compile(r"^/desk(/.*)?$")
+
+
+@request_cache
+def get_docked_apps() -> set[str]:
+	"""Apps that surface their entries on another app's rail.
+
+	A companion app (e.g. India Compliance for ERPNext) mounts its dock onto a host app's rail
+	rather than taking an apps-screen slot of its own. It is kept off the apps screen even when it
+	also declares `add_to_apps_screen` -- companion apps keep that hook so they still appear on
+	older versions, so here the mount wins.
+
+	The rule reads the **mount**, not the mere presence of a dock: every app that ships a rail
+	ships a `Dock` record now, so keying on that would delete each adopting app from the apps
+	screen."""
+	from frappe.boot import get_app_rail_host_map
+
+	return set(get_app_rail_host_map())
+
+
+@frappe.whitelist()
+@request_cache
+def get_apps():
+	apps = frappe.get_installed_apps()
+	app_list = []
+	for app in apps:
+		if (
+			app not in get_setup_wizard_completed_apps()
+			and app not in get_setup_wizard_not_required_apps()
+			and "System Manager" not in frappe.get_roles()
+		):
+			continue
+
+		if app == "frappe":
+			continue
+		app_details = frappe.get_hooks("add_to_apps_screen", app_name=app)
+		if not len(app_details):
+			continue
+		for app_detail in app_details:
+'''
+
 
 def git(cwd, *args):
     subprocess.run(
@@ -624,6 +683,7 @@ class PatchStep(unittest.TestCase):
         # cap of build-image.sh never reached the vite build and the capped builder SIGKILLed it.
         path = "frappe/bundler.py"
         self.commit(path, BUNDLER)
+        self.commit(APPS_PY_PATH, APPS_PY)
         run = subprocess.run(["sh", APPLY, FRAPPE_PATCH_DIR, self.app], capture_output=True, text=True)
         self.assertEqual(run.returncode, 0, run.stderr)
         scope = {"os": os}
@@ -634,10 +694,25 @@ class PatchStep(unittest.TestCase):
             os.environ.pop("NODE_OPTIONS", None)
             self.assertEqual(scope["get_node_env"](), {"NODE_OPTIONS": "--max_old_space_size=2928"})
 
+    def test_our_apps_screen_patch_skips_the_docked_apps(self):
+        # Regression: get_docked_apps said a mounted app is kept off the apps screen, but get_apps never
+        # called it, so a mounted app's tile stayed on /apps while the sidebar switcher dropped it.
+        self.commit("frappe/bundler.py", BUNDLER)
+        self.commit(APPS_PY_PATH, APPS_PY)
+        run = subprocess.run(["sh", APPLY, FRAPPE_PATCH_DIR, self.app], capture_output=True, text=True)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        get_apps = self.read(APPS_PY_PATH)
+        get_apps = get_apps[get_apps.index("def get_apps"):]
+        self.assertIn('\t\tif app == "frappe":\n\t\t\tcontinue\n\t\t# The mount wins: a docked app is kept off the apps screen, see get_docked_apps.\n'
+                      '\t\tif app in get_docked_apps():\n\t\t\tcontinue\n', get_apps)
+        self.assertLess(get_apps.index("get_docked_apps()"), get_apps.index("app_details = "))
+
     def test_our_hrms_dock_patch_mounts_the_rail_on_erpnext(self):
         # Regression: hrms's dock had no mount, so its nine HR entries kept their own apps-screen
         # tile. mount_on erpnext puts them on ERPNext's rail (after Treasury and Swiss Payroll).
         # frappe reads a mount only from the app's own standard dock row, so the patch is ours to carry.
+        # The stamp moves with the patch: frappe's migrate imports a shipped document only when its
+        # modified is newer than the stored row's, so a site that holds the old dock never got the mount.
         self.commit(HRMS_DOCK_PATH, HRMS_DOCK_JSON)
         run = subprocess.run(["sh", APPLY, HRMS_PATCH_DIR, self.app], capture_output=True, text=True)
         self.assertEqual(run.returncode, 0, run.stderr)
@@ -645,6 +720,7 @@ class PatchStep(unittest.TestCase):
         self.assertEqual(dock["mount_on"], "erpnext")
         self.assertEqual(dock["app"], "hrms")
         self.assertEqual(len(dock["items"]), 9)
+        self.assertGreater(dock["modified"], "2026-10-05 12:30:00.000000")
 
     def test_the_containerfile_builds_assets_after_the_frappe_patch(self):
         with open(CONTAINERFILE) as f:
