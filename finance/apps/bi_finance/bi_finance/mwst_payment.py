@@ -373,8 +373,8 @@ def journal_totals(lines, totals):
     every VAT row counts (1170 -> 400, 1171 -> 405, 2203 -> 382/383 by the Bezugsteuer rule, its base at the period's
     rate, 2200 by the net credit in the row of its rate); a 2202 or 1172 row is a reverse-charge transit, not a Ziffer.
     A manual 2200 row the voucher's own rows cannot rate rates from the entry's group (the base row the import booked
-    next to the VAT, see _manual_group_rate). A move (keyed by journal line id) and any other voucher count by the account pairs
-    as before: a 1170/1171 row with 1172 and a 2200 row with 2202 are the moves the Payment Entries already hold,
+    next to the VAT, see _manual_group_rate). A move (keyed by journal line id) and any other voucher count by the
+    account pairs as before: a 1170/1171 row with 1172 and a 2200 row with 2202 are the moves the Payment Entries already hold,
     not counted; 2200 alone is the sales tax booked by hand. The Bezugsteuer move (a numeric-keyed voucher's
     2203 row next to its 2202 debit) is the tax the Payment Entries' shared deduct rows already hold: not counted,
     listed in the CSV's skipped moves; a 2203 row on a voucher of no other known kind stays uncounted too and is
