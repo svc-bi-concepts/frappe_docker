@@ -10,7 +10,7 @@ document that explains the step is in brackets. Conventions for labels and butto
 1. **Wise and PayPal:** they sync each hour by themselves. Check on **Wise Settings** and
    **PayPal Settings** (Switzerland card) that the hourly sync is on. [`finance/apps/bi_finance/README.md`]
 2. **Bank Statement Upload:** upload the UBS camt file of the month (**Bank Statement Upload**,
-   Switzerland card). [`finance/docs/swiss.md`, camt.053 import]
+   Switzerland card). [`finance/apps/bi_finance/README.md`, bank_statement_upload]
 3. **Unreconciled bank lines:** clear what is left (Treasury shortcut). [`finance/docs/payment-runs.md`, the camt match]
 4. **Bank Reconciliation Tool:** match the remaining lines to Payment Entries (Treasury shortcut).
 5. **Payment Proposal:** create for the due bills (Switzerland card), check the list and the total,
@@ -41,7 +41,7 @@ document that explains the step is in brackets. Conventions for labels and butto
    paystub of the month. [`finance/apps/bi_payroll/README.md`]
 3. **QST Tariff:** the Quellensteuer codes and their rows (Switzerland card) for employees who are
    taxed at source.
-4. **Payroll Hand Over:** the report of the month per employee, gross, net and the Swiss components, for
+4. **Payroll Hand-over:** the report of the month per employee, gross, net and the Swiss components, for
    the trustee (Switzerland card). It reads the submitted slips; it changes nothing.
 5. **Still manual until erp-1jh5:** the BVG, UVG, NBU, KTG and FAK rates and the BVG insured salaries are
    placeholders until the fund and insurer sheets are in. Until then the slips are checked against the

@@ -23,7 +23,7 @@ SWITZERLAND = [
     "Bank Statement Upload",
     "Payroll Swiss Settings",
     "QST Tariff",
-    "Payroll Hand Over",
+    "Payroll Hand-over",
 ]
 
 
@@ -63,6 +63,23 @@ class Card(unittest.TestCase):
     def test_the_page_block_ids_are_unique(self):
         ids = [block["id"] for block in json.loads(self.doc["content"])]
         self.assertEqual([i for i, n in Counter(ids).items() if n > 1], [])
+
+    def test_a_report_link_names_a_report_that_exists_and_opens_as_a_query_report(self):
+        # the link_to is the report's own name ("Payroll Hand-over"), not the folder or a label
+        names = set()
+        for app in ("bi_finance", "bi_payroll"):
+            root = os.path.join(PACKAGE, "..", "..", app, app, app, "report")
+            for folder in (os.listdir(root) if os.path.isdir(root) else []):
+                if not os.path.isdir(os.path.join(root, folder)):
+                    continue
+                for file in os.listdir(os.path.join(root, folder)):
+                    if file.endswith(".json"):
+                        with open(os.path.join(root, folder, file), encoding="utf-8") as f:
+                            names.add(json.load(f)["name"])
+        for link in self.card_links():
+            if link["link_type"] == "Report":
+                self.assertIn(link["link_to"], names, link["label"])
+                self.assertEqual(link["is_query_report"], 1, link["label"])
 
     def test_bank_statement_upload_is_in_one_place_only(self):
         shortcuts = [s["label"] for s in self.doc["shortcuts"]]
