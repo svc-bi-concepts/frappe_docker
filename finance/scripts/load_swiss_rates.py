@@ -8,10 +8,10 @@ receives them in RATES_JSON and writes the settings single. Two modes, one file:
     container: RATES_JSON='[...]' python - --apply|--dry             (script on stdin)
 
 Only rows with set=yes are applied, and only fields in RATE_FIELDS (the same list
-swiss_rates.py carries; test_load_swiss_rates.py guards the agreement). This round
-that is the KTG fields only: BVG, UVG, NBU and FAK stay placeholders until their
-sheets land (yardmaster 2026-10-11). No rate is printed: the output names fields
-and whether a value changed, the values themselves are read back on the site.
+swiss_rates.py carries; test_load_swiss_rates.py guards the agreement). Which fields
+a run sets is the CSV's call: a rate whose sheet has not landed stays set=no and
+keeps its placeholder. No rate is printed: the output names fields and whether a
+value changed, the values themselves are read back on the site.
 """
 
 import argparse

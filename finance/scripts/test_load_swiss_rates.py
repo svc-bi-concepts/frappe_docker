@@ -43,7 +43,7 @@ class PrepareTest(unittest.TestCase):
         path = self.csv([
             "swiss_ktg_ee,0,percent,yes,ktg sheet,3,employer pays",
             "swiss_ktg_ag,2.5,percent,yes,ktg sheet,3,invented rate",
-            "ktg_waiting_days,14,days,no,ktg sheet,3,info only",
+            "ktg_waiting_days,33,days,no,ktg sheet,3,info only",
         ])
         self.assertEqual(load_swiss_rates.prepare(path),
                          [{"field": "swiss_ktg_ee", "value": 0.0},
@@ -60,7 +60,7 @@ class PrepareTest(unittest.TestCase):
             load_swiss_rates.prepare(path)
 
     def test_no_set_yes_row_is_an_error(self):
-        path = self.csv(["ktg_waiting_days,14,days,no,ktg sheet,3,info only"])
+        path = self.csv(["ktg_waiting_days,33,days,no,ktg sheet,3,info only"])
         with self.assertRaises(ValueError):
             load_swiss_rates.prepare(path)
 
