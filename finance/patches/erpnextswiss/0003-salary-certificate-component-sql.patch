@@ -1,0 +1,61 @@
+diff --git a/erpnextswiss/erpnextswiss/doctype/salary_certificate/salary_certificate.py b/erpnextswiss/erpnextswiss/doctype/salary_certificate/salary_certificate.py
+index 3c4a3c5..c064226 100644
+--- a/erpnextswiss/erpnextswiss/doctype/salary_certificate/salary_certificate.py
++++ b/erpnextswiss/erpnextswiss/doctype/salary_certificate/salary_certificate.py
+@@ -132,8 +132,6 @@ def get_component_dynamic(employee, start_date, end_date, componentlist):
+     if len(componentlist) == 0:
+         return 0.0;
+ 
+-    expression = "";
+-    
+     positiv = []
+     negativ = []
+     for item in componentlist:
+@@ -143,36 +141,30 @@ def get_component_dynamic(employee, start_date, end_date, componentlist):
+         else:
+             positiv.append(comp.name)
+ 
+-    expression = "' OR `tabSalary Detail`.`salary_component` = '"
+-
+     pos = 0.0
+     neg = 0.0
+ 
+     if len(positiv) > 0:
+-        expression_pos = expression.join(positiv)
+-
+         sql_query_pos = """SELECT `tabSalary Slip`.`employee`, IFNULL(SUM(`tabSalary Detail`.`amount`), 0) AS `amount`
+             FROM `tabSalary Slip` 
+             INNER JOIN `tabSalary Detail` ON `tabSalary Slip`.`name` = `tabSalary Detail`.`parent`
+-            WHERE `tabSalary Slip`.`employee` = '{0}'
+-            AND `tabSalary Slip`.`posting_date` >= '{1}'
+-            AND `tabSalary Slip`.`posting_date` <= '{2}'
++            WHERE `tabSalary Slip`.`employee` = %s
++            AND `tabSalary Slip`.`posting_date` >= %s
++            AND `tabSalary Slip`.`posting_date` <= %s
+             AND `tabSalary Slip`.`docstatus` = 1
+-            AND (`tabSalary Detail`.`salary_component` = '{3}');""".format(employee, start_date, end_date, expression_pos)
+-        values = frappe.db.sql(sql_query_pos, as_dict=True)
++            AND `tabSalary Detail`.`salary_component` IN %s;"""
++        values = frappe.db.sql(sql_query_pos, (employee, start_date, end_date, tuple(positiv)), as_dict=True)
+         pos = values[0].amount
+     
+     if len(negativ) > 0:
+-        expression_neg = expression.join(negativ)
+-
+         sql_query_neg = """SELECT `tabSalary Slip`.`employee`, IFNULL(SUM(`tabSalary Detail`.`amount`), 0) AS `amount`
+             FROM `tabSalary Slip` 
+             INNER JOIN `tabSalary Detail` ON `tabSalary Slip`.`name` = `tabSalary Detail`.`parent`
+-            WHERE `tabSalary Slip`.`employee` = '{0}'
+-            AND `tabSalary Slip`.`posting_date` >= '{1}'
+-            AND `tabSalary Slip`.`posting_date` <= '{2}'
++            WHERE `tabSalary Slip`.`employee` = %s
++            AND `tabSalary Slip`.`posting_date` >= %s
++            AND `tabSalary Slip`.`posting_date` <= %s
+             AND `tabSalary Slip`.`docstatus` = 1
+-            AND (`tabSalary Detail`.`salary_component` = '{3}');""".format(employee, start_date, end_date, expression_neg)
+-        values = frappe.db.sql(sql_query_neg, as_dict=True)
++            AND `tabSalary Detail`.`salary_component` IN %s;"""
++        values = frappe.db.sql(sql_query_neg, (employee, start_date, end_date, tuple(negativ)), as_dict=True)
+         neg = values[0].amount
+     return pos - neg
+\ No newline at end of file

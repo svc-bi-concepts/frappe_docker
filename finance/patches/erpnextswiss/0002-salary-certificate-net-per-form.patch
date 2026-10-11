@@ -1,0 +1,17 @@
+diff --git a/erpnextswiss/erpnextswiss/doctype/salary_certificate/salary_certificate.py b/erpnextswiss/erpnextswiss/doctype/salary_certificate/salary_certificate.py
+index 3c4a3c5..86c979a 100644
+--- a/erpnextswiss/erpnextswiss/doctype/salary_certificate/salary_certificate.py
++++ b/erpnextswiss/erpnextswiss/doctype/salary_certificate/salary_certificate.py
+@@ -94,8 +94,10 @@ def fetch_dynamic(self):
+     self.deduction_pension = get_component_dynamic(self.employee, self.start_date, self.end_date, frappe.get_doc('Salary Certificate Settings').deduction_pension)
+     # Pos 10.2
+     self.deduction_pension_additional = get_component_dynamic(self.employee, self.start_date, self.end_date, frappe.get_doc('Salary Certificate Settings').deduction_pension_additional)
+-    # Pos 11
+-    self.net_salary = values[0].net
++    # Pos 11: the Wegleitung's Ziffer 11, Ziffer 8 less the total of Ziffer 9 and 10, the way the form's own
++    # 'Summen berechnen' computes it. The slips' net_pay is lower: it also deducts Quellensteuer and KTG.
++    self.net_salary = (self.gross_salary - self.deduction_ahv
++        - self.deduction_pension - self.deduction_pension_additional)
+     # Pos 12
+     self.source_tax_deduction = get_component_dynamic(self.employee, self.start_date, self.end_date, frappe.get_doc('Salary Certificate Settings').source_tax_deduction)
+     # Pos 13.1.1

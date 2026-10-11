@@ -53,7 +53,8 @@ The hand-over rows are checked against invented employees (`python3 -m unittest
 bi_payroll.test_hand_over`) and were run on a throwaway site with invented slips (erp-fs9c: rows
 equal the slips per year and per month). Two parts are open and stay so: Quellensteuer (in payroll since erp-6rrh,
 a component set from the gross) was not yet on the site the proof ran on, so its column there is 0, and the
-Lohnausweis line mapping (below) is not checked against the 2026 form (step 6).
+Lohnausweis line mapping (below) is not checked against the 2026 form on the copy yet (step 6);
+lines 1, 11 and 15 follow the Wegleitung text since erp-4yyn.
 
 ## Versions
 
@@ -113,8 +114,8 @@ insurer's or the Ausgleichskasse's own sheet before a live run.
 | KTG | Component with the insurer's rate on the insured salary | Set by the insurer | Config. The 2026 KTG contract is fetched and read (erp-1jh5, 2026-10-11): its values sit in the private CSV and the settings stay open for the follow-up bead; the employer pays the premium, so the sheet names no employee share | the contract in `private/payroll-insurance/` |
 | FAK | Employer component on the AHV wage, rate by canton and Ausgleichskasse | Set by the fund | Config. Needs the fund's rate | none |
 | Quellensteuer | Not covered. erpnextswiss's Salary Certificate settings have a field "12 Quellensteuerabzug" that maps a component; it does not compute the tax | Cantonal tariffs, per year | **Gap.** Build (bi_finance) or outsource. See Questions | `erpnextswiss` `salary_certificate_settings.json` |
-| 13th salary | A Salary Component paid in December, or an accrual over the year (`accrual_component`) | Contract | Config. Choose the method (Question) | HRMS `salary_component` fields |
-| Lohnausweis (Form 11), per employee per year | erpnextswiss `Salary Certificate`: sums `Salary Slip` gross and net over the year, and the `Salary Detail` rows by `abbr` (B, AHV, ALV, NBUV, PK) into the form's fields. Fields are set in `Salary Certificate Settings` (dynamic configuration, step `lohnausweis`) | ESTV Wegleitung for Form 11 applies from 1 Jan 2026 | Needs HRMS. The field layout is checked line by line against the 2026 Wegleitung in "Lohnausweis map"; line 11 differs from the form (decision 1 there) | [ESTV Wegleitung 2026](https://www.estv.admin.ch/dam/de/sd-web/afP1GDFr8gE3/dbst-form-lohna-wegleitung-2026-de.pdf) (not opened in this study; from the search result) |
+| 13th salary | A Salary Component paid in December, or an accrual over the year (`accrual_component`) | Contract | None in the data (Question 5). No component until a contract says so | HRMS `salary_component` fields |
+| Lohnausweis (Form 11), per employee per year | erpnextswiss `Salary Certificate`: sums `Salary Slip` gross and net over the year, and the `Salary Detail` rows by `abbr` (B, AHV, ALV, NBUV, PK) into the form's fields. Fields are set in `Salary Certificate Settings` (dynamic configuration, step `lohnausweis`). Its Nettolohn (Ziffer 11) and its component SQL are corrected by our patches (`finance/patches/erpnextswiss` 0002-0004) | ESTV Wegleitung for Form 11 applies from 1 Jan 2026 | Needs HRMS. The field layout is checked line by line against the 2026 Wegleitung in "Lohnausweis map"; lines 1, 11 and 15 follow the Wegleitung since erp-4yyn (the copy proof stays step 6) | [ESTV Wegleitung 2026](https://www.estv.admin.ch/dam/de/sd-web/afP1GDFr8gE3/dbst-form-lohna-wegleitung-2026-de.pdf); the PDF is read (Ziffer 1, 10.1, 11, 15), `private/payroll/forms/wegleitung-lohnausweis-2026.pdf` |
 | ELM / Swissdec transmission | Not in erpnextswiss `v16` (no ELM file in its tree), not in HRMS | ELM 4.0 switched off; ELM 5.0 required for the 2026 payroll year. Sources disagree on the 4.0 end date (30.06.2026 per BFS; end 2025 per one vendor). Transmission needs Swissdec-certified payroll software | **Gap.** See Questions and `elm.md` | [BFS](https://www.bfs.admin.ch/bfs/de/home/grundlagen/elm.html), [Swissdec](https://www.swissdec.ch/abschaltung-elm-4-0), [AXA](https://www.axa.ch/de/unternehmenskunden/melden-und-mutieren/melden/elektronische-lohnmeldung.html) |
 | Payslip layout | bi_payroll's `Lohnabrechnung` print format on Salary Slip (erp-h47v): Jinja template `lohnabrechnung.html`, German, generic (company and employee from the records at print time); the rows, bases and rates are prepared by `bi_payroll/payslip.py` (jinja method `payslip_data`) from the slip's own tables, with the employer shares in a separate block, year-to-date gross and net, and the masked AHV number and bank account. Installed and made the Salary Slip default by `swiss-setup.py` step `payslip`. erpnextswiss ships `kt_salary_slip.html`, a print for one of its own sample companies; used as a reference only | none | Done in the HR train; live install is a go-live step (no live write in a train child). PDF proof on the HRMS copy once the train image carries it | erpnextswiss `templates/print_formats/kt_salary_slip.html`; `finance/apps/bi_payroll/bi_payroll/lohnabrechnung.html` |
 | Net salary payment (pain.001) | erpnextswiss `Payment Proposal` with `Payment Proposal Salary Slip` (the salary side of the payment run). The run in `payment-runs.md` leaves salaries out while the site has no HRMS | pain.001.001.09 as in `payment-runs.md` | Test on a copy after HRMS (erp-xpmr) | `payment-runs.md`; erpnextswiss `payment_proposal_salary_slip` |
@@ -326,11 +327,43 @@ calculated.
 The report `Payroll hand-over` (bi_payroll) has a view `Lohnausweis` that sums the same rows into the
 Form 11 lines (column in brackets). The line numbers and labels are the fields of erpnextswiss's Salary
 Certificate, which the settings step `lohnausweis` (`finance/scripts/swiss-setup.py`) maps to our components.
+Lines 1, 11 and 15 follow the ESTV Wegleitung 2026 (read for erp-hx7s: Ziffer 1, 10.1, 11 and 15), with
+tests (erp-4yyn): line 1 carries every earning row of the slips, line 11 is line 8 less lines 9 and 10.1
+(not the slips' net pay, which also deducts Quellensteuer and KTG), and the KTG employee share goes into
+line 15 as a remark. The view keeps rappen; the flag 'Whole francs' rounds it for the print or the export
+(round half up). The full line-by-line check on the copy stays step 6 of the plan. erpnextswiss's Salary
+Certificate gets the same net rule through our patches (`finance/patches/erpnextswiss`, 0002-0004).
 
 Checked against ESTV, Wegleitung zum Ausfüllen des Lohnausweises 2026 (Formular 11, the 2027 edition
 when published): **yes** = the Wegleitung's text for the line was read and the source below fits it;
 **heading** = only the line's heading was checked, so the line is not in payroll and the trustee reads its text.
 The ESTV PDF is kept under `private/payroll/forms/` (not in the repo).
+
+| Form line | Salary Component(s) on the slip | Column in view `Lohnausweis` | Status |
+|---|---|---|---|
+| 1. Lohn / Rente | every earning row of the slip (Basic Salary, Commission, any Zulage) | `line_1` | in payroll (Wegleitung Ziffer 1: all employer payments not on lines 2-7), erp-4yyn |
+| 2.1 Verpflegung und Unterkunft | none | — | not in payroll |
+| 2.2 Privatanteil Geschäftsfahrzeug | none | — | not in payroll |
+| 2.3 Weitere Gehaltsnebenleistungen | none | — | not in payroll |
+| 3. Unregelmässige Leistungen | none | — | not in payroll |
+| 4. Kapitalleistungen | none | — | not in payroll |
+| 5. Beteiligungsrechte | none | — | not in payroll |
+| 6. Verwaltungsratsentschädigungen | none | — | not in payroll |
+| 7. Andere Leistungen | none | — | not in payroll |
+| 8. Bruttolohn total | gross pay of the slip | `line_8` | in payroll |
+| 9. Beiträge AHV/IV/EO/ALV/NBUV | AHV/IV/EO Employee, ALV Employee, NBU Employee | `line_9` | in payroll |
+| 10.1 Ordentliche Beiträge berufliche Vorsorge | BVG Employee | `line_10_1` | in payroll |
+| 10.2 Beiträge Einkauf berufliche Vorsorge | none | — | not in payroll |
+| 11. Nettolohn / Rente | line 8 less lines 9 and 10.1, computed in the view | `line_11` | in payroll (Wegleitung Ziffer 11). The slip's net pay is lower: it also deducts Quellensteuer and KTG, erp-4yyn |
+| 12. Quellensteuerabzug | Quellensteuer Employee | `line_12` | in payroll since erp-6rrh (the tax is set on the slip from the gross, per canton tariff) |
+| 13.1.1 Effektive Spesen Reise / Verpflegung / Übernachtung | none | — | not in payroll |
+| 13.1.2 Effektive Spesen übrige | none | — | not in payroll |
+| 13.2.1 Pauschalspesen Repräsentation | none | — | not in payroll |
+| 13.2.2 Pauschalspesen Auto | none | — | not in payroll |
+| 13.2.3 Pauschalspesen übrige | none | — | not in payroll |
+| 13.3 Beiträge an die Weiterbildung | none | — | not in payroll |
+| 14. Weitere Gehaltsnebenleistungen | none | — | not in payroll |
+| 15. Bemerkungen | KTG Employee, as the remark "KTG-Beitrag Arbeitnehmer CHF …" | `line_15` | in payroll (Wegleitung Ziffer 15): KTG has no line of its own, erp-4yyn. KTG keeps its own column in the hand-over view |
 
 | Form line | Source in ERPNext | erpnextswiss field | Checked | Note |
 |---|---|---|---|---|
@@ -362,8 +395,8 @@ The ESTV PDF is kept under `private/payroll/forms/` (not in the repo).
 | 13.2.3 Pauschalspesen übrige | none | `other_net_expenses` | heading | not in payroll; trustee |
 | 13.3 Beiträge Weiterbildung | none | `education` | heading | not in payroll; trustee |
 | 14. Weitere Gehaltsnebenleistungen | none | `other_salary_sides` | heading | not in payroll; trustee |
-| 15. Bemerkungen | Free text on the certificate | `remarks` | yes | Left free: the settings' remark table stays empty. Mandatory notes (several certificates in one year, KTG amounts, Privatanteil) are typed by the trustee |
-| (no line) KTG Employee | `KTG Employee` (abbr KTG) | none; view column `ktg_employee` | yes | The Wegleitung (Ziffer 9): employee-paid Krankentaggeld contributions may not be deducted from the gross; they can be shown under line 15. The trustee confirms before a deduction is used |
+| 15. Bemerkungen | Free text on the certificate | `remarks` | yes | The settings' remark table stays empty; the view fills line 15 itself with the KTG remark (erp-4yyn). Other mandatory notes (several certificates in one year, Privatanteil) are typed by the trustee |
+| (no line) KTG Employee | `KTG Employee` (abbr KTG) | the view's line-15 remark, erp-4yyn | yes | The Wegleitung (Ziffer 9): employee-paid Krankentaggeld contributions may not be deducted from the gross; the view remarks them under line 15 ("KTG-Beitrag Arbeitnehmer CHF …"). The trustee confirms before a deduction is used |
 
 Unentgeltliche Beförderung and Kantinenverpflegung (boxes F and G) are not in payroll: both boxes stay **no**.
 The employer shares (AHV, ALV, BVG, UVG, KTG, FAK) are not on the form's lines and stay in the

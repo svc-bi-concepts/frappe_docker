@@ -4,9 +4,11 @@ The rows are read from the submitted Salary Slips of the company and their Salar
 payslips' own amounts. Export them from the report (Excel or CSV) and send them to the trustee; the payroll data
 stays out of the repository (finance/docs/hrms.md).
 
-The view 'Lohnausweis' sums the same rows into the form's lines (hand_over.LOHNAUSWEIS). It is not the certificate:
-the lines not in payroll are not in it, and the mapping is checked against the 2026 form before use
-(finance/docs/hrms.md, step 6).
+The view 'Lohnausweis' sums the same rows into the form's lines (hand_over.LOHNAUSWEIS) per the ESTV Wegleitung:
+line 1 carries every earning row, line 11 is line 8 less lines 9 and 10.1 (not the slips' net pay), the KTG
+employee share is a line-15 remark. The flag 'Whole francs' rounds the lines for the print or the export (round
+half up); the view itself keeps rappen. It is not the certificate: the lines not in payroll are not in it, and
+the mapping is checked against the 2026 form before use (finance/docs/hrms.md, step 6).
 
 The view 'Quellensteuer Abrechnung' lists the withholding per canton and per month or quarter (hand_over.qst_rows), for
 the cantonal return. The view 'Jahresdeklarationen' gives the year's wage sums per insurance (hand_over.annual_rows),
@@ -86,14 +88,17 @@ def execute(filters=None):
     ahv_numbers = {e.name: e.social_security_number or "" for e in employees_query}
     births = {e.name: e.date_of_birth for e in employees_query}
     lines = {}
+    earnings = {}
     details = frappe.get_all(
         "Salary Detail",
         filters={"parenttype": "Salary Slip", "parent": ["in", [s.name for s in slips]]},
-        fields=["parent", "salary_component", "amount"],
+        fields=["parent", "salary_component", "amount", "parentfield"],
     )
     for d in details:
         slip_lines = lines.setdefault(d.parent, {})
         slip_lines[d.salary_component] = slip_lines.get(d.salary_component, 0) + flt(d.amount)
+        if d.parentfield == "earnings":
+            earnings.setdefault(d.parent, set()).add(d.salary_component)
 
     slip_rows = [
         {
@@ -112,9 +117,9 @@ def execute(filters=None):
     if annual:
         bvg_insured_salaries(slip_rows, employees, end)
         return annual_columns(), annual_rows(slip_rows, lines, year)
-    rows = hand_over(slip_rows, lines, bool(month))
+    rows = hand_over(slip_rows, lines, bool(month), earnings)
     if view == LOHNAUSWEIS_VIEW:
-        rows = lohnausweis(rows)
+        rows = lohnausweis(rows, francs=bool(filters.francs))
     return columns_of(), rows
 
 
@@ -179,10 +184,12 @@ def lohnausweis_columns(by_month):
     if by_month:
         cols.append({"label": _("Month"), "fieldname": "month", "fieldtype": "Int", "width": 70})
     cols.append({"label": _("Slips"), "fieldname": "slips", "fieldtype": "Int", "width": 60})
-    cols += [
-        {"label": label, "fieldname": column, "fieldtype": "Currency", "width": 160}
-        for column, label, _keys in LOHNAUSWEIS
-    ]
+    for column, label, _keys in LOHNAUSWEIS:
+        if column == "line_15":
+            # Bemerkungen: the KTG remark, text, not an amount
+            cols.append({"label": label, "fieldname": column, "fieldtype": "Data", "width": 320})
+        else:
+            cols.append({"label": label, "fieldname": column, "fieldtype": "Currency", "width": 160})
     return cols
 
 

@@ -3,10 +3,16 @@
 One row per employee for the period, or per employee and month. The amounts are the slips' own (gross, net) and the
 Salary Detail rows of each slip, summed by component, so the rows match the payslips.
 
+The Lohnausweis view follows the ESTV Wegleitung for Form 11 (found in erp-hx7s): line 1 carries
+every earning row of the slips, line 11 is line 8 less lines 9 and 10.1 (not the slips' net pay, which also
+deducts Quellensteuer and KTG), and the KTG employee share goes into line 15 as a remark, for want of a line of
+its own. The printed certificate shows whole francs (round half up, certificate_rounding); the view keeps rappen.
+
 Pure Python, so the offline tests run without frappe (test_hand_over.py). The report
 (bi_payroll/bi_payroll/report/payroll_hand_over) reads the submitted Salary Slips and passes them here.
 """
 
+from decimal import Decimal, ROUND_HALF_UP
 from itertools import groupby
 
 # Column key -> the Salary Component's name in fixtures/salary_component.json. Quellensteuer is the component
@@ -25,31 +31,41 @@ COMPONENTS = {
     "ktg_employer": "KTG Employer",
     "fak_employer": "FAK Employer",
 }
-# The earnings the rows carry besides gross: Lohnausweis line 1 is the salary and the commission (wage type 1218).
+# The earnings that keep a column of their own. Lohnausweis line 1 is wider: every earning row of the slip
+# (the report tells hand_over() which Salary Detail rows sit in a slip's earnings table), per the Wegleitung's
+# Ziffer 1 (the salary, Provisionen, any Zulage).
 EARNINGS = {"basic": "Basic Salary", "commission": "Commission"}
 EMPLOYER_SHARES = [key for key in COMPONENTS if key.endswith("_employer")]
-AMOUNTS = ["gross", "net", *EARNINGS, *COMPONENTS, "employer_total"]
+AMOUNTS = ["gross", "net", "earnings", *EARNINGS, *COMPONENTS, "employer_total"]
 
-# The Lohnausweis (Form 11) lines that the rows fill, numbered as erpnextswiss's Salary Certificate numbers them
-# (its fields 1 to 15, the same numbers as the form). A line not listed is not in payroll yet: docs/hrms.md has the
-# full table. KTG is not on a line here; its own column keeps it visible until the trustee says where it goes.
-# (column key, the form's line, the amounts summed into it)
+# The Lohnausweis (Form 11) lines that the view fills, numbered as erpnextswiss's Salary Certificate numbers them
+# (its fields 1 to 15, the same numbers as the form). Per the ESTV Wegleitung 2026: line 1 is every earning of the
+# slip (Ziffer 1), line 11 is line 8 less the total of lines 9 and 10 (Ziffer 11) — the slips' own net is lower,
+# it also deducts Quellensteuer and KTG. Line 15 (Bemerkungen) carries the KTG employee share as a remark
+# (KTG_REMARK): KTG has no line of its own. A line not listed is not in payroll yet: docs/hrms.md has the full
+# table. (column key, the form's line, the amounts summed into it; None keys: lohnausweis() computes the line)
 LOHNAUSWEIS = [
-    ("line_1", "1. Lohn", ["basic", "commission"]),
+    ("line_1", "1. Lohn", ["earnings"]),
     ("line_8", "8. Bruttolohn total", ["gross"]),
     ("line_9", "9. Beiträge AHV/IV/EO/ALV/NBUV", ["ahv_employee", "alv_employee", "nbu_employee"]),
     ("line_10_1", "10.1 Ordentliche Beiträge berufliche Vorsorge", ["bvg_employee"]),
-    ("line_11", "11. Nettolohn", ["net"]),
+    ("line_11", "11. Nettolohn", None),
     ("line_12", "12. Quellensteuerabzug", ["quellensteuer"]),
-    ("ktg_employee", "KTG Employee (not on a line: to check)", ["ktg_employee"]),
+    ("line_15", "15. Bemerkungen", None),
 ]
+# The line-15 remark for the KTG employee share; the amount formats per the flag: rappen in the view, whole
+# francs for the print or the export.
+KTG_REMARK = "KTG-Beitrag Arbeitnehmer CHF {0}"
 
 
-def hand_over(slips, lines, by_month):
+def hand_over(slips, lines, by_month, earnings=None):
     """slips: dicts with name, employee, employee_name, ahv_number, month, gross_pay, net_pay (submitted slips).
     lines: {slip name: {component name: amount}}, the Salary Detail rows of each slip summed by component.
+    earnings: {slip name: {component name, ...}}, the rows that sit in a slip's earnings table; their sum is
+    Lohnausweis line 1, so it names every earning, not only Basic Salary.
     by_month: one row per employee and month, else one row per employee for the whole period."""
     key_of = {name: key for key, name in {**EARNINGS, **COMPONENTS}.items()}
+    earning_names = earnings or {}
     rows = {}
     for slip in slips:
         month = slip["month"] if by_month else None
@@ -61,9 +77,12 @@ def hand_over(slips, lines, by_month):
         row["slips"] += 1
         row["gross"] += slip["gross_pay"]
         row["net"] += slip["net_pay"]
+        slip_earnings = earning_names.get(slip["name"], ())
         for component, amount in lines.get(slip["name"], {}).items():
             if component in key_of:
                 row[key_of[component]] += amount
+            if component in slip_earnings:
+                row["earnings"] += amount
     for row in rows.values():
         row["employer_total"] = sum(row[key] for key in EMPLOYER_SHARES)
         for key in AMOUNTS:
@@ -71,15 +90,39 @@ def hand_over(slips, lines, by_month):
     return sorted(rows.values(), key=lambda row: (row["employee"], row["month"] or 0))
 
 
-def lohnausweis(rows):
-    """The hand-over rows, with the amounts summed by the Lohnausweis lines instead of the components: one row per row."""
-    return [
-        {
+def certificate_rounding(amount):
+    """The whole francs of the printed certificate, round half up (the form is filled in francs, not rappen).
+    The view keeps rappen; this runs for the print or the export flag only."""
+    return int(Decimal(str(amount)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+
+def lohnausweis(rows, francs=False):
+    """The hand-over rows, with the amounts on the Lohnausweis lines instead of the components: one row per row.
+    Line 11 is computed per the Wegleitung (line 8 less lines 9 and 10.1), line 15 remarks the KTG employee share.
+    francs: whole francs for the printed certificate or the export (round half up); the view keeps rappen."""
+    view = []
+    for row in rows:
+        line = {
             **{key: row[key] for key in ("employee", "employee_name", "ahv_number", "month", "slips")},
-            **{column: round(sum(row[key] for key in keys), 2) for column, _, keys in LOHNAUSWEIS},
+            **{column: round(sum(row[key] for key in keys), 2) for column, _, keys in LOHNAUSWEIS if keys},
         }
-        for row in rows
-    ]
+        # Ziffer 11: Ziffer 8 less the total of Ziffer 9 and 10 — not the slips' net pay, which also deducts
+        # Quellensteuer (Ziffer 12) and KTG.
+        line["line_11"] = round(line["line_8"] - line["line_9"] - line["line_10_1"], 2)
+        # Ziffer 15 (Bemerkungen): the KTG employee share has no line of its own.
+        if row["ktg_employee"]:
+            amount = certificate_rounding(row["ktg_employee"]) if francs else f"{row['ktg_employee']:.2f}"
+            line["line_15"] = KTG_REMARK.format(amount)
+        else:
+            line["line_15"] = ""
+        if francs:
+            # The printed form's arithmetic must hold on its own francs: line 11 from the printed lines.
+            for column, _, _ in LOHNAUSWEIS:
+                if column not in ("line_11", "line_15"):
+                    line[column] = certificate_rounding(line[column])
+            line["line_11"] = line["line_8"] - line["line_9"] - line["line_10_1"]
+        view.append(line)
+    return view
 
 
 # The Quellensteuer return: the slips' own tax, per canton and per month or quarter. The period is the report's filter.
@@ -192,3 +235,4 @@ def _finish_annual(row):
     for key in ANNUAL_BASES + ANNUAL_CONTRIBUTIONS:
         row[key] = round(row[key], 2)
     return row
+

@@ -9,7 +9,8 @@ import datetime
 import unittest
 
 from bi_payroll.hand_over import (
-    AMOUNTS, COMPONENTS, LOHNAUSWEIS, annual_rows, bvg_insured, hand_over, lohnausweis, qst_rows,
+    AMOUNTS, COMPONENTS, LOHNAUSWEIS, annual_rows, bvg_insured, certificate_rounding, hand_over, lohnausweis,
+    qst_rows,
 )
 
 
@@ -101,27 +102,61 @@ class Components(unittest.TestCase):
 
 
 class Lohnausweis(unittest.TestCase):
-    def line(self, lines=LINES):
-        (row,) = hand_over([MONTH_1], lines, by_month=False)
+    # The earning rows of SAL-1, as the report passes them (the Salary Detail rows in the slip's
+    # earnings table).
+    EARNED = {"SAL-1": {"Basic Salary"}}
+
+    def line(self, lines=LINES, earnings=None):
+        (row,) = hand_over([MONTH_1], lines, by_month=False, earnings=earnings or self.EARNED)
         (line,) = lohnausweis([row])
         return line
 
     def test_line_1_is_the_basic_salary(self):
         self.assertEqual(self.line()["line_1"], 8000)
 
-    def test_line_1_is_the_basic_salary_and_the_commission(self):
+    def test_line_1_is_every_earning_row(self):
         # invented: 8,000 salary and 2,000 commission in one month
-        slips = [slip("SAL-3", 1, 10000, 9113)]
-        lines = {"SAL-3": {**LINES["SAL-1"], "Commission": 2000}}
-        (row,) = hand_over(slips, lines, by_month=False)
+        lines = {"SAL-1": {**LINES["SAL-1"], "Commission": 2000}}
+        earnings = {"SAL-1": {"Basic Salary", "Commission"}}
+        (row,) = hand_over([slip("SAL-1", 1, 10000, 9113)], lines, by_month=False, earnings=earnings)
         self.assertEqual(row["commission"], 2000)
+        self.assertEqual(row["earnings"], 10000)
         (line,) = lohnausweis([row])
         self.assertEqual(line["line_1"], 10000)
 
-    def test_line_8_and_11_are_the_slips_gross_and_net(self):
+    def test_line_1_takes_any_zulage_component(self):
+        # the Wegleitung's Ziffer 1: any Zulage is Lohn, not only the earnings with a column of their own
+        lines = {"SAL-1": {**LINES["SAL-1"], "Nachtzulage": 120}}
+        earnings = {"SAL-1": {"Basic Salary", "Nachtzulage"}}
+        (row,) = hand_over([slip("SAL-1", 1, 8120, 7233)], lines, by_month=False, earnings=earnings)
+        self.assertEqual(row["basic"], 8000)
+        (line,) = lohnausweis([row])
+        self.assertEqual(line["line_1"], 8120)
+
+    def test_line_1_stays_zero_without_earning_rows(self):
+        # the report always passes them; a caller who cannot sees it here
+        (row,) = hand_over([MONTH_1], LINES, by_month=False)
+        (line,) = lohnausweis([row])
+        self.assertEqual(line["line_1"], 0)
+
+    def test_line_8_is_the_slips_gross(self):
+        self.assertEqual(self.line()["line_8"], 8000)
+
+    def test_line_11_is_line_8_less_line_9_and_line_10_1(self):
+        # the Wegleitung's Ziffer 11: 8,000 - 552 - 300 = 7,148. The slip's net (7,113) is lower: it also
+        # deducts the KTG (35), which is not on a line.
         line = self.line()
-        self.assertEqual(line["line_8"], 8000)
-        self.assertEqual(line["line_11"], 7113)
+        self.assertEqual(line["line_11"], 8000 - 552 - 300)
+        self.assertNotEqual(line["line_11"], 7113)
+
+    def test_line_11_differs_from_the_net_on_a_slip_with_quellensteuer_and_ktg(self):
+        # QST (250) and KTG (35) sit in the slip's net, not in line 11
+        lines = {"SAL-1": dict(LINES["SAL-1"], **{"Quellensteuer Employee": 250})}
+        line = self.line(lines=lines)
+        self.assertEqual(line["line_12"], 250)
+        self.assertEqual(line["line_11"], 7148)
+        (row,) = hand_over([slip("SAL-1", 1, 8000, 6863)], lines, by_month=False, earnings=self.EARNED)
+        self.assertEqual(row["net"], 6863)  # the slip's own net: QST and KTG deducted
 
     def test_line_9_is_the_employee_ahv_alv_and_nbu(self):
         self.assertEqual(self.line()["line_9"], 424 + 88 + 40)
@@ -132,10 +167,14 @@ class Lohnausweis(unittest.TestCase):
     def test_line_12_is_the_quellensteuer_employee_row(self):
         self.assertEqual(self.line()["line_12"], 0)
         lines = {"SAL-1": dict(LINES["SAL-1"], **{"Quellensteuer Employee": 250})}
-        self.assertEqual(self.line(lines)["line_12"], 250)
+        self.assertEqual(self.line(lines=lines)["line_12"], 250)
 
-    def test_ktg_employee_keeps_a_column_until_it_has_a_line(self):
-        self.assertEqual(self.line()["ktg_employee"], 35)
+    def test_line_15_remarks_the_ktg_employee_share(self):
+        self.assertEqual(self.line()["line_15"], "KTG-Beitrag Arbeitnehmer CHF 35.00")
+
+    def test_line_15_stays_empty_without_ktg(self):
+        lines = {"SAL-1": {k: v for k, v in LINES["SAL-1"].items() if "KTG" not in k}}
+        self.assertEqual(self.line(lines=lines)["line_15"], "")
 
     def test_the_rows_keep_the_employee_and_the_slip_count(self):
         line = self.line()
@@ -144,14 +183,44 @@ class Lohnausweis(unittest.TestCase):
     def test_one_row_per_hand_over_row(self):
         slips = [slip("SAL-1", 1, 8000, 7113), slip("SAL-2", 2, 8100, 7200)]
         lines = {"SAL-1": LINES["SAL-1"], "SAL-2": LINES["SAL-1"]}
-        rows = lohnausweis(hand_over(slips, lines, by_month=True))
+        earnings = {"SAL-1": {"Basic Salary"}, "SAL-2": {"Basic Salary"}}
+        rows = lohnausweis(hand_over(slips, lines, by_month=True, earnings=earnings))
         self.assertEqual([r["month"] for r in rows], [1, 2])
         self.assertEqual([r["line_8"] for r in rows], [8000, 8100])
 
-    def test_every_column_sums_amounts_the_rows_carry(self):
+    def test_every_summed_column_sums_amounts_the_rows_carry(self):
         for column, _, keys in LOHNAUSWEIS:
+            if keys is None:
+                continue  # line 11 and line 15 are computed, not summed
             with self.subTest(column=column):
                 self.assertTrue(set(keys) <= set(AMOUNTS))
+
+
+class CertificateRounding(unittest.TestCase):
+    def test_half_rappen_rounds_up(self):
+        self.assertEqual(certificate_rounding(7148.5), 7149)
+        self.assertEqual(certificate_rounding(7148.4), 7148)
+        self.assertEqual(certificate_rounding(35), 35)
+
+    def test_the_francs_flag_rounds_the_lines_half_up(self):
+        # invented: 8,000.50 gross, 424.40 AHV, so the printed lines round on their own
+        lines = {"SAL-1": dict(LINES["SAL-1"], **{"Basic Salary": 8000.5, "AHV/IV/EO Employee": 424.4})}
+        (row,) = hand_over([slip("SAL-1", 1, 8000.5, 7113)], lines, by_month=False,
+                           earnings={"SAL-1": {"Basic Salary"}})
+        (line,) = lohnausweis([row], francs=True)
+        self.assertEqual(line["line_8"], 8001)
+        self.assertEqual(line["line_9"], 552)  # 552.40 rounds down
+        self.assertEqual(line["line_11"], 8001 - 552 - 300)  # the printed form's own arithmetic
+        self.assertIsInstance(line["line_11"], int)
+        self.assertEqual(line["line_15"], "KTG-Beitrag Arbeitnehmer CHF 35")
+
+    def test_the_view_keeps_rappen(self):
+        lines = {"SAL-1": dict(LINES["SAL-1"], **{"AHV/IV/EO Employee": 424.4})}
+        (row,) = hand_over([MONTH_1], lines, by_month=False, earnings={"SAL-1": {"Basic Salary"}})
+        (line,) = lohnausweis([row])
+        self.assertEqual(line["line_9"], 552.4)
+        self.assertIsInstance(line["line_11"], float)
+        self.assertEqual(line["line_15"], "KTG-Beitrag Arbeitnehmer CHF 35.00")
 
 
 class Payslips(unittest.TestCase):

@@ -232,6 +232,85 @@ ITEM_TOOLS = [
 ]
 
 
+# The lines of erpnextswiss salary_certificate.py at the pin (5d85c45) around the three hunks of the
+# patches 0002-0004: the imports (0004), Pos 11 in fetch_dynamic (0002) and get_component_dynamic (0003).
+# The bodies are the upstream ones, the untouched middle is cut: git apply needs a hunk's context, not its
+# line numbers. The file at the pin ends without a newline, at `return pos - neg`.
+SALARY_CERTIFICATE_PATH = "erpnextswiss/erpnextswiss/doctype/salary_certificate/salary_certificate.py"
+SALARY_CERTIFICATE = '''# -*- coding: utf-8 -*-
+# Copyright (c) 2018-2024, libracore (https://www.libracore.com) and contributors
+# For license information, please see license.txt
+
+from __future__ import unicode_literals
+import frappe
+from frappe.model.document import Document
+
+class SalaryCertificate(Document):
+    pass
+
+
+    # Pos 10.1
+    self.deduction_pension = get_component_dynamic(self.employee, self.start_date, self.end_date, frappe.get_doc('Salary Certificate Settings').deduction_pension)
+    # Pos 10.2
+    self.deduction_pension_additional = get_component_dynamic(self.employee, self.start_date, self.end_date, frappe.get_doc('Salary Certificate Settings').deduction_pension_additional)
+    # Pos 11
+    self.net_salary = values[0].net
+    # Pos 12
+    self.source_tax_deduction = get_component_dynamic(self.employee, self.start_date, self.end_date, frappe.get_doc('Salary Certificate Settings').source_tax_deduction)
+    # Pos 13.1.1
+
+
+def get_component_dynamic(employee, start_date, end_date, componentlist):
+    
+    if len(componentlist) == 0:
+        return 0.0;
+
+    expression = "";
+    
+    positiv = []
+    negativ = []
+    for item in componentlist:
+        comp = frappe.get_doc("Salary Component", item.component)
+        if item.is_negativ == 1:
+            negativ.append(comp.name)
+        else:
+            positiv.append(comp.name)
+
+    expression = "' OR `tabSalary Detail`.`salary_component` = '"
+
+    pos = 0.0
+    neg = 0.0
+
+    if len(positiv) > 0:
+        expression_pos = expression.join(positiv)
+
+        sql_query_pos = """SELECT `tabSalary Slip`.`employee`, IFNULL(SUM(`tabSalary Detail`.`amount`), 0) AS `amount`
+            FROM `tabSalary Slip` 
+            INNER JOIN `tabSalary Detail` ON `tabSalary Slip`.`name` = `tabSalary Detail`.`parent`
+            WHERE `tabSalary Slip`.`employee` = '{0}'
+            AND `tabSalary Slip`.`posting_date` >= '{1}'
+            AND `tabSalary Slip`.`posting_date` <= '{2}'
+            AND `tabSalary Slip`.`docstatus` = 1
+            AND (`tabSalary Detail`.`salary_component` = '{3}');""".format(employee, start_date, end_date, expression_pos)
+        values = frappe.db.sql(sql_query_pos, as_dict=True)
+        pos = values[0].amount
+    
+    if len(negativ) > 0:
+        expression_neg = expression.join(negativ)
+
+        sql_query_neg = """SELECT `tabSalary Slip`.`employee`, IFNULL(SUM(`tabSalary Detail`.`amount`), 0) AS `amount`
+            FROM `tabSalary Slip` 
+            INNER JOIN `tabSalary Detail` ON `tabSalary Slip`.`name` = `tabSalary Detail`.`parent`
+            WHERE `tabSalary Slip`.`employee` = '{0}'
+            AND `tabSalary Slip`.`posting_date` >= '{1}'
+            AND `tabSalary Slip`.`posting_date` <= '{2}'
+            AND `tabSalary Slip`.`docstatus` = 1
+            AND (`tabSalary Detail`.`salary_component` = '{3}');""".format(employee, start_date, end_date, expression_neg)
+        values = frappe.db.sql(sql_query_neg, as_dict=True)
+        neg = values[0].amount
+    return pos - neg'''
+
+
 def git(cwd, *args):
     subprocess.run(
         ["git", "-c", "user.name=test", "-c", "user.email=test@example.invalid", *args],
@@ -258,6 +337,11 @@ class PatchStep(unittest.TestCase):
             f.write(text)
         git(self.app, "add", name)
         git(self.app, "commit", "-q", "-m", "pin")
+
+    def commit_pin_sources(self):
+        """The two files our erpnextswiss patches touch, as they read at the pin 5d85c45."""
+        self.commit("erpnextswiss/scripts/item_tools.py", "\n".join(ITEM_TOOLS) + "\n")
+        self.commit(SALARY_CERTIFICATE_PATH, SALARY_CERTIFICATE)
 
     def patch(self, name, text):
         with open(os.path.join(self.patches, name), "w") as f:
@@ -319,10 +403,30 @@ class PatchStep(unittest.TestCase):
             compile(source, "item_tools.py", "exec")
         # The patch names the file from the repository root: erpnextswiss/scripts/item_tools.py.
         path = "erpnextswiss/scripts/item_tools.py"
-        self.commit(path, source)
+        self.commit_pin_sources()
         run = subprocess.run(["sh", APPLY, PATCH_DIR, self.app], capture_output=True, text=True)
         self.assertEqual(run.returncode, 0, run.stderr)
         compile(self.read(path), path, "exec")
+
+    def test_our_salary_certificate_patches_fix_net_sql_and_import(self):
+        # At the pin, fetch_values msgprints through an unimported _, fetch_dynamic takes the slips'
+        # net_pay as the Nettolohn (Ziffer 11 is Ziffer 8 less the total of 9 and 10), and
+        # get_component_dynamic formats the component names straight into the SQL.
+        source = SALARY_CERTIFICATE
+        self.assertNotIn("from frappe import", source)
+        self.assertIn("self.net_salary = values[0].net", source)
+        self.assertIn(".format(employee, start_date, end_date, expression_pos)", source)
+        self.commit_pin_sources()
+        run = subprocess.run(["sh", APPLY, PATCH_DIR, self.app], capture_output=True, text=True)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        patched = self.read(SALARY_CERTIFICATE_PATH)
+        compile(patched, SALARY_CERTIFICATE_PATH, "exec")
+        self.assertIn("from frappe import _", patched)
+        self.assertIn("self.net_salary = (self.gross_salary - self.deduction_ahv", patched)
+        self.assertNotIn("self.net_salary = values[0].net", patched)
+        self.assertIn("IN %s", patched)
+        self.assertIn("tuple(positiv)", patched)
+        self.assertNotIn(".format(employee, start_date, end_date", patched)
 
     def test_our_bundler_patch_keeps_the_node_options_the_build_was_given(self):
         # Regression: frappe's bundler replaced NODE_OPTIONS with 75% of the RAM it sees, so the heap

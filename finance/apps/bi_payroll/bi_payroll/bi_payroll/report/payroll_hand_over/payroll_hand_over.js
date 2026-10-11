@@ -41,5 +41,14 @@ frappe.query_reports["Payroll Hand-over"] = {
 			default: "Month",
 			description: __("Quellensteuer Abrechnung: one row per canton and month, or per quarter"),
 		},
+		{
+			fieldname: "francs",
+			label: __("Whole francs"),
+			fieldtype: "Check",
+			default: 0,
+			description: __(
+				"Lohnausweis only: round the lines to whole francs, round half up, for the printed certificate or the export. The view keeps rappen."
+			),
+		},
 	],
 };

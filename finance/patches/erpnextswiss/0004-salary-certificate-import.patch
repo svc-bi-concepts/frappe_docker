@@ -1,0 +1,12 @@
+diff --git a/erpnextswiss/erpnextswiss/doctype/salary_certificate/salary_certificate.py b/erpnextswiss/erpnextswiss/doctype/salary_certificate/salary_certificate.py
+index 3c4a3c5..3c49d45 100644
+--- a/erpnextswiss/erpnextswiss/doctype/salary_certificate/salary_certificate.py
++++ b/erpnextswiss/erpnextswiss/doctype/salary_certificate/salary_certificate.py
+@@ -4,6 +4,7 @@
+ 
+ from __future__ import unicode_literals
+ import frappe
++from frappe import _
+ from frappe.model.document import Document
+ 
+ class SalaryCertificate(Document):
