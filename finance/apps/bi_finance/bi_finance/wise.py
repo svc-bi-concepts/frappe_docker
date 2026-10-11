@@ -15,7 +15,7 @@ import frappe
 from erpnext.setup.utils import get_exchange_rate
 from frappe import _
 
-from bi_finance import bank_feed, wise_client
+from bi_finance import bank_feed, bank_match_job, wise_client
 
 BANK = "WISE PAYMENTS LIMITED"
 
@@ -119,6 +119,8 @@ def run(dry_run, start=None, end=None):
             ensure_bank_account(currency)
             bank_feed.write(bank_account, create)
             frappe.db.commit()
+            # the matching job after the write: the lines it is certain of reconcile now (bank_match_job)
+            bank_match_job.match_after_import(bank_account)
         accounts.append(_account_report(currency, bank_account, currency_rows, create, summary, balances.get(currency), now, rates))
     if not dry_run:
         # one field, not settings.save(): a save would write back the token and switches as read at the start of the run

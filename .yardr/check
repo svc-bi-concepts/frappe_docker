@@ -16,7 +16,7 @@ assert all(s[n].get('restart') != 'unless-stopped' for n in ['configurator', 'cr
 "
 # The bi_finance layout and stamp guard, stdlib only (no frappe), so it runs on the host.
 # A synced JSON changed without a newer 'modified' fails here; see test_layout.py.
-(cd finance/apps/bi_finance && python3 -m unittest bi_finance.test_layout bi_finance.test_wise_client bi_finance.test_estv_vat_xml bi_finance.test_mwst_payment bi_finance.test_treasury_card bi_finance.test_vat_declaration_client)
+(cd finance/apps/bi_finance && python3 -m unittest bi_finance.test_layout bi_finance.test_wise_client bi_finance.test_estv_vat_xml bi_finance.test_mwst_payment bi_finance.test_treasury_card bi_finance.test_vat_declaration_client bi_finance.test_bank_match)
 # The bi_payroll formulas (invented employees), the ESTV withholding tariffs (invented rows), the payroll hand-over rows
 # (invented employees), the Quellensteuer tariff codes (invented rows) and its layout and stamp guard, stdlib only.
 (cd finance/apps/bi_payroll && python3 -m unittest bi_payroll.test_swiss_payroll bi_payroll.test_quellensteuer bi_payroll.test_hand_over bi_payroll.test_structure_gap bi_payroll.test_qst_codes bi_payroll.test_layout)

@@ -11,7 +11,7 @@ from decimal import Decimal
 import frappe
 from frappe.utils import today
 
-from bi_finance import camt
+from bi_finance import bank_match_job, camt
 
 
 @frappe.whitelist()
@@ -40,9 +40,13 @@ def _run(file_url, bank_account, write, upload=None):
     checks = camt.check_balances(statement["balances"], ledger)
 
     imported = _write(account, decisions, upload) if write else 0
+    if write:
+        # the import is committed before the matching job, whose rollback on a failed line must not undo it
+        frappe.db.commit()
+    matching = bank_match_job.match_after_import(account["name"]) if write else None
     return {
         "bank_account": account["name"], "iban": statement["iban"], "version": statement["version"],
-        "currency": account["currency"], "imported": imported,
+        "currency": account["currency"], "imported": imported, "matching": matching,
         "counts": camt.summary(decisions, statement["skipped"]),
         "balances": {code: {"date": check["date"], "file": float(check["file"]), "ledger": float(check["ledger"]), "diff": float(check["diff"])}
                      for code, check in checks.items()},
