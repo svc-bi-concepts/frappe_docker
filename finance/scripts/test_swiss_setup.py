@@ -156,6 +156,20 @@ class HrGrantsTest(unittest.TestCase):
         self.assertEqual(swiss_setup.hr_grants(self.WANTED, self.WANTED, self.WANTED), ([], []))
 
 
+class HrStepTest(unittest.TestCase):
+    def test_without_hr_user_the_step_skips_and_touches_nothing(self):
+        # swiss-setup.sh with no argument runs every step; hr must not end that run.
+        said = []
+        with mock.patch.dict(os.environ, {"HR_USER": ""}), \
+                mock.patch.object(swiss_setup, "say", said.append), \
+                mock.patch.object(swiss_setup, "frappe") as fr:
+            swiss_setup.hr()
+        self.assertEqual(len(said), 1)
+        self.assertIn("skipped", said[0])
+        fr.db.exists.assert_not_called()
+        fr.db.commit.assert_not_called()
+
+
 class SingleFixesTest(unittest.TestCase):
     def test_sets_only_offered_fields_that_differ(self):
         want = {"payroll_based_on": "Leave", "include_holidays_in_total_working_days": 1}

@@ -537,7 +537,10 @@ def hr():
     # counterpart: hr_check().
     user_name = os.environ.get("HR_USER", "").strip()
     if not user_name:
-        sys.exit("hr: HR_USER is not set; the user stays out of this repo (pass HR_USER=<user>)")
+        # Like host: no argument runs every step, and a step that needs a value from the
+        # environment skips instead of ending the run.
+        say("hr: HR_USER not set; skipped (the user stays out of this repo; pass HR_USER=<user>)")
+        return
     if not frappe.db.exists("User", user_name):
         sys.exit(f"hr: no user {user_name}")
     if not frappe.db.get_value("User", user_name, "enabled"):

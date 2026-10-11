@@ -226,6 +226,9 @@ the `HR_USER` environment variable, never in this repo:
 HR_USER=<user> finance/scripts/swiss-setup.sh hr
 ```
 
+Without `HR_USER` the step says so and skips, like `host` without `HOST_NAME`, so a run
+of all steps does not stop on it.
+
 The step gives the user the roles HR Manager, HR User and Leave Approver — the
 ones HRMS v16.50.0 installs (role profile "HR" in `hrms/setup.py`, together with
 Expense Approver). A fourth goal role, **Payroll Manager, does not exist in
