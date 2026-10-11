@@ -148,6 +148,16 @@ month can have several. Link it only when a month has a single entry; otherwise 
 The check after the load is the one `import_payroll.py --check` already does: the GL per
 account and year against bexio's lines, with counts and totals only in the notes.
 
+### Cutover 2027
+
+Decision D1/D2 (2026-10-11): bexio runs the 2026 payroll to the end; ERPNext's first payroll is January 2027
+(HR 7). The GL the slips start from stays level with bexio through the monthly delta
+(`finance/bexio/delta.sh`, `finance/docs/operating.md`, "Cutover"): the payroll journal lines of each bexio
+month arrive as Journal Entries keyed `journal-<id>`, and the 31.12.2026 check (after the closing delta)
+confirms ERPNext's balances equal bexio's closing per account — result: (pending, January 2027, written into
+`finance/docs/erpnext-setup.md`, "Cutover 2027"). From 1.1.2027 the payroll books only in ERPNext; bexio
+stays read-only until its Lohnausweis 2026 is done, then is cancelled.
+
 ## Plan
 
 Ordered beads. Each is one change, offline first; the live site is only changed in a deploy

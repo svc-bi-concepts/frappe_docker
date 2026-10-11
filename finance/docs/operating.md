@@ -54,3 +54,48 @@ document that explains the step is in brackets. Conventions for labels and butto
 5. **Still manual until erp-1jh5:** the BVG, UVG, NBU, KTG and FAK rates and the BVG insured salaries are
    placeholders until the fund and insurer sheets are in. Until then the slips are checked against the
    paystubs by hand.
+
+## Cutover (bexio to ERPNext, 2027)
+
+Decision D1 (2026-10-11): ERPNext leads from 1 January 2027. All of 2026 stays in bexio, the year-end closing
+included; ERPNext runs in parallel and receives every bexio change as a monthly delta
+(`finance/bexio/README.md`, "The monthly delta"). Once every delta is in, ERPNext's 1.1.2027 opening is bexio's
+closing by construction; there is no opening import.
+
+**The month, after each bexio month close — October, November, December 2026, then once more after the 2026
+Abschlussbuchungen, when bexio's business year is closed:**
+
+1. Benchi exports, after bexio's month close, on the Mac mini (the whole account: entities, document PDFs,
+   payroll; into `private/bexio-export/<date>-complete/`, which is the `<export-dir>` below):
+
+       BEXIO_BROKER=1 python3 finance/bexio/export.py --complete --year 2026
+
+   (`--year 2026` keeps the payroll export on 2026 when the closing export is run in 2027; the broker-less
+   fallback with the export login is in `finance/bexio/README.md`).
+2. Take a backup with the files, the way `finance/docs/archiving.md` says:
+   `docker compose -p frappe-finance exec -T backend bench --site frontend backup --with-files`. The
+   timestamp prefix of the new set in `sites/frontend/private/backups` is the `BACKUP_ID`.
+3. The yardmaster or a builder runs the dry run: `sh finance/bexio/delta.sh <export-dir>`. The counts table
+   goes into the bead note.
+4. ledgerdemain reads the dry run (nothing unexpected in the counts) and gives the go.
+5. Apply: `DELTA_APPLY=1 BACKUP_ID=<id> sh finance/bexio/delta.sh <export-dir>` — apply pass, rerun (must
+   insert nothing), trial balance check. The counts go into the note.
+6. The month's trial balance per account equals bexio's; what differs are the known rows (the rappen
+   roundings, the sub-centime closings on 1100, the two rows of 6641/1021 — see
+   `finance/docs/erpnext-setup.md`, "Bexio history").
+
+**December only, before the January 2027 revaluation run (erp-f5ss):** one Currency Exchange row per foreign
+currency the books hold (EUR, USD, PLN, as the bank accounts show), dated 2026-12-31, with the ESTV
+Jahresendkurs (public, estv.admin.ch). The revaluation job reads only those rows. Save the rates and the
+source URL under `private/` first; the rows are a live write through the API user, so ledgerdemain reads the
+list (currency, rate, date) and gives the go before they are written; the counts (rows written per currency)
+go into the note.
+
+**The 31.12.2026 check (January 2027):** after the closing delta, `finance/bexio/check_trial_balance.py`
+compares ERPNext's 31.12.2026 balances per account with bexio's closing. Everything must be explained by the
+known rows; anything else is listed privately and fixed before 1 January. The result is written into the cutover
+paragraphs of `finance/docs/erpnext-setup.md` and `finance/docs/hrms.md`.
+
+**The rules (D1/D5):** from 1.1.2027 nothing is booked in bexio; it stays read-only for Benchi and ERPNext
+leads. bexio stays readable until its last filings are done from it — the 2026 Q4 MWST declaration and the
+Lohnausweis 2026 — then the bexio account is cancelled and its API token revoked (Benchi).

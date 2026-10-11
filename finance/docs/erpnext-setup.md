@@ -386,3 +386,15 @@ with a voucher. Both wait for confirmation.
 
 Not done here: no period is locked or frozen. The MWST per quarter against bexio
 is in `swiss.md`, "VAT per quarter against bexio".
+
+### Cutover 2027
+
+Decision D1 (2026-10-11): ERPNext leads from 1 January 2027. Until then the books stay level with bexio
+through the monthly delta (`finance/bexio/delta.sh`, the procedure in `finance/docs/operating.md`,
+"Cutover"): after each bexio month close — October, November, December 2026, then after the 2026
+Abschlussbuchungen — the delta's apply pass brings ERPNext back level, and the rerun must insert nothing.
+
+The 31.12.2026 check: after the closing delta, `check_trial_balance.py` compares ERPNext's closing balances
+per account with bexio's. Result: (pending, January 2027 — this paragraph is written when the check has run;
+everything must be explained by the known rows above, and ERPNext's 1.1.2027 opening is then bexio's closing
+by construction, with no opening import.)

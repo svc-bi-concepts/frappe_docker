@@ -565,3 +565,36 @@ Then the check against bexio's journal, read only:
 A difference is listed in the CSV under `<private>/`, not in the repository. Differences that are accepted, and
 not fixed, are listed in the note of the bead that owns them (rounding under one franc per account, and the open
 customer item of the chain).
+
+## The monthly delta (cutover 2027)
+
+Decision D1 (2026-10-11): ERPNext leads from 1 January 2027; all of 2026, the year-end closing included, stays in
+bexio. Until then every bexio change reaches ERPNext as a monthly delta, so on 1 January 2027 ERPNext's balances
+are bexio's closing by construction and no opening import is made. `delta.sh` is the import chain above as one
+command, run after every bexio month close (the procedure is in `finance/docs/operating.md`, "Cutover"):
+
+    sh finance/bexio/delta.sh <export-dir>
+    DELTA_APPLY=1 BACKUP_ID=<id> sh finance/bexio/delta.sh <export-dir>
+
+It runs the chain in order — master, sales (+ the credit note), purchase, payments in, payments out, VAT fix,
+bank, manual entries, manual fix, payroll journal lines, opening, files, document PDFs — first as a dry pass that
+prints each step's counts, then, with `DELTA_APPLY=1`, as an apply pass in which every plan is submitted through
+`finance/scripts/bexio-drafts.sh` (the GL is written), then as a dry pass again: the rerun, which must insert
+nothing. It ends with the trial balance check against bexio's journal (read only).
+
+- `<export-dir>` is passed to every loader; there is no default. The month's export is the fresh one.
+- `BACKUP_ID` is the id of the backup taken before the apply pass (`bench --site frontend backup`); the apply
+  run is refused without one.
+- A lock under `private/` refuses a second delta while one runs: two writers would interleave their plans.
+- The bank check (`import_bank.py --check`) and the payroll check run after the apply pass's submits.
+- Each step's output and every plan land in `private/bexio-delta/<stamp>/<pass>/` (mode 700); the counts table at
+  the end is what goes into the note.
+- `delta_counts.py` counts the bexio-keyed documents per doctype (the rerun check above, as a command). delta.sh
+  reads it before the dry pass, after the apply pass and after the rerun: the apply pass's before/after are the
+  new documents per doctype, and a rerun that moves the counts fails the run.
+- A clean rerun still has loaders that exit 1 for their accepted differences (the sales differences lines, the
+  one unmapped credit-voucher payment, the bank's unmatched lines): the gate is that the rerun inserts nothing,
+  not the loaders' exit codes. Exit codes of delta.sh: 0 ok; 2 refused (usage, no `BACKUP_ID`, lock held);
+  3 a step failed; 4 the rerun inserted something; 5 the rerun moved the counts.
+- Not part of the delta: the employees and the paystub PDFs (HR reference data, not the books; the 2026 payroll
+  runs in bexio).
