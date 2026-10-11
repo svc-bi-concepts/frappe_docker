@@ -211,8 +211,13 @@ class EarningsAndTotalsTest(unittest.TestCase):
         self.assertEqual(prepared()["earnings"], [{"label": "Grundlohn", "amount": "8'000.00"}])
 
     def test_an_unknown_earning_prints_with_its_own_name(self):
-        d = prepared(earnings=[line("Basic Salary", 8000.0), line("Commission", 500.0)])
-        self.assertIn({"label": "Commission", "amount": "500.00"}, d["earnings"])
+        d = prepared(earnings=[line("Basic Salary", 8000.0), line("Gewinnbeteiligung", 500.0)])
+        self.assertIn({"label": "Gewinnbeteiligung", "amount": "500.00"}, d["earnings"])
+
+    def test_the_commission_earning_prints_german(self):
+        # the Commission component of erp-ca04 sits in the gross
+        d = prepared(earnings=[line("Basic Salary", 8000.0), line("Commission", 500.0)], gross_pay=8500.0)
+        self.assertIn({"label": "Provision", "amount": "500.00"}, d["earnings"])
 
     def test_gross_total_deduction_and_net(self):
         d = prepared()

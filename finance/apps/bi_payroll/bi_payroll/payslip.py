@@ -31,7 +31,7 @@ EMPLOYER = (
     ("KTG Employer", "KTG", "swiss_ktg_ag", "gross"),
     ("FAK Employer", "FAK", "swiss_fak_ag", "gross"),
 )
-EARNING_LABELS = {"Basic Salary": "Grundlohn"}
+EARNING_LABELS = {"Basic Salary": "Grundlohn", "Commission": "Provision"}
 # Components that count into the year-to-date net: the employee's own costs. The employer rows and
 # the BVG Age helper row (its amount is an age, not money) stay out.
 NET_YTD_COMPONENTS = {d[0] for d in DEDUCTIONS}
