@@ -310,5 +310,32 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(sp_read.load_config(self.path), {"tenant_id": "t"})
 
 
+class ErrorPathTest(Keys):
+    def test_a_thumbprint_that_is_not_sha1_hex_is_refused(self):
+        for bad in ("zz", "ab" * 19, None):
+            with self.assertRaises(SharePointError):
+                Graph(TENANT, CLIENT, bad, DRIVE, self.key_pem)
+
+    def test_a_key_openssl_rejects_fails_without_echoing_it(self):
+        bad = "-----BEGIN PRIVATE KEY-----\nnot-a-key-secret\n-----END PRIVATE KEY-----\n"
+        g = Graph(TENANT, CLIENT, "ab" * 20, DRIVE, bad)
+        with self.assertRaises(SharePointError) as ctx:
+            g.client_assertion()
+        self.assertNotIn("not-a-key-secret", str(ctx.exception))
+
+    def test_main_without_the_vault_key_says_so_and_sends_nothing(self):
+        cfg = {"tenant_id": "t", "client_id": "c", "thumbprint": "ab" * 20,
+               "drive_id": "d", "folders": {"Insurance": "i"}}
+        err = io.StringIO()
+        with mock.patch.object(sp_read, "load_config", lambda: cfg), \
+                mock.patch.dict(os.environ, {}, clear=True), \
+                mock.patch.object(sp_read, "OPENER") as opener, \
+                mock.patch("sys.stderr", err):
+            code = sp_read.main(["sp_read.py", "fetch"])
+        self.assertEqual(code, 1)
+        self.assertIn("SP_CERT_KEY", err.getvalue())
+        opener.open.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
