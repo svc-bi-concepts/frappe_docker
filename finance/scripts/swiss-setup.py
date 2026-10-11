@@ -1,5 +1,5 @@
 """Swiss setup of company BI Concepts, run inside the backend container by
-swiss-setup.sh. Steps are named on the command line (coa, vat, fiscal,
+swiss-setup.sh. Steps are named on the command line (coa, accounts, vat, fiscal,
 fields, currencies, banks, gebuev, qrbill, payslip, host, payments, hr, payroll_accounts, lohnausweis); each one is re-runnable and skips what
 already exists. `freeze <date> [--apply]` is a separate command: it closes the
 books up to a date and is a dry run unless --apply is given."""
@@ -886,6 +886,57 @@ def freeze(date, apply):
     say(f"freeze: set, accounts frozen till {date}")
 
 
+# The bexio additions to erpnextswiss's KMU chart that the payroll books into (private/bexio-mapping.md's chart
+# rows "add under"; read off the live chart read-only, numbers and labels only): erpnextswiss's
+# accounts_template.csv has none of them, the live chart has them all, and a migrate with bi_payroll's account
+# fixtures fails on the links without them. The numbers are one source with bi_payroll's BEXIO_ADDED
+# (test_payroll_accounts): a test in test_swiss_setup.py compares the two.
+PAYROLL_ACCOUNTS = {
+    # number: (name, root type, parent group number), as the live chart hangs them
+    "2270": ("KK Vorsorgeeinrichtung", "Liability", "2"),
+    "2271": ("KK AHV, IV, EO, ALV", "Liability", "2"),
+    "2273": ("KK Unfallversicherung", "Liability", "2"),
+    "2274": ("KK Krankentaggeld", "Liability", "2"),
+    "2279": ("KK Quellensteuer", "Liability", "2"),
+    "5003": ("Provisionen", "Expense", "50"),
+    "5720": ("BVG-Beitrag", "Expense", "57"),
+}
+
+
+def new_accounts(table):
+    """The rows the accounts step inserts, in number order: number, name, root and report type, parent group
+    number. table: number -> (name, root type, parent group number); the report type follows the root type."""
+    return [{"account_number": number, "account_name": name, "root_type": root,
+             "report_type": "Balance Sheet" if root == "Liability" else "Profit and Loss",
+             "parent_number": parent}
+            for number, (name, root, parent) in sorted(table.items())]
+
+
+def accounts():
+    # Creates the bexio-added payroll accounts (PAYROLL_ACCOUNTS) when missing, after coa and before the first
+    # migrate; on the live chart they all exist, so there the step only says so. ERPNext names a numbered account
+    # "<number> - <name> - <abbr>" (autoname), the name bi_payroll's fixtures link. The parent group comes from
+    # the template's chart; account() refuses when it is not there (coa first), it is never made here.
+    for row in new_accounts(PAYROLL_ACCOUNTS):
+        number = row["account_number"]
+        if frappe.db.exists("Account", {"company": COMPANY, "account_number": number}):
+            say(f"accounts: {number} in place")
+            continue
+        frappe.get_doc({
+            "doctype": "Account",
+            "account_name": row["account_name"],
+            "company": COMPANY,
+            "parent_account": account(row["parent_number"]),
+            "account_number": number,
+            "is_group": 0,
+            "root_type": row["root_type"],
+            "report_type": row["report_type"],
+            "account_currency": frappe.db.get_value("Company", COMPANY, "default_currency"),
+        }).insert()
+        say(f"accounts: {number} created")
+    frappe.db.commit()
+
+
 def payroll_accounts():
     # HRMS's accrual Journal Entry credits the net wages to the Company's default payroll payable account; bexio's is
     # 1091 Lohndurchlaufkonto (bi_payroll.swiss_rates). Set here, not in the fixtures: the Company is not a fixture.
@@ -900,8 +951,8 @@ def payroll_accounts():
     say(f"payroll_accounts: default payroll payable set to {PAYROLL_PAYABLE_ACCOUNT}")
 
 
-STEPS = {"coa": coa, "vat": vat, "fiscal": fiscal, "fields": fields, "currencies": currencies, "banks": banks,
-         "gebuev": gebuev, "qrbill": qrbill, "payslip": payslip, "host": host, "payments": payments, "hr": hr,
+STEPS = {"coa": coa, "accounts": accounts, "vat": vat, "fiscal": fiscal, "fields": fields, "currencies": currencies,
+         "banks": banks, "gebuev": gebuev, "qrbill": qrbill, "payslip": payslip, "host": host, "payments": payments, "hr": hr,
          "payroll_accounts": payroll_accounts, "lohnausweis": lohnausweis}
 
 if __name__ == "__main__":

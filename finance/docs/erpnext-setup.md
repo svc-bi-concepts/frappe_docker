@@ -60,7 +60,7 @@ See `finance/docs/operating.md` for the steps in the order they are done.
 
 ## The setup script
 
-`finance/scripts/swiss-setup.sh [coa] [vat] [fiscal] [fields] [currencies] [banks] [gebuev] [qrbill] [host] [payments] [hr]`
+`finance/scripts/swiss-setup.sh [coa] [accounts] [vat] [fiscal] [fields] [currencies] [banks] [gebuev] [qrbill] [host] [payments] [hr]`
 pipes `swiss-setup.py` into bench's Python in the backend container. No argument
 runs all steps. Every step skips what exists, so a second run changes nothing.
 
@@ -115,6 +115,23 @@ five defaults have no field in v16 and are skipped with a message. Account
 tax templates need. Mode of Payment `Cash` points at 1000 Kasse.
 erpnextswiss's own importer is not used: it imports `pandas`, which the image
 does not have (bead erp-p1xb).
+
+**accounts.** The bexio additions the payroll books into — 2270 KK
+Vorsorgeeinrichtung, 2271 KK AHV, IV, EO, ALV, 2273 KK Unfallversicherung,
+2274 KK Krankentaggeld, 2279 KK Quellensteuer, 5003 Provisionen, 5720
+BVG-Beitrag (`bexio-mapping.md`'s chart rows; read off the live chart
+read-only, numbers and labels only). erpnextswiss's template has none of them,
+so a fresh site's migrate fails on bi_payroll's account fixtures without them.
+The step creates each missing one under the group the live chart hangs it
+under (the 227x under root 2, 5003 under 50, 5720 under 57), named
+`<number> - <name> - <abbr>` like every account, skips what exists, and
+refuses a missing parent group instead of making one. On a fresh site the
+order is `coa`, `accounts`, then the migrate that takes the fixtures. The
+table is one source with `bi_payroll.test_payroll_accounts`'s `BEXIO_ADDED`:
+a test compares the two. The live chart already has all seven (the history
+import made them), so on live the step creates nothing; the HR 6 parallel
+payroll is proven on the copy, which is restored from a live backup and so
+has them too.
 
 **vat.** bexio's 42 VAT codes (`/3.0/taxes`), 1:1, replace the templates
 ERPNext had. Each code is one template per kind, named after the code:

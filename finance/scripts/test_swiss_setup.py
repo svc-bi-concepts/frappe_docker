@@ -20,6 +20,12 @@ _spec = importlib.util.spec_from_file_location("swiss_setup", _path)
 swiss_setup = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(swiss_setup)
 
+# bi_payroll's test_payroll_accounts holds BEXIO_ADDED, the account numbers the Salary Component fixtures link
+# and a fresh chart lacks. The accounts table in swiss-setup.py must name exactly those (one source): the app's
+# directory goes on the path so the comparison test can import the list.
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(_path), "..", "apps", "bi_payroll")))
+from bi_payroll.test_payroll_accounts import BEXIO_ADDED  # noqa: E402
+
 
 class DeleteRevokesTest(unittest.TestCase):
     def test_revokes_every_role_but_the_kept_one(self):
@@ -128,6 +134,9 @@ class StepsTest(unittest.TestCase):
 
     def test_payroll_accounts_is_a_step(self):
         self.assertIn("payroll_accounts", swiss_setup.STEPS)
+
+    def test_accounts_is_a_step(self):
+        self.assertIn("accounts", swiss_setup.STEPS)
 
 
 class PayslipChangesTest(unittest.TestCase):
@@ -312,6 +321,87 @@ class LohnausweisTest(unittest.TestCase):
         wanted = swiss_setup.lohnausweis_components(self.components)
         current = dict(wanted, catering=["Anything"])
         self.assertEqual(swiss_setup.lohnausweis_changes(1, current, wanted), (False, []))
+
+
+class NewAccountsTest(unittest.TestCase):
+    # The rows the accounts step inserts, derived from the table in swiss-setup.py.
+    ROWS = {r["account_number"]: r for r in swiss_setup.new_accounts(swiss_setup.PAYROLL_ACCOUNTS)}
+
+    def test_seven_rows_in_number_order(self):
+        self.assertEqual([r["account_number"] for r in swiss_setup.new_accounts(swiss_setup.PAYROLL_ACCOUNTS)],
+                         ["2270", "2271", "2273", "2274", "2279", "5003", "5720"])
+
+    def test_the_report_type_follows_the_root_type(self):
+        self.assertEqual(self.ROWS["2271"]["report_type"], "Balance Sheet")
+        self.assertEqual(self.ROWS["5003"]["report_type"], "Profit and Loss")
+
+    def test_the_parents_are_the_groups_the_live_chart_hangs_them_under(self):
+        self.assertEqual((self.ROWS["2270"]["parent_number"], self.ROWS["2279"]["parent_number"]), ("2", "2"))
+        self.assertEqual((self.ROWS["5003"]["parent_number"], self.ROWS["5720"]["parent_number"]), ("50", "57"))
+
+    def test_the_names_are_the_mapping_labels(self):
+        self.assertEqual(self.ROWS["2271"]["account_name"], "KK AHV, IV, EO, ALV")
+        self.assertEqual(self.ROWS["5720"]["account_name"], "BVG-Beitrag")
+
+
+class PayrollAccountsTableTest(unittest.TestCase):
+    # One source: the fixtures' account links need exactly the bexio-added numbers (bi_payroll's BEXIO_ADDED),
+    # and the accounts step makes exactly the table's numbers. If the two drift, a fresh migrate misses a link.
+    def test_the_table_is_bexio_added(self):
+        self.assertEqual(set(swiss_setup.PAYROLL_ACCOUNTS), set(BEXIO_ADDED))
+
+
+class AccountsTest(unittest.TestCase):
+    # The step runs in the container; here frappe is a mock: db.exists answers from a set, db.get_value gives the
+    # Company's currency, and account() resolves the parent numbers or refuses one the chart has not.
+    PARENTS = {"2": "Passiven - BIC", "50": "Lohnaufwand - BIC", "57": "Sozialversicherungsaufwand - BIC"}
+    NUMBERS = ("2270", "2271", "2273", "2274", "2279", "5003", "5720")
+
+    def run_step(self, existing=(), parents=PARENTS):
+        existing = set(existing)
+
+        def exists(doctype, filters):
+            return doctype == "Account" and filters["account_number"] in existing
+
+        def account(number):
+            if number not in parents:
+                raise RuntimeError(f"Account {number} not found in {swiss_setup.COMPANY}; run the coa step first")
+            return parents[number]
+
+        with mock.patch.object(swiss_setup, "frappe") as frappe, \
+                mock.patch.object(swiss_setup, "account", side_effect=account), \
+                mock.patch.object(swiss_setup, "say") as say:
+            frappe.db.exists.side_effect = exists
+            frappe.db.get_value.return_value = "CHF"
+            swiss_setup.accounts()
+        inserts = [c.args[0] for c in frappe.get_doc.call_args_list]
+        return inserts, say, frappe
+
+    def test_creates_the_seven_missing_accounts(self):
+        inserts, say, frappe = self.run_step()
+        self.assertEqual([d["account_number"] for d in inserts], list(self.NUMBERS))
+        self.assertEqual(inserts[0], {
+            "doctype": "Account", "account_name": "KK Vorsorgeeinrichtung", "company": swiss_setup.COMPANY,
+            "parent_account": "Passiven - BIC", "account_number": "2270", "is_group": 0,
+            "root_type": "Liability", "report_type": "Balance Sheet", "account_currency": "CHF",
+        })
+        frappe.db.commit.assert_called_once()
+        self.assertIn("accounts: 2270 created", say.call_args_list[0].args[0])
+
+    def test_skips_what_exists(self):
+        inserts, say, _ = self.run_step(existing=["2271"])
+        self.assertEqual([d["account_number"] for d in inserts], [n for n in self.NUMBERS if n != "2271"])
+        self.assertTrue(any("2271 in place" in c.args[0] for c in say.call_args_list))
+
+    def test_a_second_run_creates_nothing(self):
+        inserts, say, frappe = self.run_step(existing=self.NUMBERS)
+        self.assertEqual(inserts, [])
+        frappe.db.commit.assert_called_once()
+        self.assertEqual(say.call_count, len(self.NUMBERS))
+
+    def test_a_missing_parent_group_is_refused_not_made(self):
+        with self.assertRaises(RuntimeError):
+            self.run_step(parents={})
 
 
 # Invented IBANs and account names only: the test data is not company data.

@@ -65,9 +65,11 @@ migrate on any site.
   bexio credits the net wages there and pays them from 1020). BVG Age (statistical) has none. The employer shares are
   the structure's `employer_contributions` (`STRUCTURE_EMPLOYER_CONTRIBUTIONS`), not deductions: HRMS's accrual debits the
   expense and credits the liability (decision of 2026-10-11 in erp-nqyb's note: FAK and AHV/ALV on 2271, UVG on 2273).
-  The 2270 to 2279 accounts and 5720 are bexio's additions to erpnextswiss's KMU template, which has none of them, and no
-  step of `finance/scripts` creates them: they exist on the live site, not on a fresh chart. `test_payroll_accounts`
-  checks every number against the template and those additions when `BI_COA_CSV` names its `accounts_template.csv`.
+  The 2270 to 2279 accounts and 5720 are bexio's additions to erpnextswiss's KMU template, which has none of them. On a
+  fresh site `swiss-setup.sh accounts` creates them, after `coa` and before the migrate that takes these fixtures (the
+  order: coa, accounts, migrate); on the live chart they all exist, so the step skips and says so. Its table is one
+  source with `test_payroll_accounts`'s `BEXIO_ADDED` (a test compares the two), which checks every number against the
+  template and those additions when `BI_COA_CSV` names its `accounts_template.csv`.
 - `bi_payroll/quellensteuer.py`: the ESTV withholding tariffs (Quellensteuer, Löhne, 2025 record format; source and
   version in the `QST Tariff` doctype's description). It parses a canton's text file (records 06 and 11), finds the
   bracket for a monthly gross and gives the tax (rate on the whole income, at least the minimum tax). Pure Python.
