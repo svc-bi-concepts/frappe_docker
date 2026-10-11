@@ -24,6 +24,10 @@ from erpnext.accounts.doctype.bank_reconciliation_tool.bank_reconciliation_tool 
     reconcile_vouchers,
 )
 
+# ERPNext's Rounding Loss Allowance: a balance at or below it counts as zero. Nothing to set on the revaluation (it is
+# required, not defaulted), so 0 books no rounding line; ledgerdemain may change it here.
+REVALUATION_ROUNDING_LOSS_ALLOWANCE = 0.0
+
 LINE_FIELDS = ["name", "date", "deposit", "withdrawal", "description", "reference_number", "transaction_id", "currency", "company"]
 
 
@@ -208,17 +212,38 @@ def monthly_revaluation():
         revaluation_draft(company, month_end)
 
 
+def revaluation_preview(company, posting_date):
+    """What revaluation_draft would book at posting_date: each account with its gain or loss. Reads only, saves nothing."""
+    doc = _revaluation(company, posting_date)
+    return [
+        {"account": acc.get("account"), "account_currency": acc.get("account_currency"), "gain_loss": acc.get("gain_loss")}
+        for acc in doc.get_accounts_data()
+        if acc.get("gain_loss")
+    ]
+
+
+def _revaluation(company, posting_date):
+    return frappe.get_doc({
+        "doctype": "Exchange Rate Revaluation",
+        "company": company,
+        "posting_date": posting_date,
+        "rounding_loss_allowance": REVALUATION_ROUNDING_LOSS_ALLOWANCE,
+    })
+
+
 def revaluation_draft(company, posting_date):
     """The Exchange Rate Revaluation of a company at posting_date, saved as a draft with its accounts (never submitted).
 
-    ERPNext takes the accounts in a foreign currency and their rates from the Currency Exchange rows of the date. An
-    existing revaluation of the company at that date is left as it is.
+    ERPNext takes the accounts in a foreign currency and their rates from the Currency Exchange rows of the date. No
+    draft is made when no account has a gain or loss that month, and an existing revaluation of the company at that date
+    is left as it is. Returns the draft's name, or None.
     """
     existing = frappe.db.get_value("Exchange Rate Revaluation", {"company": company, "posting_date": posting_date, "docstatus": ["<", 2]})
     if existing:
         return existing
-    doc = frappe.get_doc({"doctype": "Exchange Rate Revaluation", "company": company, "posting_date": posting_date})
-    doc.insert()
+    doc = _revaluation(company, posting_date)
     doc.fetch_and_calculate_accounts_data()
-    doc.save()
+    if not doc.accounts:
+        return None
+    doc.insert()
     return doc.name
