@@ -288,8 +288,10 @@ cancelled entries and other companies.
   refuses the declaration naming the code and its net, and so does a document whose zero-rate
   codes would split its net between two rows. After the deductions the fill checks the form's
   plausibility itself: 200 less the deductions must equal the sum of the rate bases within a
-  rounding of 0.05 per rate row the period uses (the bases are derived from the taxes), or the
-  fill refuses with the difference. 289 and 299 it does not set: the form computes them from
+  rounding (the bases are derived from the taxes, so each sales row may be off by half a rappen
+  of tax; the allowance is the sum of those bounds, at least 0.05 per rate row the period
+  uses), or the fill refuses with the difference. A code or net named above refuses whatever
+  the difference. 289 and 299 it does not set: the form computes them from
   the fields on save. The report fills the same rows (`mwst_report.py --basis payment`);
   in the comparison with bexio a 220/221/225 figure against bexio's empty row is the expected
   difference, named "deduction rows" — bexio's own declarations never carried one.

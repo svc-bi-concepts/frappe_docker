@@ -162,18 +162,27 @@ class DeductionsTest(unittest.TestCase):
         self.assertIn("UEX", message)
         self.assertIn("ULA", message)
 
-    def test_the_rounding_tolerance_of_the_derived_bases(self):
-        # a tax of 0.08 at 8.1 % derives a base of 0.99, so each document keeps a rappen of 200 out of the rows;
-        # two documents are still within 0.05 per rate row, seven are not and refuse
-        two = self.fields(sales=[sale(datetime.date(2026, 8, 3), row("UN81 8.1% Normalsatz", "0.08"), net="1.00")
-                                 for _ in range(2)])
-        self.assertEqual(two["total_revenue"], D("2.00"))
-        self.assertEqual(two["normal_amount_2024"], D("1.98"))
+    def test_the_derived_bases_drift_within_the_rounding_of_their_documents(self):
+        # a tax of 0.08 at 8.1 % derives a base of 0.99, so each document keeps a rappen of 200 out of the rate row;
+        # forty such documents drift by 0.40, over a flat 0.05 but within the half-rappen bound of their taxes
+        fields = self.fields(sales=[sale(datetime.date(2026, 8, 3), row("UN81 8.1% Normalsatz", "0.08"), net="1.00")
+                                    for _ in range(40)])
+        self.assertEqual(fields["total_revenue"], D("40.00"))
+        self.assertEqual(fields["normal_amount_2024"], D("39.60"))
+
+    def test_a_difference_beyond_the_rounding_refuses_with_the_difference(self):
+        # invented: a document whose net is 5.00 more than its taxed rows and its zero-rate code carries
+        # (a rated row beside no zero-rate row: nothing takes the 5.00), so 200 is off the rate base by far more
+        # than the half-rappen bound of one 8.1 % tax
         with self.assertRaises(ValueError) as caught:
-            self.fields(sales=[sale(datetime.date(2026, 8, 3), row("UN81 8.1% Normalsatz", "0.08"), net="1.00")
-                               for _ in range(7)])
-        self.assertIn("0.07", str(caught.exception))
-        self.assertIn("0.05", str(caught.exception))
+            self.fields(sales=[sale(datetime.date(2026, 8, 3), row("UN81 8.1% Normalsatz", "81.00"), net="1005.00")])
+        self.assertIn("5.00", str(caught.exception))
+
+    def test_a_code_with_no_row_refuses_even_when_its_net_is_within_the_rounding(self):
+        with self.assertRaises(ValueError) as caught:
+            self.fields(sales=[sale(datetime.date(2026, 8, 3), row("UN81 8.1% Normalsatz", "81.00"),
+                                    row("U00 0% Null-Satz", "0"), net="1000.03")])
+        self.assertIn("U00", str(caught.exception))
 
 
 if __name__ == "__main__":

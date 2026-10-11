@@ -13,6 +13,7 @@ from decimal import ROUND_HALF_UP, Decimal
 
 CENT = Decimal("0.01")
 ZERO = Decimal("0")
+HALF_CENT = Decimal("0.005")
 
 # The Bezugsteuer owed moved from Ziffer 382 to 383 with the rate change; the form has one row each.
 # Date of the change as the form gives it (the bexio validity column is not used for this).
@@ -112,6 +113,7 @@ class Totals:
         self.other_keys = []        # the keys (or '(no bexio_id)') of vouchers the pair rule counts
         self.undeducted_net = {}    # a zero-rate sales code with no deduction row: code -> the net it keeps out of them
         self.unsplit_net = {}       # a document whose zero-rate codes would share its net between rows: codes -> net
+        self.base_drift = ZERO      # the most the derived bases of the sales rows can be off their documents' nets
 
     def add(self, row, base, tax):
         acc = self.rows.setdefault(row, [ZERO, ZERO])
@@ -202,6 +204,9 @@ def _tax_row(totals, row, templates, posting_date, purchase):
         return code, None, None
     base = derived_base(tax, rate)
     totals.add(form_row, base, tax)
+    if base is not None and not purchase:
+        # the tax is rounded to the rappen: half a rappen of tax is 0.5 / rate of base, and the base is rounded again
+        totals.base_drift += HALF_CENT * 100 / Decimal(str(rate)) + HALF_CENT
     return code, form_row, base
 
 def form_totals(totals):
@@ -417,8 +422,10 @@ ACQUISITION_FIELDS = [("382", "additional_amount", "additional_tax"),
 UNDECIDED_ZIFFERN = ("410", "415", "420")
 # The deductions of Ziffer 200 on the form: the zero-rate sales rows (225 and 235 only when a code fills them).
 DEDUCTION_ROWS = ("220", "221", "225", "230", "235")
-# The difference the plausibility check allows per rate row the period uses: the base of a rate row is derived from
-# its tax, and one rappen of tax is about 0.12 of base at 8.1 %, so the derived bases are off by a few rappen.
+# The difference the plausibility check allows: a rate row's base is derived from its tax, so each sales document's
+# derived base is off its net by up to Totals.base_drift (about 0.06 per row at 8.1 %), and the drifts add up over a
+# quarter's documents. A flat allowance would refuse most ordinary quarters. The allowance is that bound, or 0.05
+# per rate row the period uses when that is more. What no deduction row takes is refused whatever the difference.
 DEDUCTION_TOLERANCE_PER_RATE_ROW = Decimal("0.05")
 
 
@@ -452,16 +459,16 @@ def declaration_fields(totals):
     rate_bases = sum((base(ziffer) for ziffer, *_ in RATE_FIELDS), ZERO)
     difference = base("200") - deductions - rate_bases
     rows_used = sum(1 for ziffer, *_ in RATE_FIELDS if base(ziffer) or tax(ziffer))
-    tolerance = DEDUCTION_TOLERANCE_PER_RATE_ROW * (rows_used or 1)
-    if abs(difference) > tolerance:
+    tolerance = max(DEDUCTION_TOLERANCE_PER_RATE_ROW * (rows_used or 1), totals.base_drift)
+    if abs(difference) > tolerance or totals.undeducted_net or totals.unsplit_net:
         named = ["{} holds a net of {:.2f} with no deduction row".format(code, net)
                  for code, net in sorted(totals.undeducted_net.items())]
         named += ["the net of {:.2f} cannot be split between {}".format(net, " and ".join(codes))
                   for codes, net in sorted(totals.unsplit_net.items())]
         raise ValueError(
             "Ziffer 200 less the deductions ({}) differs from the rate bases ({}) by {},"
-            " more than the rounding of {} per rate row{}".format(
-                deductions, rate_bases, difference, tolerance,
+            " and the rounding allows {}{}".format(
+                deductions, rate_bases, difference, tolerance.quantize(CENT, rounding=ROUND_HALF_UP),
                 ": " + "; ".join(named) if named else ""))
     fields = {"total_revenue": base("200")}
     for ziffer in DEDUCTION_ROWS:
