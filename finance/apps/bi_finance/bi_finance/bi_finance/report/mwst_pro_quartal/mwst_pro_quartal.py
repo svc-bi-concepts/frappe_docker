@@ -68,6 +68,10 @@ def _belege(company, quarters, filters):
             "base": flt(beleg["base"]),
             "tax": flt(beleg["tax"]),
         })
+    if not rows:
+        return (_belege_columns(), rows,
+                "Ziffer {0} hat in {1} keine Belege: eine Summenzeile (399, 479, 500) oder ohne Buchung.".format(
+                    str(ziffer).strip(), quarter), None)
     return (_belege_columns(), rows,
             "Belege von Ziffer {0} in {1} auf der Zahlungsbasis; ihre Anteile summieren sich in die Ziffer.".format(
                 str(ziffer).strip(), quarter), None)
