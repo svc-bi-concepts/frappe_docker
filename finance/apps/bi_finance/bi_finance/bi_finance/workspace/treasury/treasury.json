@@ -8,7 +8,7 @@
  "is_hidden": 0,
  "standard": 1,
  "icon": "wallet",
- "content": "[{\"id\": \"a1d7e3c904\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Bank Transactions\", \"col\": 3}}, {\"id\": \"0f5b9c28e6\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Unreconciled\", \"col\": 3}}, {\"id\": \"f1c3a7d902\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Cash Flow Forecast\", \"col\": 3}}, {\"id\": \"c9a2f6b81d\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"MWST pro Quartal\", \"col\": 3}}, {\"id\": \"44559c07eb\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Cash Position Total\", \"col\": 3}}, {\"id\": \"84d6ad5962\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Cash Position 1000\", \"col\": 3}}, {\"id\": \"aa2ecadc9b\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Cash Position 1010\", \"col\": 3}}, {\"id\": \"609f9111a2\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Cash Position 1020\", \"col\": 3}}, {\"id\": \"6c0b18e0fd\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Cash Position 1021\", \"col\": 3}}, {\"id\": \"3f9a1c6e27\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Cash Conversion CCC\", \"col\": 3}}, {\"id\": \"c8d24b0f93\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Cash Conversion Change\", \"col\": 3}}, {\"id\": \"de64bbef1e\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Cash Position History\", \"col\": 12}}, {\"id\": \"7e61a9d5c0\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Cash Conversion Trend\", \"col\": 12}}, {\"id\": \"b2f0c4a913\", \"type\": \"card\", \"data\": {\"card_name\": \"Banking\", \"col\": 4}}, {\"id\": \"e83d5a0c17\", \"type\": \"card\", \"data\": {\"card_name\": \"Payments\", \"col\": 4}}, {\"id\": \"5d9c1e7b42\", \"type\": \"card\", \"data\": {\"card_name\": \"MWST\", \"col\": 4}}, {\"id\": \"91a6f3d0e8\", \"type\": \"card\", \"data\": {\"card_name\": \"Cash forecast\", \"col\": 4}}, {\"id\": \"4c7e2b9f06\", \"type\": \"card\", \"data\": {\"card_name\": \"Payroll\", \"col\": 4}}]",
+ "content": "[{\"id\": \"a1d7e3c904\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Transactions\", \"col\": 3}}, {\"id\": \"0f5b9c28e6\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Unreconciled\", \"col\": 3}}, {\"id\": \"f1c3a7d902\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Cash Flow Forecast\", \"col\": 3}}, {\"id\": \"c9a2f6b81d\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"MWST pro Quartal\", \"col\": 3}}, {\"id\": \"44559c07eb\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Cash Position Total\", \"col\": 3}}, {\"id\": \"84d6ad5962\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Cash Position 1000\", \"col\": 3}}, {\"id\": \"aa2ecadc9b\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Cash Position 1010\", \"col\": 3}}, {\"id\": \"609f9111a2\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Cash Position 1020\", \"col\": 3}}, {\"id\": \"6c0b18e0fd\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Cash Position 1021\", \"col\": 3}}, {\"id\": \"3f9a1c6e27\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Cash Conversion CCC\", \"col\": 3}}, {\"id\": \"c8d24b0f93\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Cash Conversion Change\", \"col\": 3}}, {\"id\": \"de64bbef1e\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Cash Position History\", \"col\": 12}}, {\"id\": \"7e61a9d5c0\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Cash Conversion Trend\", \"col\": 12}}, {\"id\": \"b2f0c4a913\", \"type\": \"card\", \"data\": {\"card_name\": \"Banking\", \"col\": 4}}, {\"id\": \"e83d5a0c17\", \"type\": \"card\", \"data\": {\"card_name\": \"Payments\", \"col\": 4}}, {\"id\": \"5d9c1e7b42\", \"type\": \"card\", \"data\": {\"card_name\": \"MWST\", \"col\": 4}}, {\"id\": \"91a6f3d0e8\", \"type\": \"card\", \"data\": {\"card_name\": \"Cash forecast\", \"col\": 4}}, {\"id\": \"4c7e2b9f06\", \"type\": \"card\", \"data\": {\"card_name\": \"Payroll\", \"col\": 4}}]",
  "number_cards": [
   {
    "number_card_name": "Cash Position Total",
@@ -51,7 +51,7 @@
  ],
  "shortcuts": [
   {
-   "label": "Bank Transactions",
+   "label": "Transactions",
    "type": "DocType",
    "link_to": "Bank Transaction",
    "doc_view": "List",
@@ -390,7 +390,7 @@
  "roles": [],
  "custom_blocks": [],
  "creation": "2026-10-10 09:00:00.000000",
- "modified": "2026-10-11 23:45:00.000000",
+ "modified": "2026-10-11 23:55:00.000000",
  "modified_by": "Administrator",
  "owner": "Administrator",
  "docstatus": 0,

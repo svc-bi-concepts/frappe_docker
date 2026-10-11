@@ -38,7 +38,7 @@ AREAS = [
 ]
 
 # the shortcuts the page keeps, in order; a shortcut repeats a card link only for the two reports named here
-SHORTCUTS = ["Bank Transactions", "Unreconciled", "Cash Flow Forecast", "MWST pro Quartal"]
+SHORTCUTS = ["Transactions", "Unreconciled", "Cash Flow Forecast", "MWST pro Quartal"]
 REPEATED = {"Cash Flow Forecast", "MWST pro Quartal"}
 
 
