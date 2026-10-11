@@ -25,7 +25,10 @@ from datetime import datetime
 PACKAGE = os.path.dirname(os.path.abspath(__file__))
 APP = os.path.dirname(PACKAGE)
 MANIFEST = os.path.join(PACKAGE, "synced_manifest.json")
-SYNCED = {"doctype", "report", "workspace", "number_card", "dashboard_chart", "page"}
+SYNCED = {"doctype", "report", "workspace", "number_card", "dashboard_chart", "page", "sidebar"}
+# App-rooted folders at the package root (Frappe syncs them from the app path, not from a module folder):
+# the Dock, <package>/dock/<app>/<app>.json. Not in SYNCED: that set marks module folders only.
+APP_ROOTED = ("dock",)
 STAMP = "%Y-%m-%d %H:%M:%S.%f"  # Frappe's 'modified' format
 
 
@@ -48,6 +51,9 @@ def synced_jsons():
             inside = set(os.path.relpath(root, home).split(os.sep))
             if not SYNCED & inside:
                 continue
+            found += [os.path.relpath(os.path.join(root, f), PACKAGE) for f in files if f.endswith(".json")]
+    for name in APP_ROOTED:
+        for root, _dirs, files in os.walk(os.path.join(PACKAGE, name)):
             found += [os.path.relpath(os.path.join(root, f), PACKAGE) for f in files if f.endswith(".json")]
     return sorted(path.replace(os.sep, "/") for path in found)
 

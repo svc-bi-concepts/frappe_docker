@@ -34,8 +34,10 @@ AREAS = [
         "Cash Conversion Cycle",
         "Cash Forecast Settings",
     ]),
-    ("Payroll", ["Payroll Swiss Settings", "QST Tariff", "Payroll Hand-over"]),
 ]
+
+# bi_payroll's documents and reports live on the Swiss Payroll rail of ERPNext (its sidebar), not here
+PAYROLL = ("Payroll Swiss Settings", "QST Tariff", "Payroll Hand-over")
 
 # the shortcuts the page keeps, in order; a shortcut repeats a card link only for the two reports named here
 SHORTCUTS = ["Transactions", "Unreconciled", "Cash Flow Forecast", "MWST pro Quartal"]
@@ -117,6 +119,14 @@ class Cards(unittest.TestCase):
         shortcuts = [s["label"] for s in self.doc["shortcuts"]]
         links = [link["label"] for link in self.doc["links"] if link["type"] == "Link"]
         self.assertEqual(shortcuts.count("Bank Statement Upload") + links.count("Bank Statement Upload"), 1)
+
+    def test_no_payroll_link_or_card_sits_on_the_treasury_page(self):
+        labels = {link["label"] for link in self.doc["links"]} | {s["label"] for s in self.doc["shortcuts"]}
+        cards = [block["data"]["card_name"] for block in json.loads(self.doc["content"]) if block["type"] == "card"]
+        for label in PAYROLL:
+            self.assertNotIn(label, labels)
+        self.assertNotIn("Payroll", cards)
+        self.assertNotIn("Payroll", self.card_breaks())
 
     def test_the_shortcuts_are_the_four_the_page_keeps(self):
         self.assertEqual([s["label"] for s in self.doc["shortcuts"]], SHORTCUTS)

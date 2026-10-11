@@ -2,7 +2,7 @@
 
 Frappe app for BI Concepts' Swiss payroll (`finance/docs/hrms.md`). It is installed on the live site and the
 HRMS copy (Decision 2026-10-10). It requires `hrms`, so nothing here goes into `bi_finance`, which must
-migrate on any site.
+migrate on any site. Its Desk is the Swiss Payroll shell: a Sidebar (`bi_payroll/sidebar/`) and a Dock mounted on ERPNext's rail, with no apps-screen tile.
 
 - `bi_payroll/fixtures/salary_component.json`: the Salary Components with their formulas (AHV/IV/EO, ALV with
   the ceiling, BVG on a fixed yearly insured salary with the age bands, NBU, UVG, KTG, FAK), and Commission (an earning

@@ -156,6 +156,12 @@ What HRMS v16.50.0 installs and what the `hr` setup step makes of it
   2026-10-11): `HR_USER` read from User (the one enabled human System User, never
   written here), 1 role added, 2 Payroll Settings values changed, rerun 0, and
   `HR_USER=<user> sh finance/scripts/swiss-setup.sh hr --check` exits 0.
+- **Where Swiss payroll lives in the Desk (erp-3ce8).** HRMS's Payroll workspace is the Home of the **Swiss Payroll**
+  shell, which bi_payroll ships (its Sidebar, `bi_payroll/bi_payroll/sidebar/`) and mounts on ERPNext's rail (its Dock
+  mounts on `erpnext`). Payroll Entry and Salary Slip sit there as the daily documents; Payroll Swiss Settings, QST
+  Tariff Code and QST Tariff under Setup, and Payroll Hand-over under Reports, are bi_payroll's and claimed by that
+  shell: a bare route to one of those opens here. Payroll Entry and Salary Slip, reached bare, still open in HRMS's own
+  Payroll shell. The Treasury page no longer carries a payroll card.
 
 ## Migration from bexio
 

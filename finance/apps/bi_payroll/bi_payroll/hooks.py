@@ -8,6 +8,11 @@ app_license = "Proprietary"
 # (Decision 2026-10-10). Keep it out of bi_finance: bi_finance must migrate where HRMS is not installed.
 required_apps = ["erpnext", "hrms", "bi_finance"]
 
+# No add_to_apps_screen: the app has no tile of its own. Its Sidebar (bi_payroll/sidebar/) and its Dock
+# (dock/, mount_on erpnext) put "Swiss Payroll" on ERPNext's rail beside the HR entries: one shell, ERPNext
+# (Benchi, 2026-10-12). The Dock mounts on erpnext and not on hrms, because a companion of a companion is not
+# appended to the host's rail (frappe's dock.py reads each companion's own rows only).
+
 # The rates are settings, not constants: each slip takes a copy when it is validated, because the
 # formulas read the slip and the assignment only (see swiss_payroll.py).
 doc_events = {

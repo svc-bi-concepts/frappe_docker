@@ -2,7 +2,8 @@
 
 One page of the recurring work, in the order it is done. Every Swiss step is on the Treasury
 workspace's cards, one per area (Desk: ERPNext › Treasury, then
-the card: **Banking**, **Payments**, **MWST**, **Cash forecast**, **Payroll**). The Desk place is in bold; the
+the card: **Banking**, **Payments**, **MWST**, **Cash forecast**). Payroll is not on that page: it is
+**ERPNext › Swiss Payroll**, on ERPNext's rail. The Desk place is in bold; the
 document that explains the step is in brackets. Conventions for labels and buttons:
 `finance/docs/erpnext-setup.md`, "Desk conventions".
 
@@ -78,12 +79,12 @@ a flat sum, not for reimbursed receipts.
 
 1. **Payroll Entry or Salary Slips:** run the month's payroll in HRMS (HR, Payroll Entry), then check the
    submitted Salary Slips. [`finance/docs/hrms.md`]
-2. **Payroll Swiss Settings:** the rates the slips use (Payroll card). Check them against the
+2. **ERPNext › Swiss Payroll › Setup › Payroll Swiss Settings:** the rates the slips use. Check them against the
    paystub of the month. [`finance/apps/bi_payroll/README.md`]
-3. **QST Tariff:** the Quellensteuer codes and their rows (Payroll card) for employees who are
+3. **ERPNext › Swiss Payroll › Setup › QST Tariff:** the Quellensteuer codes and their rows for employees who are
    taxed at source.
-4. **Payroll Hand-over:** the report of the month per employee, gross, net and the Swiss components, for
-   the trustee (Payroll card). It reads the submitted slips; it changes nothing.
+4. **ERPNext › Swiss Payroll › Reports › Payroll Hand-over:** the report of the month per employee, gross, net and the Swiss components, for
+   the trustee. It reads the submitted slips; it changes nothing.
 5. **Still manual until erp-1jh5:** the BVG, UVG, NBU, KTG and FAK rates and the BVG insured salaries are
    placeholders until the fund and insurer sheets are in. Until then the slips are checked against the
    paystubs by hand.
@@ -202,7 +203,7 @@ mode denies a builder's docker writes. Notes give counts and totals only, never 
     - QR: the bi_finance QR print format is the default, and the erpnextswiss QR formats show as disabled (Desk, Print Format);
     - erpnextswiss and hrms patches: the build applied them (`apply-patches.sh` stops the build on a patch that does not
       apply); by hand as `finance/docs/erpnextswiss-patches.md` says (the hrms bump re-checks `hrms/0001-dock-mounts-on-erpnext.patch` like the erpnextswiss ones);
-    - the Treasury and Payroll workspaces open in the Desk.
+    - the Treasury workspace and ERPNext › Swiss Payroll open in the Desk.
 
     Then delete the `private/d4-*` files that served these checks; the totals go in the note.
 12. **Rollback.**

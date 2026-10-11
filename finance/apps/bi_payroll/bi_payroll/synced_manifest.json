@@ -14,5 +14,13 @@
  "bi_payroll/report/payroll_hand_over/payroll_hand_over.json": {
   "modified": "2026-10-11 13:00:00.000000",
   "sha": "11e71297d432a375cea5fe8a04b7e86dbe4e3e8aad80559faabf75f443170ec9"
+ },
+ "bi_payroll/sidebar/bi_payroll/bi_payroll.json": {
+  "modified": "2026-10-12 01:00:00.000000",
+  "sha": "334302fc14f647d2d98f257dc578aab8db01d8755b699b687b6a14bbea1df708"
+ },
+ "dock/bi_payroll/bi_payroll.json": {
+  "modified": "2026-10-12 01:00:00.000000",
+  "sha": "4ab8d9fb59b2dd24cd0afdb766285ad5f265ec3d42e196304f9eab74fee4f109"
  }
 }
