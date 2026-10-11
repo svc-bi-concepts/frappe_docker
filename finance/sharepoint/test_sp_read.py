@@ -332,6 +332,63 @@ class FetchTest(Keys):
                 sp_read.target(self.out, folder_part, name)
 
 
+class FetchPathsTest(Keys):
+    FIN = GRAPH + "/drives/%s/items/fin/children" % DRIVE
+    ROOTS = [("Finance", "fin")]
+
+    def setUp(self):
+        self.out = tempfile.mkdtemp(prefix="sp-out-")
+        self.routes = {
+            TOKEN_URL: json.dumps({"access_token": "fake-token"}).encode(),
+            self.FIN: page([folder("Acc", "f-acc"), file_("Root.pdf", "root", 2)]),
+            GRAPH + "/drives/%s/items/f-acc/children" % DRIVE: page([
+                file_("Beitrag 2026.pdf", "beitrag", 5), file_("Other.pdf", "other", 3)]),
+            GRAPH + "/drives/%s/items/beitrag/content" % DRIVE: b"BEIT!",
+            GRAPH + "/drives/%s/items/root/content" % DRIVE: b"RT",
+            GRAPH + "/drives/%s/items/other/content" % DRIVE: b"OTH",
+        }
+
+    def tearDown(self):
+        shutil.rmtree(self.out)
+
+    def graph(self):
+        fake = FakeGraph(self.routes)
+        thumbprint = hashlib.sha1(self.cert_der).hexdigest()
+        return fake, Graph(TENANT, CLIENT, thumbprint, DRIVE, self.key_pem, transport=fake)
+
+    def test_saves_exactly_the_listed_paths_under_their_root_with_mode_600(self):
+        fake, g = self.graph()
+        out = io.StringIO()
+        sp_read.fetch_paths(g, self.ROOTS, ["Finance/Acc/Beitrag 2026.pdf", "Finance/Root.pdf"], self.out, out)
+        with open(os.path.join(self.out, "Finance", "Acc", "Beitrag 2026.pdf"), "rb") as f:
+            self.assertEqual(f.read(), b"BEIT!")
+        self.assertFalse(os.path.exists(os.path.join(self.out, "Finance", "Acc", "Other.pdf")))
+        for root, dirs, files in os.walk(self.out):
+            for name in files:
+                self.assertEqual(stat.S_IMODE(os.stat(os.path.join(root, name)).st_mode), 0o600, name)
+        self.assertIn("2 of 2 paths saved under", out.getvalue())
+
+    def test_one_path_that_is_not_under_the_root_downloads_nothing(self):
+        fake, g = self.graph()
+        with self.assertRaises(SharePointError):
+            sp_read.fetch_paths(g, self.ROOTS, ["Finance/Root.pdf", "Finance/Acc/Missing.pdf"], self.out, io.StringIO())
+        self.assertFalse([c for c in fake.calls if c[1].endswith("/content")])
+        self.assertFalse(os.listdir(self.out))
+
+    def test_a_path_that_could_leave_the_output_folder_is_refused_before_any_download(self):
+        self.routes[self.FIN] = page([file_("..", "dots", 2)])
+        fake, g = self.graph()
+        with self.assertRaises(SharePointError):
+            sp_read.fetch_paths(g, self.ROOTS, ["Finance/.."], self.out, io.StringIO())
+        self.assertFalse([c for c in fake.calls if c[1].endswith("/content")])
+
+    def test_the_list_file_skips_blank_and_comment_lines(self):
+        path = os.path.join(self.out, "paths.txt")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("# a comment\n\nFinance/Root.pdf\n  Finance/Acc/Beitrag 2026.pdf  \n")
+        self.assertEqual(sp_read.read_paths(path), ["Finance/Root.pdf", "Finance/Acc/Beitrag 2026.pdf"])
+
+
 class RefusalTest(Keys):
     def test_refusals_name_the_status_and_code_but_not_the_url_or_message(self):
         body = json.dumps({"error": {"code": "accessDenied", "message": "drive-x item ins not shared"}}).encode()

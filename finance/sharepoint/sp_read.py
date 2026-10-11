@@ -297,9 +297,40 @@ def fetch(graph, roots, out_dir=OUT, out=sys.stdout):
     out.write("%d of %d sheets saved under %s\n" % (len(plan), len(SHEETS), out_dir))
 
 
+def read_paths(path):
+    """The paths in a list file, one per line: '/'-joined, each starting with its root's name. Blank lines and '#' lines are skipped."""
+    with open(path, encoding="utf-8") as f:
+        return [line.strip() for line in f if line.strip() and not line.startswith("#")]
+
+
+def fetch_paths(graph, roots, wanted, out_dir=OUT, out=sys.stdout):
+    """Download the files named by wanted, each path as '/'-joined names under its root; nothing else.
+
+    The names come from a list kept under private/, so they never reach the repo. Every path
+    must match exactly one file under roots, and every name must be plain, before the first
+    download: one path that is missing leaves nothing behind.
+    """
+    files = {}
+    for name, folder_id in roots:
+        for folder, item in graph.walk(folder_id):
+            files.setdefault("/".join((name,) + folder + (item["name"],)), ((name,) + folder, item))
+    missing = [path for path in wanted if path not in files]
+    if missing:
+        raise SharePointError("%d of %d paths are not under the roots; nothing downloaded" % (len(missing), len(wanted)))
+    plan = [(target(out_dir, files[path][0], files[path][1]["name"]), files[path][1]) for path in wanted]
+    for path, item in plan:
+        body = graph.download(item["id"])
+        if len(body) != item.get("size", len(body)):
+            raise SharePointError("%s: downloaded size differs from the listing" % item["name"])
+        save(path, body)
+        out.write("%10d  %s\n" % (len(body), os.path.relpath(path, out_dir)))
+    out.write("%d of %d paths saved under %s\n" % (len(plan), len(wanted), out_dir))
+
+
 def main(argv, out=sys.stdout):
-    if len(argv) < 2 or argv[1] not in ("list", "fetch") or (argv[1] == "list" and len(argv) != 3):
-        sys.stderr.write("usage: sp_read.py list <folder> | fetch\n")
+    if len(argv) < 2 or argv[1] not in ("list", "fetch", "fetch-paths") or (argv[1] == "list" and len(argv) != 3) \
+            or (argv[1] == "fetch-paths" and len(argv) != 3):
+        sys.stderr.write("usage: sp_read.py list <folder> | fetch | fetch-paths <list file>\n")
         return 2
     try:
         cfg = load_config()
@@ -309,6 +340,8 @@ def main(argv, out=sys.stdout):
         graph = Graph(cfg["tenant_id"], cfg["client_id"], cfg["thumbprint"], cfg["drive_id"], key)
         if argv[1] == "list":
             list_folder(graph, cfg["folders"][argv[2]], out)
+        elif argv[1] == "fetch-paths":
+            fetch_paths(graph, [("Finance", cfg["folders"]["Finance"])], read_paths(argv[2]), OUT, out)
         else:
             fetch(graph, [(name, cfg["folders"][name]) for name in SEARCHED], OUT, out)
     except SharePointError as err:
