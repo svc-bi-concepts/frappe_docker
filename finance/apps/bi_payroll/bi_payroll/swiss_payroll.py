@@ -70,28 +70,35 @@ def ensure_structure():
     # One Salary Structure per Swiss company, made once (after install and after each migrate, so a new company is
     # covered). Submitted, so Salary Structure Assignments can name it. A structure that no slip or assignment names
     # is replaced when it is defective: nothing depends on it yet, so the new one is made as a fresh structure would
-    # be. One in use is not changed here: its gap is logged, so it is in the Error Log and not silent.
+    # be. One in use is not replaced here: its missing components are logged, so they are in the Error Log and not
+    # silent. Its rows whose formula or condition differs from the component's (the fixture changed after the row was
+    # copied) are refreshed through HRMS's own sync, which changes no submitted slip.
     for company in frappe.get_all("Company", filters={"country": "Switzerland"}, pluck="name"):
         existing = frappe.db.get_value("Salary Structure", {"company": company, "docstatus": ["<", 2]}, "name")
         if existing:
             structure = frappe.get_doc("Salary Structure", existing)
+            lines = structure.earnings + structure.deductions + structure.employer_contributions
             missing = missing_components(
                 [row.salary_component for row in structure.earnings],
                 [row.salary_component for row in structure.deductions],
                 [row.salary_component for row in structure.employer_contributions],
             )
-            bare = formula_gaps(structure.earnings + structure.deductions + structure.employer_contributions)
-            if not missing and not bare:
+            bare = formula_gaps(lines)
+            stale = stale_rows(lines)
+            if not missing and not stale:
                 continue
             if structure_in_use(existing):
-                gaps = [f"has no {', '.join(missing)}"] if missing else []
-                if bare:
-                    gaps.append(f"has {len(bare)} rows without their component's formula")
-                frappe.log_error(
-                    title="Swiss Salary Structure lacks components",
-                    message=f"Salary Structure {existing} for {company} {' and '.join(gaps)}. It is not changed by "
-                    "bench migrate: make it again by hand (README, Salary Structure).",
-                )
+                if stale:
+                    refresh_rows(existing, stale, company)
+                if missing:
+                    frappe.log_error(
+                        title="Swiss Salary Structure lacks components",
+                        message=f"Salary Structure {existing} for {company} has no {', '.join(missing)}. It is not "
+                        "changed by bench migrate: make it again by hand (README, Salary Structure).",
+                    )
+                continue
+            if not missing and not bare:
+                refresh_rows(existing, stale, company)
                 continue
             if structure.docstatus == 1:
                 structure.cancel()
@@ -130,6 +137,44 @@ def formula_gaps(rows):
         row.salary_component for row in rows
         if not row.formula and frappe.db.get_value("Salary Component", row.salary_component, "formula")
     ]
+
+
+def stale_rows(rows):
+    # the rows whose formula or condition differs from their component's, as (component, [(field, value)]): HRMS
+    # evaluates the row's copy, so a change to the component reaches the row only through HRMS's sync. The formula is
+    # compared as HRMS stores it: none when the component does not compute from it, so such a row is not stale every
+    # migrate. A component that is missing is not stale: ensure_structure logs it.
+    stale = []
+    for row in rows:
+        component = frappe.db.get_value(
+            "Salary Component", row.salary_component, ["formula", "condition", "amount_based_on_formula"], as_dict=True
+        )
+        if not component:
+            continue
+        formula = component.formula if component.amount_based_on_formula else ""
+        changes = []
+        amount_changed = bool(row.amount_based_on_formula) != bool(component.amount_based_on_formula)
+        if (row.formula or "") != (formula or "") or amount_changed:
+            changes.append(("formula", component.formula))
+        if (row.condition or "") != (component.condition or ""):
+            changes.append(("condition", component.condition))
+        if changes:
+            stale.append((row.salary_component, changes))
+    return stale
+
+
+def refresh_rows(structure, stale, company):
+    # HRMS's own sync (the Desk's 'sync to structures' after a formula edit): it sets the row of every structure that
+    # has it, submitted and in use included, and saves a version row. Submitted slips keep the amounts they booked.
+    for name, changes in stale:
+        component = frappe.get_doc("Salary Component", name)
+        for field, value in changes:
+            component.update_salary_structures(field, value, [structure])
+    frappe.log_error(
+        title="Swiss Salary Structure rows refreshed",
+        message=f"Salary Structure {structure} for {company}: rows whose formula or condition differed from their "
+        f"Salary Component: {len(stale)}. HRMS's sync set them.",
+    )
 
 
 def structure_rows(components):

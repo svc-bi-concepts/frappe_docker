@@ -101,9 +101,13 @@ migrate on any site.
   that no slip and no Salary Structure Assignment names (unused) and that is defective (a component missing, or a row
   whose component has a formula but which has none of its own) is cancelled if submitted, deleted and made again by
   `bench migrate`, with every row of `swiss_rates.py` and each row's formula; the Error Log gets "Swiss Salary Structure
-  replaced" with the counts. A structure in use is not changed: the gap is logged to the Error Log ("Swiss Salary
-  Structure lacks components"), and a slip whose Quellensteuer amount is not zero stops on validate ("has no
-  Quellensteuer Employee row") until the structure has it. The manual step, for a structure in use only: make the
+  replaced" with the counts. A structure in use is not replaced. Its rows whose formula or condition differs from the
+  component's (a fixture changed after the row was copied) are refreshed on every migrate through HRMS's own sync (the
+  Desk's "sync to structures": a version row "via Salary Component sync"); the Error Log gets "Swiss Salary Structure
+  rows refreshed" with the count. A refresh changes no submitted slip: slips keep the amounts they booked. A missing
+  component is logged to the Error Log ("Swiss Salary Structure lacks components"), and a slip whose Quellensteuer
+  amount is not zero stops on validate ("has no Quellensteuer Employee row") until the structure has it. The remake is
+  for missing rows only. The manual step, for a structure in use only: make the
   structure again with every row of `swiss_rates.py` (STRUCTURE_EARNINGS, STRUCTURE_DEDUCTIONS, the Quellensteuer
   Employee last, and STRUCTURE_EMPLOYER_CONTRIBUTIONS in the `employer_contributions` table), each row with its
   component's formula (`structure_rows` does this), and submit it. Then cancel each employee's assignment on the old

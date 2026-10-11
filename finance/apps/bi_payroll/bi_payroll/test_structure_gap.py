@@ -5,6 +5,8 @@
 from this app's directory. They cover what the throwaway-site check (erp-5t6q) found: a structure made before the
 Quellensteuer row existed stops a slip that has a tax, and ensure_structure logs the gap instead of leaving it silent.
 They also cover the replacement of an unused structure that is defective (erp-d74t): replaced, left alone when in use.
+Rows of a structure in use whose formula or condition differs from the component's are refreshed through HRMS's sync
+(the component's update_salary_structures), and nothing else is.
 """
 
 import importlib
@@ -36,6 +38,8 @@ class FakeDb:
         self.structure_has_row = structure_has_row
         self.employee = employee
         self.in_use = in_use
+        self.conditions = {}  # a component's condition by name, empty by default
+        self.amounts = {}  # a component's amount_based_on_formula by name, 1 by default
 
     def get_value(self, doctype, name, fields=None, as_dict=False, **kwargs):
         if doctype == "Employee":
@@ -46,7 +50,8 @@ class FakeDb:
             # test_swiss_payroll's subject), and structure_rows copies the flag onto every row
             formula = f"FORMULA-{name}"
             return types.SimpleNamespace(
-                formula=formula, amount_based_on_formula=1, statistical_component=0
+                formula=formula, amount_based_on_formula=self.amounts.get(name, 1), statistical_component=0,
+                condition=self.conditions.get(name, ""),
             ) if as_dict else formula
         return "SS-1" if doctype == "Salary Structure" else None
 
@@ -102,7 +107,12 @@ def fake_frappe(db):
 
 def rows(names, formulas=True):
     # structure rows as the database gives them: each with its component's formula, or without one
-    return [types.SimpleNamespace(salary_component=n, formula=f"FORMULA-{n}" if formulas else "") for n in names]
+    return [
+        types.SimpleNamespace(
+            salary_component=n, formula=f"FORMULA-{n}" if formulas else "", condition="", amount_based_on_formula=1,
+        )
+        for n in names
+    ]
 
 
 class StructureGap(unittest.TestCase):
@@ -186,8 +196,9 @@ class StructureGap(unittest.TestCase):
 class Replacing(unittest.TestCase):
     def setUp(self):
         self.made = []  # the new structures, each as the dict ensure_structure gives frappe.get_doc
+        self.components = {}  # each Salary Component ensure_structure loads, by name: a mock with update_salary_structures
 
-    def run_ensure(self, earnings, deductions, in_use=False, docstatus=0, employer=None):
+    def run_ensure(self, earnings, deductions, in_use=False, docstatus=0, employer=None, conditions=None, amounts=None):
         # one run of ensure_structure on the company's structure, with the given rows and use
         structure = types.SimpleNamespace(
             name="SS-1", docstatus=docstatus, earnings=earnings, deductions=deductions,
@@ -195,9 +206,18 @@ class Replacing(unittest.TestCase):
             cancel=mock.Mock(),
         )
         frappe = self.install(in_use)
-        frappe.get_doc = mock.Mock(side_effect=lambda arg, *args: structure if arg == "Salary Structure" else self.new(arg))
+        frappe.db.conditions = conditions or {}
+        frappe.db.amounts = amounts or {}
+        frappe.get_doc = mock.Mock(side_effect=lambda arg, *args: self.doc(structure, arg, *args))
         self.module.ensure_structure()
         return structure, frappe
+
+    def doc(self, structure, doctype, *args):
+        if doctype == "Salary Structure":
+            return structure
+        if doctype == "Salary Component":
+            return self.components.setdefault(args[0], mock.Mock())
+        return self.new(doctype)
 
     def install(self, in_use):
         frappe, utils = fake_frappe(FakeDb(structure_has_row=True, in_use=in_use))
@@ -256,19 +276,78 @@ class Replacing(unittest.TestCase):
         frappe.delete_doc.assert_not_called()
         self.assertEqual(self.made, [])
         structure.cancel.assert_not_called()
+        self.assertEqual(self.components, {})  # nothing is refreshed: the gap is a missing row, not a stale one
         frappe.log_error.assert_called_once()
         self.assertEqual(frappe.log_error.call_args.kwargs["title"], "Swiss Salary Structure lacks components")
         self.assertIn(QST, frappe.log_error.call_args.kwargs["message"])
 
-    def test_a_structure_in_use_without_formulas_is_logged_and_not_replaced(self):
+    def test_a_structure_in_use_without_formulas_gets_them_through_hrms_and_is_not_replaced(self):
         structure, frappe = self.run_ensure(
             rows(STRUCTURE_EARNINGS, formulas=False), rows(STRUCTURE_DEDUCTIONS, formulas=False), in_use=True,
             employer=rows(STRUCTURE_EMPLOYER_CONTRIBUTIONS, formulas=False),
         )
         frappe.delete_doc.assert_not_called()
         self.assertEqual(self.made, [])
+        self.assertEqual(len(self.components), ROWS)  # each component of the structure, once
+        self.components[QST].update_salary_structures.assert_called_once_with("formula", f"FORMULA-{QST}", ["SS-1"])
         frappe.log_error.assert_called_once()
-        self.assertIn(f"has {ROWS} rows without their component's formula", frappe.log_error.call_args.kwargs["message"])
+        self.assertEqual(frappe.log_error.call_args.kwargs["title"], "Swiss Salary Structure rows refreshed")
+        self.assertIn(f"Salary Component: {ROWS}", frappe.log_error.call_args.kwargs["message"])
+
+    def test_a_stale_formula_in_use_is_refreshed_with_the_components_formula(self):
+        earnings = rows(STRUCTURE_EARNINGS)
+        earnings[0].formula = "OLD-FORMULA"
+        structure, frappe = self.run_ensure(earnings, rows(STRUCTURE_DEDUCTIONS), in_use=True)
+        name = STRUCTURE_EARNINGS[0]
+        self.components[name].update_salary_structures.assert_called_once_with("formula", f"FORMULA-{name}", ["SS-1"])
+        self.assertEqual(list(self.components), [name])
+        frappe.delete_doc.assert_not_called()
+        self.assertEqual(self.made, [])
+        frappe.log_error.assert_called_once()
+        self.assertEqual(frappe.log_error.call_args.kwargs["title"], "Swiss Salary Structure rows refreshed")
+        self.assertIn("Salary Structure SS-1 for Beispiel Test AG: rows whose formula or condition differed from their "
+                      "Salary Component: 1.", frappe.log_error.call_args.kwargs["message"])
+
+    def test_a_differing_condition_in_use_is_refreshed_with_the_condition_call(self):
+        name = STRUCTURE_EARNINGS[0]
+        structure, frappe = self.run_ensure(
+            rows(STRUCTURE_EARNINGS), rows(STRUCTURE_DEDUCTIONS), in_use=True, conditions={name: "gross > 0"},
+        )
+        self.components[name].update_salary_structures.assert_called_once_with("condition", "gross > 0", ["SS-1"])
+        frappe.delete_doc.assert_not_called()
+        frappe.log_error.assert_called_once()
+        self.assertEqual(frappe.log_error.call_args.kwargs["title"], "Swiss Salary Structure rows refreshed")
+
+    def test_an_amount_flag_that_differs_in_use_is_refreshed_with_the_formula_call(self):
+        earnings = rows(STRUCTURE_EARNINGS)
+        earnings[0].amount_based_on_formula = 0
+        name = STRUCTURE_EARNINGS[0]
+        structure, frappe = self.run_ensure(earnings, rows(STRUCTURE_DEDUCTIONS), in_use=True)
+        self.components[name].update_salary_structures.assert_called_once_with("formula", f"FORMULA-{name}", ["SS-1"])
+
+    def test_an_equal_row_in_use_is_not_refreshed(self):
+        structure, frappe = self.run_ensure(rows(STRUCTURE_EARNINGS), rows(STRUCTURE_DEDUCTIONS), in_use=True)
+        self.assertEqual(self.components, {})
+        frappe.log_error.assert_not_called()
+
+    def test_a_component_without_a_formula_has_no_row_that_is_stale(self):
+        # HRMS stores no formula when the component does not compute from it: the row with none is not stale
+        name = STRUCTURE_EARNINGS[0]
+        earnings = rows(STRUCTURE_EARNINGS)
+        earnings[0].formula = ""
+        earnings[0].amount_based_on_formula = 0
+        structure, frappe = self.run_ensure(earnings, rows(STRUCTURE_DEDUCTIONS), in_use=True, amounts={name: 0})
+        self.assertEqual(self.components, {})
+        frappe.log_error.assert_not_called()
+
+    def test_an_unused_structure_with_only_stale_rows_is_refreshed_and_not_replaced(self):
+        earnings = rows(STRUCTURE_EARNINGS)
+        earnings[0].formula = "OLD-FORMULA"
+        structure, frappe = self.run_ensure(earnings, rows(STRUCTURE_DEDUCTIONS), in_use=False)
+        self.components[STRUCTURE_EARNINGS[0]].update_salary_structures.assert_called_once()
+        frappe.delete_doc.assert_not_called()
+        self.assertEqual(self.made, [])
+        self.assertEqual(frappe.log_error.call_args.kwargs["title"], "Swiss Salary Structure rows refreshed")
 
     def test_a_complete_structure_with_formulas_is_untouched(self):
         structure, frappe = self.run_ensure(rows(STRUCTURE_EARNINGS), rows(STRUCTURE_DEDUCTIONS))
@@ -286,9 +365,9 @@ class Replacing(unittest.TestCase):
         made = self.made[0]
         replaced = types.SimpleNamespace(
             name="SS-1", docstatus=0,
-            earnings=[types.SimpleNamespace(**r) for r in made["earnings"]],
-            deductions=[types.SimpleNamespace(**r) for r in made["deductions"]],
-            employer_contributions=[types.SimpleNamespace(**r) for r in made["employer_contributions"]],
+            earnings=[types.SimpleNamespace(condition="", **r) for r in made["earnings"]],
+            deductions=[types.SimpleNamespace(condition="", **r) for r in made["deductions"]],
+            employer_contributions=[types.SimpleNamespace(condition="", **r) for r in made["employer_contributions"]],
             cancel=mock.Mock(),
         )
         frappe = self.install(in_use=False)
