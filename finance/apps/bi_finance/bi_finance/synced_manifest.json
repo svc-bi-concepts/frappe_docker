@@ -92,11 +92,11 @@
   "sha": "74e99d5618d48042d5bb35b684a59533cb9312156a4fdde72280c6277f02c8e4"
  },
  "bi_finance/sidebar/bi_finance/bi_finance.json": {
-  "modified": "2026-10-11 23:55:00.000000",
-  "sha": "a2e192eea7341bb4776120b483fb61a3fc9bcbfe326b50d8e9641d5de3042fa3"
+  "modified": "2026-10-12 03:00:00.000000",
+  "sha": "5b4ce504c0e5262e5d80287379220f1d92fa532200c4d2a20b870ed0375adf8b"
  },
  "dock/bi_finance/bi_finance.json": {
-  "modified": "2026-10-11 23:55:00.000000",
-  "sha": "ac43bca2145ec2e18df45f68802a287b7f5b416410cb12c21fe432fde6377edb"
+  "modified": "2026-10-12 03:00:00.000000",
+  "sha": "f6985038771c073668803c0e5399f6bb6cb5511aacc9210fc4fd0586097a5990"
  }
 }

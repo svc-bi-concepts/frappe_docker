@@ -5,10 +5,11 @@
  "doctype": "Dock",
  "idx": 0,
  "items": [
-  {"icon": "wallet-duotone", "link_to": "BI Finance", "link_type": "Sidebar", "title": "Finance"}
+  {"icon": "wallet-duotone", "link_to": "BI Finance", "link_type": "Sidebar", "title": "Treasury"}
  ],
- "modified": "2026-10-11 23:55:00.000000",
+ "modified": "2026-10-12 03:00:00.000000",
  "modified_by": "Administrator",
+ "mount_on": "erpnext",
  "name": "bi_finance",
  "owner": "Administrator",
  "standard": 1

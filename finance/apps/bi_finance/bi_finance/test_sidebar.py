@@ -76,7 +76,8 @@ class Sidebar(unittest.TestCase):
     def test_the_document_is_the_module_sidebar(self):
         self.assertEqual(self.doc["doctype"], "Sidebar")
         self.assertEqual(self.doc["name"], "BI Finance")
-        self.assertEqual(self.doc["title"], "BI Finance")
+        # the title is what the shell header and the rail tooltip show, next to Accounts and Selling
+        self.assertEqual(self.doc["title"], "Treasury")
         self.assertEqual(self.doc["module"], "BI Finance")
         self.assertEqual(self.doc["app"], "bi_finance")
 
@@ -113,23 +114,26 @@ class Sidebar(unittest.TestCase):
             )
             self.assertEqual(claimed, should, link["label"])
 
-    def test_the_dock_rail_opens_the_module_sidebar_that_ships(self):
+    def test_the_dock_mounts_the_rail_entry_on_erpnext_and_opens_the_module_sidebar(self):
+        # BI Finance is part of ERPNext: its one rail entry sits on ERPNext's rail (frappe's companion mount),
+        # and the entry opens the Sidebar above
         with open(DOCK, encoding="utf-8") as f:
             dock = json.load(f)
         self.assertEqual(dock["doctype"], "Dock")
         self.assertEqual(dock["name"], "bi_finance")
         self.assertEqual(dock["app"], "bi_finance")
+        self.assertEqual(dock["mount_on"], "erpnext")
         self.assertEqual(dock["standard"], 1)
-        self.assertEqual([(item["link_type"], item["link_to"]) for item in dock["items"]], [("Sidebar", "BI Finance")])
-        self.assertEqual(dock["items"][0]["title"], "Finance")
+        self.assertEqual(
+            [(item["link_type"], item["link_to"], item["title"]) for item in dock["items"]],
+            [("Sidebar", "BI Finance", "Treasury")],
+        )
         self.assertEqual(self.doc["name"], dock["items"][0]["link_to"])
 
-    def test_the_apps_tile_carries_the_logo_that_ships(self):
-        tile = hooks.add_to_apps_screen[0]
-        self.assertEqual(tile["name"], "bi_finance")
-        self.assertEqual(tile["sequence_id"], 3)
-        logo = os.path.join(PACKAGE, "public", *tile["logo"].split("/assets/bi_finance/")[1].split("/"))
-        self.assertTrue(os.path.isfile(logo), logo)
+    def test_bi_finance_has_no_apps_screen_tile_and_no_logo(self):
+        # a companion of ERPNext takes no tile on the apps screen or the switcher
+        self.assertFalse(hasattr(hooks, "add_to_apps_screen"))
+        self.assertFalse(os.path.exists(os.path.join(PACKAGE, "public", "images", "bi_finance.svg")))
 
     def test_the_workspace_row_names_the_shipped_workspace(self):
         workspaces = own_names("workspace")

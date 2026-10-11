@@ -33,12 +33,7 @@ Invoice prints, with the QR code drawn on our own server (no external host, see
   from this directory, or in the image as in `finance/docs/erpnext-setup.md`.
 - `bi_finance/bi_finance/` is the module folder "BI Finance": the doctypes, reports, workspaces, number
   cards and charts that migrate syncs live there, and nowhere else (`bi_finance/test_layout.py` checks it).
-- `bi_finance/bi_finance/sidebar/bi_finance/`: the `Sidebar` document "BI Finance" — what the desk's Apps-mode
-  left-hand menu reads (frappe v16 computes that menu from the module's own doctypes and reports unless the app
-  ships a `Sidebar` document, so the document is what lists VAT Declaration and Payment Proposal, erpnextswiss's
-  doctypes, in the BI Finance menu; `is_default_module` stays off them, so their documents still open in the
-  Schweizer Buchhaltung shell). The Desktop Icon and the Workspace Sidebar from erp-w4rd stay for a Desktop Icons
-  site; Apps mode does not read them (`hooks.py`). `bi_finance/test_sidebar.py` is the offline test.
+- Desk: BI Finance is a companion of ERPNext, its rail entry Treasury is the Dock in `bi_finance/dock/` and its menu the Sidebar in `bi_finance/bi_finance/sidebar/bi_finance/` (`bi_finance/test_sidebar.py`); see `finance/docs/erpnext-setup.md`, Desk conventions.
 - `bi_finance/bi_finance/report/cash_position`: the "Cash Position" report (Bank and Cash accounts, their
   balances in original currency and in CHF, month-end history). Read-only. The Treasury
   workspace (`bi_finance/bi_finance/workspace/treasury`), its number cards (`number_card/`) and the chart
