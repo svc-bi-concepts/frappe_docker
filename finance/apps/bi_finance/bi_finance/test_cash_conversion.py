@@ -143,7 +143,8 @@ class Build(unittest.TestCase):
         self.flows, self.balances = history(self.months)
 
     def build(self, customers=(), suppliers=()):
-        return cc.build(self.months, self.flows, self.balances, list(customers), list(suppliers))
+        # oldest first here, so the indices of the tests read by month; build itself lists the newest first
+        return list(reversed(cc.build(self.months, self.flows, self.balances, list(customers), list(suppliers))))
 
     def test_one_row_per_month_since_the_first_month(self):
         rows = self.build()
@@ -208,6 +209,56 @@ class Build(unittest.TestCase):
         rows = self.build(suppliers=suppliers)
         self.assertEqual(rows[2]["paid_days_suppliers"], 30.0)
         self.assertIsNone(rows[2]["paid_days_customers"])
+
+    def test_the_table_lists_the_newest_month_first(self):
+        rows = cc.build(self.months, self.flows, self.balances, [], [])
+        self.assertEqual(rows[0]["month"], D(2020, 12, 31))
+        self.assertEqual(rows[-1]["month"], D(2019, 1, 31))
+
+    def test_months_before_the_books_start_are_left_out_and_the_rolling_values_still_count_them(self):
+        # Jan to Mar 2019 have no postings at all: the table starts in April, and a window still covers those months
+        for key in ("revenue", "purchases", "cogs"):
+            self.flows[key][:3] = [0.0] * 3
+        for key in ("receivables", "payables", "inventory"):
+            self.balances[key][:3] = [0.0] * 3
+        rows = self.build()
+        self.assertEqual(len(rows), 21)
+        self.assertEqual(rows[0]["month"], D(2019, 4, 30))
+        december = next(row for row in rows if row["month"] == D(2019, 12, 31))
+        # the window Jan to Dec 2019 holds 90000 of revenue, 3000 owed at its end: 3000 / 90000 x 365
+        self.assertEqual(december["dso_12"], round(3000.0 / 90000.0 * 365, 1))
+
+    def test_a_month_with_only_a_balance_is_where_the_books_start(self):
+        # January 2019 is empty; February has no flows, only an opening payable: the books start in February
+        for key in ("revenue", "purchases", "cogs"):
+            self.flows[key][:2] = [0.0, 0.0]
+        for key in ("receivables", "payables", "inventory"):
+            self.balances[key][:2] = [0.0, 0.0]
+        self.balances["payables"][1] = 50.0
+        rows = self.build()
+        self.assertEqual(len(rows), 23)
+        self.assertEqual(rows[0]["month"], D(2019, 2, 28))
+
+
+class Chart(unittest.TestCase):
+    def test_labels_are_the_short_month_and_two_digit_year(self):
+        self.assertEqual(cc.month_label(D(2026, 9, 30)), "Sep 26")
+        self.assertEqual(cc.month_label(D(2019, 1, 31)), "Jan 19")
+
+    def test_the_chart_draws_the_last_24_months_oldest_first(self):
+        months = cc.month_ends(D(2019, 1, 1), D(2021, 6, 30))  # 30 months
+        flows, balances = history(months)
+        rows = cc.build(months, flows, balances, [], [])
+        shown = cc.shown(rows)
+        self.assertEqual(len(shown), cc.CHART_MONTHS)
+        self.assertEqual(cc.month_label(shown[0]["month"]), "Jul 19")
+        self.assertEqual(cc.month_label(shown[-1]["month"]), "Jun 21")
+        self.assertEqual(rows[0]["month"], D(2021, 6, 30))  # the table itself keeps all of them
+
+    def test_a_short_history_is_shown_whole(self):
+        months = cc.month_ends(D(2019, 1, 1), D(2019, 6, 30))
+        flows, balances = history(months)
+        self.assertEqual(len(cc.shown(cc.build(months, flows, balances, [], []))), 6)
 
 
 if __name__ == "__main__":

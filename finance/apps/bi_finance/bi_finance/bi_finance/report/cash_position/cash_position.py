@@ -7,7 +7,8 @@ before it. ERPNext fills that table from its rate source (Currency Exchange Sett
 frankfurter.dev); this report only reads it. A missing rate leaves that account's CHF value
 out and says so in the message.
 
-The chart shows the same balances at each month end from January 2019, at the rate of that day.
+The chart shows the balances at the last 24 month ends up to the as-of date, at the rate of that day; the table
+and the total keep the balance at the as-of date, whatever the chart shows.
 """
 
 import calendar
@@ -17,6 +18,8 @@ from collections import defaultdict
 import frappe
 from frappe import _
 from frappe.utils import escape_html, flt, getdate, nowdate
+
+from bi_finance.cash_conversion import CHART_MONTHS, month_label
 
 BASE = "CHF"
 CASH_ACCOUNT_TYPES = ["Bank", "Cash"]
@@ -71,9 +74,10 @@ def build(accounts, movements, rates, as_of, months, total_label="Total CHF"):
     accounts: (name, currency) of each account, in the order they show.
     movements: {name: [(posting date, amount in the account's currency)]}, dated on or before as_of.
     rates: {currency: [(date, CHF per unit)]}, sorted by date. CHF itself is 1.
-    months: the month ends of the chart, on or before as_of.
+    months: the month ends up to as_of, from January 2019; the chart shows the last CHART_MONTHS of them.
     Returns (rows, chart, total, missing): missing lists (name, currency) of the accounts without a rate.
     """
+    months = months[-CHART_MONTHS:]
     rows, missing = [], []
     for name, currency in accounts:
         balance = round(balance_on(movements.get(name, []), as_of), 2)
@@ -103,7 +107,7 @@ def build(accounts, movements, rates, as_of, months, total_label="Total CHF"):
                 totals[i] += value
         datasets.append({"name": name, "values": values})
     datasets.append({"name": total_label, "values": [round(t, 2) for t in totals]})
-    chart = {"data": {"labels": [day.isoformat() for day in months], "datasets": datasets}, "type": "line"}
+    chart = {"data": {"labels": [month_label(day) for day in months], "datasets": datasets}, "type": "line"}
     return rows, chart, total, missing
 
 

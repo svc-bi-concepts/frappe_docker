@@ -829,5 +829,40 @@ class OwnerAccounts(unittest.TestCase):
         self.assertEqual(dates, [D(2026, 11, 5), D(2026, 12, 5), D(2027, 1, 5)])
 
 
+class Message(unittest.TestCase):
+    """The report's message from a computed result (invented accounts and counts, no run-rates, so no currency is shown)."""
+
+    def setUp(self):
+        patch = mock.patch.object(cff, "_", lambda text: text)  # no site, so no translations
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def result(self, not_modelled):
+        return {"not_modelled": not_modelled, "run_rate": None, "new_purchases": None, "expected_payroll": None,
+                "hrms_payroll": None, "lines": [], "beyond": 0, "weeks": [], "without_history": 0}
+
+    def test_the_accounts_without_a_series_are_one_line_at_the_top_and_folded_at_the_end(self):
+        message = cff.forecast_message(self.result({"6570": 4, "6940": 2}), "CHF")
+        head, _, _rest = message.partition("<br>")
+        self.assertEqual(head, "2 accounts have no regular series and are not modelled (details folded at the end of this message).")
+        self.assertNotIn("Not modelled, no regular series", head)
+        fold = message.index("<details>")
+        self.assertLess(message.index("Journal entries are recurring costs"), fold)  # the reading comes first
+        self.assertIn("<summary>Accounts not modelled</summary>", message)
+        self.assertIn("Not modelled, no regular series: 4 entries on account 6570.", message[fold:])
+        self.assertIn("Not modelled, no regular series: 2 entries on account 6940.", message[fold:])
+        self.assertTrue(message.endswith("</details>"))
+
+    def test_no_account_without_a_series_means_no_line_and_no_fold(self):
+        message = cff.forecast_message(self.result({}), "CHF")
+        self.assertNotIn("not modelled", message)
+        self.assertNotIn("<details>", message)
+
+    def test_the_account_lines_are_escaped_inside_the_fold(self):
+        message = cff.forecast_message(self.result({"<b>": 1}), "CHF")
+        self.assertIn("entries on account &lt;b&gt;.", message)
+        self.assertNotIn("<b>", message)
+
+
 if __name__ == "__main__":
     unittest.main()

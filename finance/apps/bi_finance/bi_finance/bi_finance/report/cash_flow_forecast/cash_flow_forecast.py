@@ -678,13 +678,22 @@ def execute(filters=None):
         "type": "line",
     }
 
+    message = forecast_message(result, currency)
+    return columns(currency, has_manual), rows, message, chart, summary
+
+
+def forecast_message(result, currency):
+    """The report's message, as HTML: one line for the accounts without a regular series, then the reading of the
+    forecast, and the per-account lines folded at the end. None when there is nothing to say."""
+    not_modelled = sorted(result["not_modelled"].items())
     messages = [_(
         "Journal entries are recurring costs by their contra account, one line each. Left out, as another line carries "
         "them: payroll (5xxx, 1091), insurers (2270 to 2279), VAT (1170 to 1172, 2200, 2202), bill payments (2000), "
         "transfers between bank and cash accounts, and entries reconciled to a purchase invoice. The owners' current "
         "accounts (2100, 2121) are labelled average and discretionary; the filter \"Include owner accounts\" leaves them out.")]
-    for number, count in sorted(result["not_modelled"].items()):
-        messages.append(_("Not modelled, no regular series: {0} entries on account {1}.").format(count, number))
+    if not_modelled:
+        messages.insert(0, _("{0} accounts have no regular series and are not modelled (details folded at the end of this message).").format(
+            len(not_modelled)))
     if result["run_rate"]:
         messages.append(_("New sales are in the forecast at {0} a week ({1} to {2}): {3} since {4}, receipts from the invoices issued in each window.").format(
             fmt_money(result["run_rate"]["weekly"], currency=currency), fmt_money(result["run_rate"]["low"], currency=currency),
@@ -706,11 +715,16 @@ def execute(filters=None):
         messages.append(_("{0} manual lines from Cash Forecast Settings are in the forecast.").format(manual_count))
     messages.extend(closing_band_messages(result, currency))
     if result["beyond"]:
-        messages.append(_("{0} lines fall after week {1} and are not in the forecast.").format(result["beyond"], len(weeks)))
+        messages.append(_("{0} lines fall after week {1} and are not in the forecast.").format(result["beyond"], len(result["weeks"])))
     if result["without_history"]:
         messages.append(_("{0} customers have no paid invoice in the last year: their open invoices are taken as paid on the due date.").format(result["without_history"]))
-    message = "<br>".join(escape_html(m) for m in messages) or None
-    return columns(currency, has_manual), rows, message, chart, summary
+    message = "<br>".join(escape_html(m) for m in messages)
+    if not_modelled:
+        # the per-account lines, folded so the message stays short above the summary
+        details = "<br>".join(escape_html(_("Not modelled, no regular series: {0} entries on account {1}.").format(count, number))
+                              for number, count in not_modelled)
+        message += "<br><details><summary>{0}</summary>{1}</details>".format(escape_html(_("Accounts not modelled")), details)
+    return message or None
 
 
 def columns(currency, has_manual=False):

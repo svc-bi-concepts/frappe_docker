@@ -14,8 +14,9 @@ this report only reads the books:
 - days to pay: from the Payment Entry references to the invoices (allocated amount, payment date less
   invoice date); the journal entries that allocate to an invoice are not counted
 
-The days in the rolling values are those of the 12 months, so a leap February counts. The message of the
-report gives the formulas and says when there is no stock.
+The days in the rolling values are those of the 12 months, so a leap February counts. The table lists the months
+newest first, from the month the books start; the chart draws the last 24 of them. The message of the report gives
+the formulas, the start of the books and says when there is no stock.
 """
 
 import datetime
@@ -25,7 +26,8 @@ import frappe
 from frappe import _
 from frappe.utils import cint, escape_html, flt, getdate, nowdate
 
-from bi_finance.cash_conversion import ROLLING, build, membership, month_ends, month_totals, running
+from bi_finance import cash_conversion as cc
+from bi_finance.cash_conversion import build, membership, month_ends, month_totals, running
 
 HISTORY_FROM = datetime.date(2019, 1, 1)
 
@@ -43,7 +45,7 @@ def columns():
         return column
 
     return [
-        col("Month", "month", "Date", width=100),
+        col("Month", "month", "Date", width=120),
         col("Revenue", "revenue"),
         col("Purchases", "purchases"),
         col("Cost of Goods Sold", "cogs"),
@@ -122,29 +124,33 @@ def execute(filters=None):
     suppliers = payments(company, as_of, "Purchase Invoice", "Pay")
     rows = build(months, flows, balances, customers, suppliers)
 
-    if cint(filters.latest_only):
-        rows = rows[-1:]
-
     messages = [
         _("DSO = receivables / revenue x days; DPO = payables / purchases x days; DIO = stock / cost of goods sold x days; "
           "CCC = DSO + DIO - DPO. The 12-month values use the 12 months to the row; days to pay are from the Payment Entries."),
     ]
+    if rows:
+        # the table starts at the first month with a posting: the months before it are all zero and are left out
+        messages.append(_("The books start in {0}: the months before it have no entries and are left out.").format(
+            rows[-1]["month"].strftime("%b %Y")))
     if months and all(balance == 0 for balance in balances["inventory"]):
         messages.append(_("No stock in any month: DIO is 0 days."))
     message = "<br>".join(escape_html(m) for m in messages)
 
-    # The trend starts with the first full 12-month window; the table has every month.
-    trend = rows[ROLLING - 1:]
+    # The chart draws the last 24 months, whatever the table shows; latest_only (the number cards) is the table's newest row
+    chart_rows = cc.shown(rows)
     chart = {
         "data": {
-            "labels": [row["month"].isoformat() for row in trend],
+            "labels": [cc.month_label(row["month"]) for row in chart_rows],
             "datasets": [
-                {"name": _("DSO 12 months"), "values": [row["dso_12"] for row in trend]},
-                {"name": _("DPO 12 months"), "values": [row["dpo_12"] for row in trend]},
-                {"name": _("DIO 12 months"), "values": [row["dio_12"] for row in trend]},
-                {"name": _("CCC 12 months"), "values": [row["ccc_12"] for row in trend]},
+                {"name": _("DSO 12 months"), "values": [row["dso_12"] for row in chart_rows]},
+                {"name": _("DPO 12 months"), "values": [row["dpo_12"] for row in chart_rows]},
+                {"name": _("DIO 12 months"), "values": [row["dio_12"] for row in chart_rows]},
+                {"name": _("CCC 12 months"), "values": [row["ccc_12"] for row in chart_rows]},
             ],
         },
         "type": "line",
     }
+
+    if cint(filters.latest_only):
+        rows = rows[:1]
     return columns(), rows, message, chart

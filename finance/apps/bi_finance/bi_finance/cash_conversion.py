@@ -24,6 +24,10 @@ import calendar
 import datetime
 
 ROLLING = 12
+# The trend chart draws this many months: 24 points label as "Sep 26" on a 1150 px chart, 90 do not ("2..")
+CHART_MONTHS = 24
+# The amounts and balances of a month: a month with none of them is before the books start
+MOVED = ("revenue", "purchases", "cogs", "receivables", "payables", "inventory")
 
 
 def month_ends(first, last):
@@ -87,6 +91,16 @@ def cash_conversion(dso, dio, dpo):
     return round(dso + dio - dpo, 1)
 
 
+def month_label(day):
+    """The month on a chart axis: "Sep 26", short enough for a label of one of 24 points."""
+    return day.strftime("%b %y")
+
+
+def shown(rows):
+    """The months the trend chart draws, oldest first: the last CHART_MONTHS of the table, which lists the newest first."""
+    return list(reversed(rows[:CHART_MONTHS]))
+
+
 def weighted_days(payments):
     """payments: (paid on, invoiced on, amount) triples. The days from invoice to payment, weighted
     by amount; None when nothing was paid."""
@@ -135,12 +149,14 @@ def membership(accounts, payables_excluded):
 
 
 def build(months, flows, balances, customers, suppliers):
-    """The rows of the report, one per month, from data already loaded.
+    """The rows of the report, one per month from the month the books start, newest first, from data already loaded.
 
     months: the month ends, consecutive, from the first month of the history to the last one.
     flows: {"revenue", "purchases", "cogs"}: per month, the amounts of the month (revenue as a positive).
     balances: {"receivables", "payables", "inventory"}: per month, the balance at its end (payables positive).
     customers, suppliers: (paid on, invoiced on, amount) triples of the payments, any date.
+    The months before the first one with any amount or balance are left out: the books start there, and their
+    rolling values are computed over the whole history first, so they are the same as with those months.
     """
     first = months[0]
     days = [end.day for end in months]
@@ -185,4 +201,6 @@ def build(months, flows, balances, customers, suppliers):
         # The change is against the rolling value twelve months back, so it starts 24 months in.
         if i >= 2 * ROLLING - 1 and row["ccc_12"] is not None and rows[i - ROLLING]["ccc_12"] is not None:
             row["ccc_12_change"] = round(row["ccc_12"] - rows[i - ROLLING]["ccc_12"], 1)
-    return rows
+
+    first = next((i for i, row in enumerate(rows) if any(row[k] for k in MOVED)), len(rows))
+    return list(reversed(rows[first:]))

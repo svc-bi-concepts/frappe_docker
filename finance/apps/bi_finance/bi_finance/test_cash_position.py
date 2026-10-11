@@ -91,7 +91,7 @@ class Build(unittest.TestCase):
     def test_chart_has_month_end_points_and_a_total_per_month(self):
         months = cp.month_ends(D(2019, 1, 1), D(2019, 3, 31))
         _rows, chart, _total, _messages = cp.build(self.accounts, self.movements, self.rates, D(2019, 3, 31), months)
-        self.assertEqual(chart["data"]["labels"], ["2019-01-31", "2019-02-28", "2019-03-31"])
+        self.assertEqual(chart["data"]["labels"], ["Jan 19", "Feb 19", "Mar 19"])
         datasets = {d["name"]: d["values"] for d in chart["data"]["datasets"]}
         self.assertEqual(datasets[CHF_ACCOUNT], [1000.0, 749.75, 749.75])
         self.assertEqual(datasets[USD_ACCOUNT], [90.0, 80.0, 120.0])  # 150 at the March rate of 0.8
@@ -105,6 +105,20 @@ class Build(unittest.TestCase):
         datasets = {d["name"]: d["values"] for d in chart["data"]["datasets"]}
         self.assertIsNone(datasets[USD_ACCOUNT][0])  # no rate on 2019-01-31
         self.assertEqual(datasets["Total CHF"][0], 1000.0)
+
+    def test_chart_shows_the_last_24_month_ends_and_the_table_the_balance_at_the_as_of_date(self):
+        months = cp.month_ends(D(2019, 1, 1), D(2021, 6, 30))  # 30 month ends
+        rows, chart, total, _messages = cp.build(self.accounts, self.movements, self.rates, D(2021, 6, 30), months)
+        labels = chart["data"]["labels"]
+        self.assertEqual(len(labels), cp.CHART_MONTHS)
+        self.assertEqual((labels[0], labels[-1]), ("Jul 19", "Jun 21"))
+        datasets = {d["name"]: d["values"] for d in chart["data"]["datasets"]}
+        self.assertEqual(len(datasets["Total CHF"]), cp.CHART_MONTHS)
+        # the table and the total are the balance at the as-of date, not the chart's first point
+        chf_balance = round(sum(amount for _, amount in self.movements[CHF_ACCOUNT]), 2)
+        usd_balance_chf = round(sum(amount for _, amount in self.movements[USD_ACCOUNT]) * 0.8, 2)
+        self.assertEqual(total, round(chf_balance + usd_balance_chf, 2))
+        self.assertEqual(rows[0]["balance"], chf_balance)
 
     def test_no_accounts_is_an_empty_table_with_a_zero_total(self):
         rows, chart, total, missing = cp.build([], {}, {}, D(2019, 2, 28), [D(2019, 1, 31)])

@@ -44,7 +44,8 @@ def columns():
     return [
         {"label": _("Week"), "fieldname": "week", "fieldtype": "Int", "width": 70},
         {"label": _("Expected"), "fieldname": "expected", "fieldtype": "Date", "width": 110},
-        {"label": _("Type"), "fieldname": "type", "fieldtype": "Data", "width": 130},
+        # wide enough for the longest kind label, "Expected payments for new purchase bills" (about 300 px at 1440 px)
+        {"label": _("Type"), "fieldname": "type", "fieldtype": "Data", "width": 300},
         {"label": _("Party"), "fieldname": "party", "fieldtype": "Data", "width": 200},
         {"label": _("Document type"), "fieldname": "document_type", "fieldtype": "Data", "width": 130},
         {"label": _("Document"), "fieldname": "document", "fieldtype": "Data", "width": 170},
