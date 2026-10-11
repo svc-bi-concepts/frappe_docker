@@ -95,6 +95,26 @@ class StepsTest(unittest.TestCase):
         self.assertIn("gebuev", swiss_setup.STEPS)
         self.assertNotIn("freeze", swiss_setup.STEPS)
 
+    def test_payslip_is_a_step(self):
+        self.assertIn("payslip", swiss_setup.STEPS)
+
+    def test_the_payslip_html_is_the_bi_payroll_app_s_template(self):
+        self.assertIn("apps/bi_payroll/bi_payroll/lohnabrechnung.html", swiss_setup.PAYSLIP_HTML)
+
+
+class PayslipChangesTest(unittest.TestCase):
+    # The Lohnabrechnung format is in place when it carries the file's HTML and is not disabled.
+    IN_PLACE = {"html": "<p>slip</p>", "disabled": 0}
+
+    def test_a_format_in_place_wants_no_change(self):
+        self.assertEqual(swiss_setup.payslip_changes(self.IN_PLACE, "<p>slip</p>"), {})
+
+    def test_changed_html_updates_the_format(self):
+        self.assertEqual(swiss_setup.payslip_changes(self.IN_PLACE, "<p>new</p>"), {"html": "<p>new</p>"})
+
+    def test_a_disabled_format_is_enabled_again(self):
+        self.assertEqual(swiss_setup.payslip_changes({**self.IN_PLACE, "disabled": 1}, "<p>slip</p>"), {"disabled": 0})
+
 
 # Invented IBANs and account names only: the test data is not company data.
 TEST_IBAN = "CH0000000000000000001"

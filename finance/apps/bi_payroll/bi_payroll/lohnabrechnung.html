@@ -1,0 +1,106 @@
+<!--
+  Print format "Lohnabrechnung" (Jinja), installed by swiss-setup.sh, step payslip, default of
+  Salary Slip. Generic Swiss payslip: company and employee come from the records at print time,
+  no company data in this file. Every value is prepared by bi_payroll.payslip (the jinja method
+  payslip_data, hooks.py) from the slip's own rows and the rates copied onto it; the offline
+  tests (test_payslip.py) render this file with an invented employee.
+-->
+<style>
+  .bi-lab { font-size: 10pt; }
+  .bi-lab table { width: 100%; border-collapse: collapse; }
+  .bi-lab th, .bi-lab td { padding: 3px 4px; vertical-align: top; }
+  .bi-lab thead th { border-bottom: 1px solid #000; text-align: left; }
+  .bi-lab .num { text-align: right; white-space: nowrap; }
+  .bi-lab .total td { border-top: 1px solid #000; font-weight: bold; }
+  .bi-lab h2 { font-size: 11pt; margin: 0 0 2mm 0; }
+  .bi-lab section { page-break-inside: avoid; margin-top: 7mm; }
+</style>
+{% set d = payslip_data(doc) %}
+<div class="bi-lab">
+  <table>
+    <tr>
+      <td style="width: 55%;"><strong>{{ d.company }}</strong></td>
+      <td style="width: 45%;">
+        <strong style="font-size: 12pt;">Lohnabrechnung</strong><br>
+        Periode: {{ d.period }}
+        {% if d.employment %}<br>Anstellungsart: {{ d.employment }}{% endif %}
+      </td>
+    </tr>
+    <tr>
+      <td colspan="2" style="padding-top: 5mm;">
+        <strong>{{ d.employee_name }}</strong>
+        {% if d.ahv_masked %}<br>AHV-Nr.: {{ d.ahv_masked }}{% endif %}
+      </td>
+    </tr>
+  </table>
+
+  <section>
+    <h2>Verdienste</h2>
+    <table>
+      <thead>
+        <tr><th>Bezeichnung</th><th class="num">Betrag CHF</th></tr>
+      </thead>
+      <tbody>
+        {% for row in d.earnings %}
+        <tr><td>{{ row.label }}</td><td class="num">{{ row.amount }}</td></tr>
+        {% endfor %}
+        <tr class="total"><td>Bruttolohn</td><td class="num">{{ d.gross }}</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Abzüge</h2>
+    <table>
+      <thead>
+        <tr><th>Bezeichnung</th><th>Ansatz</th><th class="num">Basis CHF</th><th class="num">Betrag CHF</th></tr>
+      </thead>
+      <tbody>
+        {% for row in d.deductions %}
+        <tr>
+          <td>{{ row.label }}</td>
+          <td>{{ row.rate }}</td>
+          <td class="num">{{ row.base }}</td>
+          <td class="num">{{ row.amount }}</td>
+        </tr>
+        {% endfor %}
+        <tr class="total"><td colspan="3">Total Abzüge</td><td class="num">{{ d.total_deduction }}</td></tr>
+        <tr class="total"><td colspan="3">Nettolohn</td><td class="num">{{ d.net }}</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Auszahlung</h2>
+    <p style="margin: 0;">Ausbezahlter Betrag: <strong>CHF {{ d.paid_amount }}</strong>
+    {% if d.bank_last_digits %}auf Konto •••• {{ d.bank_last_digits }}{% endif %}</p>
+  </section>
+
+  <section>
+    <h2>Arbeitgeberbeiträge (Information)</h2>
+    <table>
+      <thead>
+        <tr><th>Bezeichnung</th><th>Ansatz</th><th class="num">Basis CHF</th><th class="num">Betrag CHF</th></tr>
+      </thead>
+      <tbody>
+        {% for row in d.employer_shares %}
+        <tr>
+          <td>{{ row.label }}</td>
+          <td>{{ row.rate }}</td>
+          <td class="num">{{ row.base }}</td>
+          <td class="num">{{ row.amount }}</td>
+        </tr>
+        {% endfor %}
+        <tr class="total"><td colspan="3">Total Arbeitgeberbeiträge</td><td class="num">{{ d.employer_total }}</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Jahr bis heute</h2>
+    <table>
+      <tr><td>Bruttolohn</td><td class="num">{{ d.year_to_date_gross }}</td></tr>
+      <tr><td>Nettolohn</td><td class="num">{{ d.year_to_date_net }}</td></tr>
+    </table>
+  </section>
+</div>

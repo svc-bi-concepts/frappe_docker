@@ -24,6 +24,12 @@ doc_events = {
 # the Employee form's Quellensteuer code dropdown and its canton filter (public/js/employee.js)
 doctype_js = {"Employee": "public/js/employee.js"}
 
+# Jinja print formats cannot import Python: the Lohnabrechnung (lohnabrechnung.html) renders the
+# rows prepared by bi_payroll.payslip through this method (as bi_finance does for the QR slip).
+jinja = {
+    "methods": ["bi_payroll.swiss_payroll.payslip_data"],
+}
+
 after_install = "bi_payroll.swiss_payroll.ensure_structure"
 after_migrate = [
     "bi_payroll.swiss_payroll.ensure_structure",

@@ -1,6 +1,6 @@
 """Swiss setup of company BI Concepts, run inside the backend container by
 swiss-setup.sh. Steps are named on the command line (coa, vat, fiscal,
-fields, currencies, banks, gebuev, qrbill, host, payments); each one is re-runnable and skips what
+fields, currencies, banks, gebuev, qrbill, payslip, host, payments); each one is re-runnable and skips what
 already exists. `freeze <date> [--apply]` is a separate command: it closes the
 books up to a date and is a dry run unless --apply is given."""
 import csv
@@ -492,6 +492,11 @@ def payments():
 PRINT_FORMAT = "BI Sales Invoice QR"
 QRBILL_HTML = "/home/frappe/frappe-bench/apps/bi_finance/bi_finance/bi_sales_invoice_qr.html"
 
+# The payslip format is a Jinja file of the bi_payroll app (finance/apps/bi_payroll), whose rows
+# come from bi_payroll/payslip.py through the jinja method payslip_data (hooks.py).
+LOHNABRECHNUNG = "Lohnabrechnung"
+PAYSLIP_HTML = "/home/frappe/frappe-bench/apps/bi_payroll/bi_payroll/lohnabrechnung.html"
+
 
 def host():
     # wkhtmltopdf runs in the backend container and fetches /assets from the site's host_name.
@@ -557,6 +562,57 @@ def qrbill_default():
     frappe.clear_cache(doctype="Sales Invoice")
     frappe.db.commit()
     say(f"qrbill: default print format of Sales Invoice set to {PRINT_FORMAT}")
+
+
+def payslip_changes(doc, html):
+    # The fields of an existing Lohnabrechnung Print Format that differ from the file: {} in place.
+    want = {"html": html, "disabled": 0}
+    return {field: value for field, value in want.items() if doc.get(field) != value}
+
+
+def payslip():
+    # The payslip format; payslip_default() sets it as the default print format of Salary Slip.
+    with open(PAYSLIP_HTML, encoding="utf-8") as f:
+        html = f.read()
+    if frappe.db.exists("Print Format", LOHNABRECHNUNG):
+        doc = frappe.get_doc("Print Format", LOHNABRECHNUNG)
+        changes = payslip_changes(doc, html)
+        if not changes:
+            say("payslip: print format in place")
+            return
+        for field, value in changes.items():
+            doc.set(field, value)
+        doc.save()
+        say(f"payslip: print format {LOHNABRECHNUNG} updated ({', '.join(changes)})")
+    else:
+        frappe.get_doc({
+            "doctype": "Print Format",
+            "name": LOHNABRECHNUNG,
+            "doc_type": "Salary Slip",
+            "module": "HR",
+            "custom_format": 1,
+            "print_format_type": "Jinja",
+            "standard": "No",
+            "disabled": 0,
+            "html": html,
+        }).insert()
+        say(f"payslip: print format {LOHNABRECHNUNG} created")
+    frappe.db.commit()
+    payslip_default()
+
+
+def payslip_default():
+    # The default print format of Salary Slip, always (the bead's decision: Benchi asked for the
+    # HRMS integration), as a Property Setter so a migrate keeps it. The Print Format itself is
+    # not a fixture: the setup step installs it from the app's file, as qrbill does.
+    filters = {"doc_type": "Salary Slip", "doctype_or_field": "DocType", "property": "default_print_format"}
+    if frappe.db.get_value("Property Setter", filters, "value") == LOHNABRECHNUNG:
+        say(f"payslip: default print format of Salary Slip is {LOHNABRECHNUNG} already")
+        return
+    frappe.make_property_setter("Salary Slip", None, "default_print_format", LOHNABRECHNUNG, "Data", for_doctype=True)
+    frappe.clear_cache(doctype="Salary Slip")
+    frappe.db.commit()
+    say(f"payslip: default print format of Salary Slip set to {LOHNABRECHNUNG}")
 
 
 def banks():
@@ -629,7 +685,7 @@ def freeze(date, apply):
 
 
 STEPS = {"coa": coa, "vat": vat, "fiscal": fiscal, "fields": fields, "currencies": currencies, "banks": banks,
-         "gebuev": gebuev, "qrbill": qrbill, "host": host, "payments": payments}
+         "gebuev": gebuev, "qrbill": qrbill, "payslip": payslip, "host": host, "payments": payments}
 
 if __name__ == "__main__":
     args = sys.argv[1:]

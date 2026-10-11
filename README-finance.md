@@ -97,3 +97,20 @@ probing mutations no longer need to purge the user cache manually. Upstream's
 pre-commit lint runs only if `pre-commit` is installed.
 
 Not covered here: backups and upgrades. Those come in later beads.
+
+## Payslip (Lohnabrechnung)
+
+The payslip is bi_payroll's print format `Lohnabrechnung` on Salary Slip: a generic German A4
+sheet (header with company, employee, masked AHV number and period; earnings; deductions with
+base and rate where the formula has one; net pay and the paid-out amount with the bank account's
+last digits; the employer's shares in a separate information block; year-to-date gross and net).
+No company data is in the repo: company and employee come from the records at print time, and
+the rows come from the slip's own tables and the rates copied onto it
+(`finance/apps/bi_payroll/bi_payroll/payslip.py`, prepared for the template
+`lohnabrechnung.html` through the jinja method `payslip_data`).
+
+Installed by `swiss-setup.sh payslip` (creates or updates the format from the app's file and
+makes it the Salary Slip default with a Property Setter; re-runnable). The step runs live only
+in the go-live bead after the HR train lands, with backup, one writer and ledgerdemain's go.
+Offline: `python3 -m unittest bi_payroll.test_payslip` renders and checks the data with an
+invented employee; the numbers of a printed slip must equal the slip's own.

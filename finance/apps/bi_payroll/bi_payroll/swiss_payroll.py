@@ -11,6 +11,7 @@ from decimal import Decimal
 import frappe
 from frappe.utils import flt, getdate
 
+from bi_payroll.payslip import prepare
 from bi_payroll.quellensteuer import parse_tariff_file, qst_amount
 from bi_payroll.swiss_rates import RATE_FIELDS, STRUCTURE_DEDUCTIONS, STRUCTURE_EARNINGS, missing_components
 
@@ -184,6 +185,28 @@ def qst_codes_for_canton(canton=None):
         "QST Tariff", filters=filters, fields=["tariff_code"], group_by="tariff_code", order_by="tariff_code asc",
         pluck="tariff_code",
     )
+
+
+def payslip_data(doc):
+    # The jinja method of the Lohnabrechnung print format (hooks.py; a Jinja print format cannot
+    # import Python). Fetches what the slip does not embed: the Employee (AHV number, birth date,
+    # canton and code), the assignment valid in the period (its insured salary) and the company
+    # name, then hands everything to the pure prepare (bi_payroll/payslip.py, test_payslip.py).
+    employee = frappe.get_doc("Employee", doc.employee) if doc.employee else None
+    assignment = None
+    if doc.employee and doc.salary_structure:
+        name = frappe.get_all(
+            "Salary Structure Assignment",
+            filters={"employee": doc.employee, "salary_structure": doc.salary_structure, "docstatus": 1,
+                     "from_date": ["<=", doc.start_date]},
+            order_by="from_date desc", limit_page_length=1, pluck="name",
+        )
+        if name:
+            assignment = frappe.db.get_value(
+                "Salary Structure Assignment", name[0], ["swiss_bvg_insured_salary"], as_dict=True
+            )
+    company = frappe.db.get_value("Company", doc.company, "company_name") if doc.company else None
+    return prepare(doc, employee=employee, assignment=assignment, company_name=company)
 
 
 @frappe.whitelist()
