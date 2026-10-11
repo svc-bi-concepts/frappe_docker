@@ -2,7 +2,7 @@
 
     python3 -m unittest bi_payroll.test_sidebar
 
-from this app's directory. The Sidebar is what the module's left-hand menu reads (sidebar/bi_payroll/bi_payroll.json,
+from this app's directory. The Sidebar is what the module's left-hand menu reads (sidebar/swiss_payroll/swiss_payroll.json,
 in the module folder, as bi_finance's is); the Dock is what puts "Swiss Payroll" on ERPNext's rail (dock/bi_payroll/,
 app-rooted, mount_on erpnext: one shell with the HR part, Benchi 2026-10-12). The app has no apps-screen tile.
 
@@ -19,7 +19,7 @@ from bi_payroll import hooks
 from bi_payroll.test_layout import PACKAGE, modules, scrub
 
 MODULE = os.path.join(PACKAGE, scrub(modules()[0]))
-SIDEBAR = os.path.join(MODULE, "sidebar", "bi_payroll", "bi_payroll.json")
+SIDEBAR = os.path.join(MODULE, "sidebar", "swiss_payroll", "swiss_payroll.json")
 DOCK = os.path.join(PACKAGE, "dock", "bi_payroll", "bi_payroll.json")
 
 # the rows hrms ships: linked here, never claimed, and not ours to find in this app
@@ -54,7 +54,7 @@ class Sidebar(unittest.TestCase):
 
     def test_the_document_is_the_module_sidebar_under_the_swiss_payroll_title(self):
         self.assertEqual(self.doc["doctype"], "Sidebar")
-        self.assertEqual(self.doc["name"], "BI Payroll")
+        self.assertEqual(self.doc["name"], "Swiss Payroll")
         self.assertEqual(self.doc["module"], "BI Payroll")
         self.assertEqual(self.doc["title"], "Swiss Payroll")
         self.assertEqual(self.doc["header_icon"], "wallet-duotone")
@@ -133,7 +133,7 @@ class Dock(unittest.TestCase):
 
     def test_the_dock_rail_opens_the_module_sidebar_that_ships(self):
         items = self.dock["items"]
-        self.assertEqual([(item["link_type"], item["link_to"]) for item in items], [("Sidebar", "BI Payroll")])
+        self.assertEqual([(item["link_type"], item["link_to"]) for item in items], [("Sidebar", "Swiss Payroll")])
         self.assertEqual(items[0]["title"], "Swiss Payroll")
         self.assertEqual(self.doc["name"], items[0]["link_to"])
 
@@ -145,7 +145,7 @@ class Layout(unittest.TestCase):
     def test_the_sidebar_and_the_dock_are_in_the_stamp_manifest(self):
         with open(os.path.join(PACKAGE, "synced_manifest.json"), encoding="utf-8") as f:
             recorded = json.load(f)
-        self.assertIn("bi_payroll/sidebar/bi_payroll/bi_payroll.json", recorded)
+        self.assertIn("bi_payroll/sidebar/swiss_payroll/swiss_payroll.json", recorded)
         self.assertIn("dock/bi_payroll/bi_payroll.json", recorded)
 
 

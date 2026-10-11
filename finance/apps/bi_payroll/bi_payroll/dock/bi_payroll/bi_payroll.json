@@ -5,9 +5,9 @@
  "doctype": "Dock",
  "idx": 0,
  "items": [
-  {"icon": "hand-coins", "link_to": "BI Payroll", "link_type": "Sidebar", "title": "Swiss Payroll"}
+  {"icon": "hand-coins", "link_to": "Swiss Payroll", "link_type": "Sidebar", "title": "Swiss Payroll"}
  ],
- "modified": "2026-10-12 01:00:00.000000",
+ "modified": "2026-10-12 02:00:00.000000",
  "modified_by": "Administrator",
  "mount_on": "erpnext",
  "name": "bi_payroll",

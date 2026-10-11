@@ -15,12 +15,12 @@
   "modified": "2026-10-11 13:00:00.000000",
   "sha": "11e71297d432a375cea5fe8a04b7e86dbe4e3e8aad80559faabf75f443170ec9"
  },
- "bi_payroll/sidebar/bi_payroll/bi_payroll.json": {
-  "modified": "2026-10-12 01:00:00.000000",
-  "sha": "334302fc14f647d2d98f257dc578aab8db01d8755b699b687b6a14bbea1df708"
+ "bi_payroll/sidebar/swiss_payroll/swiss_payroll.json": {
+  "modified": "2026-10-12 02:00:00.000000",
+  "sha": "ec26c2663d749ca8d7bbaf5dbdb64e6f1c6c8b7cb537ad3fe391d3bf23b71731"
  },
  "dock/bi_payroll/bi_payroll.json": {
-  "modified": "2026-10-12 01:00:00.000000",
-  "sha": "4ab8d9fb59b2dd24cd0afdb766285ad5f265ec3d42e196304f9eab74fee4f109"
+  "modified": "2026-10-12 02:00:00.000000",
+  "sha": "2ec6742f1ca60bc8fb02c53508c9fab51d8adcab4c9b91d7432a9e03d70916f6"
  }
 }

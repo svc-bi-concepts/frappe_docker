@@ -19,10 +19,10 @@
   {"child": 1, "collapsible": 1, "indent": 0, "is_default_module": 0, "keep_closed": 0, "label": "Salary Structure", "link_to": "Salary Structure", "link_type": "DocType", "show_arrow": 0, "type": "Link"},
   {"child": 1, "collapsible": 1, "indent": 0, "is_default_module": 0, "keep_closed": 0, "label": "Salary Component", "link_to": "Salary Component", "link_type": "DocType", "show_arrow": 0, "type": "Link"}
  ],
- "modified": "2026-10-12 01:00:00.000000",
+ "modified": "2026-10-12 02:00:00.000000",
  "modified_by": "Administrator",
  "module": "BI Payroll",
- "name": "BI Payroll",
+ "name": "Swiss Payroll",
  "owner": "Administrator",
  "sequence_id": 0.0,
  "standard": 1,
