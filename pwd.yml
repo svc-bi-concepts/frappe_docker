@@ -3,9 +3,7 @@ services:
     image: frappe/erpnext:v16.50.0
     networks:
       - frappe_network
-    deploy:
-      restart_policy:
-        condition: on-failure
+    restart: unless-stopped
     volumes:
       - sites:/home/frappe/frappe-bench/sites
       - logs:/home/frappe/frappe-bench/logs
@@ -94,9 +92,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-    deploy:
-      restart_policy:
-        condition: on-failure
+    restart: unless-stopped
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
@@ -114,9 +110,7 @@ services:
     depends_on:
       - websocket
       - backend
-    deploy:
-      restart_policy:
-        condition: on-failure
+    restart: unless-stopped
     command:
       - nginx-entrypoint.sh
     environment:
@@ -138,9 +132,7 @@ services:
     image: frappe/erpnext:v16.50.0
     networks:
       - frappe_network
-    deploy:
-      restart_policy:
-        condition: on-failure
+    restart: unless-stopped
     command:
       - bench
       - worker
@@ -160,9 +152,7 @@ services:
     image: frappe/erpnext:v16.50.0
     networks:
       - frappe_network
-    deploy:
-      restart_policy:
-        condition: on-failure
+    restart: unless-stopped
     command:
       - bench
       - worker
@@ -182,9 +172,7 @@ services:
     image: redis:6.2-alpine
     networks:
       - frappe_network
-    deploy:
-      restart_policy:
-        condition: on-failure
+    restart: unless-stopped
     volumes:
       - redis-queue-data:/data
 
@@ -192,17 +180,13 @@ services:
     image: redis:6.2-alpine
     networks:
       - frappe_network
-    deploy:
-      restart_policy:
-        condition: on-failure
+    restart: unless-stopped
 
   scheduler:
     image: frappe/erpnext:v16.50.0
     networks:
       - frappe_network
-    deploy:
-      restart_policy:
-        condition: on-failure
+    restart: unless-stopped
     command:
       - bench
       - schedule
@@ -217,9 +201,7 @@ services:
     image: frappe/erpnext:v16.50.0
     networks:
       - frappe_network
-    deploy:
-      restart_policy:
-        condition: on-failure
+    restart: unless-stopped
     command:
       - node
       - /home/frappe/frappe-bench/apps/frappe/socketio.js

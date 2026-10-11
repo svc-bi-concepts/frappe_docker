@@ -6,6 +6,14 @@ set -e
 # The finance stack's compose files (live and the HRMS copy) must parse together.
 docker compose -f pwd.yml -f finance-local.yml config -q
 docker compose -f pwd.yml -f finance-copy.yml config -q
+# The long-running services come back after a VM restart (restart: unless-stopped); the one-shot ones do not.
+docker compose -f pwd.yml -f finance-local.yml config --format json | python3 -c "
+import json, sys
+s = json.load(sys.stdin)['services']
+long = ['backend', 'db', 'frontend', 'queue-long', 'queue-short', 'redis-cache', 'redis-queue', 'scheduler', 'websocket']
+assert all(s[n].get('restart') == 'unless-stopped' for n in long), [n for n in long if s[n].get('restart') != 'unless-stopped']
+assert all(s[n].get('restart') != 'unless-stopped' for n in ['configurator', 'create-site'])
+"
 # The bi_finance layout and stamp guard, stdlib only (no frappe), so it runs on the host.
 # A synced JSON changed without a newer 'modified' fails here; see test_layout.py.
 (cd finance/apps/bi_finance && python3 -m unittest bi_finance.test_layout bi_finance.test_wise_client bi_finance.test_estv_vat_xml bi_finance.test_mwst_payment bi_finance.test_treasury_card bi_finance.test_vat_declaration_client)

@@ -261,6 +261,13 @@ docker compose -p frappe-finance restart frontend websocket
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/api/method/ping   # must print 200
 ```
 
+After a VM restart (colima, a reboot of the Mac mini) the containers come back on their own:
+`restart: unless-stopped` is on the long-running services in `pwd.yml` (db, redis, backend,
+frontend, websocket, queue-short, queue-long, scheduler), so a clean stop does not leave them
+down. nginx in `frontend` may still keep the backend IP from before the restart, so the same
+ping can answer 502. If it does, restart `frontend` and `websocket` as above and check the ping
+again; no recreate is needed.
+
 Back up first (`bench --site frontend backup --with-files`), and switch only
 when no other session is writing to ERPNext. A deploy runs the switch script,
 which does the restart and the ping, then the clean-up:
