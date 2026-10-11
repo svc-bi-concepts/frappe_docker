@@ -696,6 +696,45 @@ class ManualInputsAndPayroll(unittest.TestCase):
         self.assertIsNone(result["accrued_payroll"])
         self.assertFalse(any("accrued net pay" in l["note"] for l in result["lines"]))
 
+    def test_slips_of_the_as_of_month_with_a_credit_1091_leave_the_later_runs_only(self):
+        # the double count: October's accrual is posted on the as-of date (10 October) while its run day (30 October)
+        # is still ahead, so the accrued line is October's net and the 30 October run is not forecast again
+        slips = [("PE-10", D(2026, 10, 31), 2700.0)]
+        with self.books(), mock.patch.object(cff, "hrms_slips", return_value=slips), \
+                mock.patch.object(cff, "clearing_balance", return_value=2500.0):
+            result = cff.compute("Test Company", AS_OF)
+        self.assertEqual([(day, amount) for day, amount, _note in self.payroll(result)],
+                         [(AS_OF + datetime.timedelta(days=1), 2500.0), (D(2026, 11, 30), 2700.0),
+                          (D(2026, 12, 31), 2700.0)])
+
+    def test_a_cleared_1091_keeps_every_run(self):
+        # the bank entry posted: no accrued line, so no month is skipped
+        slips = [("PE-10", D(2026, 10, 31), 2700.0)]
+        with self.books(), mock.patch.object(cff, "hrms_slips", return_value=slips):
+            result = cff.compute("Test Company", AS_OF)
+        self.assertEqual([(day, amount) for day, amount, _note in self.payroll(result)],
+                         [(D(2026, 10, 30), 2700.0), (D(2026, 11, 30), 2700.0), (D(2026, 12, 31), 2700.0)])
+        self.assertIsNone(result["accrued_payroll"])
+
+    def test_an_as_of_after_the_run_day_keeps_the_accrued_line_and_the_later_runs(self):
+        # the 30 October run is past the as-of date (the books carry it), the 1091 credit is the open accrual:
+        # nothing skipped, nothing doubled
+        slips = [("PE-10", D(2026, 10, 31), 2700.0)]
+        with self.books(), mock.patch.object(cff, "hrms_slips", return_value=slips), \
+                mock.patch.object(cff, "clearing_balance", return_value=2500.0):
+            result = cff.compute("Test Company", D(2026, 10, 31))
+        self.assertEqual([(day, amount) for day, amount, _note in self.payroll(result)],
+                         [(D(2026, 11, 1), 2500.0), (D(2026, 11, 30), 2700.0), (D(2026, 12, 31), 2700.0),
+                          (D(2027, 1, 29), 2700.0)])
+
+    def test_a_credit_1091_without_slips_keeps_the_trailing_runs(self):
+        # no slips, so no month is known to skip: the trailing runs stay and the accrued line carries the balance
+        with self.books(), mock.patch.object(cff, "clearing_balance", return_value=2500.0):
+            result = cff.compute("Test Company", AS_OF)
+        self.assertEqual([(day, amount) for day, amount, _note in self.payroll(result)],
+                         [(AS_OF + datetime.timedelta(days=1), 2500.0), (D(2026, 10, 30), 3000.0),
+                          (D(2026, 11, 30), 3000.0), (D(2026, 12, 31), 3000.0)])
+
     def test_the_settings_level_wins_over_the_slips(self):
         slips = [("PE-9", D(2026, 9, 30), 2700.0)]
         with self.books(expected=4500.0), mock.patch.object(cff, "hrms_slips", return_value=slips):

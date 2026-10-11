@@ -570,13 +570,17 @@ def compute(company, as_of, include_run_rate=True, include_new_purchases=True, i
 
     expected, manual = manual_inputs()
     trailing = cf.payroll_from_postings(cf.payroll_postings(personnel_postings(company, as_of)))
-    hrms = cf.hrms_net(hrms_slips(company, as_of))
+    slips = hrms_slips(company, as_of)
+    hrms = cf.hrms_net(slips)
     amount = cf.payroll_level(expected, trailing, hrms)
+    accrued = cf.accrued_net(clearing_balance(company, as_of))
     if amount:
         note = _(cf.payroll_basis_note(expected, hrms))
-        for day in cf.payroll_dates(as_of, horizon):
+        # while the accrued line carries the latest slips' month's net (the accrual posted before that month's run
+        # day), the run of that month is not forecast again; a cleared 1091 or no slips keeps every run
+        skip_month = cf.hrms_latest_month(slips) if accrued else None
+        for day in cf.payroll_dates(as_of, horizon, skip_month):
             lines.append(line("payroll", day, amount, "", "", "", note))
-    accrued = cf.accrued_net(clearing_balance(company, as_of))
     if accrued:
         lines.append(line("payroll", as_of + datetime.timedelta(days=1), accrued, "", "", "",
                           _("accrued net pay on 1091, not yet paid")))

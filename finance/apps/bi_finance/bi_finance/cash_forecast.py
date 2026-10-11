@@ -285,6 +285,16 @@ def hrms_net(slips):
     return round(sum(net for entry, end_date, net in slips if (end_date, entry) == latest), 2)
 
 
+def hrms_latest_month(slips):
+    """slips: (payroll entry, end date, net pay) as hrms_net reads them. The (year, month) of the latest submitted
+    slips' end date, the entry name breaking a tie. None without slips. That month's net is what the 1091 accrued
+    line carries, so while that line exists the month's run is not forecast again (payroll_dates' skip_month)."""
+    if not slips:
+        return None
+    latest_end = max((end_date, entry) for entry, end_date, _net in slips)[0]
+    return latest_end.year, latest_end.month
+
+
 def accrued_net(clearing_balance):
     """The salary clearing account's (1091) balance on the as-of date, credit minus debit, as a positive outflow
     when it is a credit: the accrual credits 1091 with the net and the bank payment debits it later, so a credit
@@ -342,15 +352,17 @@ def payroll_run(year, month):
     return day - datetime.timedelta(days=max(day.weekday() - 4, 0))
 
 
-def payroll_dates(as_of, end):
+def payroll_dates(as_of, end, skip_month=None):
     """Each monthly salary run after as_of and up to end. A run on as_of itself is not one: the books are read through
-    as_of, so a run paid that day is already in the opening balance (the back-test of erp-q1w8 reads it so)."""
+    as_of, so a run paid that day is already in the opening balance (the back-test of erp-q1w8 reads it so).
+    skip_month: a (year, month) whose run is left out — while the accrued line carries the latest slips' month's net
+    (hrms_latest_month), that month's run would count the same net twice; the default keeps every run."""
     year, month = as_of.year, as_of.month
     while True:
         run = payroll_run(year, month)
         if run > end:
             return
-        if run > as_of:
+        if run > as_of and (year, month) != skip_month:
             yield run
         year, month = (year + 1, 1) if month == 12 else (year, month + 1)
 
