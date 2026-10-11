@@ -16,11 +16,11 @@ they use, unset they read the real path, as documented in README.md.
 Standard library only.
 """
 
+import atexit
 import os
 import shutil
 import sys
 import tempfile
-import unittest
 
 REAL = "/Users/bsaladin/ws_yardr_finance/private"
 WRITERS = ("write_private", "write_private_bytes", "_write_private")
@@ -34,6 +34,7 @@ def setUpModule():
     if _temp is None:
         _temp = tempfile.mkdtemp(prefix="bexio-test-private-")
         os.environ["BEXIO_PRIVATE"] = _temp
+        atexit.register(shutil.rmtree, _temp, ignore_errors=True)  # one folder for the whole run: per-module cleanup would delete it under the next module
     real = os.path.realpath(REAL)
     here = os.path.dirname(os.path.abspath(__file__))
     for mod in list(sys.modules.values()):
@@ -48,7 +49,6 @@ def setUpModule():
             elif callable(value) and getattr(value, "__name__", None) in WRITERS \
                     and not getattr(value, "_private_guarded", False):
                 setattr(mod, name, _guarded(value, real))
-    unittest.addModuleCleanup(shutil.rmtree, _temp, ignore_errors=True)
 
 
 def _guarded(write, real):

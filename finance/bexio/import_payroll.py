@@ -65,8 +65,8 @@ def rule5_conflicts(data):
 
 
 def vat_booked_ids(private=None):
-    private = private or im.PRIVATE
     """The journal ids the VAT Journal Entries of import_vat_fix book, from the private id files (second word of each line)."""
+    private = private or im.PRIVATE
     ids = set()
     for name in VAT_ID_FILES:
         with open(os.path.join(private, name), encoding="utf-8") as f:
