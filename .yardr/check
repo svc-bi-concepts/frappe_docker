@@ -38,6 +38,7 @@ assert all(s[n].get('restart') != 'unless-stopped' for n in ['configurator', 'cr
 # The copy stack's guards (live project and missing image refused) with stub docker, and its compose file's restarts and ports.
 # The D4 patch check (update-check.sh): invented tag lists, the upstream replaced, no network.
 # swiss-setup.py's pure helpers (frappe mocked): the payslip step among them.
+# swiss-setup.py's pure helpers (frappe mocked): the payslip and the hr steps among them.
 (cd finance/scripts && python3 -m unittest test_build_image test_switch_image test_copy_stack test_update_check test_load_swiss_rates test_swiss_setup)
 # Upstream's own lint, when pre-commit is installed (optional for now).
 if command -v pre-commit >/dev/null; then

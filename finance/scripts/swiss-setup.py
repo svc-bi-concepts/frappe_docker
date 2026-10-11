@@ -1,6 +1,6 @@
 """Swiss setup of company BI Concepts, run inside the backend container by
 swiss-setup.sh. Steps are named on the command line (coa, vat, fiscal,
-fields, currencies, banks, gebuev, qrbill, payslip, host, payments); each one is re-runnable and skips what
+fields, currencies, banks, gebuev, qrbill, payslip, host, payments, hr); each one is re-runnable and skips what
 already exists. `freeze <date> [--apply]` is a separate command: it closes the
 books up to a date and is a dry run unless --apply is given."""
 import csv
@@ -487,6 +487,137 @@ def payments():
     frappe.db.commit()
 
 
+# HR (HR 5, erp-mvr9). The roles HRMS v16.50.0 installs: the role profile "HR"
+# holds HR User, HR Manager, Leave Approver and Expense Approver (hrms/setup.py),
+# and the custom role "Employee Self Service" gates the self-service portal. It
+# ships no Payroll Manager: the payroll doctypes (Salary Slip, Payroll Entry)
+# are the HR Manager's. That role is granted only when the site has it; the
+# step never creates a role.
+HR_ROLES = ["HR Manager", "HR User", "Payroll Manager", "Leave Approver"]
+# Payroll Settings (single), Benchi 2026-10-11: payroll works on Leave, not
+# attendance; holidays count in the working days; no slip is e-mailed —
+# Salary Slip.on_submit mails the slip to the employee when this check is on.
+PAYROLL_SETTINGS_WANT = {"payroll_based_on": "Leave", "include_holidays_in_total_working_days": 1,
+                         "email_salary_slip_to_employee": 0}
+# HR Settings (single): v16.50.0 has no switch for employee self-service or for
+# onboarding e-mails. Self-service is off when no enabled user holds the
+# Employee Self Service role and no Employee carries a user; onboarding e-mails
+# go only from Employee Onboarding documents, of which the site has none (the
+# importers write Employees directly). `hr --check` prints the counts.
+HR_SETTINGS_WANT = {}
+# The roles of an enabled user that make it an HR or payroll user in `hr --check`.
+HR_CHECK_ROLES = ("HR Manager", "HR User", "Leave Approver", "Expense Approver",
+                  "Payroll Manager", "Employee Self Service")
+
+
+def hr_grants(wanted, site_roles, user_roles):
+    """wanted: roles the goal names; site_roles: Role names on the site;
+    user_roles: the user's roles. Returns (roles to add, roles the site has
+    no Role document for). A role without a Role document is never added."""
+    have_site, have_user = set(site_roles), set(user_roles)
+    return ([r for r in wanted if r in have_site and r not in have_user],
+            [r for r in wanted if r not in have_site])
+
+
+def single_fixes(want, current, offered):
+    """want: {field: value}; current: {field: value}; offered: the fieldnames
+    the single has. Returns ((field, old, new) to set, fields not offered)."""
+    changes, not_offered = [], []
+    for f, v in want.items():
+        if f not in offered:
+            not_offered.append(f)
+        elif current.get(f) != v:
+            changes.append((f, current.get(f), v))
+    return changes, not_offered
+
+
+def hr():
+    # Benchi's user (HR_USER in the environment, never in this repo) gets the HR
+    # roles; Payroll Settings and HR Settings hold the values above. Read-only
+    # counterpart: hr_check().
+    user_name = os.environ.get("HR_USER", "").strip()
+    if not user_name:
+        sys.exit("hr: HR_USER is not set; the user stays out of this repo (pass HR_USER=<user>)")
+    if not frappe.db.exists("User", user_name):
+        sys.exit(f"hr: no user {user_name}")
+    if not frappe.db.get_value("User", user_name, "enabled"):
+        sys.exit(f"hr: user {user_name} is not enabled")
+
+    site_roles = frappe.get_all("Role", pluck="name")
+    user = frappe.get_doc("User", user_name)
+    to_add, not_offered = hr_grants(HR_ROLES, site_roles, [r.role for r in user.roles])
+    for role in to_add:
+        user.append("roles", {"role": role})
+        say(f"hr: {user_name}: role {role} added")
+    for role in not_offered:
+        say(f"hr: the site has no role {role}; HRMS v16.50.0 installs none and none is created here (payroll sits on HR Manager)")
+    if to_add:
+        user.save()
+    # read-back of every wanted role
+    have = {r.role for r in frappe.get_doc("User", user_name).roles}
+    for role in HR_ROLES:
+        if role in site_roles:
+            say(f"hr: {user_name} {role}: {'yes' if role in have else 'NO'}")
+
+    for single, want in (("Payroll Settings", PAYROLL_SETTINGS_WANT), ("HR Settings", HR_SETTINGS_WANT)):
+        offered = {f.fieldname for f in frappe.get_meta(single).fields if f.fieldname}
+        doc = frappe.get_doc(single)
+        changes, missing = single_fixes(want, {f: doc.get(f) for f in want}, offered)
+        for f, old, v in changes:
+            doc.set(f, v)
+            say(f"hr: {single} {f}: {old!r} -> {v!r}")
+        if changes:
+            doc.save()
+        # read-back of every wanted value the single offers
+        fresh = frappe.get_doc(single)
+        for f in want:
+            if f in offered:
+                say(f"hr: {single} {f} = {fresh.get(f)!r}")
+        for f in missing:
+            say(f"hr: {single} has no field {f}; not set")
+    say("hr: HRMS v16.50.0 has no rounding setting; CHF rounds to 0.05 by the Currency smallest fraction (currencies step)")
+    say("hr: HRMS v16.50.0 has no switch for employee self-service or onboarding e-mails; hr --check reports the counts")
+    frappe.db.commit()
+
+
+def hr_check():
+    # Read-only. User names are not company data, but notes keep counts only.
+    enabled = set(frappe.get_all("User", filters={"enabled": 1}, pluck="name"))
+    holders = [(r.parent, r.role) for r in frappe.get_all(
+        "Has Role", filters={"parenttype": "User", "role": ["in", list(HR_CHECK_ROLES)]},
+        fields=["parent", "role"]) if r.parent in enabled]
+    for user_with_role, role in sorted(holders):
+        say(f"hr --check: {user_with_role}: {role}")
+    say(f"hr --check: {len({u for u, _ in holders})} enabled users hold HR or payroll roles")
+    for single, want in (("Payroll Settings", PAYROLL_SETTINGS_WANT), ("HR Settings", HR_SETTINGS_WANT)):
+        offered = {f.fieldname for f in frappe.get_meta(single).fields if f.fieldname}
+        for f, v in want.items():
+            if f in offered:
+                got = frappe.db.get_single_value(single, f)
+                say(f"hr --check: {single} {f} = {got!r}" + ("" if got == v else f", want {v!r}"))
+    say("hr --check: HRMS v16.50.0 has no rounding setting; CHF rounds to 0.05 by the Currency smallest fraction")
+    say(f"hr --check: {frappe.db.count('Employee', {'user_id': ['is', 'set']})} employees carry a user")
+    say(f"hr --check: {frappe.db.count('Employee Onboarding')} Employee Onboarding documents")
+    user_name = os.environ.get("HR_USER", "").strip()
+    if not user_name:
+        say("hr --check: HR_USER not set; the user's state is not compared")
+        return
+    site_roles = frappe.get_all("Role", pluck="name")
+    to_add, not_offered = hr_grants(HR_ROLES, site_roles,
+                                    [r.role for r in frappe.get_doc("User", user_name).roles])
+    wrong = [f"role {r} missing" for r in to_add]
+    for single, want in (("Payroll Settings", PAYROLL_SETTINGS_WANT), ("HR Settings", HR_SETTINGS_WANT)):
+        offered = {f.fieldname for f in frappe.get_meta(single).fields if f.fieldname}
+        doc = frappe.get_doc(single)
+        fixes, _ = single_fixes(want, {f: doc.get(f) for f in want}, offered)
+        wrong += [f"{single} {f} = {old!r}, want {v!r}" for f, old, v in fixes]
+    for w in wrong:
+        say(f"hr --check: {user_name}: {w}")
+    if wrong:
+        sys.exit(f"hr --check: {len(wrong)} differences")
+    say(f"hr --check: {user_name} holds the offered HR roles and the settings hold the wanted values")
+
+
 # The print format is a Jinja file of the bi_finance app (finance/apps/bi_finance),
 # which the image installs. The app's qrbill.py draws the QR code.
 PRINT_FORMAT = "BI Sales Invoice QR"
@@ -685,7 +816,7 @@ def freeze(date, apply):
 
 
 STEPS = {"coa": coa, "vat": vat, "fiscal": fiscal, "fields": fields, "currencies": currencies, "banks": banks,
-         "gebuev": gebuev, "qrbill": qrbill, "payslip": payslip, "host": host, "payments": payments}
+         "gebuev": gebuev, "qrbill": qrbill, "payslip": payslip, "host": host, "payments": payments, "hr": hr}
 
 if __name__ == "__main__":
     args = sys.argv[1:]
@@ -698,7 +829,10 @@ if __name__ == "__main__":
         if args[:1] == ["freeze"]:
             freeze(*parse_freeze(args[1:]))
         elif check:
-            vat_check()
+            if steps == ["hr"]:
+                hr_check()
+            else:
+                vat_check()
         else:
             for s in steps:
                 STEPS[s]()

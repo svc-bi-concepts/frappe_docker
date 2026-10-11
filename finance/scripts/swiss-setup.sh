@@ -5,8 +5,10 @@
 # installed (finance/docs/erpnext-setup.md).
 #
 #   finance/scripts/swiss-setup.sh                # all steps
-#   finance/scripts/swiss-setup.sh vat fiscal     # some of: coa vat fiscal fields currencies banks gebuev qrbill host payments
+#   finance/scripts/swiss-setup.sh vat fiscal     # some of: coa vat fiscal fields currencies banks gebuev qrbill host payments hr
 #   finance/scripts/swiss-setup.sh vat --check <export dir>   # VAT codes against the export's taxes.json
+#   finance/scripts/swiss-setup.sh hr --check     # read-only: HR roles of enabled users and the two settings
+#   HR_USER=<user> finance/scripts/swiss-setup.sh hr          # the HR roles on that user and the HR settings
 #   finance/scripts/swiss-setup.sh freeze 2025-12-31          # dry run: what a freeze would set
 #   finance/scripts/swiss-setup.sh freeze 2025-12-31 --apply  # sets accounts frozen till that date
 #
@@ -30,6 +32,7 @@ export TAXES_JSON ACCOUNTS_JSON
 # bench's own Python loads the site; the script goes in on stdin so the
 # container needs no copy of it.
 docker compose -p frappe-finance -f pwd.yml -f finance-local.yml exec -T \
-  -e BANKS="${BANKS:-}" -e HOST_NAME="${HOST_NAME:-}" -e TAXES_JSON -e ACCOUNTS_JSON backend \
+  -e BANKS="${BANKS:-}" -e HOST_NAME="${HOST_NAME:-}" -e HR_USER="${HR_USER:-}" \
+  -e TAXES_JSON -e ACCOUNTS_JSON backend \
   sh -c 'cd /home/frappe/frappe-bench/sites && exec ../env/bin/python - "$@"' sh "$@" \
   < finance/scripts/swiss-setup.py

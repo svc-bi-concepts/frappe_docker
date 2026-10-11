@@ -60,7 +60,7 @@ See `finance/docs/operating.md` for the steps in the order they are done.
 
 ## The setup script
 
-`finance/scripts/swiss-setup.sh [coa] [vat] [fiscal] [fields] [currencies] [banks] [qrbill] [host]`
+`finance/scripts/swiss-setup.sh [coa] [vat] [fiscal] [fields] [currencies] [banks] [gebuev] [qrbill] [host] [payments] [hr]`
 pipes `swiss-setup.py` into bench's Python in the backend container. No argument
 runs all steps. Every step skips what exists, so a second run changes nothing.
 
@@ -218,6 +218,47 @@ run unless `--apply` is given. It shows the current freeze, the GL entries that
 the date would cover, and the role allowed to post into frozen periods (set by
 hand; the command does not set it). It refuses to move a freeze back. Not run
 yet: the history import comes first.
+
+**hr.** The HR roles and the HR settings (HR 5, erp-mvr9). The user is named by
+the `HR_USER` environment variable, never in this repo:
+
+```sh
+HR_USER=<user> finance/scripts/swiss-setup.sh hr
+```
+
+The step gives the user the roles HR Manager, HR User and Leave Approver — the
+ones HRMS v16.50.0 installs (role profile "HR" in `hrms/setup.py`, together with
+Expense Approver). A fourth goal role, **Payroll Manager, does not exist in
+HRMS v16.50.0**: the payroll doctypes (Salary Slip, Payroll Entry) belong to HR
+Manager. The step grants it only when the site has the Role document, and never
+creates one, so a later HRMS that ships it is picked up by a rerun.
+
+Payroll Settings: `payroll_based_on` = Leave (not attendance),
+`include_holidays_in_total_working_days` = 1, `email_salary_slip_to_employee`
+= 0 — Salary Slip's `on_submit` mails the slip to the employee exactly when that
+check is on, so off means no slip e-mail on submit and none by hand. HRMS
+v16.50.0 has **no rounding setting**: CHF rounds to 0.05 through the Currency
+smallest fraction, already set by the `currencies` step.
+
+HR Settings: v16.50.0 has **no switch** for employee self-service or for
+onboarding e-mails, and the step invents none. Self-service is off because no
+enabled user holds the "Employee Self Service" role and no Employee carries a
+user; onboarding e-mails go only from Employee Onboarding documents, of which
+the site has none (the importers write Employees directly). `hr --check`
+reports the counts:
+
+```sh
+finance/scripts/swiss-setup.sh hr --check
+```
+
+prints every enabled user that holds an HR or payroll role (HR Manager, HR
+User, Leave Approver, Expense Approver, Payroll Manager, Employee Self
+Service), the two settings' values, the employees that carry a user and the
+Employee Onboarding count. With `HR_USER` set it also compares the wanted state
+and exits 1 on any difference. The API user keeps System Manager and its
+existing roles; the step touches only `HR_USER` (erp-wnx7). Live run and the
+rerun on the copy are the go-live bead's (train rule): backup first, one
+writer, read back, rerun 0.
 
 **Treasury.** The workspace "Treasury" is a file of bi_finance, as are its number cards
 (`bi_finance/bi_finance/number_card/`: the total in CHF, and one card per Bank or Cash account by its

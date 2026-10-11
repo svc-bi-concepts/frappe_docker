@@ -120,6 +120,39 @@ insurer's or the Ausgleichskasse's own sheet before a live run.
 | Net salary payment (pain.001) | erpnextswiss `Payment Proposal` with `Payment Proposal Salary Slip` (the salary side of the payment run). The run in `payment-runs.md` leaves salaries out while the site has no HRMS | pain.001.001.09 as in `payment-runs.md` | Test on a copy after HRMS (erp-xpmr) | `payment-runs.md`; erpnextswiss `payment_proposal_salary_slip` |
 | Employee AHV number | erpnextswiss custom fields `social_security_number` and `old_social_security_number` on Employee | n/a | Present in `v16` (`custom/employee.json`) | erpnextswiss `v16` |
 
+## Roles and settings (erp-mvr9)
+
+What HRMS v16.50.0 installs and what the `hr` setup step makes of it
+(`erpnext-setup.md`, The setup script):
+
+- **Roles.** The role profile "HR" holds HR User, HR Manager, Leave Approver and
+  Expense Approver (`hrms/setup.py`, `DEFAULT_ROLE_PROFILES`); the install also
+  creates the custom role "Employee Self Service", which gates the self-service
+  portal (User Type with `apply_user_permission_on` Employee). There is **no
+  Payroll Manager role in HRMS v16.50.0** (none in the whole tree at the tag):
+  the payroll doctypes — Salary Slip, Salary Structure, Payroll Entry — are the
+  HR Manager's (`payroll_entry.json`: HR Manager only). Benchi's user therefore
+  gets HR Manager, HR User and Leave Approver; Payroll Manager is granted by the
+  step only when the site has the Role document, never created. The API user
+  keeps System Manager and its HR User, and gets nothing more (erp-wnx7).
+- **Payroll Settings.** `payroll_based_on` = Leave (the default),
+  `include_holidays_in_total_working_days` = 1, `email_salary_slip_to_employee`
+  = 0. That last check is the only slip e-mail switch: `salary_slip.py`
+  `on_submit` reads exactly it, so off means no automatic slip e-mail on submit
+  and none by hand. There is **no rounding setting** in v16.50.0; CHF rounds to
+  0.05 through the Currency smallest fraction (`currencies` step).
+- **HR Settings.** v16.50.0 has **no switch** for employee self-service and none
+  for onboarding e-mails, and the step invents none. Self-service is off when no
+  enabled user holds the "Employee Self Service" role and no Employee carries a
+  user (`user_id`); onboarding e-mails go only from Employee Onboarding
+  documents, of which the site has none — the importers write Employees
+  directly. `hr --check` prints the counts (enabled users with HR or payroll
+  roles, employees with a user, Employee Onboarding documents) and, with
+  `HR_USER` set, compares the wanted state, exit 1 on a difference.
+- **No live write in this bead** (train rule): the step and its check are proven
+  on the HRMS copy; the live run (`HR_USER=<user> sh finance/scripts/swiss-setup.sh hr`,
+  backup first, one writer, rerun 0) is listed for the go-live bead (erp-zg4p).
+
 ## Migration from bexio
 
 The bexio payroll export (bead erp-5sbz) is not run yet, so this section maps the entities

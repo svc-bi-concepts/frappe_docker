@@ -101,6 +101,27 @@ class StepsTest(unittest.TestCase):
     def test_the_payslip_html_is_the_bi_payroll_app_s_template(self):
         self.assertIn("apps/bi_payroll/bi_payroll/lohnabrechnung.html", swiss_setup.PAYSLIP_HTML)
 
+    def test_hr_is_a_step(self):
+        self.assertIn("hr", swiss_setup.STEPS)
+
+    def test_payroll_settings_want_holds_benchis_decisions(self):
+        # Benchi 2026-10-11: leave based, holidays counted, no slip e-mails
+        # (Salary Slip.on_submit mails the slip when the check is on).
+        self.assertEqual(swiss_setup.PAYROLL_SETTINGS_WANT, {
+            "payroll_based_on": "Leave",
+            "include_holidays_in_total_working_days": 1,
+            "email_salary_slip_to_employee": 0,
+        })
+
+    def test_hr_settings_wants_nothing(self):
+        # HRMS v16.50.0 has no switch for self-service or onboarding e-mails;
+        # the step must not invent one.
+        self.assertEqual(swiss_setup.HR_SETTINGS_WANT, {})
+
+    def test_the_wanted_roles_are_the_goal_four(self):
+        self.assertEqual(swiss_setup.HR_ROLES,
+                         ["HR Manager", "HR User", "Payroll Manager", "Leave Approver"])
+
 
 class PayslipChangesTest(unittest.TestCase):
     # The Lohnabrechnung format is in place when it carries the file's HTML and is not disabled.
@@ -114,6 +135,42 @@ class PayslipChangesTest(unittest.TestCase):
 
     def test_a_disabled_format_is_enabled_again(self):
         self.assertEqual(swiss_setup.payslip_changes({**self.IN_PLACE, "disabled": 1}, "<p>slip</p>"), {"disabled": 0})
+
+
+class HrGrantsTest(unittest.TestCase):
+    WANTED = swiss_setup.HR_ROLES
+
+    def test_adds_the_missing_roles_the_site_offers(self):
+        site = ["HR Manager", "HR User", "Leave Approver"]
+        to_add, not_offered = swiss_setup.hr_grants(self.WANTED, site, ["HR User"])
+        self.assertEqual(to_add, ["HR Manager", "Leave Approver"])
+        self.assertEqual(not_offered, ["Payroll Manager"])
+
+    def test_a_role_without_a_role_document_is_never_added(self):
+        # HRMS v16.50.0 ships no Payroll Manager: noted, not created.
+        to_add, not_offered = swiss_setup.hr_grants(self.WANTED, ["HR Manager", "HR User", "Leave Approver"], [])
+        self.assertEqual(to_add, ["HR Manager", "HR User", "Leave Approver"])
+        self.assertEqual(not_offered, ["Payroll Manager"])
+
+    def test_nothing_to_do_when_all_in_place(self):
+        self.assertEqual(swiss_setup.hr_grants(self.WANTED, self.WANTED, self.WANTED), ([], []))
+
+
+class SingleFixesTest(unittest.TestCase):
+    def test_sets_only_offered_fields_that_differ(self):
+        want = {"payroll_based_on": "Leave", "include_holidays_in_total_working_days": 1}
+        current = {"payroll_based_on": "Leave", "include_holidays_in_total_working_days": 0}
+        changes, not_offered = swiss_setup.single_fixes(want, current, set(want))
+        self.assertEqual(changes, [("include_holidays_in_total_working_days", 0, 1)])
+        self.assertEqual(not_offered, [])
+
+    def test_an_already_right_value_changes_nothing(self):
+        self.assertEqual(swiss_setup.single_fixes({"a": 0}, {"a": 0}, {"a"}), ([], []))
+
+    def test_a_field_the_single_has_not_is_reported_not_set(self):
+        changes, not_offered = swiss_setup.single_fixes({"a": 1, "b": 2}, {"a": 1, "b": None}, {"a"})
+        self.assertEqual(changes, [])
+        self.assertEqual(not_offered, ["b"])
 
 
 # Invented IBANs and account names only: the test data is not company data.
