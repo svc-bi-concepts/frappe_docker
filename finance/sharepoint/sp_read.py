@@ -1,46 +1,41 @@
 """Read-only SharePoint reader for the documents payroll needs.
 
-Talks to Microsoft Graph as IT's app yardr-finance: a client-credentials token
-from the app's certificate (a JWT client assertion signed with its private key),
-then GET requests for folders and file contents. Nothing else leaves this module:
-every request goes through Graph._send, which allows GET to Graph and the token
-POST, and nothing else.
+Talks to Microsoft Graph as IT's app yardr-finance. The app's key never reaches
+this module: IT's token broker holds it and hands out access tokens only. A GET
+to the broker on 127.0.0.1, with the broker's bearer token in the Authorization
+header (read from a file at run time, never logged), returns {access_token,
+expires_in} for Graph. Then GET requests for folders and file contents. Nothing
+else leaves this module: every request goes through Graph._send, which allows GET
+to Graph and GET to the broker, and nothing else.
 
-The tenant, client and drive ids and the folder item ids come from
-private/graph-cert/sharepoint.json, which must be mode 600. The public
-certificate is private/graph-cert/finance.pem. The private key comes from the
-environment (SP_CERT_KEY, injected by varlock at run time). It reaches openssl
-through a pipe, so it is never written to disk, logged or put in an error.
+The drive id and the folder item ids come from private/graph-cert/sharepoint.json,
+which must be mode 600. No varlock is needed to run it.
 
-    varlock run -p /Users/bsaladin/ws_yardr_finance/secrets -- python3 finance/sharepoint/sp_read.py list Insurance
-    varlock run -p /Users/bsaladin/ws_yardr_finance/secrets -- python3 finance/sharepoint/sp_read.py fetch
+    python3 finance/sharepoint/sp_read.py list Insurance
+    python3 finance/sharepoint/sp_read.py fetch
 
-Standard library only, plus the openssl binary, so it runs on the system Python.
+SP_BROKER_URL and SP_BROKER_TOKEN_FILE override the broker's address (it must be
+http on 127.0.0.1) and the path of its bearer token file.
+
+Standard library only, so it runs on the system Python.
 """
 
-import base64
-import hashlib
 import json
 import os
 import re
 import stat
-import subprocess
 import sys
-import time
 import urllib.error
 import urllib.parse
 import urllib.request
-import uuid
 
 PRIVATE = "/Users/bsaladin/ws_yardr_finance/private"
 CONFIG = os.path.join(PRIVATE, "graph-cert", "sharepoint.json")
-CERT = os.path.join(PRIVATE, "graph-cert", "finance.pem")
 OUT = os.path.join(PRIVATE, "payroll-insurance")
 
 GRAPH = "https://graph.microsoft.com/v1.0"
-LOGIN = "https://login.microsoftonline.com"
-SCOPE = "https://graph.microsoft.com/.default"
-ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+BROKER = "http://127.0.0.1:18898/token/finance"
+BROKER_TOKEN_FILE = "/private/var/vlbroker/graph/pub/graph-token"
 
 # The insurer sheets payroll needs: the BVG plan sheet, and one sheet each for UVG, NBU, KTG and FAK.
 SHEETS = ("BVG", "UVG", "NBU", "KTG", "FAK")
@@ -54,7 +49,7 @@ class SharePointError(Exception):
 
 
 def refusal_code(err):
-    """Graph's error code (or the token endpoint's), never its message: a message can carry ids."""
+    """Graph's error code (or the broker's), never its message: a message can carry ids."""
     try:
         body = json.loads(err.read().decode("utf-8", "replace"))
     except ValueError:
@@ -104,111 +99,6 @@ def load_config(path=CONFIG):
         return json.load(f)
 
 
-def b64url(raw):
-    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
-
-
-def compact(obj):
-    return json.dumps(obj, separators=(",", ":")).encode()
-
-
-def cert_der(cert_pem):
-    """The DER bytes of the first certificate in a PEM text."""
-    m = re.search(r"-----BEGIN CERTIFICATE-----(.*?)-----END CERTIFICATE-----", cert_pem, re.S)
-    if not m:
-        raise SharePointError("no certificate in the certificate file")
-    return base64.b64decode("".join(m.group(1).split()))
-
-
-def sign_rs256(data, key_pem):
-    """The RS256 signature of data, made by openssl. The key goes in through a pipe, never a file."""
-    key = key_pem.encode() if isinstance(key_pem, str) else key_pem
-    r, w = os.pipe()
-    try:
-        if os.write(w, key) != len(key):
-            raise SharePointError("the key did not fit in the pipe")
-    finally:
-        os.close(w)
-    try:
-        proc = subprocess.run(
-            ["openssl", "dgst", "-sha256", "-sign", "/dev/fd/%d" % r],
-            input=data, stdout=subprocess.PIPE, stderr=subprocess.PIPE, pass_fds=(r,))
-    finally:
-        os.close(r)
-    if proc.returncode:
-        raise SharePointError("signing failed: openssl exit %d" % proc.returncode)
-    return proc.stdout
-
-
-class Graph:
-    """Reads Graph as the yardr-finance app. Every request goes through _send."""
-
-    def __init__(self, tenant, client_id, drive, cert_pem, key_pem, transport=http, now=time.time):
-        self.token_url = "%s/%s/oauth2/v2.0/token" % (LOGIN, tenant)
-        self.client_id = client_id
-        self.drive = drive
-        self.der = cert_der(cert_pem)
-        self.key_pem = key_pem
-        self.transport = transport
-        self.now = now
-        self.token = None
-
-    def _send(self, method, url, headers, data=None):
-        reads_graph = method == "GET" and url.startswith(GRAPH + "/")
-        gets_token = method == "POST" and url == self.token_url
-        if not (reads_graph or gets_token):
-            raise SharePointError("refused %s: this client only reads Graph" % method)
-        return self.transport(method, url, headers, data)
-
-    def client_assertion(self):
-        """The JWT that proves the app holds the certificate's key."""
-        now = int(self.now())
-        header = {"alg": "RS256", "typ": "JWT", "x5t#S256": b64url(hashlib.sha256(self.der).digest())}
-        claims = {"aud": self.token_url, "iss": self.client_id, "sub": self.client_id,
-                  "jti": str(uuid.uuid4()), "nbf": now, "exp": now + 300}
-        signing = "%s.%s" % (b64url(compact(header)), b64url(compact(claims)))
-        return "%s.%s" % (signing, b64url(sign_rs256(signing.encode(), self.key_pem)))
-
-    def access_token(self):
-        if self.token is None:
-            form = urllib.parse.urlencode({
-                "client_id": self.client_id,
-                "scope": SCOPE,
-                "grant_type": "client_credentials",
-                "client_assertion_type": ASSERTION_TYPE,
-                "client_assertion": self.client_assertion(),
-            }).encode()
-            body = self._send("POST", self.token_url,
-                              {"Content-Type": "application/x-www-form-urlencoded"}, form)
-            self.token = json.loads(body.decode())["access_token"]
-        return self.token
-
-    def get(self, url):
-        return self._send("GET", url, {"Authorization": "Bearer " + self.access_token()})
-
-    def children(self, item_id):
-        """Every child of a folder item, following Graph's paging."""
-        url = "%s/drives/%s/items/%s/children" % (GRAPH, self.drive, item_id)
-        items = []
-        while url:
-            page = json.loads(self.get(url).decode())
-            items.extend(page.get("value", []))
-            url = page.get("@odata.nextLink")
-        return items
-
-    def walk(self, item_id, path=()):
-        """(folder path, file item) for every file under a folder, depth first."""
-        for item in self.children(item_id):
-            if "folder" in item:
-                for found in self.walk(item["id"], path + (item["name"],)):
-                    yield found
-            elif "file" in item:
-                yield path, item
-
-    def download(self, item_id):
-        return self.get("%s/drives/%s/items/%s/content" % (GRAPH, self.drive, item_id))
-
-
 def pick_sheets(files):
     """{sheet: (folder path, item)}, one file per insurer sheet. Nothing is guessed: no match or several is an error."""
     chosen = {}
@@ -236,6 +126,74 @@ def save(path, body):
     with os.fdopen(fd, "wb") as f:
         f.write(body)
     os.chmod(path, 0o600)
+
+
+class Graph:
+    """Reads Graph as the yardr-finance app, with the token from IT's broker. Every request goes through _send."""
+
+    def __init__(self, drive, broker=BROKER, token_file=BROKER_TOKEN_FILE, transport=http):
+        host = urllib.parse.urlsplit(broker)
+        if host.scheme != "http" or host.hostname != "127.0.0.1":
+            # The broker's bearer token goes to this address: it must not leave this machine.
+            raise SharePointError("the token broker must be http on 127.0.0.1")
+        self.drive = drive
+        self.broker = broker
+        self.token_file = token_file
+        self.transport = transport
+        self.token = None
+
+    def _send(self, method, url, headers, data=None):
+        reads_graph = method == "GET" and url.startswith(GRAPH + "/")
+        asks_broker = method == "GET" and url == self.broker
+        if not (reads_graph or asks_broker):
+            raise SharePointError("refused %s: this client only reads Graph" % method)
+        return self.transport(method, url, headers, data)
+
+    def broker_token(self):
+        """Graph's access token, from the broker. The bearer file is read here, at run time, and never logged."""
+        try:
+            with open(self.token_file) as f:
+                bearer = f.read().strip()
+        except OSError:
+            raise SharePointError("cannot read the broker's token file")
+        body = self._send("GET", self.broker, {"Authorization": "Bearer " + bearer})
+        try:
+            token = json.loads(body.decode()).get("access_token")
+        except (ValueError, AttributeError):
+            token = None
+        if not token:
+            raise SharePointError("the token broker gave no access token")
+        return token
+
+    def access_token(self):
+        if self.token is None:
+            self.token = self.broker_token()
+        return self.token
+
+    def get(self, url):
+        return self._send("GET", url, {"Authorization": "Bearer " + self.access_token()})
+
+    def children(self, item_id):
+        """Every child of a folder item, following Graph's paging."""
+        url = "%s/drives/%s/items/%s/children" % (GRAPH, self.drive, item_id)
+        items = []
+        while url:
+            page = json.loads(self.get(url).decode())
+            items.extend(page.get("value", []))
+            url = page.get("@odata.nextLink")
+        return items
+
+    def walk(self, item_id, path=()):
+        """(folder path, file item) for every file under a folder, depth first."""
+        for item in self.children(item_id):
+            if "folder" in item:
+                for found in self.walk(item["id"], path + (item["name"],)):
+                    yield found
+            elif "file" in item:
+                yield path, item
+
+    def download(self, item_id):
+        return self.get("%s/drives/%s/items/%s/content" % (GRAPH, self.drive, item_id))
 
 
 def list_folder(graph, folder_id, out=sys.stdout):
@@ -269,12 +227,9 @@ def main(argv, out=sys.stdout):
         return 2
     try:
         cfg = load_config()
-        key = os.environ.get("SP_CERT_KEY")
-        if not key:
-            raise SharePointError("SP_CERT_KEY is not set: run this through varlock")
-        with open(CERT) as f:
-            cert = f.read()
-        graph = Graph(cfg["tenant_id"], cfg["client_id"], cfg["drive_id"], cert, key)
+        graph = Graph(cfg["drive_id"],
+                      broker=os.environ.get("SP_BROKER_URL", BROKER),
+                      token_file=os.environ.get("SP_BROKER_TOKEN_FILE", BROKER_TOKEN_FILE))
         if argv[1] == "list":
             list_folder(graph, cfg["folders"][argv[2]], out)
         else:
