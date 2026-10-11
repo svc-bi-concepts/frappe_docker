@@ -94,7 +94,7 @@ def read_overrides(path):
                 days = float(fields[1]) if len(fields) == 2 else -1.0
             except ValueError:
                 days = -1.0
-            if not bexio_id or bexio_id in overrides or not 0 <= days:
+            if not bexio_id or bexio_id in overrides or not 0 <= days < float("inf"):
                 malformed.append(number)
             else:
                 overrides[bexio_id] = days

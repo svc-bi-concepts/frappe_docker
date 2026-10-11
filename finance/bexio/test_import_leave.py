@@ -290,6 +290,26 @@ class OverrideTest(unittest.TestCase):
         self.assertEqual(overrides, {"8001": 0.0, "8005": 2.0})
         self.assertEqual(malformed, [2, 3, 4, 5, 6])
 
+    def test_non_finite_days_are_malformed(self):
+        overrides, malformed = il.read_overrides(self.write_overrides("8001\tinf\n8002\tnan\n8003\t1\n"))
+        self.assertEqual((overrides, malformed), ({"8003": 1.0}, [1, 2]))
+
+    def test_apply_with_a_malformed_row_stops_before_any_write(self):
+        import contextlib
+        import io
+        from unittest import mock
+        path = self.write_overrides("8001\tlots\n")
+        stderr = io.StringIO()
+        with mock.patch.object(il, "OVERRIDES_FILE", path), \
+                mock.patch.object(il, "load_payroll", return_value=([], [])), \
+                mock.patch.object(il.Erp, "from_file", return_value=FakeErp()) as client, \
+                contextlib.redirect_stderr(stderr):
+            code = il.main(["--apply"])
+        self.assertEqual(code, 2)
+        self.assertIn("lines 1", stderr.getvalue())
+        self.assertNotIn("lots", stderr.getvalue())
+        self.assertEqual(client.return_value.writes, 0)
+
     def test_repeat_dry_run_with_override_plans_no_write(self):
         erp = FakeErp()
         employees = {"8001": active_employee("HR-EMP-8001"), "8002": active_employee("HR-EMP-8002"),
