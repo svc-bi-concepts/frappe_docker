@@ -148,13 +148,55 @@ class Structure(unittest.TestCase):
         self.assertEqual(missing_components(STRUCTURE_EARNINGS, before), ["Quellensteuer Employee"])
 
     def test_a_structure_without_an_earning_names_it_too(self):
-        self.assertEqual(missing_components([], STRUCTURE_DEDUCTIONS), ["Basic Salary"])
+        self.assertEqual(missing_components([], STRUCTURE_DEDUCTIONS), ["Basic Salary", "Commission"])
+
+    def test_a_structure_made_before_the_commission_row_names_the_gap(self):
+        self.assertEqual(missing_components(["Basic Salary"], STRUCTURE_DEDUCTIONS), ["Commission"])
+
+
+class Commission(unittest.TestCase):
+    # invented: 8,000 salary and 2,000 commission, so the gross is 10,000 in the month
+    def test_the_commission_is_an_earning_in_the_gross(self):
+        self.assertEqual(COMPONENTS["COMM"]["salary_component"], "Commission")
+        self.assertEqual(COMPONENTS["COMM"]["type"], "Earning")
+        self.assertEqual(COMPONENTS["COMM"]["statistical_component"], 0)
+        self.assertEqual(COMPONENTS["COMM"]["do_not_include_in_total"], 0)
+        self.assertEqual(COMPONENTS["COMM"]["amount_based_on_formula"], 0)
+        self.assertEqual(COMPONENTS["COMM"]["depends_on_payment_days"], 0)
+
+    def test_ahv_is_deducted_on_salary_plus_commission(self):
+        self.assertAlmostEqual(run("AHV", gross_pay=10000), 10000 * 5.3 / 100)
+
+    def test_alv_is_deducted_on_salary_plus_commission_up_to_the_ceiling(self):
+        self.assertAlmostEqual(run("ALV", gross_pay=10000), 10000 * 1.1 / 100)
+        # 12,000 salary and 1,000 commission: 13,000 is above the monthly ceiling of 12,350
+        self.assertAlmostEqual(run("ALV", gross_pay=13000), 12350 * 1.1 / 100)
+
+    def test_the_other_social_shares_are_on_salary_plus_commission(self):
+        rates = dict(RATES, swiss_nbu_ee=1.2, swiss_ktg_ee=0.5, swiss_uvg_max=148200, swiss_uvg_ag=0.8)
+        self.assertAlmostEqual(run("NBUV", gross_pay=10000, rates=rates), 10000 * 1.2 / 100)
+        self.assertAlmostEqual(run("KTG", gross_pay=10000, rates=rates), 10000 * 0.5 / 100)
+        self.assertAlmostEqual(run("UVG_AG", gross_pay=10000, rates=rates), 10000 * 0.8 / 100)
+
+    def test_bvg_stays_on_the_insured_salary_above_the_threshold(self):
+        # the assignment's insured salary is fixed: the commission does not change the BVG base (hrms.md, question 3)
+        with_commission = run("PK", insured=60000, gross_pay=10000)
+        without = run("PK", insured=60000, gross_pay=8000)
+        self.assertAlmostEqual(with_commission, (60000 - 26460) / 12 * 2 / 100)
+        self.assertEqual(with_commission, without)
+
+    def test_without_a_commission_the_deductions_are_unchanged(self):
+        self.assertAlmostEqual(run("AHV", gross_pay=8000), 8000 * 5.3 / 100)
+        self.assertAlmostEqual(run("ALV", gross_pay=8000), 8000 * 1.1 / 100)
 
 
 class Fixtures(unittest.TestCase):
     def test_every_name_in_a_formula_is_known(self):
         known = set(RATE_FIELDS) | set(ASSIGNMENT_FIELDS) | SLIP_NAMES | set(SLIP_FUNCTIONS) | set(COMPONENTS)
         for abbr, component in COMPONENTS.items():
+            if not component["formula"]:
+                # a component paid by Additional Salary (Commission) has no formula to read names from
+                continue
             names = {n.id for n in ast.walk(ast.parse(component["formula"], mode="eval")) if isinstance(n, ast.Name)}
             with self.subTest(abbr=abbr):
                 self.assertEqual(names - known, set(), f"unknown names in {abbr}")

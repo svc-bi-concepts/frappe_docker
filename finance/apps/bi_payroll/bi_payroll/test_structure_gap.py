@@ -18,6 +18,8 @@ from bi_payroll.swiss_rates import STRUCTURE_DEDUCTIONS, STRUCTURE_EARNINGS
 
 QST = "Quellensteuer Employee"
 # an invented bracket: 4950 up to 5050, 4.00 percent, no minimum tax
+# every row of a complete structure: the earnings and the deductions
+ROWS = len(STRUCTURE_EARNINGS) + len(STRUCTURE_DEDUCTIONS)
 BRACKET = {
     "canton": "ZG", "tariff_code": "B2N", "valid_from": datetime.date(2026, 1, 1),
     "income_from": 4950.0, "step": 100.0, "minimum_tax": 0.0, "rate": 4.0,
@@ -200,7 +202,7 @@ class Replacing(unittest.TestCase):
         self.assertEqual(new["deductions"][-1]["salary_component"], QST)
         frappe.log_error.assert_called_once()
         self.assertEqual(frappe.log_error.call_args.kwargs["title"], "Swiss Salary Structure replaced")
-        self.assertIn("0 missing components and 14 rows without a formula", frappe.log_error.call_args.kwargs["message"])
+        self.assertIn(f"0 missing components and {ROWS} rows without a formula", frappe.log_error.call_args.kwargs["message"])
 
     def test_an_unused_structure_without_a_component_is_replaced_with_it(self):
         structure, frappe = self.run_ensure(
@@ -236,7 +238,7 @@ class Replacing(unittest.TestCase):
         frappe.delete_doc.assert_not_called()
         self.assertEqual(self.made, [])
         frappe.log_error.assert_called_once()
-        self.assertIn("has 14 rows without their component's formula", frappe.log_error.call_args.kwargs["message"])
+        self.assertIn(f"has {ROWS} rows without their component's formula", frappe.log_error.call_args.kwargs["message"])
 
     def test_a_complete_structure_with_formulas_is_untouched(self):
         structure, frappe = self.run_ensure(rows(STRUCTURE_EARNINGS), rows(STRUCTURE_DEDUCTIONS))

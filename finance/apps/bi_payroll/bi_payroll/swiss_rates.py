@@ -15,7 +15,8 @@ RATE_FIELDS = [
 ASSIGNMENT_FIELDS = ["swiss_bvg_insured_salary"]
 
 # Order matters: a formula can read only the components above it (BVG Age before the BVG components).
-STRUCTURE_EARNINGS = ["Basic Salary"]
+# Commission is paid per month through Additional Salary; the row is there at 0 so the structure names it.
+STRUCTURE_EARNINGS = ["Basic Salary", "Commission"]
 STRUCTURE_DEDUCTIONS = [
     "BVG Age",
     "AHV/IV/EO Employee", "AHV/IV/EO Employer",

@@ -110,7 +110,7 @@ insurer's or the Ausgleichskasse's own sheet before a live run.
 | KTG | Component with the insurer's rate on the insured salary | Set by the insurer | Config. The 2026 KTG contract is fetched and read (erp-1jh5, 2026-10-11): its values sit in the private CSV and the settings stay open for the follow-up bead; the employer pays the premium, so the sheet names no employee share | the contract in `private/payroll-insurance/` |
 | FAK | Employer component on the AHV wage, rate by canton and Ausgleichskasse | Set by the fund | Config. Needs the fund's rate | none |
 | Quellensteuer | Not covered. erpnextswiss's Salary Certificate settings have a field "12 Quellensteuerabzug" that maps a component; it does not compute the tax | Cantonal tariffs, per year | **Gap.** Build (bi_finance) or outsource. See Questions | `erpnextswiss` `salary_certificate_settings.json` |
-| 13th salary | A Salary Component paid in December, or an accrual over the year (`accrual_component`) | Contract | Config. Choose the method (Question) | HRMS `salary_component` fields |
+| 13th salary | A Salary Component paid in December, or an accrual over the year (`accrual_component`) | Contract | None in the data (Question 5). No component until a contract says so | HRMS `salary_component` fields |
 | Lohnausweis (Form 11), per employee per year | erpnextswiss `Salary Certificate`: sums `Salary Slip` gross and net over the year, and the `Salary Detail` rows by `abbr` (B, AHV, ALV, NBUV, PK) into the form's fields. Fields are set in `Salary Certificate Settings` | ESTV Wegleitung for Form 11 applies from 1 Jan 2026 | Needs HRMS. The field layout is **not checked** against the 2026 form | [ESTV Wegleitung 2026](https://www.estv.admin.ch/dam/de/sd-web/afP1GDFr8gE3/dbst-form-lohna-wegleitung-2026-de.pdf) (not opened in this study; from the search result) |
 | ELM / Swissdec transmission | Not in erpnextswiss `v16` (no ELM file in its tree), not in HRMS | ELM 4.0 switched off; ELM 5.0 required for the 2026 payroll year. Sources disagree on the 4.0 end date (30.06.2026 per BFS; end 2025 per one vendor). Transmission needs Swissdec-certified payroll software | **Gap.** See Questions and `elm.md` | [BFS](https://www.bfs.admin.ch/bfs/de/home/grundlagen/elm.html), [Swissdec](https://www.swissdec.ch/abschaltung-elm-4-0), [AXA](https://www.axa.ch/de/unternehmenskunden/melden-und-mutieren/melden/elektronische-lohnmeldung.html) |
 | Payslip layout | HRMS print format on Salary Slip, built for us (the no-company-data rule keeps the template generic). erpnextswiss ships `kt_salary_slip.html`, a print for one of its own sample companies; use it as a reference only | none | Build. Small | erpnextswiss `templates/print_formats/kt_salary_slip.html` |
@@ -259,8 +259,9 @@ calculated.
 4. **Insurers and funds.** The names of the Ausgleichskasse, the UVG, NBU and KTG insurer,
    and the FAK fund, each with its current rate sheet. The rates are in these, not in the
    law.
-5. **13th salary.** Paid in December, or accrued monthly? Either works in HRMS; it changes the
-   components.
+5. **13th salary.** Answered 2026-10-11 from the figures (HR 3): none. No 13th salary, bonus or December double
+   in the 35 months of the figures (9 employees). No component; a "13th Salary" component, paid in December
+   through Additional Salary, is added only when a contract says so. Counts in `finance/apps/bi_payroll/README.md`.
 6. **History depth.** Which business years must the Lohnausweis cover from ERPNext? Each year
    back is one load of Salary Slips from bexio.
 7. **Net salary payment.** Keep it on the UBS pain.001 run (erp-xpmr), once it works with

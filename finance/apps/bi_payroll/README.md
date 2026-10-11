@@ -5,8 +5,9 @@ HRMS copy (Decision 2026-10-10). It requires `hrms`, so nothing here goes into `
 migrate on any site.
 
 - `bi_payroll/fixtures/salary_component.json`: the Salary Components with their formulas (AHV/IV/EO, ALV with
-  the ceiling, BVG on a fixed yearly insured salary with the age bands, NBU, UVG, KTG, FAK). The abbreviations
-  are the ones erpnextswiss's Salary Certificate reads (B, AHV, ALV, NBUV, PK). No 13th salary component.
+  the ceiling, BVG on a fixed yearly insured salary with the age bands, NBU, UVG, KTG, FAK), and Commission (an earning
+  with no formula, paid by Additional Salary; see below). The abbreviations are the ones erpnextswiss's Salary
+  Certificate reads (B, AHV, ALV, NBUV, PK). No 13th salary component: the data has none (see below).
 - `bi_payroll/fixtures/custom_field.json`: the rate copies on Salary Slip (one read-only section), and the
   BVG insured salary on Salary Structure Assignment (fixed per year).
 - `bi_payroll/swiss_rates.py`: the list of rate names, shared by the settings, the slip copies and the tests.
@@ -79,3 +80,46 @@ migrate on any site.
   `python3 -m unittest test_import_assignments` in `finance/bexio`.
 - `finance/images/bi_payroll.Containerfile`: the layer on the image with bi_finance (live and copy), built by
   `finance/scripts/build-image.sh`.
+- Commission (HR 3, wage type 1218): an earning with the abbreviation COMM, no formula and amount 0 in the structure, so
+  the structure names it. It is paid per month through Additional Salary, and it is in the slip's gross: AHV/IV/EO,
+  ALV (under the monthly ceiling), NBU, UVG, KTG, FAK and the Quellensteuer (`withhold_qst` reads the gross) take it in.
+  BVG does not: its base is the assignment's insured salary, fixed per year, so a commission leaves BVG as it was. Whether
+  the insured salary follows the salary is open (`finance/docs/hrms.md`, question 3). The account is 5000 (Löhne); 5003
+  (Provisionen) is on bexio's chart, and the component takes it only if the GL shows commissions there (none does yet).
+  Like the other components, it has no GL account on the fixture.
+- Additional Salary, for Benchi (Desk: HR > Additional Salary > New): one per employee and month for a commission. The
+  fields are the employee, the salary component "Commission", the amount, and the payroll date (the month the
+  commission belongs to). The Payroll Entry for that month picks it up, and the slip computes AHV, ALV and the rest
+  on salary plus commission. Not yet run on a site: HR 6 (the copy) checks the slip before the first live run.
+- The live structure is in use, so the migrate does not add the Commission row to it: `ensure_structure` logs "Swiss Salary
+  Structure lacks components" to the Error Log. The commission then still pays through Additional Salary (HRMS adds an
+  Additional Salary component to the slip even when the structure does not hold it, to check on the copy), but the
+  structure is made again by hand (the Salary Structure bullet above) before the first live run.
+- Wage types (bexio paystubs, public numbers and names only) and the component each one feeds:
+
+  | Wage type | Name on the paystub | Component (fixture) |
+  | --- | --- | --- |
+  | 1000 | Monthly salary | Basic Salary |
+  | 1001 | Monthly salary 2 | Basic Salary (a second monthly salary line; the same component) |
+  | 1005 | Hourly wage | none (no hourly employment in the data since 2024) |
+  | 1160 | Vacation compensation | none (not in payroll yet) |
+  | 1218 | Commission | Commission |
+  | 5000 | Gross wages | the gross (`gross_pay`), not a component |
+  | 5010 | AHV/IV/EO contribution | AHV/IV/EO Employee |
+  | 5020 | ALV contribution | ALV Employee |
+  | 5040 | NBU contribution | NBU Employee |
+  | 5050 | BVG contribution | BVG Employee |
+  | 5060 | Withholding tax | Quellensteuer Employee |
+  | 5900 | Total deductions | the sum of the deductions |
+  | 6500 | Net salary | the net (`net_pay`) |
+  | 6510 | Advance payment | none (a payment, not payroll) |
+  | 6600 | Amount paid out | none (a payment, not payroll) |
+  | 6030, 6070, 6300.1 | Other effective expenses, other lump sum expenses, Rent | none (expenses; HR 11 covers the route) |
+
+  The employer shares are not on the paystub; the fixture's employer components carry them.
+- 13th salary (HR 3, from the figures, counts only): no 13th salary, bonus or double December in the data. Of 777 lines
+  for 9 employees over 35 months, no wage type is a 13th salary or a bonus; 1005 is the hourly wage (3 lines, one
+  employee, 2023 and 2024). In no December is the salary more than 1.5 times the employee's median monthly salary, and no
+  December month holds both a 1000 and a 1001 line. So the component needed is none. Add a "13th Salary"
+  component, paid in December through Additional Salary, only when a contract says so.
+- Commission in the data (counts only): 6 lines of wage type 1218 for 2 employees over the 35 months.

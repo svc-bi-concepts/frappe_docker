@@ -23,8 +23,8 @@ COMPONENTS = {
     "ktg_employer": "KTG Employer",
     "fak_employer": "FAK Employer",
 }
-# The earnings the rows carry besides gross: Lohnausweis line 1 is the basic salary, the only earning there is.
-EARNINGS = {"basic": "Basic Salary"}
+# The earnings the rows carry besides gross: Lohnausweis line 1 is the salary and the commission (wage type 1218).
+EARNINGS = {"basic": "Basic Salary", "commission": "Commission"}
 EMPLOYER_SHARES = [key for key in COMPONENTS if key.endswith("_employer")]
 AMOUNTS = ["gross", "net", *EARNINGS, *COMPONENTS, "employer_total"]
 
@@ -33,7 +33,7 @@ AMOUNTS = ["gross", "net", *EARNINGS, *COMPONENTS, "employer_total"]
 # full table. KTG is not on a line here; its own column keeps it visible until the trustee says where it goes.
 # (column key, the form's line, the amounts summed into it)
 LOHNAUSWEIS = [
-    ("line_1", "1. Lohn", ["basic"]),
+    ("line_1", "1. Lohn", ["basic", "commission"]),
     ("line_8", "8. Bruttolohn total", ["gross"]),
     ("line_9", "9. Beiträge AHV/IV/EO/ALV/NBUV", ["ahv_employee", "alv_employee", "nbu_employee"]),
     ("line_10_1", "10.1 Ordentliche Beiträge berufliche Vorsorge", ["bvg_employee"]),

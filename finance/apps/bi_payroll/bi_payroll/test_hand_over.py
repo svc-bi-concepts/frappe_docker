@@ -106,6 +106,15 @@ class Lohnausweis(unittest.TestCase):
     def test_line_1_is_the_basic_salary(self):
         self.assertEqual(self.line()["line_1"], 8000)
 
+    def test_line_1_is_the_basic_salary_and_the_commission(self):
+        # invented: 8,000 salary and 2,000 commission in one month
+        slips = [slip("SAL-3", 1, 10000, 9113)]
+        lines = {"SAL-3": {**LINES["SAL-1"], "Commission": 2000}}
+        (row,) = hand_over(slips, lines, by_month=False)
+        self.assertEqual(row["commission"], 2000)
+        (line,) = lohnausweis([row])
+        self.assertEqual(line["line_1"], 10000)
+
     def test_line_8_and_11_are_the_slips_gross_and_net(self):
         line = self.line()
         self.assertEqual(line["line_8"], 8000)
