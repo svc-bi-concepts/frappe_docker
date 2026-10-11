@@ -15,6 +15,9 @@ override_whitelisted_methods = {
     "erpnextswiss.erpnextswiss.doctype.payment_proposal.payment_proposal.create_payment_proposal": "bi_finance.payment_run.create_payment_proposal",
 }
 
+# the Desk buttons of the VAT Declaration (public/js/vat_declaration.js): Fill from payments, with its preview
+doctype_js = {"VAT Declaration": "public/js/vat_declaration.js"}
+
 # Frappe syncs the module folders of standard types from the core list only; the Treasury cards
 # and chart (number_card/, dashboard_chart/) are this app's, so they are declared here.
 importable_doctypes = ["Number Card", "Dashboard Chart"]

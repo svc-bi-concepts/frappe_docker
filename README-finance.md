@@ -11,7 +11,8 @@ still describes the generic setup; this file covers only what this yard runs.
 - ERPNext / frappe `v16.50.0` with erpnextswiss, site `frontend` (the default
   site). The image is `frappe-finance-custom:v16.50.0-swiss`, set in
   `finance-local.yml`; build it with `finance/scripts/build-image.sh live <tag>`. Swiss
-  setup of the company: `finance/docs/erpnext-setup.md`.
+  setup of the company: `finance/docs/erpnext-setup.md`. The recurring work (month, quarter,
+  payroll) in Desk order: `finance/docs/operating.md`.
 - Services: `backend`, `frontend`, `websocket`, `scheduler`, `queue-short`,
   `queue-long`, `configurator`, `create-site`, `db` (MariaDB 11.8),
   `redis-cache` and `redis-queue`.
