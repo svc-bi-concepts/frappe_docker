@@ -410,9 +410,12 @@ Build result: see the bead note.
    **Kept off by code (2026-10-11, erp-5zk7):** the erpnextswiss QR print formats that name the
    host ("QR Sales Invoice", "QR Sales Invoice Switzerland Rounding - Description Details") are
    switched off after every migrate by bi_finance's `after_migrate` hook (`bi_finance/setup.py`):
-   any Print Format whose HTML names data.libracore.ch is set disabled = 1, so erpnextswiss's own
-   fixtures, which re-enable theirs on each migrate, cannot turn them back on. Idempotent; a rerun
-   of the migrate changes nothing.
+   the two erpnextswiss QR formats by name, any Print Format whose HTML names data.libracore.ch, and
+   any whose HTML calls the QR helper endpoint `api/iso20022.php` (erp-w27b). Those are set disabled
+   = 1, so erpnextswiss's own fixtures, which re-enable theirs on each migrate, cannot turn them back
+   on. The Description Details format calls that helper on `qr-code.2itea.global`, not on
+   data.libracore.ch, which is why the name match is needed. Idempotent; a rerun of the migrate
+   changes nothing.
 2. **Unverified QR-bill layout.** The slip is hand-built HTML, not a checked
    Swiss QR-bill. Compare a generated slip against a bank's validator before
    use. **Validator pass (2026-10-11, erp-5zk7):** the QR content is checked with the official

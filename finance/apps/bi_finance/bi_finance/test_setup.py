@@ -1,7 +1,7 @@
-"""Offline tests for setup.py: after every migrate, the print formats whose HTML names
-data.libracore.ch are switched off again (erpnextswiss's fixtures re-enable theirs on each
-migrate), and the Property Setter fixture keeps 'BI Sales Invoice QR' the default print
-format of Sales Invoice.
+"""Offline tests for setup.py: after every migrate, erpnextswiss's QR print formats are switched
+off again (its fixtures re-enable them on each migrate): by name, by the libracore host in the
+HTML, and by the QR helper's endpoint in the HTML. The Property Setter fixture keeps
+'BI Sales Invoice QR' the default print format of Sales Invoice.
 
 Invented Print Format rows, no database, no network. The modules import frappe, so run them
 in the image (finance/docs/erpnext-setup.md), as with bi_finance.test_qrbill.
@@ -14,33 +14,92 @@ from unittest import mock
 
 from bi_finance import setup
 
-ROWS = ["QR Sales Invoice", "QR Sales Invoice Switzerland Rounding - Description Details"]
+HERE = os.path.dirname(os.path.abspath(setup.__file__))
+DETAILS = "QR Sales Invoice Switzerland Rounding - Description Details"
 
 
-def run_with(rows):
+def fmt(name, html="<p>plain</p>", disabled=0):
+    return {"name": name, "html": html, "disabled": disabled}
+
+
+def get_all_over(formats):
+    """frappe.get_all over the invented rows: the filters and or_filters the hook passes, applied in memory."""
+
+    def hit(row, field, op, value):
+        if op == "in":
+            return row[field] in value
+        assert op == "like" and value.startswith("%") and value.endswith("%"), (op, value)
+        return value[1:-1] in row[field]
+
+    def get_all(doctype, filters, or_filters, pluck):
+        assert doctype == "Print Format" and pluck == "name"
+        return [
+            f["name"]
+            for f in formats
+            if all(f[k] == v for k, v in filters.items())
+            and any(hit(f, field, op, value) for _, field, op, value in or_filters)
+        ]
+
+    return get_all
+
+
+def run_with(formats):
     fake = mock.Mock()
-    fake.get_all.return_value = rows
+    fake.get_all.side_effect = get_all_over(formats)
     with mock.patch.object(setup, "frappe", fake):
         returned = setup.disable_libracore_print_formats()
     return returned, fake
 
 
 class DisableLibracorePrintFormats(unittest.TestCase):
-    def test_disables_every_format_whose_html_names_libracore(self):
-        returned, fake = run_with(list(ROWS))
-        self.assertEqual(returned, ROWS)
-        # the query itself carries the idempotence (only enabled ones) and the marker (the host)
-        fake.get_all.assert_called_once_with(
-            "Print Format",
-            filters={"disabled": 0, "html": ["like", "%data.libracore.ch%"]},
-            pluck="name",
-        )
-        for name in ROWS:
-            fake.db.set_value.assert_any_call("Print Format", name, "disabled", 1, update_modified=False)
-        self.assertEqual(fake.db.set_value.call_count, len(ROWS))
+    def test_name_match(self):
+        # the two erpnextswiss QR formats are switched by name, whatever their HTML says
+        for name in setup.QR_FORMATS:
+            with self.subTest(name=name):
+                returned, fake = run_with([fmt(name, html="<p>no host, no helper</p>")])
+                self.assertEqual(returned, [name])
+                fake.db.set_value.assert_called_once_with("Print Format", name, "disabled", 1, update_modified=False)
+
+    def test_host_match(self):
+        html = '<img src="https://data.libracore.ch/phpqrcode/api/iso20022.php?iban=x">'
+        returned, fake = run_with([fmt("Some QR Format", html=html)])
+        self.assertEqual(returned, ["Some QR Format"])
+        fake.db.set_value.assert_called_once_with("Print Format", "Some QR Format", "disabled", 1, update_modified=False)
+
+    def test_helper_match(self):
+        # erpnextswiss's Description Details format calls the helper on another host
+        html = '<img src="http://qr-code.example.test/api/iso20022.php?iban=x">'
+        returned, fake = run_with([fmt("Helper Only", html=html)])
+        self.assertEqual(returned, ["Helper Only"])
+        fake.db.set_value.assert_called_once_with("Print Format", "Helper Only", "disabled", 1, update_modified=False)
+
+    def test_our_own_format_is_untouched(self):
+        # 'BI Sales Invoice QR' draws its QR locally: neither the host nor the helper is in its HTML
+        with open(os.path.join(HERE, "bi_sales_invoice_qr.html"), encoding="utf-8") as f:
+            ours = f.read()
+        returned, fake = run_with([fmt("BI Sales Invoice QR", html=ours), fmt("Standard", html="<p>x</p>")])
+        self.assertEqual(returned, [])
+        fake.db.set_value.assert_not_called()
+
+    def test_each_path_once_and_only_enabled_formats(self):
+        formats = [
+            fmt("QR Sales Invoice"),
+            fmt(DETAILS),
+            fmt("Some QR Format", html="https://data.libracore.ch/x"),
+            fmt("Helper Only", html="https://h.example.test/api/iso20022.php"),
+            fmt("Already Off", html="https://data.libracore.ch/x", disabled=1),
+            fmt("Standard"),
+        ]
+        returned, fake = run_with(formats)
+        self.assertEqual(returned, ["QR Sales Invoice", DETAILS, "Some QR Format", "Helper Only"])
+        self.assertEqual(fake.db.set_value.call_count, 4)
+        # the query itself carries the idempotence (only enabled ones) and the three markers
+        filters = fake.get_all.call_args.kwargs["filters"]
+        self.assertEqual(filters, {"disabled": 0})
 
     def test_a_rerun_changes_nothing(self):
-        returned, fake = run_with([])  # every match is disabled already
+        # every match is disabled already
+        returned, fake = run_with([fmt("QR Sales Invoice", disabled=1), fmt(DETAILS, disabled=1)])
         self.assertEqual(returned, [])
         fake.db.set_value.assert_not_called()
 
