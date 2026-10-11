@@ -86,7 +86,6 @@ def allocation_days(employee, export_employee):
 
 def build_plan(export_employees, erp_employees):
     """Per-active-employee allocation plan keyed by the bexio id, without printing values."""
-    by_id = {str(emp["id"]): emp for emp in export_employees}
     plan = []
     defaults = []
     problems = []
@@ -172,7 +171,8 @@ class LeaveImporter:
                 self.counts["unchanged"] += 1
             filters = [["employee", "=", employee["name"]], ["leave_type", "=", LEAVE_TYPE],
                        ["from_date", "=", FROM_DATE], ["to_date", "=", TO_DATE]]
-            found = self.erp.list("Leave Allocation", filters, ["name", "docstatus"])
+            found = [row for row in self.erp.list("Leave Allocation", filters, ["name", "docstatus"])
+                     if row.get("docstatus") != 2]  # a cancelled allocation does not count
             if found:
                 # A pre-existing draft is not silently submitted or replaced.
                 self.counts["unchanged"] += 1

@@ -172,6 +172,12 @@ class MappingTest(unittest.TestCase):
         self.assertEqual(doc["swiss_hours_per_week"], "")
         self.assertEqual(doc["swiss_stay_permit"], "")
 
+    def test_stay_permit_is_normalised_to_the_select_options(self):
+        self.assertEqual(ie.stay_permit(" ci "), "Ci")
+        self.assertEqual(ie.stay_permit("b"), "B")
+        self.assertEqual(ie.stay_permit("Z"), "")
+        self.assertEqual(ie.stay_permit(None), "")
+
     def test_bio_skips_what_the_record_does_not_carry(self):
         erp = FakeErp()
         import_all(erp, [invented_employee(stay_permit_category=None, language=None)],

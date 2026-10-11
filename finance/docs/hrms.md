@@ -227,12 +227,6 @@ slot that ledgerdemain gives (`erpnext-setup.md`).
    `python3 finance/bexio/import_employees.py --dry-run` and `--apply`: 9 Employees on live
    (3 Active, 6 Left), rerun 0 new, nobody without a joining date (`private/payroll/needs-dates.txt`
    says 0). Counts only here; the importer prints counts and changed field names by row position.
-4c. **Leave and holiday setup** (`finance/bexio/import_leave.py`): the 2026 canton-wide SZ public holidays
-   from the Kanton Schwyz list, Ferien, the 2026 Leave Period and one submitted allocation per Active Employee.
-   Missing annual days use the OR minimum (20, or 25 under age 20), pro-rated by employment level; the private
-   `leave-defaults.txt` list is for Benchi to check. Absence history stays out because bexio's export is empty.
-   Dry run and repeatability are covered by invented-data tests. The train rule reserves all setup and live writes
-   for the HR go-live bead; no live write in this child.
 4b. **Payroll inputs from the paystubs** (erp-y4yf, `finance/bexio/import_assignments.py`). Derived from the
    parsed figures (`parse_paystubs.py`): one submitted Salary Structure Assignment per Active employee on
    the "Swiss Monthly" structure, base = the monthly salary (1001 up to 2025, 1000 from 2025) of the latest
@@ -250,6 +244,12 @@ slot that ledgerdemain gives (`erpnext-setup.md`).
    BVG plan (the band rates in the settings, then the insured salaries with them). The QST
    Tariff rows are loaded by `bi_payroll.swiss_payroll.load_tariff` from the ESTV file before the codes resolve; the
    Employee's code is picked from the QST Tariff Code list of its canton (erp-wvbn), and the loader makes those codes.
+4c. **Leave and holiday setup** (`finance/bexio/import_leave.py`): the 2026 canton-wide SZ public holidays
+   from the Kanton Schwyz list, Ferien, the 2026 Leave Period and one submitted allocation per Active Employee.
+   Missing annual days use the OR minimum (20, or 25 under age 20), pro-rated by employment level; the private
+   `leave-defaults.txt` list is for Benchi to check. Absence history stays out because bexio's export is empty.
+   Dry run and repeatability are covered by invented-data tests. The train rule reserves all setup and live writes
+   for the HR go-live bead; no live write in this child.
 5. **Payslip history as reference** (erp-2c3a, `finance/bexio/import_paystubs.py`). Replaces the
    earlier plan of one submitted Salary Slip per employee and month (Decision, ledgerdemain, 2026-10-10).
    No Salary Slips for the history: the export holds no figures per slip (bexio's paystub overview
