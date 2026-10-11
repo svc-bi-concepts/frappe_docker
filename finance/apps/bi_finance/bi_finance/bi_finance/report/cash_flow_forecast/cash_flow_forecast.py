@@ -32,8 +32,10 @@ The dates and sums are in bi_finance/cash_forecast.py. This module reads the boo
     (2100, 2121) are labelled "(average, discretionary)" and can be left out by a filter;
 - payroll: the salary accounts 5000 to 5099 of the last year (not the 57xx social contributions nor the 58xx other
   personnel costs: those are bills or bank lines), the average of the last three months, paid on the last day of
-  the month (the Friday before when that is a weekend); the expected monthly payroll of the Cash Forecast Settings
-  replaces that average when it is set;
+  the month (the Friday before when that is a weekend); the net pay of the last submitted Salary Slips replaces
+  that average once HRMS runs, and the expected monthly payroll of the Cash Forecast Settings replaces both when
+  it is set; a credit balance on the salary clearing account 1091 on the as-of date is one more payroll line in
+  week 1, the net pay accrued but not yet paid;
 - manual: the dated one-off lines of the Cash Forecast Settings, in or out, inside the horizon (after the as-of date);
   one line each, with its label, and a column of its own that shows only when there are lines;
 - VAT: the balance of 2200 and 2202 less 1170 to 1172, split at the start of the current quarter: the quarter closed
@@ -278,6 +280,37 @@ def personnel_postings(company, as_of):
     return [(day, number, flt(amount)) for day, number, amount in rows]
 
 
+def hrms_slips(company, as_of):
+    """(payroll entry, end date, net pay) of the submitted Salary Slips posted up to the as-of date, the basis of
+    cf.hrms_net. [] on a site without HRMS: the Salary Slip DocType does not exist there, and the GL's trailing
+    mean stays the basis. Keyed on the slips, not on the Payroll Entry: an entry can sit in draft while its
+    slips are submitted. Read by posting date, like every other source: a slip is the basis exactly when its
+    accrual reaches the GL (the accrual Journal Entry carries the slip's posting date), so a run's month is not
+    counted twice — by the end date the slip would stay unseen while the GL already carries its accrual."""
+    if not frappe.db.exists("DocType", "Salary Slip"):
+        return []
+    rows = frappe.db.sql(
+        """select payroll_entry, end_date, net_pay
+        from `tabSalary Slip`
+        where company = %s and docstatus = 1 and posting_date <= %s""",
+        (company, as_of),
+    )
+    return [(entry, end_date, flt(net_pay)) for entry, end_date, net_pay in rows]
+
+
+def clearing_balance(company, as_of):
+    """The salary clearing account's (1091) balance on the as-of date, credit minus debit: a credit balance is the
+    net pay accrued but not yet paid (cf.accrued_net)."""
+    rows = frappe.db.sql(
+        """select sum(gle.credit - gle.debit)
+        from `tabGL Entry` gle join `tabAccount` a on a.name = gle.account
+        where gle.company = %s and gle.is_cancelled = 0 and a.is_group = 0 and a.account_number = %s
+          and gle.posting_date <= %s""",
+        (company, cf.SALARY_CLEARING_ACCOUNT, as_of),
+    )
+    return flt(rows[0][0])
+
+
 def vat_balances(company, as_of):
     """{account number: debit minus credit} of the VAT accounts on as_of."""
     numbers = cf.VAT_LIABILITY_ACCOUNTS + cf.VAT_INPUT_ACCOUNTS
@@ -423,7 +456,8 @@ def dry_run(company=None, as_of=None):
     sources = recurring_sources(company, as_of)
     bill_keys = {cf.description_key(item["supplier"]) for item in sources["bills"]}
     insurers = insurer_suppliers(company)
-    lines = compute(company, as_of)["lines"]
+    result = compute(company, as_of)
+    lines = result["lines"]
     salary_months = {(day.year, day.month) for day, _amount in cf.payroll_postings(personnel_postings(company, as_of))}
     return {
         "bill_groups": len(sources["bills"]),
@@ -435,6 +469,8 @@ def dry_run(company=None, as_of=None):
         "insurer_recurring_lines": sum(1 for l in lines if l["kind"] == "recurring" and l["party"] in insurers),
         "payroll_salary_months": len(salary_months),
         "payroll_lines": sum(1 for l in lines if l["kind"] == "payroll"),
+        "payroll_hrms": 1 if result["hrms_payroll"] is not None else 0,
+        "payroll_accrued_lines": 1 if result["accrued_payroll"] else 0,
         "bank_lines_kept": sources["kept"],
         "bank_lines_left_out": dict(sources["left_out"]),
         "bank_groups_per_period": dict(collections.Counter(item["period"] for item in sources["bank"])),
@@ -534,15 +570,16 @@ def compute(company, as_of, include_run_rate=True, include_new_purchases=True, i
 
     expected, manual = manual_inputs()
     trailing = cf.payroll_from_postings(cf.payroll_postings(personnel_postings(company, as_of)))
-    amount = cf.payroll_level(expected, trailing)
+    hrms = cf.hrms_net(hrms_slips(company, as_of))
+    amount = cf.payroll_level(expected, trailing, hrms)
     if amount:
-        if expected:
-            note = _("payroll from settings: the expected monthly payroll, run on the last day of the month or the Friday before a weekend")
-        else:
-            note = _("average of the last three salary months (accounts {0} to {1}), run on the last day of the month or the Friday before a weekend").format(
-                *cf.SALARY_ACCOUNTS)
+        note = _(cf.payroll_basis_note(expected, hrms))
         for day in cf.payroll_dates(as_of, horizon):
             lines.append(line("payroll", day, amount, "", "", "", note))
+    accrued = cf.accrued_net(clearing_balance(company, as_of))
+    if accrued:
+        lines.append(line("payroll", as_of + datetime.timedelta(days=1), accrued, "", "", "",
+                          _("accrued net pay on 1091, not yet paid")))
 
     for row in manual:
         if cf.manual_day_in_window(row.date, as_of, horizon):
@@ -574,6 +611,8 @@ def compute(company, as_of, include_run_rate=True, include_new_purchases=True, i
         "run_rate": run_rate,
         "new_purchases": new_purchases,
         "expected_payroll": expected,
+        "hrms_payroll": hrms,
+        "accrued_payroll": accrued,
         "closing_band": cf.closing_band(weeks[-1]["closing"], run_rate, new_purchases),
         "not_modelled": sources["contra_not_modelled"],
     }
@@ -655,6 +694,9 @@ def execute(filters=None):
     if result["expected_payroll"]:
         messages.append(_("Payroll is from settings: {0} a month, in place of the trailing mean of the last three salary months.").format(
             fmt_money(result["expected_payroll"], currency=currency)))
+    elif result["hrms_payroll"] is not None:
+        messages.append(_("Payroll is from the last submitted salary slips: {0} a month.").format(
+            fmt_money(result["hrms_payroll"], currency=currency)))
     manual_count = sum(1 for l in result["lines"] if l["kind"] == cf.MANUAL)
     if manual_count:
         messages.append(_("{0} manual lines from Cash Forecast Settings are in the forecast.").format(manual_count))

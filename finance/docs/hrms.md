@@ -276,6 +276,8 @@ slot that ledgerdemain gives (`erpnext-setup.md`).
 8. **Cash forecast.** The forecast reads the salary accounts 5000 to 5099 (`cash_forecast.py`).
    After HRMS, the Payroll Entry accruals post to the same accounts. Confirm the payroll line
    of the forecast does not count a salary twice once the net pay runs through the bank.
+   done: erp-b1dv, the forecast's payroll line is the slips' net once HRMS runs; the
+   insurers' bills carry the contributions.
 9. **Quellensteuer** (only if Question 2 says we build it). Its own bead, with the tariff
    tables as data.
 10. **ELM** (only if Question 1 says we transmit ourselves). Its own bead, after a

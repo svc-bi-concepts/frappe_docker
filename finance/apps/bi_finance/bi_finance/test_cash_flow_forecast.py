@@ -255,7 +255,7 @@ class NewSalesRunRate(unittest.TestCase):
             "recurring_sources": {"bills": [], "bank": [], "contra": [], "contra_not_modelled": {}},
             "personnel_postings": [], "vat_balances": {},
             "vat_paid_since": 0.0, "sales_paid_in_windows": payments, "purchase_paid_in_windows": [],
-            "insurer_suppliers": set(),
+            "insurer_suppliers": set(), "hrms_slips": [], "clearing_balance": 0.0,
         }
         return {name: stack.enter_context(mock.patch.object(cff, name, return_value=value))
                 for name, value in stubs.items()}
@@ -451,6 +451,7 @@ class NewPurchasesRunRate(LedgerFixture):
             "recurring_sources": {"bills": bills, "bank": [], "contra": [], "contra_not_modelled": {}},
             "personnel_postings": [], "vat_balances": {},
             "vat_paid_since": 0.0, "insurer_suppliers": set(insurers),
+            "hrms_slips": [], "clearing_balance": 0.0,
         }
         with contextlib.ExitStack() as stack:
             for name, value in stubs.items():
@@ -488,7 +489,8 @@ class NewPurchasesRunRate(LedgerFixture):
                 stubs = {"opening_cash": 1000.0, "manual_inputs": (0.0, []), "open_documents": {}, "paid_history": {}, "sales_paid_in_windows": [],
                          "recurring_sources": {"bills": [], "bank": [], "contra": [], "contra_not_modelled": {}},
                          "personnel_postings": [], "vat_balances": {},
-                         "vat_paid_since": 0.0, "insurer_suppliers": set()}
+                         "vat_paid_since": 0.0, "insurer_suppliers": set(),
+                         "hrms_slips": [], "clearing_balance": 0.0}
                 for name, value in stubs.items():
                     stack.enter_context(mock.patch.object(cff, name, return_value=value))
                 stack.enter_context(mock.patch.object(cff, "_", lambda text: text))
@@ -573,7 +575,7 @@ class OpenDocuments(LedgerFixture):
             "opening_cash": 1000.0, "manual_inputs": (0.0, []), "paid_history": {}, "sales_paid_in_windows": [],
             "recurring_sources": {"bills": [item], "bank": [], "contra": [], "contra_not_modelled": {}},
             "personnel_postings": [], "vat_balances": {},
-            "vat_paid_since": 0.0,
+            "vat_paid_since": 0.0, "hrms_slips": [], "clearing_balance": 0.0,
         }
         with contextlib.ExitStack() as stack:
             for name, value in stubs.items():
@@ -594,7 +596,7 @@ class ManualInputsAndPayroll(unittest.TestCase):
             "recurring_sources": {"bills": [], "bank": [], "contra": [], "contra_not_modelled": {}},
             "personnel_postings": postings, "vat_balances": {}, "vat_paid_since": 0.0,
             "sales_paid_in_windows": [], "purchase_paid_in_windows": [], "insurer_suppliers": set(),
-            "manual_inputs": (expected, list(manual)),
+            "manual_inputs": (expected, list(manual)), "hrms_slips": [], "clearing_balance": 0.0,
         }
         with contextlib.ExitStack() as stack:
             for name, value in stubs.items():
@@ -656,7 +658,8 @@ class ManualInputsAndPayroll(unittest.TestCase):
 
     def test_the_lines_report_shows_a_manual_line_signed_as_entered(self):
         with self.books(manual=self.manual_rows()):
-            _columns, rows, _message = cffl.execute({"company": "Test Company", "as_of_date": AS_OF})
+            with mock.patch.object(cffl, "_", lambda text: text):  # no site, so no translations
+                _columns, rows, _message = cffl.execute({"company": "Test Company", "as_of_date": AS_OF})
         self.assertEqual([(row["expected"], row["amount"], row["type"]) for row in rows if row["type"] == "Manual input"],
                          [(D(2026, 10, 20), -200.0, "Manual input"), (D(2026, 11, 20), 700.0, "Manual input")])
 
@@ -670,10 +673,77 @@ class ManualInputsAndPayroll(unittest.TestCase):
             columns, _rows, _message, _chart, _summary = cff.execute(filters)
         self.assertNotIn("manual", [column["fieldname"] for column in columns])
 
+    def test_the_last_submitted_slips_net_is_the_payroll_when_slips_exist(self):
+        slips = [("PE-9", D(2026, 9, 30), 1500.0), ("PE-9", D(2026, 9, 30), 1200.0)]
+        with self.books(), mock.patch.object(cff, "hrms_slips", return_value=slips):
+            result = cff.compute("Test Company", AS_OF)
+        runs = self.payroll(result)
+        self.assertEqual([(day, amount) for day, amount, _note in runs],
+                         [(D(2026, 10, 30), 2700.0), (D(2026, 11, 30), 2700.0), (D(2026, 12, 31), 2700.0)])
+        self.assertTrue(all("net pay of the last submitted salary slips" in note for _d, _a, note in runs))
+
+    def test_a_credit_balance_on_1091_is_one_accrued_payroll_line_in_week_1(self):
+        with self.books(), mock.patch.object(cff, "clearing_balance", return_value=900.0):
+            result = cff.compute("Test Company", AS_OF)
+        accrued = [l for l in result["lines"] if "accrued net pay" in l["note"]]
+        self.assertEqual([(l["day"], l["amount"], l["week"], l["kind"], l["party"]) for l in accrued],
+                         [(AS_OF + datetime.timedelta(days=1), 900.0, 1, "payroll", "")])
+        self.assertEqual(result["accrued_payroll"], 900.0)
+
+    def test_a_debit_balance_on_1091_is_no_accrued_line(self):
+        with self.books(), mock.patch.object(cff, "clearing_balance", return_value=-500.0):
+            result = cff.compute("Test Company", AS_OF)
+        self.assertIsNone(result["accrued_payroll"])
+        self.assertFalse(any("accrued net pay" in l["note"] for l in result["lines"]))
+
+    def test_the_settings_level_wins_over_the_slips(self):
+        slips = [("PE-9", D(2026, 9, 30), 2700.0)]
+        with self.books(expected=4500.0), mock.patch.object(cff, "hrms_slips", return_value=slips):
+            result = cff.compute("Test Company", AS_OF)
+        runs = self.payroll(result)
+        self.assertEqual([amount for _day, amount, _note in runs], [4500.0] * 3)
+        self.assertTrue(all(note.startswith("payroll from settings") for _d, _a, note in runs))
+
+    def test_without_slips_the_trailing_mean_stays_and_no_accrued_line_is_forecast(self):
+        with self.books():
+            result = cff.compute("Test Company", AS_OF)
+        runs = self.payroll(result)
+        self.assertEqual([amount for _day, amount, _note in runs], [3000.0] * 3)
+        self.assertIsNone(result["hrms_payroll"])
+        self.assertIsNone(result["accrued_payroll"])
+        self.assertTrue(all("average of the last three salary months" in note for _d, _a, note in runs))
+
+    def test_the_report_message_says_the_payroll_is_from_the_slips(self):
+        slips = [("PE-9", D(2026, 9, 30), 2700.0)]
+        with self.books(), mock.patch.object(cff, "hrms_slips", return_value=slips):
+            _columns, _rows, message, _chart, _summary = cff.execute({"company": "Test Company", "as_of_date": AS_OF})
+        self.assertIn("Payroll is from the last submitted salary slips: 2700.00 CHF a month", message)
+
     def test_the_report_message_says_the_payroll_is_from_settings(self):
         with self.books(expected=4500.0):
             _columns, _rows, message, _chart, _summary = cff.execute({"company": "Test Company", "as_of_date": AS_OF})
         self.assertIn("Payroll is from settings: 4500.00 CHF a month", message)
+
+
+class HrmsSlips(unittest.TestCase):
+    # the reader itself: the guard for a site without HRMS, and the posting-date filter (mutation: a filter on the
+    # end date would keep a run whose accrual is already in the GL on the trailing mean)
+    def test_the_slips_are_read_by_posting_date_as_tuples(self):
+        with mock.patch.object(cff, "frappe") as frappe:
+            frappe.db.exists.return_value = True
+            frappe.db.sql.return_value = [("PE-9", D(2026, 9, 30), "2700.5")]
+            rows = cff.hrms_slips("Test Company", AS_OF)
+        self.assertEqual(rows, [("PE-9", D(2026, 9, 30), 2700.5)])
+        sql, args = frappe.db.sql.call_args.args
+        self.assertIn("docstatus = 1", sql)
+        self.assertIn("posting_date <= %s", sql)
+        self.assertEqual(args, ("Test Company", AS_OF))
+
+    def test_a_site_without_hrms_reads_no_slips(self):
+        with mock.patch.object(cff, "frappe") as frappe:
+            frappe.db.exists.return_value = False
+            self.assertEqual(cff.hrms_slips("Test Company", AS_OF), [])
+            frappe.db.sql.assert_not_called()
 
 
 class OwnerAccounts(unittest.TestCase):
@@ -689,6 +759,7 @@ class OwnerAccounts(unittest.TestCase):
         stubs = {
             "opening_cash": 1000.0, "manual_inputs": (0.0, []), "open_documents": {}, "paid_history": {}, "recurring_sources": sources,
             "personnel_postings": [], "vat_balances": {}, "vat_paid_since": 0.0, "sales_paid_in_windows": [],
+            "hrms_slips": [], "clearing_balance": 0.0,
         }
         with contextlib.ExitStack() as stack:
             for name, value in stubs.items():

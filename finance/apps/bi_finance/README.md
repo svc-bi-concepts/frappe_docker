@@ -83,8 +83,12 @@ Invoice prints, with the QR code drawn on our own server (no external host, see
   account) are their own source "manual" in the forecast when their date is after the as-of date and up to the horizon end,
   one line each; a line on the as-of date is in the opening balance already, as a salary run on that day is. The per-source
   back-test does not cover them: they have no history, and a report run for a past as-of date reads the settings as they
-  stand, so a back-test is only comparable with the settings empty. The next step is a payroll level read from HRMS (Salary Structure
-  Assignments or the last submitted slips), once payroll has run on the live site.
+  stand, so a back-test is only comparable with the settings empty. Once HRMS runs, the payroll line is the net pay
+  of the last submitted Salary Slips (the sum of the slips of the latest payroll entry by end date); the salary
+  clearing account 1091's credit balance on the as-of date is one more payroll line in week 1, the net accrued but
+  not yet paid. The expected level of the settings still wins when it is set; without submitted slips (bexio's
+  months, a site without HRMS) the trailing mean stays. The 57xx and 227x stay out of the line: the insurers'
+  bills carry the contributions.
 - `bi_finance/test_cash_forecast.py`: offline tests of `cash_forecast.py` with invented data:
   `python3 -m unittest bi_finance.test_cash_forecast` from this directory.
 - `bi_finance/cash_conversion.py`: the Cash Conversion Cycle arithmetic, pure Python: DSO, DPO and DIO per month

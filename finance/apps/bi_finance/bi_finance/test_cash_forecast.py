@@ -267,6 +267,41 @@ class Payroll(unittest.TestCase):
     def test_a_run_before_the_as_of_date_is_not_in_the_forecast(self):
         self.assertEqual(list(cf.payroll_dates(D(2026, 10, 31), D(2026, 11, 30))), [D(2026, 11, 30)])
 
+    def test_hrms_net_is_the_sum_of_the_last_entry_slips(self):
+        slips = [("PE-9", D(2026, 9, 30), 1500.0), ("PE-9", D(2026, 9, 30), 1200.0)]
+        self.assertEqual(cf.hrms_net(slips), 2700.0)
+
+    def test_hrms_net_takes_the_latest_entry_by_end_date(self):
+        slips = [("PE-8", D(2026, 8, 31), 3000.0), ("PE-9", D(2026, 9, 30), 2700.0)]
+        self.assertEqual(cf.hrms_net(slips), 2700.0)
+
+    def test_hrms_net_breaks_an_end_date_tie_by_the_entry_name(self):
+        slips = [("PE-9-b", D(2026, 9, 30), 100.0), ("PE-9-a", D(2026, 9, 30), 3000.0)]
+        self.assertEqual(cf.hrms_net(slips), 100.0)
+
+    def test_no_slips_no_hrms_net(self):
+        self.assertIsNone(cf.hrms_net([]))
+
+    def test_the_level_prefers_the_settings_then_the_slips_then_the_trailing_mean(self):
+        self.assertEqual(cf.payroll_level(5000.0, 3000.0, 4200.0), 5000.0)
+        self.assertEqual(cf.payroll_level(0.0, 3000.0, 4200.0), 4200.0)
+        self.assertEqual(cf.payroll_level(None, 3000.0, 4200.0), 4200.0)
+
+    def test_the_level_falls_back_to_the_trailing_mean_without_slips(self):
+        self.assertEqual(cf.payroll_level(None, 3000.0, None), 3000.0)
+
+    def test_a_credit_balance_on_1091_is_the_accrued_net(self):
+        self.assertEqual(cf.accrued_net(1234.56), 1234.56)
+
+    def test_a_debit_or_zero_balance_on_1091_is_no_accrued_net(self):
+        self.assertIsNone(cf.accrued_net(-100.0))
+        self.assertIsNone(cf.accrued_net(0.0))
+
+    def test_the_basis_note_says_which_basis_the_amount_came_from(self):
+        self.assertIn("payroll from settings", cf.payroll_basis_note(5000.0, None))
+        self.assertIn("net pay of the last submitted salary slips", cf.payroll_basis_note(0.0, 4200.0))
+        self.assertIn("average of the last three salary months", cf.payroll_basis_note(0.0, None))
+
 
 class Vat(unittest.TestCase):
     def test_owed_is_the_liabilities_less_the_input_tax(self):

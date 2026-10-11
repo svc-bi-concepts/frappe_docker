@@ -263,10 +263,46 @@ def recurring_dates(item, as_of, end):
             yield day
 
 
-def payroll_level(expected, trailing):
+def payroll_level(expected, trailing, hrms=None):
     """The monthly payroll of each salary run: the expected level of the Cash Forecast Settings when it is set (above
-    zero), else the trailing basis (payroll_from_postings), None when neither is there."""
-    return expected if expected else trailing
+    zero), else the net pay of the last submitted salary slips (hrms_net), else the trailing basis
+    (payroll_from_postings). hrms defaults to None, so a site without HRMS keeps the two-argument behaviour.
+    None when neither basis is there."""
+    if expected:
+        return expected
+    if hrms is not None:
+        return hrms
+    return trailing
+
+
+def hrms_net(slips):
+    """slips: (payroll entry, end date, net pay) of the submitted Salary Slips up to the as-of date (the report's
+    hrms_slips). The net pay of the last salary run: the sum over the slips of the latest payroll entry, latest by
+    end date, the entry name breaking a tie. None without slips, so the GL's trailing mean stays the basis."""
+    if not slips:
+        return None
+    latest = max((end_date, entry) for entry, end_date, _net in slips)
+    return round(sum(net for entry, end_date, net in slips if (end_date, entry) == latest), 2)
+
+
+def accrued_net(clearing_balance):
+    """The salary clearing account's (1091) balance on the as-of date, credit minus debit, as a positive outflow
+    when it is a credit: the accrual credits 1091 with the net and the bank payment debits it later, so a credit
+    balance is the net pay accrued but not yet paid. A debit balance or zero is None: nothing accrued to pay."""
+    return round(clearing_balance, 2) if clearing_balance > 0 else None
+
+
+def payroll_basis_note(expected, hrms):
+    """The note a salary run line carries, saying which basis its amount came from: the expected level of the Cash
+    Forecast Settings when it is set, else the net pay of the last submitted salary slips, else the average of the
+    last three salary months."""
+    if expected:
+        return ("payroll from settings: the expected monthly payroll, run on the last day of the month "
+                "or the Friday before a weekend")
+    if hrms is not None:
+        return "net pay of the last submitted salary slips, run on the last day of the month or the Friday before a weekend"
+    return ("average of the last three salary months (accounts 5000 to 5099), run on the last day of the month "
+            "or the Friday before a weekend")
 
 
 def manual_amount(direction, amount):
