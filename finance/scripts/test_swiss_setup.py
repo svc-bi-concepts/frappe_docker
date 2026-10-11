@@ -6,6 +6,7 @@ Run with: python3 -m unittest discover -s finance/scripts -p 'test_*.py'
 import importlib.util
 import os
 import sys
+import types
 import unittest
 from unittest import mock
 
@@ -141,6 +142,44 @@ class PayslipChangesTest(unittest.TestCase):
 
     def test_a_disabled_format_is_enabled_again(self):
         self.assertEqual(swiss_setup.payslip_changes({**self.IN_PLACE, "disabled": 1}, "<p>slip</p>"), {"disabled": 0})
+
+
+class SetDoctypePropertyTest(unittest.TestCase):
+    def test_one_args_dict_with_the_six_keys_of_frappe_16_51(self):
+        with mock.patch.object(swiss_setup, "frappe") as frappe:
+            swiss_setup.set_doctype_property("Salary Slip", "default_print_format", "Lohnabrechnung", "Data")
+        frappe.make_property_setter.assert_called_once_with({
+            "doctype": "Salary Slip",
+            "doctype_or_field": "DocType",
+            "fieldname": None,
+            "property": "default_print_format",
+            "value": "Lohnabrechnung",
+            "property_type": "Data",
+        })
+
+
+class DefaultPrintFormatStepTest(unittest.TestCase):
+    # payslip() and qrbill(): the format's own work is skipped when it is in place, the default never is
+    def run_step(self, step, default, doc):
+        # the format file reads as "<p>slip</p>", the Print Format row is doc: in place when they match
+        with mock.patch.object(swiss_setup, "frappe") as frappe, \
+                mock.patch("builtins.open", mock.mock_open(read_data="<p>slip</p>")), \
+                mock.patch.object(swiss_setup, default) as set_default, \
+                mock.patch.object(swiss_setup, "say"):
+            frappe.db.exists.return_value = True
+            frappe.get_doc.return_value = doc
+            step()
+        return frappe, set_default
+
+    def test_payslip_with_the_format_in_place_still_sets_the_default(self):
+        frappe, set_default = self.run_step(swiss_setup.payslip, "payslip_default", {"html": "<p>slip</p>", "disabled": 0})
+        set_default.assert_called_once_with()
+
+    def test_qrbill_with_the_format_in_place_still_sets_the_default(self):
+        # qrbill() reads the row's fields as attributes, payslip() through get()
+        row = types.SimpleNamespace(html="<p>slip</p>", disabled=0, margin_bottom=1)
+        frappe, set_default = self.run_step(swiss_setup.qrbill, "qrbill_default", row)
+        set_default.assert_called_once_with()
 
 
 class HrGrantsTest(unittest.TestCase):

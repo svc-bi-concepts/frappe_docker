@@ -134,6 +134,19 @@ def say(msg):
     print(msg, flush=True)
 
 
+def set_doctype_property(doctype, prop, value, property_type):
+    # frappe 16 takes one args dict here; the positional form (doctype, fieldname, property, ...) raises
+    # TypeError. fieldname stays None: a DocType property names no field.
+    frappe.make_property_setter({
+        "doctype": doctype,
+        "doctype_or_field": "DocType",
+        "fieldname": None,
+        "property": prop,
+        "value": value,
+        "property_type": property_type,
+    })
+
+
 def delete_revokes(perms, keep):
     """perms: (role, permlevel, delete) rows, as the effective permissions of a
     doctype. Returns the (role, permlevel) pairs that may delete but are not in keep."""
@@ -692,7 +705,7 @@ def qrbill_default():
     if frappe.db.get_value("Property Setter", filters, "value") == PRINT_FORMAT:
         say(f"qrbill: default print format of Sales Invoice is {PRINT_FORMAT} already")
         return
-    frappe.make_property_setter("Sales Invoice", None, "default_print_format", PRINT_FORMAT, "Data", for_doctype=True)
+    set_doctype_property("Sales Invoice", "default_print_format", PRINT_FORMAT, "Data")
     frappe.clear_cache(doctype="Sales Invoice")
     frappe.db.commit()
     say(f"qrbill: default print format of Sales Invoice set to {PRINT_FORMAT}")
@@ -713,11 +726,11 @@ def payslip():
         changes = payslip_changes(doc, html)
         if not changes:
             say("payslip: print format in place")
-            return
-        for field, value in changes.items():
-            doc.set(field, value)
-        doc.save()
-        say(f"payslip: print format {LOHNABRECHNUNG} updated ({', '.join(changes)})")
+        else:
+            for field, value in changes.items():
+                doc.set(field, value)
+            doc.save()
+            say(f"payslip: print format {LOHNABRECHNUNG} updated ({', '.join(changes)})")
     else:
         frappe.get_doc({
             "doctype": "Print Format",
@@ -743,7 +756,7 @@ def payslip_default():
     if frappe.db.get_value("Property Setter", filters, "value") == LOHNABRECHNUNG:
         say(f"payslip: default print format of Salary Slip is {LOHNABRECHNUNG} already")
         return
-    frappe.make_property_setter("Salary Slip", None, "default_print_format", LOHNABRECHNUNG, "Data", for_doctype=True)
+    set_doctype_property("Salary Slip", "default_print_format", LOHNABRECHNUNG, "Data")
     frappe.clear_cache(doctype="Salary Slip")
     frappe.db.commit()
     say(f"payslip: default print format of Salary Slip set to {LOHNABRECHNUNG}")
@@ -846,7 +859,7 @@ def gebuev():
     for dt in GEBUEV_TRACKED:
         if frappe.db.get_value("DocType", dt, "track_changes"):
             continue
-        frappe.make_property_setter(dt, None, "track_changes", 1, "Check", for_doctype=True)
+        set_doctype_property(dt, "track_changes", 1, "Check")
         say(f"gebuev: {dt}: track changes on")
     frappe.clear_cache()
     say("gebuev: track changes checked on " + str(len(GEBUEV_TRACKED)) + " doctypes")
