@@ -25,9 +25,6 @@ manual remake of bi_payroll/README.md ("Salary Structure") runs as this script
 
 Every step is skipped when its end state already holds, so a rerun changes
 nothing (proven on the copy, which was remade for the October parallel proof).
-An employee whose old assignment is already cancelled but who has no active one
-on the new structure gets it restored from the cancelled row, so a rerun after
-an interrupted run completes instead of skipping.
 
 PRIVACY: payroll data is the company's most sensitive data and this repo is
 public. The script prints counts, yes/no and document states, never employee
@@ -136,6 +133,8 @@ def move_assignments(old_name, new_name):
         doc.insert()
         doc.submit()
         frappe.db.commit()
+        # a second old row of the same employee (an earlier cancelled one) must not make a second assignment
+        active_on_new.add(row["employee"])
         if row["docstatus"] == 2:
             restored += 1
             say(f"remake: record {position}: assignment restored on {new_name}")

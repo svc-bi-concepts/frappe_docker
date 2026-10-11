@@ -101,6 +101,16 @@ class MovePlanTest(unittest.TestCase):
         self.assertEqual(created[0].employee, "EMP-A")
 
 
+    def test_two_old_rows_of_one_employee_make_one_assignment(self):
+        old_rows = [
+            {"name": "SSA-1", "docstatus": 2, "employee": "EMP-A"},
+            {"name": "SSA-2", "docstatus": 1, "employee": "EMP-A"},
+        ]
+        moved, created = self.run_moves(old_rows, [])
+        self.assertEqual(moved, 1)
+        self.assertEqual(len(created), 1)
+
+
 class FreeNameTest(unittest.TestCase):
     def test_first_free(self):
         with mock.patch.object(remake.frappe, "get_all", return_value=[]):
