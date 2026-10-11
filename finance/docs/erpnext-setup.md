@@ -63,6 +63,13 @@ own: bi_finance's Treasury, bi_payroll's Swiss Payroll, and hrms's HR modules (H
 a one-key patch to hrms, `finance/docs/erpnextswiss-patches.md`). They follow ERPNext's entries in the
 order the apps are installed (`sites/apps.txt`: bi_finance, bi_payroll, erpnext, erpnextswiss, frappe, hrms).
 The order, and hiding an entry, is arranged in the Desk with a Workspace Manager (the site layer, no code).
+Treasury's module Sidebar (`bi_finance/sidebar/bi_finance/bi_finance.json`) is arranged like ERPNext's: Home, the
+daily documents at top level with icons, then the Reports, Banking and Setup sections. The claim rule: a Sidebar item
+carries `is_default_module` when it is a document Benchi works in daily that its own app does not navigate, so a bare
+route to it (a workspace card, a search result, the Add button of a list) opens in Treasury. VAT Declaration and
+Payment Proposal are claimed for that reason, since erpnextswiss's shell would otherwise open them. ERPNext's own
+documents are never claimed (its bank rows stay in ERPNext's shell). A new doctype or report of ours goes into the
+sidebar, and into the top level if it is daily work.
 
 ## The setup script
 

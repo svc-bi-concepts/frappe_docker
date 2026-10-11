@@ -7,23 +7,28 @@ Finance menu, which the computed sidebar cannot show. Offline, stdlib only:
 
     python3 -m unittest bi_finance.test_sidebar
 
-Ownership: `is_default_module` on an item claims the entity for this shell, so it is set
-only on bi_finance's own doctypes and reports — never on the four rows that other apps
-ship, whose shells keep them (VAT Declaration and Payment Proposal open in the Schweizer
-Buchhaltung shell, the two bank rows in Accounts).
+Ownership: `is_default_module` on an item claims the entity for this shell. It is set on
+bi_finance's own doctypes and reports, and on the two erpnextswiss documents Benchi works in
+every day (VAT Declaration, Payment Proposal): without the claim a bare route to them (a
+workspace card, a search result, the Add button of a bare list) opens erpnextswiss's
+60-item computed shell. It is never set on ERPNext's own bank rows (Bank Transaction,
+Bank Reconciliation Tool, Bank Account): ERPNext's shell keeps them, and the two bank pages
+resolve here by being listed.
 """
 
 import json
 import os
 import unittest
 
+from bi_finance import hooks
 from bi_finance.test_layout import PACKAGE, modules, scrub
 
 SIDEBAR = os.path.join(PACKAGE, scrub(modules()[0]), "sidebar", "bi_finance", "bi_finance.json")
+DOCK = os.path.join(PACKAGE, "dock", "bi_finance", "bi_finance.json")
 
 # what the computed sidebar shows today: none of it may disappear
 KEEP = (
-    "Treasury",
+    "Home",  # the Treasury row, relabelled Home (ERPNext's first row)
     "Wise Settings",
     "PayPal Settings",
     "Bank Statement Upload",
@@ -36,14 +41,21 @@ KEEP = (
     "MWST pro Quartal",
 )
 
-# the rows another app ships: present here, never claimed (their documents open in their
-# own shell, not this one)
-FOREIGN = {
+# the two erpnextswiss documents Benchi works in daily: present here and claimed, so a bare route
+# to them opens in this shell (the reason is in the module docstring)
+CLAIMED = {
     "VAT Declaration": "DocType",
     "Payment Proposal": "DocType",
+}
+
+# ERPNext's own bank rows: present here, never claimed (ERPNext's shell keeps them)
+ERPNEXT = {
     "Bank Transaction": "DocType",
     "Bank Reconciliation Tool": "DocType",
+    "Bank Account": "DocType",
 }
+
+FOREIGN = {**CLAIMED, **ERPNEXT}  # rows another app ships: their names are not this app's to ship
 
 
 def load():
@@ -73,11 +85,14 @@ class Sidebar(unittest.TestCase):
         for label in KEEP:
             self.assertIn(label, labels)
 
-    def test_the_erpnextswiss_items_are_present_and_unclaimed(self):
+    def test_the_erpnextswiss_documents_are_claimed_and_the_erpnext_rows_are_not(self):
         by_label = {link["label"]: link for link in self.links}
-        for label, link_type in FOREIGN.items():
+        for label, link_type in CLAIMED.items():
             self.assertEqual(by_label[label]["link_type"], link_type)
-            self.assertFalse(by_label[label].get("is_default_module"))
+            self.assertTrue(by_label[label].get("is_default_module"), label)
+        for label, link_type in ERPNEXT.items():
+            self.assertEqual(by_label[label]["link_type"], link_type)
+            self.assertFalse(by_label[label].get("is_default_module"), label)
 
     def test_every_doctype_and_report_row_names_something_that_ships(self):
         own = own_names("doctype") | own_names("report")
@@ -89,12 +104,32 @@ class Sidebar(unittest.TestCase):
             else:
                 self.assertIn(scrub(link["link_to"]), own, link["label"])
 
-    def test_ownership_is_claimed_only_on_the_app_s_own_rows(self):
+    def test_ownership_is_claimed_on_the_app_s_own_rows_and_the_two_erpnextswiss_documents(self):
         own = own_names("doctype") | own_names("report")
         for link in self.links:
             claimed = bool(link.get("is_default_module"))
-            should = link["link_type"] in ("DocType", "Report") and scrub(link["link_to"]) in own
+            should = link["link_type"] in ("DocType", "Report") and (
+                scrub(link["link_to"]) in own or link["label"] in CLAIMED
+            )
             self.assertEqual(claimed, should, link["label"])
+
+    def test_the_dock_rail_opens_the_module_sidebar_that_ships(self):
+        with open(DOCK, encoding="utf-8") as f:
+            dock = json.load(f)
+        self.assertEqual(dock["doctype"], "Dock")
+        self.assertEqual(dock["name"], "bi_finance")
+        self.assertEqual(dock["app"], "bi_finance")
+        self.assertEqual(dock["standard"], 1)
+        self.assertEqual([(item["link_type"], item["link_to"]) for item in dock["items"]], [("Sidebar", "BI Finance")])
+        self.assertEqual(dock["items"][0]["title"], "Finance")
+        self.assertEqual(self.doc["name"], dock["items"][0]["link_to"])
+
+    def test_the_apps_tile_carries_the_logo_that_ships(self):
+        tile = hooks.add_to_apps_screen[0]
+        self.assertEqual(tile["name"], "bi_finance")
+        self.assertEqual(tile["sequence_id"], 3)
+        logo = os.path.join(PACKAGE, "public", *tile["logo"].split("/assets/bi_finance/")[1].split("/"))
+        self.assertTrue(os.path.isfile(logo), logo)
 
     def test_the_workspace_row_names_the_shipped_workspace(self):
         workspaces = own_names("workspace")
@@ -102,11 +137,22 @@ class Sidebar(unittest.TestCase):
             if link["link_type"] == "Workspace":
                 self.assertIn(scrub(link["link_to"]), workspaces, link["label"])
 
-    def test_the_sections_group_the_menu_in_the_asked_order(self):
-        sections = [item["label"] for item in self.doc["items"] if item["type"] == "Section Break"]
-        self.assertEqual(sections, ["Banking", "Payments", "MWST", "Cash forecast"])
-        self.assertEqual(self.doc["items"][0]["label"], "Treasury")
-        for item in self.doc["items"]:
+    def test_the_menu_reads_home_then_the_daily_documents_then_the_sections(self):
+        # ERPNext's arrangement: Home, the daily documents at top level with icons, then the sections
+        items = self.doc["items"]
+        self.assertEqual(items[0]["label"], "Home")
+        self.assertEqual(items[0]["link_type"], "Workspace")
+        first_section = next(i for i, item in enumerate(items) if item["type"] == "Section Break")
+        daily = [item["label"] for item in items[1:first_section]]
+        self.assertEqual(daily, ["Bank Transaction", "Bank Statement Upload", "Payment Proposal", "VAT Declaration"])
+        for item in items[1:first_section]:
+            self.assertEqual(item["child"], 0, item["label"])
+            self.assertTrue(item.get("icon"), item["label"])
+        sections = [item["label"] for item in items if item["type"] == "Section Break"]
+        self.assertEqual(sections, ["Reports", "Banking", "Setup"])
+        opened = {item["label"]: item["keep_closed"] for item in items if item["type"] == "Section Break"}
+        self.assertEqual(opened, {"Reports": 0, "Banking": 1, "Setup": 1})
+        for item in items:
             if item["type"] == "Section Break":
                 self.assertEqual(item["indent"], 1)
             else:
