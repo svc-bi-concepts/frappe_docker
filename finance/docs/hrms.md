@@ -240,6 +240,9 @@ slot that ledgerdemain gives (`erpnext-setup.md`).
    are placeholders, so the insured salary is worked back from the paystub's 5050 through them, to reproduce
    that amount in the BVG Employee formula. Without it the first payroll would deduct no BVG. Each calibrated
    value is listed in `private/payroll/bvg-calibration.txt`; both are replaced when the fund's plan sheet arrives.
+   The insured salary on the assignment is a YEARLY amount (the formula divides it by 12): a monthly-scale value
+   computes a zero BVG deduction, and the BVG row then drops off the payslip and off line 10.1 of the Form 11
+   (found by the erp-rqxs PDF proof on the copy).
    **Stays manual:** the employer rates (AHV, ALV, UVG, KTG, FAK: the insurers' sheets — the KTG contract is read and
    its values are private, the settings follow in a follow-up bead, erp-1jh5; KTG is printed on no paystub), and the
    BVG plan (the band rates in the settings, then the insured salaries with them). The QST
