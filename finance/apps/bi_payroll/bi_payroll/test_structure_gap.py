@@ -17,9 +17,9 @@ from unittest import mock
 from bi_payroll.swiss_rates import STRUCTURE_DEDUCTIONS, STRUCTURE_EARNINGS
 
 QST = "Quellensteuer Employee"
-# an invented bracket: 4950 up to 5050, 4.00 percent, no minimum tax
 # every row of a complete structure: the earnings and the deductions
 ROWS = len(STRUCTURE_EARNINGS) + len(STRUCTURE_DEDUCTIONS)
+# an invented bracket: 4950 up to 5050, 4.00 percent, no minimum tax
 BRACKET = {
     "canton": "ZG", "tariff_code": "B2N", "valid_from": datetime.date(2026, 1, 1),
     "income_from": 4950.0, "step": 100.0, "minimum_tax": 0.0, "rate": 4.0,
@@ -133,6 +133,12 @@ class StructureGap(unittest.TestCase):
         module.withhold_qst(slip)  # saved again: nothing changes, no second calculation
         self.assertEqual(slip.swiss_qst_amount, 200.0)
         self.assertEqual(slip.calculated, 1)
+
+    def test_the_tax_is_on_the_gross_with_the_commission(self):
+        module, _ = self.load(structure_has_row=True)
+        slip = FakeSlip(gross=4000 + 1000)  # invented: 4,000 salary and 1,000 commission, the gross HRMS gives
+        module.withhold_qst(slip)
+        self.assertEqual(slip.swiss_qst_amount, 200.0)
 
     def test_a_slip_without_a_tax_is_not_stopped_by_a_structure_without_the_row(self):
         module, frappe = self.load(structure_has_row=False)
