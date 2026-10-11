@@ -322,8 +322,6 @@ class LohnausweisTest(unittest.TestCase):
         wanted = swiss_setup.lohnausweis_components()
         current = dict(wanted, catering=["Anything"])
         self.assertEqual(swiss_setup.lohnausweis_changes(1, current, wanted), (False, []))
-    def test_expenses_is_a_step(self):
-        self.assertIn("expenses", swiss_setup.STEPS)
 
 
 class ClaimTypeRowsTest(unittest.TestCase):
@@ -336,6 +334,9 @@ class ClaimTypeRowsTest(unittest.TestCase):
         ("5832", "Pauschalspesen"),
     ]
     COMPANY = "Test BI Concepts AG"
+
+    def test_expenses_is_a_step(self):
+        self.assertIn("expenses", swiss_setup.STEPS)
 
     def test_the_five_types_are_58xx_accounts_with_unique_names(self):
         numbers = [number for number, _name in swiss_setup.EXPENSE_CLAIM_TYPES]

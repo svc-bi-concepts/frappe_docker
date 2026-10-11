@@ -1,7 +1,7 @@
 """Swiss setup of company BI Concepts, run inside the backend container by
 swiss-setup.sh. Steps are named on the command line (coa, accounts, vat, fiscal,
 fields, currencies, banks, gebuev, qrbill, payslip, host, payments, hr, payroll_accounts, lohnausweis,
-expenses); each one is re-runnable and skips what (HR 11 expenses: the claim route as the optional route for employee expenses — the setup step 'expenses' (five Expense Claim Types on bexio's 5811, 5820, 5821, 5822, 5832, the Company's default expense-claim payable 2003, the Expense Approver role on HR_USER), the two routes in operating.md (claim with VAT through the Payment Proposal run, or flat allowances by Additional Salary with the payroll), Payment Entries for claim rows in the payment run (paid from the UBS account, to the claim's payable, submitted on download), the erpnextswiss patches 0002 (the proposal's claim rows pay grand_total, so a VAT claim is not paid short) and 0003 (get_primary_address called .format instead of formatting, every Payment Proposal was refused), offline tests (erp-j9kn))
+expenses); each one is re-runnable and skips what
 already exists. `freeze <date> [--apply]` is a separate command: it closes the
 books up to a date and is a dry run unless --apply is given."""
 import csv
