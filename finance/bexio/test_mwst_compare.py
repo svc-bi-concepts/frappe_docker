@@ -4,6 +4,7 @@ import unittest
 from decimal import Decimal
 
 import mwst_compare as mc
+from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
 
 
 class QuarterTest(unittest.TestCase):

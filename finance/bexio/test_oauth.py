@@ -12,6 +12,7 @@ from unittest import mock
 
 import oauth
 from oauth import KeychainError, OAuthError
+from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
 
 FAKE_ENV = {"BEXIO_CLIENT_ID": "client-id-not-real", "BEXIO_CLIENT_SECRET": "secret-not-real"}
 

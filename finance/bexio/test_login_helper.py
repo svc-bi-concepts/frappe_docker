@@ -18,6 +18,7 @@ from unittest import mock
 
 import login_helper
 import oauth
+from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
 
 REDIRECT = "https://login.example.test:8461/callback"
 TAILNET_USER = "owner@tailnet.example.test"  # invented; tailscale serve sends the real one in the header

@@ -10,6 +10,7 @@ import unittest
 from decimal import Decimal
 
 import check_trial_balance as ctb
+from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
 
 YEARS = [
     {"id": 1, "start": "2020-01-01", "end": "2020-12-31"},

@@ -14,6 +14,7 @@ import unittest
 
 import import_assignments as ia
 from import_master import ErpError
+from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
 
 COMPANY = ia.COMPANY
 STRUCTURE = "Swiss Monthly BI Concepts"

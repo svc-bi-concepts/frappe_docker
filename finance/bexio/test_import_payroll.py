@@ -12,6 +12,7 @@ from decimal import Decimal
 
 import import_payroll as ipr
 import posting_plan as pp
+from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
 
 # bexio account ids of the test chart -> ERPNext account names
 ACCOUNTS = {"A5000": "5000 - Lohn Test - bic", "A1020": "1020 - Bank Test - bic", "A2270": "2270 - Sozial Test - bic",

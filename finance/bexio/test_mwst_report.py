@@ -15,6 +15,7 @@ from decimal import Decimal
 from unittest import mock
 
 import mwst_report as mr
+from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
 
 D = Decimal
 

@@ -14,6 +14,7 @@ from unittest import mock
 import import_files as imf
 import import_master as im
 from test_import_master import FakeErp
+from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
 
 
 def write_export(root, bills=(), expenses=(), files=None, bill_attachments=None, contents=None):

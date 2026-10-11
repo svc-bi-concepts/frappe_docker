@@ -64,7 +64,8 @@ def rule5_conflicts(data):
             if len(kinds.get((line["date"][:10], line["description"]), ())) > 1}
 
 
-def vat_booked_ids(private=im.PRIVATE):
+def vat_booked_ids(private=None):
+    private = private or im.PRIVATE
     """The journal ids the VAT Journal Entries of import_vat_fix book, from the private id files (second word of each line)."""
     ids = set()
     for name in VAT_ID_FILES:
@@ -163,7 +164,8 @@ def load_accounts(token_file):
     return {str(r["bexio_id"]): r["name"] for r in rows}
 
 
-def check(lines, accounts, erp, private=im.PRIVATE):
+def check(lines, accounts, erp, private=None):
+    private = private or im.PRIVATE
     """Read ERPNext (read only) after the loader run and compare it with the lines.
 
     Counts the submitted Journal Entries keyed journal-%, and per voucher compares the GL with the line: the debit account

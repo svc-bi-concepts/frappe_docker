@@ -15,6 +15,7 @@ from unittest import mock
 
 import import_bank as ib
 import import_master as im
+from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
 
 # the lookups the mapping reads; the ids and names are invented
 LOOKUPS = {

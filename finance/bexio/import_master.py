@@ -33,7 +33,7 @@ import urllib.parse
 import urllib.request
 from decimal import Decimal
 
-PRIVATE = "/Users/bsaladin/ws_yardr_finance/private"
+PRIVATE = os.environ.get("BEXIO_PRIVATE") or "/Users/bsaladin/ws_yardr_finance/private"
 TOKEN_FILE = "/Users/bsaladin/ws_yardr_finance/.erpnext-api"
 COMPANY = "BI Concepts"
 ABBR = "bic"

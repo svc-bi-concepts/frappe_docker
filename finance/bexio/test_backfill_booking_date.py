@@ -8,6 +8,7 @@ import unittest
 from unittest import mock
 
 import backfill_booking_date as bb
+from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
 
 RECORDS = [
     {"id": 1, "value_date": "2026-03-30", "book_date": "2026-03-31T00:00:00+02:00"},

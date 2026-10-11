@@ -11,6 +11,7 @@ from decimal import Decimal
 import import_master as im
 import import_payments_out as po
 from test_import_master import FakeErp
+from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
 
 # bexio account ids of the test chart, by account number
 NUMBERS = {10: "2000", 11: "1020", 12: "1021", 13: "1170", 14: "1171", 15: "1172", 16: "4400", 17: "4906",

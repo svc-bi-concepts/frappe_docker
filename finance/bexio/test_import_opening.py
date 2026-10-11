@@ -9,6 +9,7 @@ import tempfile
 import unittest
 
 import import_opening as op
+from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
 
 # invented accounts of the chart, by number
 BY_NUMBER = {

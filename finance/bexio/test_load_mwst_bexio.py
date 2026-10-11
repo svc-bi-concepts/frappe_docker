@@ -13,6 +13,7 @@ from unittest import mock
 
 import import_master as im
 import load_mwst_bexio as loader
+from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
 
 CSV = """quarter,ziffer,label,entgelt_chf,steuer_chf,journal_entgelt_chf,journal_steuer_chf,entgelt_tol_chf,steuer_tol_chf
 2026Q1,302,Normalsatz 7.7 %,1000.00,70.00,0.00,0.00,0.10,0.05

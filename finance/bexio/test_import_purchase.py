@@ -10,6 +10,7 @@ from decimal import Decimal
 
 import import_master as im
 import import_purchase as ip
+from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
 
 # Item Tax Templates by bexio tax id (invented names; one template per bexio code, keyed by its bexio_id)
 TAXES = {

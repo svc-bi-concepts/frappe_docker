@@ -14,6 +14,7 @@ from unittest import mock
 
 import export
 from client import BexioError, Client
+from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
 
 FAKE = {
     "/2.0/contact": [{"id": 1, "name_1": "Muster AG"}, {"id": 2, "name_1": "Test GmbH"}],
@@ -226,7 +227,7 @@ class ExportTest(unittest.TestCase):
 
         self.assertEqual(
             export.default_out(datetime.date(2026, 10, 9)),
-            "/Users/bsaladin/ws_yardr_finance/private/bexio-export/2026-10-09",
+            os.path.join(export.PRIVATE, "bexio-export", "2026-10-09"),
         )
 
     def test_export_issues_only_get_requests(self):
@@ -436,7 +437,7 @@ class ExportTest(unittest.TestCase):
 
     def test_complete_is_dated_under_the_export_folder(self):
         self.assertEqual(export.default_complete_out(datetime.date(2026, 10, 10)),
-                         "/Users/bsaladin/ws_yardr_finance/private/bexio-export/2026-10-10-complete")
+                         os.path.join(export.PRIVATE, "bexio-export", "2026-10-10-complete"))
 
     def test_complete_writes_the_entities_and_the_payroll_into_one_folder(self):
         # Both logins answer from the fixtures (the payroll reads come back empty), so only the layout is checked.

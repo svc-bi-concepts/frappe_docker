@@ -7,6 +7,7 @@ import unittest
 from decimal import Decimal
 
 import import_vat_fix as vf
+from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
 
 # bexio account ids of the test chart, by account number
 NUMBERS = {1: "1170", 2: "1171", 3: "1172", 4: "2200", 5: "2202", 6: "2203", 7: "2000", 8: "1100", 9: "6940",

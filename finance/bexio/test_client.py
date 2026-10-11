@@ -12,6 +12,7 @@ from unittest import mock
 
 import client
 from client import BexioError, Client
+from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
 
 
 def _client():

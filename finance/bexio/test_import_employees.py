@@ -12,6 +12,7 @@ import tempfile
 import unittest
 
 import import_employees as ie
+from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
 
 
 def invented_employee(**overrides):

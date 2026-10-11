@@ -6,6 +6,7 @@ import unittest
 from decimal import Decimal
 
 import mwst_ziffern_compare as zc
+from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
 
 
 def bexio_row(quarter, ziffer, base, tax, jbase="0.00", jtax="0.00", tol="0.00", stol="0.00"):

@@ -12,6 +12,7 @@ from decimal import Decimal
 
 import import_master as im
 import import_sales as isl
+from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
 
 # the lookups the mapping reads from ERPNext; the ids and names are invented
 LOOKUPS = {

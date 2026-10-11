@@ -17,6 +17,7 @@ import import_manual_entries as ime
 import import_master as im
 import import_purchase as ip
 from test_import_manual_entries import CURRENCIES, entry, line, lookups
+from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
 
 PURCHASE = "5001 - Testaufwand - bic"       # bexio 21
 BANK = "1020 - Bank Test - bic"             # bexio 11

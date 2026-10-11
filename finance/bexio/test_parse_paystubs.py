@@ -13,6 +13,7 @@ import unittest
 from unittest import mock
 
 import parse_paystubs as pp
+from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
 
 DE = open(os.path.join(os.path.dirname(__file__), "fixtures", "paystub-invented.txt"), encoding="utf-8").read()
 EN = open(os.path.join(os.path.dirname(__file__), "fixtures", "paystub-invented-en.txt"), encoding="utf-8").read()

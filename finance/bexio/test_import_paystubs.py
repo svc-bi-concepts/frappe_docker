@@ -13,6 +13,7 @@ import import_files as imf
 import import_master as im
 import import_paystubs as ips
 from test_import_master import FakeErp
+from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
 
 EMP_A = "emp-invented-a"
 EMP_B = "emp-invented-b"

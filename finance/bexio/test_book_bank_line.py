@@ -11,6 +11,7 @@ from decimal import Decimal
 
 import book_bank_line as bb
 import import_master as im
+from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
 
 BANK_GL = "1021 - Testbank - X"
 EXPENSE = "6500 - Testaufwand - X"

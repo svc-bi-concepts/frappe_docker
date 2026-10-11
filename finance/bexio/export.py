@@ -57,7 +57,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from client import BexioError, Client  # noqa: E402
 
-PRIVATE = "/Users/bsaladin/ws_yardr_finance/private"
+PRIVATE = os.environ.get("BEXIO_PRIVATE") or "/Users/bsaladin/ws_yardr_finance/private"
 
 FILES = "files"
 FILE_LINKS = "file_links"

@@ -5,6 +5,7 @@ import unittest
 from decimal import Decimal
 
 import mwst_bexio as mb
+from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
 
 TAXES = {16: {"id": 16, "code": "UN77", "value": 7.7}, 28: {"id": 28, "code": "UN81", "value": 8.1},
          33: {"id": 33, "code": "BZM81", "value": 8.1}, 38: {"id": 38, "code": "VB81", "value": 8.1},

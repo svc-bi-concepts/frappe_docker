@@ -31,7 +31,7 @@ import re
 import subprocess
 import sys
 
-PRIVATE = "/Users/bsaladin/ws_yardr_finance/private"
+PRIVATE = os.environ.get("BEXIO_PRIVATE") or "/Users/bsaladin/ws_yardr_finance/private"
 PAYSTUBS_JSON = os.path.join(PRIVATE, "bexio-payroll", "paystubs.json")
 PAYSTUBS_DIR = os.path.join(PRIVATE, "bexio-payroll", "paystubs")
 OUT_CSV = os.path.join(PRIVATE, "payroll", "paystub-figures.csv")

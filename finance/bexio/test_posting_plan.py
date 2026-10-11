@@ -11,6 +11,7 @@ import tempfile
 import unittest
 
 import posting_plan as pp
+from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
 
 
 def line(i, date, description, debit, credit, amount, ref_class=None, ref_id=None):

@@ -9,6 +9,7 @@ import os
 import subprocess
 import tempfile
 import unittest
+from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 SCRIPT = os.path.join(ROOT, "finance", "bexio", "delta.sh")

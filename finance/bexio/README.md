@@ -598,3 +598,9 @@ nothing. It ends with the trial balance check against bexio's journal (read only
   3 a step failed; 4 the rerun inserted something; 5 the rerun moved the counts.
 - Not part of the delta: the employees and the paystub PDFs (HR reference data, not the books; the 2026 payroll
   runs in bexio).
+
+## Tests never touch private/
+
+Every unit test run (`python3 -m unittest discover -s finance/bexio -p 'test_*.py'`) points private/
+at a temp folder (`private_guard.py`, pulled into each test module by its `setUpModule` import); the
+scripts themselves read `BEXIO_PRIVATE` to override their private folder, unset it is the real one.

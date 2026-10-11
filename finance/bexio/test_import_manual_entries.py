@@ -15,6 +15,7 @@ from unittest import mock
 import import_manual_entries as ime
 import import_master as im
 import import_purchase as ip
+from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
 
 CURRENCIES = {"1": "CHF", "2": "EUR"}
 # the accounts by number: the reverse-charge pair, and the VAT accounts a code's kind books to (invented names)
