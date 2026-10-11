@@ -17,6 +17,7 @@ A pin change may stop a patch from applying; the build then fails and names the 
 | `erpnextswiss/0006-primary-address-format.patch` | `common_functions.py`, `get_primary_address`: the SQL string ends with `.format` — a reference to the method, not a call. The bound method went into `frappe.db.sql` as the query, and the bare `except` swallowed the error: the function always returned `None`. | With the defect, `Payment Proposal.validate` refuses every proposal ("Company address missing"), though the company's address exists and is complete — the payment run and the claim route cannot start at all (found in the erp-j9kn rehearsal; no proposal had ever run against this pin). The fixed query keeps its `%(type)s`/`%(name)s` placeholders, which `frappe.db.sql` substitutes itself. |
 | `erpnextswiss/0003-salary-certificate-component-sql.patch` | `salary_certificate.py`, `get_component_dynamic`: the component names go into the query as `IN %s` parameters (with the employee and the dates), not `.format`ed into the SQL string. | The query matches `tabSalary Detail`.`salary_component` (the component's name). A name with an apostrophe broke the SQL at the pin's string formatting, so the certificate raised or summed wrong. |
 | `erpnextswiss/0004-salary-certificate-import.patch` | `salary_certificate.py`: `from frappe import _`. | `fetch_values` calls `frappe.msgprint(_("Please select a valid employee."))`; at the pin `_` is not imported, so fetching values with no employee selected raised `NameError`. |
+| `erpnextswiss/0007-form11-fits-a4.patch` | `print_format/605.040.18n_form._11/605.040.18n_form._11.json`, css: the `.form11` rule carries `zoom: 0.69`, so the format's 980 px canvas renders 676 px wide — inside the A4 printable width (210 mm less the 15 mm page margins on both sides = 180 mm = 680 px at 96 dpi; 680/980 = 0.694). | frappe's document PDF path (`download_pdf` → `get_pdf` with its default `smart_shrinking=False`) adds `--disable-smart-shrinking` for wkhtmltopdf > 0.12.3, so the Salary Certificate spilled to two pages, every amount cell empty and the signature block clipped (erp-rqxs). The report path passes `smart_shrinking=True` and was never affected. frappe's shared PDF code stays untouched — every other format on the site is sized for A4 — the form carries the fit instead (erp-gfz9). Proven on the copy: the invented employee's certificate renders as one complete page through `download_pdf`. |
 
 Check a patch by hand against the pin:
 
@@ -28,8 +29,9 @@ git apply --check ../finance/patches/erpnextswiss/0001-item-tools-syntax.patch
 
 The gate (`sh .yardr/check`) runs the apply step over invented trees holding the pinned
 sources of the patched files (the `item_tools.py`, `salary_certificate.py`,
-`payment_proposal.py` and `common_functions.py` excerpts in
-`finance/scripts/test_build_image.py`), so a patch that stops applying to the pin fails there.
+`payment_proposal.py` and `common_functions.py` excerpts and the print format JSON's
+head in `finance/scripts/test_build_image.py`), so a patch that stops applying to the
+pin fails there.
 
 ## How they are applied
 

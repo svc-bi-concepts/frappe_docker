@@ -345,6 +345,23 @@ def get_component_dynamic(employee, start_date, end_date, componentlist):
     return pos - neg'''
 
 
+# The first lines of erpnextswiss print format 605.040.18n_form._11.json at the pin (5d85c45):
+# line 4, the css field, is patch 0005's target line. The html and format_data fields are cut:
+# git apply needs the hunk's context, not the whole file. The cut after "disabled" keeps that
+# line verbatim, comma and all, so the object does not close cleanly and the css line is parsed
+# on its own. Raw string: the css carries the JSON escapes (\n, \") as the two characters they
+# are, and the opening brace sits on the string's first line (a raw string keeps a \\\n continuation).
+FORM11_JSON_PATH = "erpnextswiss/erpnextswiss/print_format/605.040.18n_form._11/605.040.18n_form._11.json"
+FORM11_JSON = r'''{
+ "align_labels_right": 0,
+ "creation": "2018-01-21 20:46:35.275930",
+ "css": ".print-format {\n   margin-left: 0.6mm;\n   margin-right: 0mm;\n   margin-top: 0mm;\n   margin-bottom: 0mm;\n   padding: 0px;\n   font-size: 10pt;\n   font-face: Arial, Helvetica, sans-serif;\n}\n\n/* use to debug\n.ff {\n  background-color: rgba(255, 0, 0, 0.2) !important;\n}\n*/\n\n.form11 {\n   background-image: url(\"/assets/erpnextswiss/images/605_040_18N_Form_11.png\");\n   background-size:cover;\n   width: 980px;\n   height: 1400px;\n}",
+ "custom_format": 1,
+ "disable_smart_shrinking": 0,
+ "disabled": 0,
+}'''
+
+
 def git(cwd, *args):
     subprocess.run(
         ["git", "-c", "user.name=test", "-c", "user.email=test@example.invalid", *args],
@@ -379,6 +396,7 @@ class PatchStep(unittest.TestCase):
         self.commit(SALARY_CERTIFICATE_PATH, SALARY_CERTIFICATE)
         self.commit("erpnextswiss/erpnextswiss/doctype/payment_proposal/payment_proposal.py", PAYMENT_PROPOSAL)
         self.commit("erpnextswiss/erpnextswiss/common_functions.py", COMMON_FUNCTIONS)
+        self.commit(FORM11_JSON_PATH, FORM11_JSON)
 
     def patch(self, name, text):
         with open(os.path.join(self.patches, name), "w") as f:
@@ -490,6 +508,24 @@ class PatchStep(unittest.TestCase):
         self.assertIn("IN %s", patched)
         self.assertIn("tuple(positiv)", patched)
         self.assertNotIn(".format(employee, start_date, end_date", patched)
+
+    def test_our_form11_patch_fits_the_canvas_to_a4(self):
+        # At the pin the Form 11 canvas is 980px wide. frappe's document PDF path
+        # (download_pdf -> get_pdf with its default smart_shrinking=False) adds
+        # --disable-smart-shrinking for wkhtmltopdf > 0.12.3, so the right-hand value column
+        # fell off the printable area and the form spilled to two pages. Patch 0007 zooms
+        # the canvas to the A4 printable width: 210 mm less the 15 mm page margins on both
+        # sides = 180 mm = 680 px at 96 dpi; 680/980 = 0.694, so the zoom is 0.69.
+        self.assertNotIn("zoom:", FORM11_JSON)
+        self.assertIn("width: 980px", FORM11_JSON)
+        self.commit_pin_sources()
+        run = subprocess.run(["sh", APPLY, PATCH_DIR, self.app], capture_output=True, text=True)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        css_line = next(l for l in self.read(FORM11_JSON_PATH).splitlines()
+                        if l.startswith(' "css": '))
+        css = json.loads("{" + css_line.rstrip(",") + "}")["css"]
+        self.assertIn(".form11 {\n   zoom: 0.69;\n", css)
+        self.assertIn("width: 980px", css)
 
     def test_our_bundler_patch_keeps_the_node_options_the_build_was_given(self):
         # Regression: frappe's bundler replaced NODE_OPTIONS with 75% of the RAM it sees, so the heap

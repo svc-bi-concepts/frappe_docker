@@ -1,0 +1,13 @@
+diff --git a/erpnextswiss/erpnextswiss/print_format/605.040.18n_form._11/605.040.18n_form._11.json b/erpnextswiss/erpnextswiss/print_format/605.040.18n_form._11/605.040.18n_form._11.json
+index 8c416e4..f706d6b 100644
+--- a/erpnextswiss/erpnextswiss/print_format/605.040.18n_form._11/605.040.18n_form._11.json
++++ b/erpnextswiss/erpnextswiss/print_format/605.040.18n_form._11/605.040.18n_form._11.json
+@@ -1,7 +1,7 @@
+ {
+  "align_labels_right": 0,
+  "creation": "2018-01-21 20:46:35.275930",
+- "css": ".print-format {\n   margin-left: 0.6mm;\n   margin-right: 0mm;\n   margin-top: 0mm;\n   margin-bottom: 0mm;\n   padding: 0px;\n   font-size: 10pt;\n   font-face: Arial, Helvetica, sans-serif;\n}\n\n/* use to debug\n.ff {\n  background-color: rgba(255, 0, 0, 0.2) !important;\n}\n*/\n\n.form11 {\n   background-image: url(\"/assets/erpnextswiss/images/605_040_18N_Form_11.png\");\n   background-size:cover;\n   width: 980px;\n   height: 1400px;\n}",
++ "css": ".print-format {\n   margin-left: 0.6mm;\n   margin-right: 0mm;\n   margin-top: 0mm;\n   margin-bottom: 0mm;\n   padding: 0px;\n   font-size: 10pt;\n   font-face: Arial, Helvetica, sans-serif;\n}\n\n/* use to debug\n.ff {\n  background-color: rgba(255, 0, 0, 0.2) !important;\n}\n*/\n\n.form11 {\n   zoom: 0.69;\n   background-image: url(\"/assets/erpnextswiss/images/605_040_18N_Form_11.png\");\n   background-size:cover;\n   width: 980px;\n   height: 1400px;\n}",
+  "custom_format": 1,
+  "disable_smart_shrinking": 0,
+  "disabled": 0,
