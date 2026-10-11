@@ -210,6 +210,15 @@ slot that ledgerdemain gives (`erpnext-setup.md`).
    Settings, not constants in code, so a 2027 change is a settings edit; each Salary Slip keeps
    the rates it was computed with. Invented-data tests for each formula, with the ALV ceiling and
    the BVG threshold (`python3 -m unittest bi_payroll.test_swiss_payroll` in the app folder).
+   Payroll accounts (erp-nqyb): the Salary Components carry their Company's accounts from bexio's chart
+   (`swiss_rates.COMPONENT_ACCOUNTS` and `EMPLOYER_CONTRIBUTION_ACCOUNTS`, the table in the app's README), and
+   `swiss-setup.sh payroll_accounts` sets the Company's default payroll payable to 1091 Lohndurchlaufkonto. The six
+   employer shares are Employer Contribution components in the structure's `employer_contributions` (decided
+   2026-10-11), so the accrual books each as expense 57xx against a 227x liability. Live steps, all in the go-live
+   bead after the train lands (erp-nqyb's done note): migrate with the fixtures; `swiss-setup.sh payroll_accounts`;
+   remake the live "Swiss Monthly" structure with `employer_contributions` (a new version, new assignments for the
+   Active employees from the existing ones, the old structure left unused). The accrual JE is proven on the copy
+   before go-live.
 4. **Employee load from the bexio export.** Offline importer, the same shape as
    `import_master.py`, writing only Employee and the AHV number. Mocked data in tests.
    Done 2026-10-11 (erp-y909): `swiss-setup.sh fields` (Employee in `BEXIO_DOCTYPES`),

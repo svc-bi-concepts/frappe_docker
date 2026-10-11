@@ -172,7 +172,9 @@ def prepare(slip, employee=None, assignment=None, company_name=""):
     deduction_lines = _value(slip, "deductions", []) or []
     deduction_rows = _rows(deduction_lines, DEDUCTIONS, slip, employee, assignment, group,
                            skip={d[0] for d in EMPLOYER})
-    employer_rows = _rows(deduction_lines, EMPLOYER, slip, employee, assignment, group, known_only=True)
+    # the employer shares are Employer Contribution components: the slip keeps them in its employer_contributions
+    employer_lines = _value(slip, "employer_contributions", []) or []
+    employer_rows = _rows(employer_lines, EMPLOYER, slip, employee, assignment, group, known_only=True)
 
     gross_ytd = sum(_num(_value(row, "year_to_date")) for row in earnings)
     net_ytd = gross_ytd - sum(

@@ -14,7 +14,8 @@ import unittest
 from datetime import date
 
 from bi_payroll.swiss_rates import (
-    ASSIGNMENT_FIELDS, RATE_FIELDS, STRUCTURE_DEDUCTIONS, STRUCTURE_EARNINGS, missing_components,
+    ASSIGNMENT_FIELDS, RATE_FIELDS, STRUCTURE_DEDUCTIONS, STRUCTURE_EARNINGS, STRUCTURE_EMPLOYER_CONTRIBUTIONS,
+    missing_components,
 )
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -128,7 +129,13 @@ class Quellensteuer(unittest.TestCase):
 class Structure(unittest.TestCase):
     def test_every_structure_component_is_a_fixture(self):
         names = {c["name"] for c in load("salary_component.json")}
-        self.assertEqual(set(STRUCTURE_EARNINGS + STRUCTURE_DEDUCTIONS) - names, set())
+        structure = STRUCTURE_EARNINGS + STRUCTURE_DEDUCTIONS + STRUCTURE_EMPLOYER_CONTRIBUTIONS
+        self.assertEqual(set(structure) - names, set())
+
+    def test_each_component_is_in_one_table_of_the_structure(self):
+        # a component in two tables would be paid twice (the slip's deductions and its employer contributions)
+        structure = STRUCTURE_EARNINGS + STRUCTURE_DEDUCTIONS + STRUCTURE_EMPLOYER_CONTRIBUTIONS
+        self.assertEqual(len(structure), len(set(structure)))
 
     def test_the_withholding_tax_is_a_deduction_after_the_gross(self):
         self.assertIn("Quellensteuer Employee", STRUCTURE_DEDUCTIONS)
@@ -140,18 +147,32 @@ class Structure(unittest.TestCase):
         self.assertIn("swiss_qst_amount", slip)
 
     def test_a_complete_structure_lacks_nothing(self):
-        self.assertEqual(missing_components(STRUCTURE_EARNINGS, STRUCTURE_DEDUCTIONS), [])
+        self.assertEqual(
+            missing_components(STRUCTURE_EARNINGS, STRUCTURE_DEDUCTIONS, STRUCTURE_EMPLOYER_CONTRIBUTIONS), [],
+        )
 
     def test_a_structure_made_before_the_withholding_row_names_the_gap(self):
         # the structure erp-2s3c made: every component but the Quellensteuer one
         before = [c for c in STRUCTURE_DEDUCTIONS if c != "Quellensteuer Employee"]
-        self.assertEqual(missing_components(STRUCTURE_EARNINGS, before), ["Quellensteuer Employee"])
+        self.assertEqual(
+            missing_components(STRUCTURE_EARNINGS, before, STRUCTURE_EMPLOYER_CONTRIBUTIONS), ["Quellensteuer Employee"],
+        )
+
+    def test_a_structure_made_before_the_employer_contributions_names_them(self):
+        # the live structure made before erp-nqyb's decision: the six shares were Deductions
+        self.assertEqual(
+            missing_components(STRUCTURE_EARNINGS, STRUCTURE_DEDUCTIONS, []), STRUCTURE_EMPLOYER_CONTRIBUTIONS,
+        )
 
     def test_a_structure_without_an_earning_names_it_too(self):
-        self.assertEqual(missing_components([], STRUCTURE_DEDUCTIONS), ["Basic Salary", "Commission"])
+        self.assertEqual(
+            missing_components([], STRUCTURE_DEDUCTIONS, STRUCTURE_EMPLOYER_CONTRIBUTIONS), ["Basic Salary", "Commission"],
+        )
 
     def test_a_structure_made_before_the_commission_row_names_the_gap(self):
-        self.assertEqual(missing_components(["Basic Salary"], STRUCTURE_DEDUCTIONS), ["Commission"])
+        self.assertEqual(
+            missing_components(["Basic Salary"], STRUCTURE_DEDUCTIONS, STRUCTURE_EMPLOYER_CONTRIBUTIONS), ["Commission"],
+        )
 
 
 class Commission(unittest.TestCase):
@@ -232,11 +253,14 @@ class Fixtures(unittest.TestCase):
 class EmployerShares(unittest.TestCase):
     # erp-fs9c: the employer components were statistical, and HRMS keeps those off the slip, so the hand-over's
     # employer columns were 0. They are on the slip now, and out of gross and net (do_not_include_in_total).
+    # erp-nqyb: an Employer Contribution, in the structure's employer_contributions table, not a deduction of the employee.
     def test_each_employer_share_is_on_the_slip(self):
         employers = [c for c in load("salary_component.json") if c["salary_component"].endswith("Employer")]
         self.assertEqual(len(employers), 6)
+        self.assertEqual(sorted(c["name"] for c in employers), sorted(STRUCTURE_EMPLOYER_CONTRIBUTIONS))
         for c in employers:
             with self.subTest(component=c["salary_component"]):
+                self.assertEqual(c["type"], "Employer Contribution")
                 self.assertEqual(c["statistical_component"], 0)
                 self.assertEqual(c["do_not_include_in_total"], 1)
 

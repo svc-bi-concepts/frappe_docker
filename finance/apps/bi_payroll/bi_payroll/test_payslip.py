@@ -56,17 +56,20 @@ def slip(**over):
         "deductions": [
             line("BVG Age", 46),
             line("AHV/IV/EO Employee", 424.0, 4240.0),
-            line("AHV/IV/EO Employer", 424.0, 4240.0),
             line("ALV Employee", 88.0, 880.0),
-            line("ALV Employer", 88.0, 880.0),
             line("BVG Employee", 300.0, 3000.0),
-            line("BVG Employer", 600.0, 6000.0),
             line("NBU Employee", 40.0, 400.0),
-            line("UVG Employer", 24.0, 240.0),
             line("KTG Employee", 35.0, 350.0),
+            line("Quellensteuer Employee", 700.0, 7000.0),
+        ],
+        # HRMS keeps the employer shares in their own table (Employer Contribution components)
+        "employer_contributions": [
+            line("AHV/IV/EO Employer", 424.0, 4240.0),
+            line("ALV Employer", 88.0, 880.0),
+            line("BVG Employer", 600.0, 6000.0),
+            line("UVG Employer", 24.0, 240.0),
             line("KTG Employer", 35.0, 350.0),
             line("FAK Employer", 60.0, 600.0),
-            line("Quellensteuer Employee", 700.0, 7000.0),
         ],
         **RATES,
     }

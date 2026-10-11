@@ -5,7 +5,7 @@
 # installed (finance/docs/erpnext-setup.md).
 #
 #   finance/scripts/swiss-setup.sh                # all steps
-#   finance/scripts/swiss-setup.sh vat fiscal     # some of: coa vat fiscal fields currencies banks gebuev qrbill host payments hr
+#   finance/scripts/swiss-setup.sh vat fiscal     # some of: coa vat fiscal fields currencies banks gebuev qrbill host payments hr payroll_accounts
 #   finance/scripts/swiss-setup.sh vat --check <export dir>   # VAT codes against the export's taxes.json
 #   finance/scripts/swiss-setup.sh hr --check     # read-only: HR roles of enabled users and the two settings
 #   HR_USER=<user> finance/scripts/swiss-setup.sh hr          # the HR roles on that user and the HR settings

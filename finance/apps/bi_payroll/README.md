@@ -43,6 +43,31 @@ migrate on any site.
   their components' formulas, or every slip pays 0.
 - `bi_payroll/test_swiss_payroll.py`: offline tests with invented employees and rates:
   `python3 -m unittest bi_payroll.test_swiss_payroll` from this directory (no frappe needed).
+- Payroll accounts (erp-nqyb): the fixture gives each Salary Component of the Company its accounts, from
+  `swiss_rates.COMPONENT_ACCOUNTS` and `EMPLOYER_CONTRIBUTION_ACCOUNTS` (numbers and names only):
+
+  | Component | Account | bexio's books |
+  | --- | --- | --- |
+  | Basic Salary | 5000 Löhne | debit, against 1091 |
+  | Commission | 5003 Provisionen | debit, against 1091 |
+  | AHV/IV/EO Employee, ALV Employee | 2271 KK AHV, IV, EO, ALV | credit |
+  | BVG Employee | 2270 KK Vorsorgeeinrichtung | credit |
+  | NBU Employee | 2273 KK Unfallversicherung | credit |
+  | KTG Employee | 2274 KK Krankentaggeld | credit |
+  | Quellensteuer Employee | 2279 KK Quellensteuer | credit |
+  | AHV/IV/EO Employer, ALV Employer (Employer Contribution) | expense 5700 AHV, IV, EO, ALV; liability 2271 | debit; credit |
+  | BVG Employer | expense 5720 BVG-Beitrag; liability 2270 | debit; credit |
+  | UVG Employer | expense 5730 UVG-Beitrag; liability 2273 | debit; credit |
+  | KTG Employer | expense 5740 KTG-Beitrag; liability 2274 | debit; credit |
+  | FAK Employer | expense 5710 FAK-Beitrag; liability 2271 | debit; credit |
+
+  The Company's default payroll payable is 1091 Lohndurchlaufkonto (`swiss-setup.sh payroll_accounts`, idempotent;
+  bexio credits the net wages there and pays them from 1020). BVG Age (statistical) has none. The employer shares are
+  the structure's `employer_contributions` (`STRUCTURE_EMPLOYER_CONTRIBUTIONS`), not deductions: HRMS's accrual debits the
+  expense and credits the liability (decision of 2026-10-11 in erp-nqyb's note: FAK and AHV/ALV on 2271, UVG on 2273).
+  The 2270 to 2279 accounts and 5720 are bexio's additions to erpnextswiss's KMU template, which has none of them, and no
+  step of `finance/scripts` creates them: they exist on the live site, not on a fresh chart. `test_payroll_accounts`
+  checks every number against the template and those additions when `BI_COA_CSV` names its `accounts_template.csv`.
 - `bi_payroll/quellensteuer.py`: the ESTV withholding tariffs (Quellensteuer, Löhne, 2025 record format; source and
   version in the `QST Tariff` doctype's description). It parses a canton's text file (records 06 and 11), finds the
   bracket for a monthly gross and gives the tax (rate on the whole income, at least the minimum tax). Pure Python.
@@ -73,7 +98,8 @@ migrate on any site.
   Structure lacks components"), and a slip whose Quellensteuer amount is not zero stops on validate ("has no
   Quellensteuer Employee row") until the structure has it. The manual step, for a structure in use only: make the
   structure again with every row of `swiss_rates.py` (STRUCTURE_EARNINGS, STRUCTURE_DEDUCTIONS, the Quellensteuer
-  Employee last), each row with its component's formula (`structure_rows` does this), submit it, cancel the old one,
+  Employee last, and STRUCTURE_EMPLOYER_CONTRIBUTIONS in the `employer_contributions` table), each row with its
+  component's formula (`structure_rows` does this), submit it, cancel the old one,
   and move the employees' assignments to the new one. A Duplicate in Desk is not enough: it copies the old rows, and
   HRMS keeps a row without its formula at 0. Employees with no tariff code are not affected.
 - Formulas: a structure row computes only with its formula stored (HRMS resets a row's formula on save to the value it

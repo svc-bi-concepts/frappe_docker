@@ -28,7 +28,7 @@ assert all(s[n].get('restart') != 'unless-stopped' for n in ['configurator', 'cr
 # The bi_payroll formulas (invented employees), the ESTV withholding tariffs (invented rows), the payroll hand-over rows
 # (invented employees), the payslip data and the Lohnabrechnung template's render (invented employee), the Quellensteuer
 # tariff codes (invented rows) and its layout and stamp guard, stdlib only (test_payslip's render needs jinja2).
-(cd finance/apps/bi_payroll && python3 -m unittest bi_payroll.test_swiss_payroll bi_payroll.test_quellensteuer bi_payroll.test_hand_over bi_payroll.test_structure_gap bi_payroll.test_qst_codes bi_payroll.test_payslip bi_payroll.test_layout)
+(cd finance/apps/bi_payroll && python3 -m unittest bi_payroll.test_swiss_payroll bi_payroll.test_quellensteuer bi_payroll.test_hand_over bi_payroll.test_structure_gap bi_payroll.test_qst_codes bi_payroll.test_payslip bi_payroll.test_layout bi_payroll.test_payroll_accounts)
 # The bexio importers' unit tests, stdlib only, about half a second.
 (cd finance/bexio && python3 -m unittest discover -s . -p "test_*.py")
 # The SharePoint reader's tests on a fake Graph (no network), with openssl for the signing check.

@@ -13,7 +13,9 @@ from frappe.utils import flt, getdate
 
 from bi_payroll.payslip import prepare
 from bi_payroll.quellensteuer import parse_tariff_file, qst_amount
-from bi_payroll.swiss_rates import RATE_FIELDS, STRUCTURE_DEDUCTIONS, STRUCTURE_EARNINGS, missing_components
+from bi_payroll.swiss_rates import (
+    RATE_FIELDS, STRUCTURE_DEDUCTIONS, STRUCTURE_EARNINGS, STRUCTURE_EMPLOYER_CONTRIBUTIONS, missing_components,
+)
 
 QST_DECIMAL_FIELDS = ("income_from", "step", "minimum_tax", "rate")
 
@@ -76,8 +78,9 @@ def ensure_structure():
             missing = missing_components(
                 [row.salary_component for row in structure.earnings],
                 [row.salary_component for row in structure.deductions],
+                [row.salary_component for row in structure.employer_contributions],
             )
-            bare = formula_gaps(structure.earnings + structure.deductions)
+            bare = formula_gaps(structure.earnings + structure.deductions + structure.employer_contributions)
             if not missing and not bare:
                 continue
             if structure_in_use(existing):
@@ -107,6 +110,7 @@ def ensure_structure():
             "is_active": "Yes",
             "earnings": structure_rows(STRUCTURE_EARNINGS),
             "deductions": structure_rows(STRUCTURE_DEDUCTIONS),
+            "employer_contributions": structure_rows(STRUCTURE_EMPLOYER_CONTRIBUTIONS),
         })
         doc.insert()
         doc.submit()
@@ -131,7 +135,7 @@ def formula_gaps(rows):
 def structure_rows(components):
     # A structure row keeps its formula only as it was typed: HRMS resets it on save, to the value it had before
     # validate. A row made with no formula therefore computes 0, so each row takes its component's formula here.
-    # The statistical flag is copied too: a row that is statistical is kept off the slip (the employer shares).
+    # The statistical flag is copied too: a row that is statistical is kept off the slip (BVG Age).
     rows = []
     for name in components:
         component = frappe.db.get_value(

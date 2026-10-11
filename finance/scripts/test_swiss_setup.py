@@ -122,6 +122,9 @@ class StepsTest(unittest.TestCase):
         self.assertEqual(swiss_setup.HR_ROLES,
                          ["HR Manager", "HR User", "Payroll Manager", "Leave Approver"])
 
+    def test_payroll_accounts_is_a_step(self):
+        self.assertIn("payroll_accounts", swiss_setup.STEPS)
+
 
 class PayslipChangesTest(unittest.TestCase):
     # The Lohnabrechnung format is in place when it carries the file's HTML and is not disabled.
@@ -185,6 +188,36 @@ class SingleFixesTest(unittest.TestCase):
         changes, not_offered = swiss_setup.single_fixes({"a": 1, "b": 2}, {"a": 1, "b": None}, {"a"})
         self.assertEqual(changes, [])
         self.assertEqual(not_offered, ["b"])
+
+
+class PayrollAccountsTest(unittest.TestCase):
+    # the step imports bi_payroll.swiss_rates at run time: the app's directory is on the path for these tests
+    def setUp(self):
+        bi_payroll = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "apps", "bi_payroll")
+        sys.path.insert(0, os.path.abspath(bi_payroll))
+        self.addCleanup(sys.path.remove, os.path.abspath(bi_payroll))
+
+    def run_step(self, current):
+        # the Company's default payroll payable as it is, and the account the step resolves 1091 to
+        with mock.patch.object(swiss_setup, "frappe") as frappe, \
+                mock.patch.object(swiss_setup, "account", return_value="1091 - Lohndurchlaufkonto - BIC") as account, \
+                mock.patch.object(swiss_setup, "say") as say:
+            frappe.db.get_value.return_value = current
+            swiss_setup.payroll_accounts()
+        return frappe, account, say
+
+    def test_sets_the_default_payable_to_1091(self):
+        frappe, account, say = self.run_step(current=None)
+        account.assert_called_once_with("1091")
+        frappe.db.set_value.assert_called_once_with(
+            "Company", swiss_setup.COMPANY, "default_payroll_payable_account", "1091 - Lohndurchlaufkonto - BIC")
+        frappe.db.commit.assert_called_once()
+        self.assertIn("set to 1091", say.call_args[0][0])
+
+    def test_a_second_run_sets_nothing(self):
+        frappe, _, say = self.run_step(current="1091 - Lohndurchlaufkonto - BIC")
+        frappe.db.set_value.assert_not_called()
+        self.assertIn("already set", say.call_args[0][0])
 
 
 # Invented IBANs and account names only: the test data is not company data.

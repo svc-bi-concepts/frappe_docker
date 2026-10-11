@@ -7,7 +7,14 @@ Needs a site with bi_payroll installed (frappe), so it is not a test_*.py: the o
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from bi_payroll.swiss_payroll import STRUCTURE_DEDUCTIONS, STRUCTURE_EARNINGS, structure_row
+from bi_payroll.swiss_payroll import (
+    STRUCTURE_DEDUCTIONS, STRUCTURE_EARNINGS, STRUCTURE_EMPLOYER_CONTRIBUTIONS, structure_rows,
+)
+
+
+def structure_row(component):
+    # the one row of a component, as ensure_structure makes it (structure_rows takes a list)
+    return structure_rows([component])[0]
 
 
 class TestStructure(IntegrationTestCase):
@@ -18,12 +25,12 @@ class TestStructure(IntegrationTestCase):
         self.assertEqual(row["formula"], frappe.db.get_value("Salary Component", "Basic Salary", "formula"))
 
     def test_every_row_of_the_structure_has_a_formula(self):
-        for component in STRUCTURE_EARNINGS + STRUCTURE_DEDUCTIONS:
+        for component in STRUCTURE_EARNINGS + STRUCTURE_DEDUCTIONS + STRUCTURE_EMPLOYER_CONTRIBUTIONS:
             with self.subTest(component=component):
                 self.assertTrue(structure_row(component)["formula"])
 
     def test_an_employer_share_is_not_a_statistical_row(self):
         # erp-fs9c: a statistical row is kept off the slip, so the hand-over's employer columns were 0
-        for component in ["AHV/IV/EO Employer", "ALV Employer", "BVG Employer", "UVG Employer", "KTG Employer", "FAK Employer"]:
+        for component in STRUCTURE_EMPLOYER_CONTRIBUTIONS:
             with self.subTest(component=component):
                 self.assertEqual(structure_row(component)["statistical_component"], 0)

@@ -14,11 +14,11 @@ import types
 import unittest
 from unittest import mock
 
-from bi_payroll.swiss_rates import STRUCTURE_DEDUCTIONS, STRUCTURE_EARNINGS
+from bi_payroll.swiss_rates import STRUCTURE_DEDUCTIONS, STRUCTURE_EARNINGS, STRUCTURE_EMPLOYER_CONTRIBUTIONS
 
 QST = "Quellensteuer Employee"
 # every row of a complete structure: the earnings and the deductions
-ROWS = len(STRUCTURE_EARNINGS) + len(STRUCTURE_DEDUCTIONS)
+ROWS = len(STRUCTURE_EARNINGS) + len(STRUCTURE_DEDUCTIONS) + len(STRUCTURE_EMPLOYER_CONTRIBUTIONS)
 # an invented bracket: 4950 up to 5050, 4.00 percent, no minimum tax
 BRACKET = {
     "canton": "ZG", "tariff_code": "B2N", "valid_from": datetime.date(2026, 1, 1),
@@ -151,6 +151,7 @@ class StructureGap(unittest.TestCase):
         module, frappe = self.load(structure_has_row=False)
         structure = types.SimpleNamespace(
             earnings=rows(STRUCTURE_EARNINGS), deductions=rows([c for c in STRUCTURE_DEDUCTIONS if c != QST]),
+            employer_contributions=rows(STRUCTURE_EMPLOYER_CONTRIBUTIONS),
         )
         frappe.get_doc = mock.Mock(return_value=structure)
         module.ensure_structure()
@@ -158,10 +159,25 @@ class StructureGap(unittest.TestCase):
         self.assertIn(QST, frappe.log_error.call_args.kwargs["message"])
         frappe.get_doc.assert_called_once_with("Salary Structure", "SS-1")  # read, never made or amended
 
+    def test_ensure_structure_logs_a_structure_without_the_employer_contributions_and_leaves_it(self):
+        # the live structure of before erp-nqyb: the six shares were deductions, so it has no employer_contributions rows
+        module, frappe = self.load(structure_has_row=True)
+        structure = types.SimpleNamespace(
+            earnings=rows(STRUCTURE_EARNINGS), deductions=rows(STRUCTURE_DEDUCTIONS), employer_contributions=[],
+        )
+        frappe.get_doc = mock.Mock(return_value=structure)
+        module.ensure_structure()
+        frappe.log_error.assert_called_once()
+        self.assertIn("FAK Employer", frappe.log_error.call_args.kwargs["message"])
+        frappe.delete_doc.assert_not_called()
+
     def test_ensure_structure_is_silent_for_a_complete_structure(self):
         module, frappe = self.load(structure_has_row=True)
         frappe.get_doc = mock.Mock(
-            return_value=types.SimpleNamespace(earnings=rows(STRUCTURE_EARNINGS), deductions=rows(STRUCTURE_DEDUCTIONS))
+            return_value=types.SimpleNamespace(
+                earnings=rows(STRUCTURE_EARNINGS), deductions=rows(STRUCTURE_DEDUCTIONS),
+                employer_contributions=rows(STRUCTURE_EMPLOYER_CONTRIBUTIONS),
+            )
         )
         module.ensure_structure()
         frappe.log_error.assert_not_called()
@@ -171,10 +187,12 @@ class Replacing(unittest.TestCase):
     def setUp(self):
         self.made = []  # the new structures, each as the dict ensure_structure gives frappe.get_doc
 
-    def run_ensure(self, earnings, deductions, in_use=False, docstatus=0):
+    def run_ensure(self, earnings, deductions, in_use=False, docstatus=0, employer=None):
         # one run of ensure_structure on the company's structure, with the given rows and use
         structure = types.SimpleNamespace(
-            name="SS-1", docstatus=docstatus, earnings=earnings, deductions=deductions, cancel=mock.Mock(),
+            name="SS-1", docstatus=docstatus, earnings=earnings, deductions=deductions,
+            employer_contributions=rows(STRUCTURE_EMPLOYER_CONTRIBUTIONS) if employer is None else employer,
+            cancel=mock.Mock(),
         )
         frappe = self.install(in_use)
         frappe.get_doc = mock.Mock(side_effect=lambda arg, *args: structure if arg == "Salary Structure" else self.new(arg))
@@ -198,6 +216,7 @@ class Replacing(unittest.TestCase):
     def test_an_unused_structure_without_formulas_is_replaced_with_them(self):
         structure, frappe = self.run_ensure(
             rows(STRUCTURE_EARNINGS, formulas=False), rows(STRUCTURE_DEDUCTIONS, formulas=False),
+            employer=rows(STRUCTURE_EMPLOYER_CONTRIBUTIONS, formulas=False),
         )
         frappe.delete_doc.assert_called_once_with("Salary Structure", "SS-1")
         self.assertEqual(len(self.made), 1)
@@ -205,6 +224,10 @@ class Replacing(unittest.TestCase):
         self.assertEqual(new["name"], "Swiss Monthly Beispiel Test AG")
         self.assertEqual([r["formula"] for r in new["deductions"]], [f"FORMULA-{c}" for c in STRUCTURE_DEDUCTIONS])
         self.assertEqual([r["formula"] for r in new["earnings"]], [f"FORMULA-{c}" for c in STRUCTURE_EARNINGS])
+        self.assertEqual(
+            [r["formula"] for r in new["employer_contributions"]],
+            [f"FORMULA-{c}" for c in STRUCTURE_EMPLOYER_CONTRIBUTIONS],
+        )
         self.assertEqual(new["deductions"][-1]["salary_component"], QST)
         frappe.log_error.assert_called_once()
         self.assertEqual(frappe.log_error.call_args.kwargs["title"], "Swiss Salary Structure replaced")
@@ -240,6 +263,7 @@ class Replacing(unittest.TestCase):
     def test_a_structure_in_use_without_formulas_is_logged_and_not_replaced(self):
         structure, frappe = self.run_ensure(
             rows(STRUCTURE_EARNINGS, formulas=False), rows(STRUCTURE_DEDUCTIONS, formulas=False), in_use=True,
+            employer=rows(STRUCTURE_EMPLOYER_CONTRIBUTIONS, formulas=False),
         )
         frappe.delete_doc.assert_not_called()
         self.assertEqual(self.made, [])
@@ -253,7 +277,10 @@ class Replacing(unittest.TestCase):
         frappe.log_error.assert_not_called()
 
     def test_a_replaced_structure_is_untouched_when_it_runs_again(self):
-        self.run_ensure(rows(STRUCTURE_EARNINGS, formulas=False), rows(STRUCTURE_DEDUCTIONS, formulas=False))
+        self.run_ensure(
+            rows(STRUCTURE_EARNINGS, formulas=False), rows(STRUCTURE_DEDUCTIONS, formulas=False),
+            employer=rows(STRUCTURE_EMPLOYER_CONTRIBUTIONS, formulas=False),
+        )
         self.assertEqual(len(self.made), 1)
         # the structure the first run made, as the database gives it back
         made = self.made[0]
@@ -261,6 +288,7 @@ class Replacing(unittest.TestCase):
             name="SS-1", docstatus=0,
             earnings=[types.SimpleNamespace(**r) for r in made["earnings"]],
             deductions=[types.SimpleNamespace(**r) for r in made["deductions"]],
+            employer_contributions=[types.SimpleNamespace(**r) for r in made["employer_contributions"]],
             cancel=mock.Mock(),
         )
         frappe = self.install(in_use=False)

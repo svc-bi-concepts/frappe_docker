@@ -1,6 +1,6 @@
 """Swiss setup of company BI Concepts, run inside the backend container by
 swiss-setup.sh. Steps are named on the command line (coa, vat, fiscal,
-fields, currencies, banks, gebuev, qrbill, payslip, host, payments, hr); each one is re-runnable and skips what
+fields, currencies, banks, gebuev, qrbill, payslip, host, payments, hr, payroll_accounts); each one is re-runnable and skips what
 already exists. `freeze <date> [--apply]` is a separate command: it closes the
 books up to a date and is a dry run unless --apply is given."""
 import csv
@@ -818,8 +818,23 @@ def freeze(date, apply):
     say(f"freeze: set, accounts frozen till {date}")
 
 
+def payroll_accounts():
+    # HRMS's accrual Journal Entry credits the net wages to the Company's default payroll payable account; bexio's is
+    # 1091 Lohndurchlaufkonto (bi_payroll.swiss_rates). Set here, not in the fixtures: the Company is not a fixture.
+    from bi_payroll.swiss_rates import PAYROLL_PAYABLE_ACCOUNT
+
+    payable = account(PAYROLL_PAYABLE_ACCOUNT)
+    if frappe.db.get_value("Company", COMPANY, "default_payroll_payable_account") == payable:
+        say("payroll_accounts: default payroll payable already set")
+        return
+    frappe.db.set_value("Company", COMPANY, "default_payroll_payable_account", payable)
+    frappe.db.commit()
+    say(f"payroll_accounts: default payroll payable set to {PAYROLL_PAYABLE_ACCOUNT}")
+
+
 STEPS = {"coa": coa, "vat": vat, "fiscal": fiscal, "fields": fields, "currencies": currencies, "banks": banks,
-         "gebuev": gebuev, "qrbill": qrbill, "payslip": payslip, "host": host, "payments": payments, "hr": hr}
+         "gebuev": gebuev, "qrbill": qrbill, "payslip": payslip, "host": host, "payments": payments, "hr": hr,
+         "payroll_accounts": payroll_accounts}
 
 if __name__ == "__main__":
     args = sys.argv[1:]
