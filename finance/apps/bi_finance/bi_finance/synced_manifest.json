@@ -91,12 +91,12 @@
   "modified": "2026-10-11 00:25:00.000000",
   "sha": "74e99d5618d48042d5bb35b684a59533cb9312156a4fdde72280c6277f02c8e4"
  },
- "bi_finance/sidebar/bi_finance/bi_finance.json": {
-  "modified": "2026-10-12 03:00:00.000000",
-  "sha": "5b4ce504c0e5262e5d80287379220f1d92fa532200c4d2a20b870ed0375adf8b"
- },
  "dock/bi_finance/bi_finance.json": {
-  "modified": "2026-10-12 03:00:00.000000",
-  "sha": "f6985038771c073668803c0e5399f6bb6cb5511aacc9210fc4fd0586097a5990"
+  "modified": "2026-10-12 04:00:00.000000",
+  "sha": "bd9672372f08194816164451b7d0758811fc6cd2a7a8b840e19e79684ac01f5d"
+ },
+ "bi_finance/sidebar/treasury/treasury.json": {
+  "modified": "2026-10-12 04:00:00.000000",
+  "sha": "5e85c51f37e80e5e847e35c6001aa20bd4d3cecd8d327ce8dd9a0af3f3177da2"
  }
 }

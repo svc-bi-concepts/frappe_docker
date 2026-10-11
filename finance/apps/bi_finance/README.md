@@ -32,7 +32,7 @@ Invoice prints, with the QR code drawn on our own server (no external host, see
   from this directory, or in the image as in `finance/docs/erpnext-setup.md`.
 - `bi_finance/bi_finance/` is the module folder "BI Finance": the doctypes, reports, workspaces, number
   cards and charts that migrate syncs live there, and nowhere else (`bi_finance/test_layout.py` checks it).
-- Desk: BI Finance is a companion of ERPNext, its rail entry Treasury is the Dock in `bi_finance/dock/` and its menu the Sidebar in `bi_finance/bi_finance/sidebar/bi_finance/` (`bi_finance/test_sidebar.py`); see `finance/docs/erpnext-setup.md`, Desk conventions.
+- Desk: BI Finance is a companion of ERPNext, its rail entry Treasury is the Dock in `bi_finance/dock/` and its menu the Sidebar in `bi_finance/bi_finance/sidebar/treasury/` (`bi_finance/test_sidebar.py`); see `finance/docs/erpnext-setup.md`, Desk conventions.
 - `bi_finance/bi_finance/report/cash_position`: the "Cash Position" report (Bank and Cash accounts, their
   balances in original currency and in CHF, month-end history). Read-only. The Treasury
   workspace (`bi_finance/bi_finance/workspace/treasury`), its number cards (`number_card/`) and the chart

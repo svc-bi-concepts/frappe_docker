@@ -23,7 +23,7 @@ import unittest
 from bi_finance import hooks
 from bi_finance.test_layout import PACKAGE, modules, scrub
 
-SIDEBAR = os.path.join(PACKAGE, scrub(modules()[0]), "sidebar", "bi_finance", "bi_finance.json")
+SIDEBAR = os.path.join(PACKAGE, scrub(modules()[0]), "sidebar", "treasury", "treasury.json")
 DOCK = os.path.join(PACKAGE, "dock", "bi_finance", "bi_finance.json")
 
 # what the computed sidebar shows today: none of it may disappear
@@ -75,7 +75,8 @@ class Sidebar(unittest.TestCase):
 
     def test_the_document_is_the_module_sidebar(self):
         self.assertEqual(self.doc["doctype"], "Sidebar")
-        self.assertEqual(self.doc["name"], "BI Finance")
+        # a Sidebar is named by its title (autoname field:title): the name is what the shell header shows
+        self.assertEqual(self.doc["name"], "Treasury")
         # the title is what the shell header and the rail tooltip show, next to Accounts and Selling
         self.assertEqual(self.doc["title"], "Treasury")
         self.assertEqual(self.doc["module"], "BI Finance")
@@ -126,7 +127,7 @@ class Sidebar(unittest.TestCase):
         self.assertEqual(dock["standard"], 1)
         self.assertEqual(
             [(item["link_type"], item["link_to"], item["title"]) for item in dock["items"]],
-            [("Sidebar", "BI Finance", "Treasury")],
+            [("Sidebar", "Treasury", "Treasury")],
         )
         self.assertEqual(self.doc["name"], dock["items"][0]["link_to"])
 

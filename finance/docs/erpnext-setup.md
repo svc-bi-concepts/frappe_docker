@@ -66,7 +66,7 @@ The order, and hiding an entry, is arranged in the Desk with a Workspace Manager
 
 BI Finance is a companion of ERPNext, not an app of its own in the apps screen (Benchi, 2026-10-12). Its
 shipped documents are a Dock mounted on erpnext (`dock/bi_finance/bi_finance.json`: one rail entry, Treasury, after
-Portal) and a module Sidebar titled Treasury (`bi_finance/sidebar/bi_finance/bi_finance.json`), arranged like
+Portal) and a module Sidebar titled Treasury (`bi_finance/sidebar/treasury/treasury.json`), arranged like
 ERPNext's Accounts: Home, the daily documents at top level with icons, then the Reports, Banking and Setup sections.
 The claim rule: a Sidebar item carries `is_default_module` when it is a document Benchi works in daily that its own
 app does not navigate, so a bare route to it (a workspace card, a search result, the Add button of a list) opens in

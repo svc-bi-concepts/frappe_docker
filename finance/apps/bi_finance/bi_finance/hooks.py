@@ -5,7 +5,7 @@ app_description = "Swiss QR-bill for Sales Invoice, drawn on our own server"
 app_license = "Proprietary"
 required_apps = ["erpnext", "erpnextswiss"]
 
-# Apps mode (the desk's default: Desktop Settings desktop_page = Apps) reads the shipped Sidebar document bi_finance/sidebar/bi_finance/bi_finance.json for the module's left-hand menu; the Workspace Sidebar and Desktop Icon fixtures count only if Desktop Settings is ever switched to Desktop Icons.
+# Apps mode (the desk's default: Desktop Settings desktop_page = Apps) reads the shipped Sidebar document bi_finance/sidebar/treasury/treasury.json for the module's left-hand menu; the Workspace Sidebar and Desktop Icon fixtures count only if Desktop Settings is ever switched to Desktop Icons.
 # Its is_default_module claims VAT Declaration and Payment Proposal (erpnextswiss's, the two Benchi works in daily) so their bare routes open in BI Finance; ERPNext's own bank rows stay unclaimed.
 
 # No add_to_apps_screen: BI Finance is part of ERPNext (Benchi, 2026-10-12), so it has no apps-screen tile.
