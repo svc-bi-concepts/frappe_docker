@@ -124,6 +124,8 @@ restore_copy() {
 safety() {
   copy_compose exec -T backend bench --site frontend set-config -p pause_scheduler 1
   copy_compose exec -T backend bench --site frontend set-config -p mute_emails 1
+  # The copy's nginx is in-network, so wkhtmltopdf finds assets; live's host_name comes from HOST_NAME in swiss-setup.sh and must never be copied here.
+  copy_compose exec -T backend bench --site frontend set-config host_name http://frontend:8080
   # The train image may carry patches the live site has not run.
   copy_compose exec -T backend bench --site frontend migrate
   copy_compose exec -T backend bench --site frontend set-maintenance-mode off

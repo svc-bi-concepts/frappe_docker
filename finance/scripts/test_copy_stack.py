@@ -132,6 +132,7 @@ class CopyStack(unittest.TestCase):
             "restore /home/frappe/frappe-bench/sites/frontend/private/backups/20261011_120000-frontend-database.sql.gz",
             "set-config -p pause_scheduler 1",
             "set-config -p mute_emails 1",
+            "set-config host_name http://frontend:8080",
             "migrate",
             "set-maintenance-mode off",
             '"Wise Settings", "sync_enabled", 0',
@@ -140,6 +141,10 @@ class CopyStack(unittest.TestCase):
         ]
         positions = [at(fragment) for fragment in order]
         self.assertEqual(positions, sorted(positions), "steps ran out of order")
+        host_calls = [c for c in calls if "set-config host_name" in c]
+        self.assertEqual(len(host_calls), 1)
+        self.assertIn("set-config host_name http://frontend:8080", host_calls[0])
+        self.assertNotRegex(host_calls[0], r"tailnet|8462|8815")
         self.assertTrue(all("frappe-finance-copy" in c for c in calls if " up -d " in c))
         self.assertFalse(any("-p frappe-finance " in c for c in calls), "the live project is never named")
 

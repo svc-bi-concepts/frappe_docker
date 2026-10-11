@@ -327,7 +327,8 @@ The live stack is not touched by any of this.
   settings below are set after every restore. Do not turn them off.
 - Safety settings, after every restore: `pause_scheduler` 1 and `mute_emails` 1 (site config: no
   scheduled jobs, no mail). `migrate` runs after the restore, because the train image may carry
-  patches the live site has not run. Wise Settings and PayPal Settings `sync_enabled` 0 (the
+  patches the live site has not run. PDFs work on the copy because `safety()` sets `host_name` to
+  the copy's nginx at `http://frontend:8080`. Wise Settings and PayPal Settings `sync_enabled` 0 (the
   hourly bank syncs). Every Email Account has outgoing and incoming off. Every Webhook is
   disabled. Website Settings `app_name` is "COPY - finance copy, not live", the navbar brand.
   bexio has no sync setting in bi_finance (its data comes in by the importers only), so none is
