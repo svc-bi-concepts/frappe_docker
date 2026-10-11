@@ -33,6 +33,27 @@ sources of the patched files (the `item_tools.py`, `salary_certificate.py`,
 head in `finance/scripts/test_build_image.py`), so a patch that stops applying to the
 pin fails there.
 
+## hrms patches
+
+The one patch to hrms (`finance/patches/hrms/`) is carried the same way: applied at the
+image build, checked by the gate, never upstream. hrms is pinned by branch in
+`finance/apps.json` (`v16.50.0`), so a bump of hrms re-checks the patch in the gate.
+
+| Patch | Fixes | Why |
+|-------|-------|-----|
+| `hrms/0001-dock-mounts-on-erpnext.patch` | `hrms/dock/hrms/hrms.json`: adds `"mount_on": "erpnext"` to hrms's shipped dock. | Benchi, 2026-10-12: "add the hr part also in the erp next", one shell, ERPNext. A dock's mount is an app-layer claim: frappe reads it only from the app's own standard dock row, so neither the site nor another app can mount hrms. With the key, the nine HR entries (HR Setup to Tax & Benefits) join ERPNext's rail after Treasury and Swiss Payroll, and hrms loses its own apps-screen tile. |
+
+Check it by hand against the pin:
+
+```sh
+git clone https://github.com/frappe/hrms && cd hrms
+git checkout v16.50.0
+git apply --check ../finance/patches/hrms/0001-dock-mounts-on-erpnext.patch
+```
+
+The gate runs the apply step over an invented tree holding the pinned `hrms.json`
+(`finance/scripts/test_build_image.py`, `test_our_hrms_dock_patch_mounts_the_rail_on_erpnext`).
+
 ## How they are applied
 
 The image build fetches the apps with `bench init` (`images/custom/Containerfile`,

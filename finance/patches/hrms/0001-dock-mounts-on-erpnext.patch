@@ -1,0 +1,12 @@
+diff --git a/hrms/dock/hrms/hrms.json b/hrms/dock/hrms/hrms.json
+index 706cb68..bfbff72 100644
+--- a/hrms/dock/hrms/hrms.json
++++ b/hrms/dock/hrms/hrms.json
+@@ -80,6 +80,7 @@
+  ],
+  "modified": "2026-10-05 12:30:00.000000",
+  "modified_by": "Administrator",
++ "mount_on": "erpnext",
+  "name": "hrms",
+  "owner": "Administrator",
+  "standard": 1,

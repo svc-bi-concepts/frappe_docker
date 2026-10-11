@@ -58,6 +58,12 @@ it writes: every write has a preview or a dry run first (Fill from payments show
 draft on its own button); a submitted document is never changed by a button, and Download Transfer File only reads.
 See `finance/docs/operating.md` for the steps in the order they are done.
 
+The rail: ERPNext's rail has three companions, each on ERPNext's own rail with no apps-screen tile of its
+own: bi_finance's Treasury, bi_payroll's Swiss Payroll, and hrms's HR modules (HR Setup to Tax & Benefits,
+a one-key patch to hrms, `finance/docs/erpnextswiss-patches.md`). They follow ERPNext's entries in the
+order the apps are installed (`sites/apps.txt`: bi_finance, bi_payroll, erpnext, erpnextswiss, frappe, hrms).
+The order, and hiding an entry, is arranged in the Desk with a Workspace Manager (the site layer, no code).
+
 ## The setup script
 
 `finance/scripts/swiss-setup.sh [coa] [accounts] [vat] [fiscal] [fields] [currencies] [banks] [gebuev] [qrbill] [host] [payments] [hr]`

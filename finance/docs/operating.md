@@ -200,8 +200,8 @@ mode denies a builder's docker writes. Notes give counts and totals only, never 
     - trial balance: the Trial Balance report for the same period equals `private/d4-trial-balance-before.csv` per account;
     - counts: `python3 finance/bexio/delta_counts.py > private/d4-counts-after.txt` equals the before file per doctype (it counts the documents that carry a bexio_id, not the Wise and PayPal syncs or HR data);
     - QR: the bi_finance QR print format is the default, and the erpnextswiss QR formats show as disabled (Desk, Print Format);
-    - erpnextswiss patches: the build applied them (`apply-patches.sh` stops the build on a patch that does not
-      apply); by hand as `finance/docs/erpnextswiss-patches.md` says;
+    - erpnextswiss and hrms patches: the build applied them (`apply-patches.sh` stops the build on a patch that does not
+      apply); by hand as `finance/docs/erpnextswiss-patches.md` says (the hrms bump re-checks `hrms/0001-dock-mounts-on-erpnext.patch` like the erpnextswiss ones);
     - the Treasury and Payroll workspaces open in the Desk.
 
     Then delete the `private/d4-*` files that served these checks; the totals go in the note.

@@ -197,6 +197,7 @@ class BuildImageModes(unittest.TestCase):
 APPLY = os.path.join(ROOT, "finance", "scripts", "apply-patches.sh")
 PATCH_DIR = os.path.join(ROOT, "finance", "patches", "erpnextswiss")
 FRAPPE_PATCH_DIR = os.path.join(ROOT, "finance", "patches", "frappe")
+HRMS_PATCH_DIR = os.path.join(ROOT, "finance", "patches", "hrms")
 CONTAINERFILE = os.path.join(ROOT, "images", "custom", "Containerfile")
 
 # The lines of frappe bundler.py at v16.51.0 around get_node_env (its line 296): the context of
@@ -359,6 +360,97 @@ FORM11_JSON = r'''{
  "custom_format": 1,
  "disable_smart_shrinking": 0,
  "disabled": 0,
+}'''
+
+# hrms's shipped dock at the pin v16.50.0 (hrms/dock/hrms/hrms.json, 87 lines, upstream content):
+# the whole file, so the patch's context is the file's own. The patch adds one key, mount_on.
+HRMS_DOCK_PATH = "hrms/dock/hrms/hrms.json"
+HRMS_DOCK_JSON = r'''{
+ "app": "hrms",
+ "creation": "2026-08-26 23:55:00",
+ "docstatus": 0,
+ "doctype": "Dock",
+ "idx": 0,
+ "items": [
+  {
+   "added": 0,
+   "hidden": 0,
+   "icon": "briefcase-duotone",
+   "link_to": "HR Setup",
+   "link_type": "Sidebar",
+   "title": "HR Setup"
+  },
+  {
+   "added": 0,
+   "hidden": 0,
+   "icon": "time-clock-duotone",
+   "link_to": "Shift & Attendance",
+   "link_type": "Sidebar",
+   "title": "Shift & Attendance"
+  },
+  {
+   "added": 0,
+   "hidden": 0,
+   "icon": "tree-palm-duotone",
+   "link_to": "Leaves",
+   "link_type": "Sidebar",
+   "title": "Leaves"
+  },
+  {
+   "added": 0,
+   "hidden": 0,
+   "icon": "receipt-card-duotone",
+   "link_to": "Expenses",
+   "link_type": "Sidebar",
+   "title": "Expenses"
+  },
+  {
+   "added": 0,
+   "hidden": 0,
+   "icon": "wallet-duotone",
+   "link_to": "Payroll",
+   "link_type": "Sidebar",
+   "title": "Payroll"
+  },
+  {
+   "added": 0,
+   "hidden": 0,
+   "icon": "podium-duotone",
+   "link_to": "Performance",
+   "link_type": "Sidebar",
+   "title": "Performance"
+  },
+  {
+   "added": 0,
+   "hidden": 0,
+   "icon": "user-clock-duotone",
+   "link_to": "Tenure",
+   "link_type": "Sidebar",
+   "title": "Tenure"
+  },
+  {
+   "added": 0,
+   "hidden": 0,
+   "icon": "user-search-duotone",
+   "link_to": "Recruitment",
+   "link_type": "Sidebar",
+   "title": "Recruitment"
+  },
+  {
+   "added": 0,
+   "hidden": 0,
+   "icon": "coins-percent-duotone",
+   "link_to": "Tax & Benefits",
+   "link_type": "Sidebar",
+   "title": "Tax & Benefits"
+  }
+ ],
+ "modified": "2026-10-05 12:30:00.000000",
+ "modified_by": "Administrator",
+ "name": "hrms",
+ "owner": "Administrator",
+ "standard": 1,
+ "user": ""
 }'''
 
 
@@ -542,12 +634,32 @@ class PatchStep(unittest.TestCase):
             os.environ.pop("NODE_OPTIONS", None)
             self.assertEqual(scope["get_node_env"](), {"NODE_OPTIONS": "--max_old_space_size=2928"})
 
+    def test_our_hrms_dock_patch_mounts_the_rail_on_erpnext(self):
+        # Regression: hrms's dock had no mount, so its nine HR entries kept their own apps-screen
+        # tile. mount_on erpnext puts them on ERPNext's rail (after Treasury and Swiss Payroll).
+        # frappe reads a mount only from the app's own standard dock row, so the patch is ours to carry.
+        self.commit(HRMS_DOCK_PATH, HRMS_DOCK_JSON)
+        run = subprocess.run(["sh", APPLY, HRMS_PATCH_DIR, self.app], capture_output=True, text=True)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        dock = json.loads(self.read(HRMS_DOCK_PATH))
+        self.assertEqual(dock["mount_on"], "erpnext")
+        self.assertEqual(dock["app"], "hrms")
+        self.assertEqual(len(dock["items"]), 9)
+
     def test_the_containerfile_builds_assets_after_the_frappe_patch(self):
         with open(CONTAINERFILE) as f:
             text = f.read()
         self.assertIn("--skip-assets", text)
         patched = text.index("apply-patches.sh /home/frappe/patches/frappe apps/frappe")
         self.assertLess(patched, text.index("bench build --production"))
+
+    def test_the_containerfile_applies_the_hrms_patch_before_the_asset_build(self):
+        with open(CONTAINERFILE) as f:
+            text = f.read()
+        self.assertIn("COPY --chown=frappe:0 finance/patches/hrms /home/frappe/patches/hrms", text)
+        hrms = text.index("apply-patches.sh /home/frappe/patches/hrms apps/hrms")
+        self.assertLess(text.index("apply-patches.sh /home/frappe/patches/frappe apps/frappe"), hrms)
+        self.assertLess(hrms, text.index("bench build --production"))
 
 
 if __name__ == "__main__":
