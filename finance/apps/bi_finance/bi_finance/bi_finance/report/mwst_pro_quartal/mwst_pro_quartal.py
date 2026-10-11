@@ -51,7 +51,8 @@ def execute(filters=None):
 
 def _belege(company, quarters, filters):
     """One Ziffer's vouchers in one quarter: the drill-down the Ziffern view's row click opens."""
-    quarter = filters.get("quarter")
+    # the filter holds Q1..Q4 and the year; the module's period is 2026Q1
+    quarter = quarters[0] if filters.get("quarter") and quarters else None
     ziffer = filters.get("ziffer")
     if not (quarter and ziffer):
         return _columns([]), [], "Belege: ein Quartal und eine Ziffer waehlen (auf eine Zeile der Ziffern-Ansicht klicken).", None

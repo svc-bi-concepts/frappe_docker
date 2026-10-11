@@ -63,6 +63,11 @@ class QuartersTest(unittest.TestCase):
     def test_one_quarter_alone(self):
         self.assertEqual(mq.quarters_of(YEAR, "q3"), ["{}Q3".format(YEAR)])
 
+    def test_the_filters_quarter_is_q1_to_q4_and_the_period_carries_the_year(self):
+        # the Belege view takes its period from here: a filter value of 2026Q1 would be no quarter
+        self.assertEqual(mq.quarters_of(YEAR, "Q1"), [Q1])
+        self.assertEqual(mq.quarters_of(YEAR, Q1), [])
+
     def test_a_quarter_outside_the_form_is_refused(self):
         self.assertEqual(mq.quarters_of(YEAR, "Q5"), [])
 

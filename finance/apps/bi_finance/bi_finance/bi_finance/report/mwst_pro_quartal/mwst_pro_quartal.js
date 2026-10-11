@@ -39,9 +39,10 @@ frappe.query_reports["MWST pro Quartal"] = {
 	],
 	onload(report) {
 		// A click on a Ziffern row opens its vouchers: the same report in the Belege view, that Ziffer and
-		// its quarter (or the year's first quarter, when the whole year is shown). One bound handler on the
+		// the quarter of the clicked column (the first quarter shown, from the label). One bound handler on the
 		// wrapper survives the re-renders.
-		report.datatable.$wrapper.on("click", ".mwst-ziffer", function () {
+		// (the datatable does not exist yet at onload, so the handler sits on the page's wrapper)
+		$(report.page.wrapper).on("click", ".mwst-ziffer", function () {
 			frappe.query_report.set_filter_value("ziffer", this.dataset.ziffer);
 			frappe.query_report.set_filter_value("quarter", this.dataset.quarter);
 			frappe.query_report.set_filter_value("ansicht", "Belege");
@@ -49,13 +50,18 @@ frappe.query_reports["MWST pro Quartal"] = {
 	},
 	formatter(value, row, column, data, default_formatter) {
 		value = default_formatter(value, row, column, data);
-		// the Ziffer's cell carries the click target; the quarter rides along for the Belege view
-		if (data && column.fieldname === "label" && (frappe.query_report.get_filter_value("ansicht") || "Ziffern") === "Ziffern") {
-			const quarters = ["Q1", "Q2", "Q3", "Q4"]
-				.map((q) => `${frappe.query_report.get_filter_value("year") || new Date().getFullYear()}${q}`)
-				.filter((q) => data[`${q} erpnext`] !== undefined);
-			const quarter = quarters.length === 1 ? quarters[0] : (quarters[0] || "");
-			value = `<span class="mwst-ziffer" data-ziffer="${frappe.utils.escape_html(data.ziffer)}" data-quarter="${quarter}" style="cursor: pointer; text-decoration: underline dotted">${value}</span>`;
+		// The label cell and every quarter cell carry the click target: the Ziffer and the filter's quarter (Q1..Q4),
+		// the label's the first quarter shown, a quarter cell's its own (the column's fieldname starts '2026Q3 ').
+		if (data && (frappe.query_report.get_filter_value("ansicht") || "Ziffern") === "Ziffern") {
+			const match = /^\d{4}(Q[1-4]) /.exec(column.fieldname || "");
+			let quarter = match ? match[1] : "";
+			if (column.fieldname === "label") {
+				const first = Object.keys(data).find((key) => / erpnext$/.test(key));
+				quarter = first ? first.slice(4, 6) : "";
+			}
+			if (quarter) {
+				value = `<span class="mwst-ziffer" data-ziffer="${frappe.utils.escape_html(data.ziffer)}" data-quarter="${quarter}" style="cursor: pointer; text-decoration: underline dotted">${value}</span>`;
+			}
 		}
 		// a Belege row's voucher opens the document
 		if (data && column.fieldname === "name" && data.doctype) {

@@ -63,11 +63,11 @@ def load(erp, rows, source, dry_run=True):
     """Upsert the rows; returns the counts (created, updated, unchanged, failed). Rows equal to what the
     site has are left untouched; a live run writes only the differences."""
     counts = collections.Counter()
+    known = {row["name"] for row in erp.list(DOCTYPE)}
     for quarter, ziffer, base, tax in rows:
         name = name_of(quarter, ziffer)
         want = {"quarter": quarter, "ziffer": ziffer, "base": float(base), "tax": float(tax), "source": source}
         try:
-            known = {row["name"] for row in erp.list(DOCTYPE)}
             if name in known:
                 have = erp.get(DOCTYPE, name)
                 if im.differs(have, want):

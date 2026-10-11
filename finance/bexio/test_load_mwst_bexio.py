@@ -101,6 +101,11 @@ class LoadTest(unittest.TestCase):
         self.assertEqual((counts["updated"], counts["unchanged"]), (1, 0))
         self.assertEqual(self.erp.store["MWST bexio Ziffer"]["MWST-BEXIO-2026Q1-302"]["base"], 1000.50)
 
+    def test_the_site_is_listed_once_not_once_per_row(self):
+        with mock.patch.object(self.erp, "list", wraps=self.erp.list) as listed:
+            loader.load(self.erp, ROWS, "bexio export 2026-10-10", dry_run=False)
+        self.assertEqual(listed.call_count, 1)
+
     def test_a_dry_run_counts_but_writes_nothing(self):
         counts = loader.load(self.erp, ROWS, "bexio export 2026-10-10", dry_run=True)
         self.assertEqual(counts["created"], 3)
