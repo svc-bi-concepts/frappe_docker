@@ -308,7 +308,10 @@ cancelled entries and other companies.
   version 1.0. formOfReporting is 2 (vereinnahmt), grossOrNet 1 (netto), and the 3.7 %
   rate of Ziffer 342 is the old Sondersatz. The UID is the Company's Tax ID with its
   nine digits; any other form is refused, not read.
-- **How-to for a quarter (Benchi files; no agent uploads).**
+- **How-to for a quarter (Benchi files; no agent uploads).** The first real filing
+  from ERPNext is 2027 Q1 (due end of May 2027): all of 2026 stays with bexio (Benchi
+  D1). The 2026 Q3 dry run was the parallel check that the fill runs without refusal
+  on a fresh quarter.
   1. Fill: the API call `fill_payment_basis` with `"dry_run": 0` (or the button, once
      one exists), which makes or updates the draft `MWST <period>`.
   2. Open the draft in ERPNext and check its figures against bexio's declaration.
