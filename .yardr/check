@@ -40,6 +40,12 @@ assert all(s[n].get('restart') != 'unless-stopped' for n in ['configurator', 'cr
 # swiss-setup.py's pure helpers (frappe mocked): the payslip and the hr steps among them.
 # The structure remake's plan (frappe mocked): create, move, restore, the wrapper's project.
 (cd finance/scripts && python3 -m unittest test_build_image test_switch_image test_copy_stack test_update_check test_load_swiss_rates test_swiss_setup test_swiss_structure_remake)
+# The payment-run tests need frappe, so they run in the live image (the tag finance-local.yml names, so it
+# never goes stale), mounted read-only, no ports, as finance/docs/payment-runs.md does. A flake that depends
+# on the clock (erp-c7wk) blocks a landing here instead of hiding in the how-to.
+IMAGE=$(docker compose -f pwd.yml -f finance-local.yml config --format json | python3 -c "import json, sys; print(json.load(sys.stdin)['services']['backend']['image'])")
+docker run --rm -v "$PWD/finance/apps/bi_finance:/home/frappe/frappe-bench/apps/bi_finance:ro" "$IMAGE" \
+  sh -c 'mkdir -p /home/frappe/logs && cd /home/frappe/frappe-bench/apps/bi_finance && ../../env/bin/python -m unittest bi_finance.test_payment_run'
 # Upstream's own lint, when pre-commit is installed (optional for now).
 if command -v pre-commit >/dev/null; then
   pre-commit run --all-files

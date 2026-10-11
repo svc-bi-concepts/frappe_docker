@@ -16,7 +16,6 @@ from unittest import mock
 import frappe
 import jinja2
 from erpnextswiss.erpnextswiss.doctype.payment_proposal import payment_proposal as swiss
-
 from frappe.utils import getdate
 
 from bi_finance import payment_run
