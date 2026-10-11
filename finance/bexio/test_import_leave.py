@@ -198,6 +198,19 @@ class PlanAndAllocationTest(unittest.TestCase):
         again.run_employees(plan)
         self.assertEqual(again.counts["created"], 1)
 
+    def test_apply_counts_the_employee_holiday_list_update_as_the_dry_run_does(self):
+        # the dry run is what the go-live reads before the apply: both count the same update
+        counts = []
+        for dry_run in (True, False):
+            erp = FakeErp()
+            employee = active_employee()
+            erp.docs["Employee"][employee["name"]] = copy.deepcopy(employee)
+            plan, _d, _p = il.build_plan([{"id": "8001", "annual_vacation_days_total": 25}], {"8001": employee})
+            importer = il.LeaveImporter(erp, dry_run=dry_run)
+            importer.run_employees(plan)
+            counts.append(importer.counts["updated"])
+        self.assertEqual(counts, [1, 1])
+
     def test_dry_run_employees_writes_nothing(self):
         erp = FakeErp()
         employee = active_employee()

@@ -211,8 +211,7 @@ class LeaveImporter:
                         self.counts["failed"] += 1
                         self.problems.append((entry["position"], "Employee holiday list refused ({})".format(type(err).__name__)))
                         continue
-                else:
-                    self.counts["updated"] += 1
+                self.counts["updated"] += 1
             else:
                 self.counts["unchanged"] += 1
             if entry["days"] == 0:
