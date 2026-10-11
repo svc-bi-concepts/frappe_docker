@@ -62,6 +62,8 @@ Pinned in `finance/apps.json`:
 
 ## VAT per quarter against bexio
 
+The loader `finance/bexio/load_mwst_bexio.py` writes bexio's Ziffern into the doctype "MWST bexio Ziffer" through the API user's System Manager role (erp-tatn pattern, erp-tgza).
+
 bexio declares on payments received (vereinnahmte Entgelte), so the VAT of a
 sale is due in the quarter of the receipt, and the input VAT of a bill in the
 quarter of its payment. ERPNext books the same moves on the same dates

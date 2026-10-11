@@ -130,6 +130,20 @@ class Stamps(unittest.TestCase):
         self.assertEqual(changed, [], "; ".join(f"{p} modified {current[p][1]} sha {current[p][0]}" for p in changed))
 
 
+class MwstBexioZifferRoles(unittest.TestCase):
+    # erp-tatn pattern: the API user loads the rows through its System Manager role (erp-hedt step 4).
+    PATH = "bi_finance/doctype/mwst_bexio_ziffer/mwst_bexio_ziffer.json"
+
+    def test_the_rows_are_accounts_manager_accounts_user_and_system_manager(self):
+        with open(os.path.join(PACKAGE, self.PATH), encoding="utf-8") as f:
+            rows = [(p["role"], p["read"], p["write"], p["create"]) for p in json.load(f)["permissions"]]
+        self.assertEqual(rows, [
+            ("Accounts Manager", 1, 1, 1),
+            ("Accounts User", 1, 0, 0),
+            ("System Manager", 1, 1, 1),
+        ])
+
+
 class StaleRule(unittest.TestCase):
     RECORDED = {"a.json": {"sha": "x", "modified": "2026-10-10 09:00:00.000000"}}
 

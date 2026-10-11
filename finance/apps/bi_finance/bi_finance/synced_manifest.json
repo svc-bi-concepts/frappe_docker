@@ -84,8 +84,8 @@
   "sha": "00a3ef1295b4e16df36858fdaa289c4aaa70bb74529daf3f376b0abe33326d87"
  },
  "bi_finance/doctype/mwst_bexio_ziffer/mwst_bexio_ziffer.json": {
-  "modified": "2026-10-11 00:25:00.000000",
-  "sha": "f30160cd5dc7ba7c0893e4b4a323c3ae508016f83bb2491639998eb478a2b30c"
+  "modified": "2026-10-12 01:33:00.000000",
+  "sha": "010e364dc4b8ed551bbf2a8a862484268fcdc82b3531991f80f3c1f6077cfdd2"
  },
  "bi_finance/report/mwst_pro_quartal/mwst_pro_quartal.json": {
   "modified": "2026-10-11 00:25:00.000000",
