@@ -4,7 +4,6 @@ Frappe app for BI Concepts' finance site. It adds the Swiss QR-bill to Sales
 Invoice prints, with the QR code drawn on our own server (no external host, see
 `finance/docs/swiss.md`).
 
-- The Apps-mode shell: the logo (`public/images/`), the Dock rail (`dock/`) and the Sidebar (`bi_finance/sidebar/`); see `finance/docs/erpnext-setup.md`, Desk conventions.
 - `bi_finance/qrbill.py`: payload per SIX QR-bill v2.3 with the SCOR creditor reference built
   from the invoice number (`RF` + check digits per ISO 11649; the slip prints it in groups of
   four), and the QR image. The payload passed the official swiss-qr-bill.org validator with no

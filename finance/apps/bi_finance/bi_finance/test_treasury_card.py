@@ -2,8 +2,8 @@
 
     python3 -m unittest bi_finance.test_treasury_card
 
-The stamp of treasury.json is checked by test_layout; this file checks what the cards hold. The groups and their
-order are the module sidebar's (sidebar/bi_finance/bi_finance.json), so a change there is a change here.
+The stamp of treasury.json is checked by test_layout; this file checks what the cards hold. The areas and their
+order are the page's own; the module sidebar (sidebar/bi_finance/bi_finance.json) is arranged like ERPNext's Accounts and does not share them.
 """
 
 import json

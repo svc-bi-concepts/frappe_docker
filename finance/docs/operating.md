@@ -1,7 +1,7 @@
 # Operating the finance stack: month, quarter, payroll
 
 One page of the recurring work, in the order it is done. Every Swiss step is on the Treasury
-workspace's cards, one per area with the same groups as the module sidebar (Desk: ERPNext › Treasury, then
+workspace's cards, one per area (Desk: ERPNext › Treasury, then
 the card: **Banking**, **Payments**, **MWST**, **Cash forecast**, **Payroll**). The Desk place is in bold; the
 document that explains the step is in brackets. Conventions for labels and buttons:
 `finance/docs/erpnext-setup.md`, "Desk conventions".
