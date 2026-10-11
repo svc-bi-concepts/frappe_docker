@@ -71,7 +71,8 @@ class ComponentAccounts(unittest.TestCase):
 
 
 # The accounts bexio's chart adds to the KMU template (private/bexio-mapping.md, the rows "add under"): erpnextswiss's
-# accounts_template.csv has none of them, and no step of finance/scripts creates them. They exist on the live site.
+# accounts_template.csv has none of them. They exist on the live site; on a fresh one the 'accounts' step of
+# finance/scripts/swiss-setup.py creates them, from a table test_swiss_setup.py compares with this list.
 BEXIO_ADDED = {"2270", "2271", "2273", "2274", "2279", "5003", "5720"}
 
 
