@@ -112,7 +112,7 @@ insurer's or the Ausgleichskasse's own sheet before a live run.
 | ALV (incl. ceiling) | Component with `min(base, ceiling)`: 1.10% employee, 1.10% employer | 2.20% total up to CHF 148,200 a year (unchanged from 2025). No contribution above the ceiling: the 1% solidarity contribution (ALV 2) lapsed on 1 Jan 2023 | Config, no code. Nothing above the ceiling | same sources; [law.ch](https://law.ch/lawnews/2022/10/arbeitslosenversicherung-solidaritaetsprozent-entfaellt-per-01-01-2023/) |
 | BVG (coordinated salary) | Component on `salary - coordination deduction`, with an entry threshold, and the age-based rates of the Pensionskasse. The split and the rates are the fund's plan, not the law | Entry threshold CHF 22,680; coordination deduction CHF 26,460 | Config is possible (the formula reads the employee's date of birth). The plan rates are open | [convit](https://convit.ch/wissen/bvg-koordinationsabzug), [auditrium](https://www.auditrium.ch/blog/articles/koordinationsabzug-2026-wichtige-aenderungen-fuer-unternehmen) |
 | UVG / NBU | Components with the insurer's percentage on the insured salary. BU/UVG employer share, NBU employee share | Set by the insurer per policy | Config. Needs the policy sheets | none; insurer documents |
-| KTG | Component with the insurer's rate on the insured salary | Set by the insurer | Config. The 2026 KTG contract is fetched and read (erp-1jh5, 2026-10-11): its values sit in the private CSV and the settings stay open for the follow-up bead; the employer pays the premium, so the sheet names no employee share | the contract in `private/payroll-insurance/` |
+| KTG | Component with the insurer's rate on the insured salary | Set by the insurer | Config. The 2026 KTG contract is read and its values are set in the settings (2026-10-11), the employee side checked against the paystubs; the employer pays the premium, so the sheet names no employee share | the contract in `private/payroll-insurance/` |
 | FAK | Employer component on the AHV wage, rate by canton and Ausgleichskasse | Set by the fund | Config. Needs the fund's rate | none |
 | Quellensteuer | Not covered. erpnextswiss's Salary Certificate settings have a field "12 Quellensteuerabzug" that maps a component; it does not compute the tax | Cantonal tariffs, per year | **Gap.** Build (bi_finance) or outsource. See Questions | `erpnextswiss` `salary_certificate_settings.json` |
 | 13th salary | A Salary Component paid in December, or an accrual over the year (`accrual_component`) | Contract | None in the data (Question 5). No component until a contract says so | HRMS `salary_component` fields |
@@ -244,9 +244,11 @@ slot that ledgerdemain gives (`erpnext-setup.md`).
    The insured salary on the assignment is a YEARLY amount (the formula divides it by 12): a monthly-scale value
    computes a zero BVG deduction, and the BVG row then drops off the payslip and off line 10.1 of the Form 11
    (found by the erp-rqxs PDF proof on the copy).
-   **Stays manual:** the employer rates (AHV, ALV, UVG, KTG, FAK: the insurers' sheets — the KTG contract is read and
-   its values are private, the settings follow in a follow-up bead, erp-1jh5; KTG is printed on no paystub), and the
-   BVG plan (the band rates in the settings, then the insured salaries with them). The QST
+   **Stays manual:** the employer rates (AHV, ALV, UVG, KTG, FAK: the insurers' sheets; KTG is printed on no paystub),
+   and the BVG plan (the band rates in the settings, then the insured salaries with them). Rates state (2026-10-11):
+   KTG's two fields (swiss_ktg_ee, swiss_ktg_ag) are set, from the insurer's contract, the employee side checked
+   against the paystubs; swiss_uvg_ag, swiss_uvg_max, swiss_nbu_ee and swiss_fak_ag stay placeholders, the documents
+   still awaited; the BVG bands stay calibrated from the paystubs. The QST
    Tariff rows are loaded by `bi_payroll.swiss_payroll.load_tariff` from the ESTV file before the codes resolve; the
    Employee's code is picked from the QST Tariff Code list of its canton (erp-wvbn), and the loader makes those codes.
 4c. **Leave and holiday setup** (`finance/bexio/import_leave.py`): the 2026 canton-wide SZ public holidays

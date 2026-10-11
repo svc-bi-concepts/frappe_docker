@@ -15,11 +15,12 @@ migrate on any site.
 - `bi_payroll/swiss_payroll.py`: `copy_rates_to_slip` (a `before_validate` on Salary Slip: the formulas see only the
   slip and the assignment, so each slip takes the rates from Payroll Swiss Settings when it is validated) and
   `ensure_structure` (one "Swiss Monthly" Salary Structure per Swiss company).
-- `bi_payroll/bi_payroll/doctype/payroll_swiss_settings`: the settings (single). All five insurers' values stay open
-  here, listed by token: the BVG age-band rates are placeholders (half the statutory minimum), UVG, NBU, KTG and FAK
-  are empty (ledgerdemain, 2026-10-11: no rate is set in erp-1jh5; a follow-up bead sets them once the documents are
-  provided). The KTG contract is fetched and read (erp-1jh5), its values sit in the private rates CSV.
-  `finance/scripts/load-swiss-rates.sh` is ready for that step: it reads the private CSV and sets the rows marked
+- `bi_payroll/bi_payroll/doctype/payroll_swiss_settings`: the settings (single). KTG's two fields (swiss_ktg_ee,
+  swiss_ktg_ag) are set — 2026-10-11, from the insurer's contract, the employee side checked against the paystubs;
+  the values sit in the private rates CSV. Four placeholders remain, listed by token: swiss_uvg_ag, swiss_uvg_max,
+  swiss_nbu_ee and swiss_fak_ag are empty, the documents still awaited. The BVG age-band rates stay placeholders
+  (half the statutory minimum, calibrated from the paystubs) until the fund's plan sheet arrives.
+  `finance/scripts/load-swiss-rates.sh` reads the private CSV and sets the rows marked
   set=yes — dry run on the copy by default, the live stack only with `--live --backup`.
 - `bi_payroll/hand_over.py` and `bi_payroll/bi_payroll/report/payroll_hand_over`: the report `Payroll hand-over`, per
   employee and year or per employee and month, for the trustee's filing (Excel or CSV). The rows are summed from the
