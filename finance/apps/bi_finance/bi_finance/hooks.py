@@ -5,6 +5,15 @@ app_description = "Swiss QR-bill for Sales Invoice, drawn on our own server"
 app_license = "Proprietary"
 required_apps = ["erpnext", "erpnextswiss"]
 
+# The apps screen lists bi_finance next to erpnextswiss's; the route is the Treasury workspace.
+add_to_apps_screen = [
+    {
+        "name": "bi_finance",
+        "title": "BI Finance",
+        "route": "/desk/treasury",
+    }
+]
+
 # Payment runs: Payment Entries stay drafts until the bank file is downloaded (payment_run.py).
 override_doctype_class = {
     "Payment Proposal": "bi_finance.payment_run.PaymentProposal",

@@ -13,6 +13,7 @@ to this file, records per synced JSON the sha of its content without 'modified' 
 A changed file must carry a newer stamp; the builder then updates the manifest with it.
 """
 
+import glob
 import hashlib
 import json
 import os
@@ -22,7 +23,7 @@ from datetime import datetime
 PACKAGE = os.path.dirname(os.path.abspath(__file__))
 APP = os.path.dirname(PACKAGE)
 MANIFEST = os.path.join(PACKAGE, "synced_manifest.json")
-SYNCED = {"doctype", "report", "workspace", "number_card", "dashboard_chart", "page"}
+SYNCED = {"doctype", "report", "workspace", "workspace_sidebar", "number_card", "dashboard_chart", "page"}
 STAMP = "%Y-%m-%d %H:%M:%S.%f"  # Frappe's 'modified' format
 
 
@@ -116,6 +117,30 @@ class StaleRule(unittest.TestCase):
 
     def test_unchanged_content_passes_whatever_the_stamp(self):
         self.assertEqual(stale(self.RECORDED, {"a.json": ("x", "2026-10-10 08:00:00.000000")}), [])
+
+
+class Navigation(unittest.TestCase):
+    # The Desktop Icon opens a Workspace Sidebar, and that sidebar's Start opens its workspace: each
+    # link must name a fixture that ships, or the icon leads nowhere on a migrated site.
+    def module_folder(self, folder, name):
+        return os.path.join(PACKAGE, scrub(modules()[0]), folder, scrub(name), scrub(name) + ".json")
+
+    def test_the_desktop_icon_opens_a_workspace_sidebar_that_ships(self):
+        app_icons = os.path.join(PACKAGE, "desktop_icon")
+        for path in glob.glob(os.path.join(app_icons, "*.json")):
+            with open(path, encoding="utf-8") as f:
+                icon = json.load(f)
+            if icon["link_type"] != "Workspace Sidebar":
+                continue
+            self.assertTrue(os.path.isfile(self.module_folder("workspace_sidebar", icon["link_to"])), icon["link_to"])
+
+    def test_the_sidebar_start_opens_a_workspace_that_ships(self):
+        for path in glob.glob(os.path.join(PACKAGE, scrub(modules()[0]), "workspace_sidebar", "*", "*.json")):
+            with open(path, encoding="utf-8") as f:
+                items = json.load(f)["items"]
+            for item in items:
+                if item.get("link_type") == "Workspace":
+                    self.assertTrue(os.path.isfile(self.module_folder("workspace", item["link_to"])), item["link_to"])
 
 
 if __name__ == "__main__":
