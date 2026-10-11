@@ -56,6 +56,7 @@ stays as bexio has it (in its own field, never renamed). Where a thing lives: th
 workspace's cards, one per area (Banking, Payments, MWST, Cash forecast, Payroll), and nowhere else is a finance step only reachable by search. What a button does before
 it writes: every write has a preview or a dry run first (Fill from payments shows the figures, then writes only the
 draft on its own button); a submitted document is never changed by a button, and Download Transfer File only reads.
+Get values is removed on a draft: it reads the invoice basis, so the payment basis is filled by Fill from payments only.
 See `finance/docs/operating.md` for the steps in the order they are done.
 
 The rail: ERPNext's rail has three companions, each on ERPNext's own rail with no apps-screen tile of its

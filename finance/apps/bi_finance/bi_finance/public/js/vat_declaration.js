@@ -5,9 +5,15 @@
 frappe.ui.form.on('VAT Declaration', {
     refresh: function(frm) {
         if (frm.doc.docstatus === 0) {
-            frm.set_intro(__("Payment basis (vereinnahmte Entgelte): use Fill from payments, not Get values"), "yellow");
+            frm.set_intro(__("Payment basis (vereinnahmte Entgelte): Fill from payments fills this draft; Recalculate updates 289/299."), "yellow");
+            // erpnextswiss adds Get values before this runs (doctype_js loads after the app's own): it reads the invoice basis
+            frm.remove_custom_button(__("Get values"));
         }
-        if (!frm.is_new()) {
+        // onload sets the dates and then erpnextswiss's default title, so the title is set here, after both
+        if (frm.is_new()) {
+            set_title(frm);
+        }
+        if (!frm.is_new() || (frm.doc.company && frm.doc.start_date && frm.doc.end_date)) {
             var button = frm.add_custom_button(__("Fill from payments"), function() {
                 fill_from_payments(frm);
             });
@@ -16,8 +22,29 @@ frappe.ui.form.on('VAT Declaration', {
                 button.prop("disabled", true);
             }
         }
-    }
+    },
+    'start_date': function(frm) { set_title(frm) },
+    'end_date': function(frm) { set_title(frm) }
 });
+
+// The title of a new declaration is its period, the name the fill gives the draft (MWST 2026Q3, vat_declaration.py).
+// erpnextswiss's default 'Qn / YYYY - abbr' is replaced, and so is our own title when the dates change; any other title is Benchi's.
+var DEFAULT_TITLE = /^Q[1-4] \/ \d{4}( - .*)?$/;
+var PERIOD_TITLE = /^MWST \d{4}(Q[1-4]|H[12])$/;
+
+function set_title(frm) {
+    var period = period_of(frm);
+    if (!frm.is_new() || !period) {
+        return;
+    }
+    var title = frm.doc.title || "";
+    if (title !== "" && !DEFAULT_TITLE.test(title) && !PERIOD_TITLE.test(title)) {
+        return;
+    }
+    if (title !== "MWST " + period) {
+        frm.set_value("title", "MWST " + period);
+    }
+}
 
 // The period the fill takes ('2026Q3' or '2026H1', as the method reads it), from the form's start and end dates.
 // Returns null when the dates are not one quarter or half-year.
@@ -85,9 +112,10 @@ function show_preview(frm, period, fields) {
                 method: "bi_finance.vat_declaration.fill_payment_basis",
                 args: { company: frm.doc.company, period: period, dry_run: 0 },
                 freeze: true,
-                callback: function() {
+                callback: function(r) {
                     dialog.hide();
-                    frm.reload_doc();
+                    // the fill creates or updates the period's draft; the unsaved new form is left, not saved
+                    frappe.set_route("Form", "VAT Declaration", r.message.name);
                 }
             });
         }

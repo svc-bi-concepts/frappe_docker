@@ -60,19 +60,19 @@ a flat sum, not for reimbursed receipts.
 
 ## Quarter
 
-1. **MWST pro Quartal vs bexio:** compare the quarter's Ziffern with bexio. Not yet in ERPNext: the page
-   comes with erp-skbk. Until then the comparison is `finance/bexio/mwst_report.py --basis payment`,
-   written to a private file. [`finance/docs/swiss.md`, VAT per quarter against bexio]
-2. **VAT Declaration, new draft:** MWST card, VAT Declaration, New. Start and End are the quarter
-   (or the half-year, e.g. 2026H1); the title becomes `MWST <period>`.
-3. **Fill from payments:** press it on the draft. The dialog shows the figures first; **Write draft**
-   writes the draft, nothing is submitted. A submitted declaration of the period is never changed.
-   [`finance/docs/swiss.md`, The VAT Declaration]
-4. **Check:** compare the form with step 1. Recalculate is safe. The Umsatz rows 220 to 235 are not
-   filled by the fill: a quarter with exports or exempt supplies is not filed until that is settled.
+1. **MWST pro Quartal vs bexio:** ERPNext › Treasury › Reports › **MWST pro Quartal**: the quarter's Ziffern per
+   quarter, with bexio's figures beside them. bexio's figures come from `finance/bexio/load_mwst_bexio.py`, which
+   the yardmaster runs. [`finance/docs/swiss.md`, VAT per quarter against bexio]
+2. **VAT Declaration, new:** MWST card, VAT Declaration, New. Set Company, Start and End to the quarter (or the
+   half-year, e.g. 2026H1); the title becomes `MWST <period>`, and the Fill from payments button is there at once.
+3. **Fill from payments:** press it on the new form. The dialog shows the figures first; **Write draft** creates
+   the period's draft and opens it. The new form is not saved, so there is one draft. Nothing is submitted. A
+   submitted declaration of the period is never changed. [`finance/docs/swiss.md`, The VAT Declaration]
+4. **Check:** compare the draft with step 1. Recalculate is safe. The fill sets the Umsatz rows 220 to 235 from
+   the sales templates; a quarter with exports or exempt supplies is checked in step 1 before it is filed.
 5. **Submit**, then **Download Transfer File** on the submitted declaration: the estv.xml (eCH-0217 2.0.0).
-6. **ePortal upload:** Benchi uploads the XML at the ESTV portal. Do not press **Get values**: it reads the
-   invoice basis and would overwrite the payment-basis figures.
+6. **ePortal upload:** Benchi uploads the XML at the ESTV portal. **Get values** is removed from the draft: it
+   reads the invoice basis and would overwrite the payment-basis figures.
 
 ## Payroll month
 

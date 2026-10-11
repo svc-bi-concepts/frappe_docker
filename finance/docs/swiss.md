@@ -299,7 +299,12 @@ cancelled entries and other companies.
   payment basis has no figure for them. A declaration with such revenue is not fillable from
   here; the live filing is a bead of its own.
 - **The form's Get values** button reads the invoice basis from the views and would
-  overwrite a payment-basis draft. Do not press it there. Recalculate is safe.
+  overwrite a payment-basis draft. `vat_declaration.js` removes it from a draft (erpnextswiss adds it
+  first; our refresh runs after). Recalculate stays and is safe.
+- **The Desk button.** On the new form, Fill from payments shows once company, Start and End are set;
+  Write draft runs the fill and opens the draft it wrote. The title of a new form is `MWST <period>` from its
+  dates (erpnextswiss's `Q3 / 2026 - abbr` default is replaced; a title typed by hand stays). The fill returns
+  the draft's name with its fields.
 - **The dry run.** `python3 finance/bexio/mwst_report.py --period 2026Q3 --basis payment
   --fields <private>/fields-2026Q3.csv` writes the fields the fill would set, to a
   private file, and writes nothing to ERPNext.
@@ -312,15 +317,18 @@ cancelled entries and other companies.
   from ERPNext is 2027 Q1 (due end of May 2027): all of 2026 stays with bexio (Benchi
   D1). The 2026 Q3 dry run was the parallel check that the fill runs without refusal
   on a fresh quarter.
-  1. Fill: in the backend container, `bench --site frontend execute
+  1. New declaration: MWST card, VAT Declaration, New. Set Company, Start and End (the quarter, e.g.
+     01-07-2026 to 30-09-2026); the title becomes `MWST 2026Q3`.
+  2. Fill from payments, on the new form: the dialog shows the figures of a dry run; **Write draft** creates
+     the period's draft (or updates its one draft) and opens it. The new form is not saved. It refuses a
+     quarter that has a submitted declaration.
+     Fallback, if the button is not there: in the backend container, `bench --site frontend execute
      bi_finance.vat_declaration.fill_payment_basis --kwargs '{"company": "<Company>",
-     "period": "2027Q1", "dry_run": 0}'` (or the button, once one exists), which makes
-     or updates the draft `MWST <period>`; with `"dry_run": 1` it only prints the fields.
-     It refuses a quarter that has a submitted declaration.
-  2. Open the draft in ERPNext and check its figures against bexio's declaration.
-  3. Download its XML from the form, and upload that file to the ESTV ePortal.
-  4. Never press Get values on a payment-basis draft (see "The form's Get values"
-     above); Recalculate is safe.
+     "period": "2027Q1", "dry_run": 0}'`, which makes or updates the draft; with `"dry_run": 1` it only
+     prints the fields.
+  3. Check the draft's figures against bexio's declaration.
+  4. Download its XML from the form, and upload that file to the ESTV ePortal.
+  5. Get values is not on a payment-basis draft (see "The form's Get values" above); Recalculate is safe.
 
 ## Alternatives
 

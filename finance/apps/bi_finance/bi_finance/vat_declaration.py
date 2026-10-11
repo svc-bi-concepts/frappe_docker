@@ -41,7 +41,7 @@ def fill_payment_basis(company, period, dry_run=0):
     """The draft VAT Declaration of one period on the payment basis: created, or its draft updated.
 
     period: '2026Q3' or '2026H1', as mwst_report.py takes it. A declaration of the period that is submitted stops the
-    fill; it is never changed. dry_run: compute the fields and return them, write nothing. The fill sets Ziffer 200,
+    fill; it is never changed. dry_run: compute the fields and return them, write nothing; a write returns the draft's name with them. The fill sets Ziffer 200,
     the rate rows, the Bezugsteuer, the Vorsteuer and the Umsatz deductions 220, 221, 225, 230 and 235 from the sales
     templates (mwst_payment.py); 205 and 280 stay as they are, and 289 and 299 the form computes itself on save
     (erpnextswiss's vat_declaration.js). A quarter whose 200 less the deductions is off the rate bases beyond
@@ -52,8 +52,9 @@ def fill_payment_basis(company, period, dry_run=0):
         fields = mwst_payment.declaration_fields(_payment_totals(company, start, end))
     except ValueError as err:
         frappe.throw(_("The declaration of {0} is not filled: {1}").format(period, err))
+    shown = {name: str(value) for name, value in fields.items()}
     if int(dry_run):
-        return {"fields": {name: str(value) for name, value in fields.items()}}
+        return {"fields": shown}
     # a dry run shows the figures with any Tax ID; a draft needs the company's UID in the pattern, no guess at it
     try:
         estv_vat_xml.uid_of(frappe.get_value("Company", company, "tax_id"))
@@ -75,7 +76,8 @@ def fill_payment_basis(company, period, dry_run=0):
     doc.vat_type = "effective"
     doc.update({name: float(value) for name, value in fields.items()})
     doc.save()
-    return {"name": doc.name}
+    # the desk routes to this draft: the new form it was opened from is not saved
+    return {"name": doc.name, "fields": shown}
 
 
 def _payment_totals(company, start, end):
