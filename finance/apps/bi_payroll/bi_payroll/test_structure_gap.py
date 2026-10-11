@@ -271,5 +271,31 @@ class Replacing(unittest.TestCase):
         self.assertEqual(len(self.made), 1)  # no second structure
 
 
+class SlipKeepsCanton(unittest.TestCase):
+    # the Quellensteuer view reads the canton and code the slip was computed with, not the Employee's later ones
+    load = StructureGap.load
+
+    def test_the_slip_keeps_the_canton_and_the_code_of_the_employee(self):
+        module, _ = self.load(structure_has_row=True)
+        slip = FakeSlip(gross=5000)
+        module.withhold_qst(slip)
+        self.assertEqual((slip.swiss_qst_canton, slip.swiss_qst_code), ("ZG", "B2N"))
+
+    def test_an_employee_without_a_code_leaves_none_on_the_slip(self):
+        module, frappe = self.load(structure_has_row=True)
+        frappe.db.employee = (None, None)
+        slip = FakeSlip(gross=5000)
+        module.withhold_qst(slip)
+        self.assertEqual((slip.swiss_qst_canton, slip.swiss_qst_code), (None, None))
+
+    def test_a_canton_without_a_code_is_kept_without_the_code(self):
+        module, frappe = self.load(structure_has_row=True)
+        frappe.db.employee = ("ZG", None)
+        slip = FakeSlip(gross=5000)
+        module.withhold_qst(slip)
+        self.assertEqual((slip.swiss_qst_canton, slip.swiss_qst_code), ("ZG", None))
+        self.assertEqual(slip.swiss_qst_amount, 0)
+
+
 if __name__ == "__main__":
     unittest.main()

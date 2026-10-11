@@ -5,9 +5,12 @@
 from this app's directory. The slips and their Salary Detail lines are made here, the way the report reads them.
 """
 
+import datetime
 import unittest
 
-from bi_payroll.hand_over import AMOUNTS, COMPONENTS, LOHNAUSWEIS, hand_over, lohnausweis
+from bi_payroll.hand_over import (
+    AMOUNTS, COMPONENTS, LOHNAUSWEIS, annual_rows, bvg_insured, hand_over, lohnausweis, qst_rows,
+)
 
 
 def slip(name, month, gross, net, employee="EMP-TEST-001"):
@@ -166,6 +169,198 @@ class Payslips(unittest.TestCase):
         lines = {"SAL-1": {"AHV/IV/EO Employee": 0.1 + 0.2}}
         (row,) = hand_over([MONTH_1], lines, by_month=False)
         self.assertEqual(row["ahv_employee"], 0.3)
+
+
+def qst_slip(name, month, gross, amount, canton, code, employee="EMP-TEST-001", employee_name="Test Employee"):
+    return {
+        "name": name, "employee": employee, "employee_name": employee_name, "month": month, "gross_pay": gross,
+        "swiss_qst_canton": canton, "swiss_qst_code": code, "swiss_qst_amount": amount,
+    }
+
+
+# Two invented cantons: ZH with two employees in February, BE with one employee in April.
+QST_SLIPS = [
+    qst_slip("Q-1", 1, 8000, 400, "ZH", "T1"),
+    qst_slip("Q-2", 2, 8000, 400, "ZH", "T1"),
+    qst_slip("Q-3", 2, 5000, 100, "ZH", "T2", employee="EMP-TEST-002", employee_name="Test Two"),
+    qst_slip("Q-4", 4, 6000, 0, "BE", "B1", employee="EMP-TEST-003", employee_name="Test Three"),
+]
+
+
+def find(rows, canton, period, employee):
+    return next(r for r in rows if (r["canton"], r["period"], r["employee"]) == (canton, period, employee))
+
+
+class QuellensteuerByMonth(unittest.TestCase):
+    def test_one_row_per_canton_month_and_employee_then_the_canton_total(self):
+        # the cantons in alphabetical order, the months in order, the employees, the total last of each group
+        rows = qst_rows(QST_SLIPS, "month")
+        self.assertEqual(
+            [(r["canton"], r["period"], r["employee"]) for r in rows],
+            [("BE", 4, "EMP-TEST-003"), ("BE", 4, ""),
+             ("ZH", 1, "EMP-TEST-001"), ("ZH", 1, ""),
+             ("ZH", 2, "EMP-TEST-001"), ("ZH", 2, "EMP-TEST-002"), ("ZH", 2, "")])
+
+    def test_the_row_carries_the_slip_base_code_and_tax(self):
+        row = find(qst_rows(QST_SLIPS, "month"), "ZH", 1, "EMP-TEST-001")
+        self.assertEqual((row["employee"], row["tariff_code"], row["slips"]), ("EMP-TEST-001", "T1", 1))
+        self.assertEqual((row["gross"], row["amount"]), (8000, 400))
+        self.assertEqual(row["rate"], 5.0)
+
+    def test_the_canton_total_adds_its_rows(self):
+        total = find(qst_rows(QST_SLIPS, "month"), "ZH", 2, "")
+        self.assertEqual(total["employee_name"], "Total")
+        self.assertEqual((total["slips"], total["gross"], total["amount"]), (2, 13000, 500))
+        self.assertEqual(total["rate"], 3.85)
+
+    def test_a_zero_tax_slip_is_listed_with_rate_zero(self):
+        row = find(qst_rows(QST_SLIPS, "month"), "BE", 4, "EMP-TEST-003")
+        self.assertEqual((row["amount"], row["rate"]), (0, 0))
+
+    def test_the_canton_totals_of_each_month(self):
+        totals = [r for r in qst_rows(QST_SLIPS, "month") if r["employee"] == ""]
+        self.assertEqual([(t["canton"], t["period"], t["amount"]) for t in totals],
+                         [("BE", 4, 0), ("ZH", 1, 400), ("ZH", 2, 500)])
+
+
+class QuellensteuerByQuarter(unittest.TestCase):
+    def test_the_months_of_a_quarter_add_up_to_one_row(self):
+        rows = qst_rows(QST_SLIPS, "quarter")
+        zh = [r for r in rows if r["canton"] == "ZH" and r["employee"] == "EMP-TEST-001"]
+        self.assertEqual(len(zh), 1)
+        self.assertEqual((zh[0]["period"], zh[0]["slips"], zh[0]["gross"], zh[0]["amount"]), (1, 2, 16000, 800))
+
+    def test_the_quarter_total_of_a_canton(self):
+        (total,) = [r for r in qst_rows(QST_SLIPS, "quarter") if r["canton"] == "ZH" and r["employee"] == ""]
+        self.assertEqual((total["period"], total["slips"], total["gross"], total["amount"]), (1, 3, 21000, 900))
+        self.assertEqual(total["rate"], 4.29)
+
+    def test_april_is_the_second_quarter(self):
+        rows = qst_rows(QST_SLIPS, "quarter")
+        self.assertEqual([(r["canton"], r["period"]) for r in rows if r["employee"] == "EMP-TEST-003"], [("BE", 2)])
+
+    def test_an_employee_whose_code_changed_has_a_row_for_each_code(self):
+        slips = [qst_slip("Q-5", 1, 1000, 50, "ZH", "T1"), qst_slip("Q-6", 3, 1000, 60, "ZH", "T9")]
+        rows = [r for r in qst_rows(slips, "quarter") if r["employee"]]
+        self.assertEqual([(r["tariff_code"], r["amount"]) for r in rows], [("T1", 50), ("T9", 60)])
+
+    def test_an_unknown_period_is_refused(self):
+        with self.assertRaises(ValueError):
+            qst_rows(QST_SLIPS, "year")
+
+
+# The Jahresdeklarationen: invented employees with a 2026 assignment of 90000 insured yearly, the ALV ceiling 126000
+# and the UVG/NBU maximum 148200 (the monthly parts 10500 and 12350). The coordination is 25725.
+ANNUAL = dict(ceiling=126000, uvg_max=148200, threshold=22000, coordination=25725, insured=90000)
+
+
+def annual_slip(name, month, gross, employee="EMP-TEST-001", year=2026, age=40, insured=ANNUAL["insured"]):
+    return {
+        "name": name, "employee": employee, "employee_name": "Test Employee", "ahv_number": "756.0000.0000.00",
+        "start_date": datetime.date(year, month, 1), "gross_pay": gross, "net_pay": gross - 500,
+        "swiss_alv_ceiling": ANNUAL["ceiling"], "swiss_uvg_max": ANNUAL["uvg_max"],
+        "swiss_bvg_threshold": ANNUAL["threshold"], "swiss_bvg_coordination": ANNUAL["coordination"],
+        "bvg_insured_yearly": insured, "age": age,
+    }
+
+
+def annual_lines(slip, insured_bvg=True):
+    # the Salary Detail amounts the rows read: the contributions, the BVG Age, and a Quellensteuer row that the
+    # Jahresdeklarationen leave out
+    bvg = 50 if insured_bvg else 0
+    return {
+        "BVG Age": slip["age"], "AHV/IV/EO Employee": 100, "ALV Employee": 10, "BVG Employee": bvg,
+        "BVG Employer": bvg, "Quellensteuer Employee": 999,
+    }
+
+
+def annual_fixture():
+    slips = [annual_slip(f"A-{m}", m, 15000 if m == 6 else 8000) for m in range(1, 13)]
+    slips.append(annual_slip("A-2025", 12, 9999, year=2025))
+    # an employee who left after March: three slips, no insured salary (below the threshold: no BVG)
+    slips += [annual_slip(f"B-{m}", m, 5000, employee="EMP-TEST-002", insured=0) for m in range(1, 4)]
+    lines = {s["name"]: annual_lines(s, insured_bvg=s["bvg_insured_yearly"] > 0) for s in slips}
+    return slips, lines
+
+
+class Jahresdeklarationen(unittest.TestCase):
+    def setUp(self):
+        self.slips, self.lines = annual_fixture()
+        self.rows = annual_rows(self.slips, self.lines, 2026)
+
+    def row(self, employee):
+        return next(r for r in self.rows if r["employee"] == employee)
+
+    def test_one_row_per_employee_and_a_total_last(self):
+        self.assertEqual([r["employee"] for r in self.rows], ["EMP-TEST-001", "EMP-TEST-002", ""])
+        self.assertEqual(self.rows[-1]["employee_name"], "Total")
+
+    def test_a_slip_of_another_year_is_left_out(self):
+        self.assertEqual(self.row("EMP-TEST-001")["slips"], 12)
+        self.assertEqual(self.row("EMP-TEST-001")["ahv_wage"], 103000)
+
+    def test_the_alv_wage_stops_at_the_ceiling_the_slip_was_computed_with(self):
+        # 11 months at 8000 and June at 15000, capped at 126000 / 12 = 10500
+        self.assertEqual(self.row("EMP-TEST-001")["alv_wage"], 11 * 8000 + 10500)
+        self.assertEqual(self.row("EMP-TEST-001")["ahv_wage"], 11 * 8000 + 15000)
+
+    def test_the_uvg_and_nbu_wage_stops_at_the_uvg_maximum(self):
+        self.assertEqual(self.row("EMP-TEST-001")["uvg_wage"], 11 * 8000 + 12350)
+
+    def test_the_bvg_salary_is_the_insured_salary_and_its_coordinated_part(self):
+        employee = self.row("EMP-TEST-001")
+        self.assertEqual(employee["bvg_salary"], 90000)
+        self.assertEqual(employee["bvg_coordinated"], round(12 * (90000 - 25725) / 12, 2))
+
+    def test_an_employee_who_left_has_the_months_he_was_paid(self):
+        left = self.row("EMP-TEST-002")
+        self.assertEqual((left["slips"], left["ahv_wage"], left["alv_wage"]), (3, 15000, 15000))
+        self.assertEqual((left["bvg_salary"], left["bvg_coordinated"], left["bvg_employee"]), (0, 0, 0))
+
+    def test_the_contributions_are_the_slips_components_per_insurance(self):
+        employee = self.row("EMP-TEST-001")
+        self.assertEqual(employee["ahv_employee"], 12 * 100)
+        self.assertEqual(employee["alv_employee"], 12 * 10)
+        self.assertEqual(employee["bvg_employee"], 12 * 50)
+        self.assertEqual(employee["bvg_employer"], 12 * 50)
+
+    def test_the_quellensteuer_is_not_a_contribution_of_the_declarations(self):
+        self.assertNotIn("quellensteuer", self.row("EMP-TEST-001"))
+
+    def test_the_total_adds_the_employees(self):
+        total = self.rows[-1]
+        self.assertEqual(total["slips"], 15)
+        self.assertEqual(total["ahv_wage"], 103000 + 15000)
+        self.assertEqual(total["alv_wage"], 11 * 8000 + 10500 + 15000)
+        self.assertEqual(total["ahv_employee"], 15 * 100)
+
+    def test_the_fak_and_ktg_bases_are_the_gross(self):
+        employee = self.row("EMP-TEST-001")
+        self.assertEqual((employee["fak_wage"], employee["ktg_wage"]), (103000, 103000))
+
+
+class BvgInsured(unittest.TestCase):
+    slip = {"bvg_insured_yearly": 90000, "swiss_bvg_threshold": 22000, "swiss_bvg_coordination": 25725}
+
+    def test_an_insured_employee_in_the_age_band(self):
+        self.assertEqual(bvg_insured(self.slip, {"BVG Age": 25}), (7500, round(64275 / 12, 10)))
+
+    def test_the_age_band_is_25_to_64(self):
+        self.assertEqual(bvg_insured(self.slip, {"BVG Age": 24}), (0, 0))
+        self.assertEqual(bvg_insured(self.slip, {"BVG Age": 65}), (0, 0))
+        self.assertEqual(bvg_insured(self.slip, {"BVG Age": 64})[0], 7500)
+
+    def test_the_age_of_the_slip_wins_over_the_line(self):
+        self.assertEqual(bvg_insured(dict(self.slip, age=64), {"BVG Age": 20})[0], 7500)
+        self.assertEqual(bvg_insured(dict(self.slip, age=20), {"BVG Age": 40}), (0, 0))
+
+    def test_without_a_slip_age_the_line_is_the_fallback(self):
+        self.assertEqual(bvg_insured(dict(self.slip), {"BVG Age": 30})[0], 7500)
+        self.assertEqual(bvg_insured(dict(self.slip), {}), (0, 0))
+
+    def test_below_the_threshold_nobody_is_insured(self):
+        slip = dict(self.slip, bvg_insured_yearly=21000)
+        self.assertEqual(bvg_insured(slip, {"BVG Age": 40}), (0, 0))
 
 
 if __name__ == "__main__":

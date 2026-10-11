@@ -38,6 +38,9 @@ Benchi decided on 2026-10-10:
   and year, or per employee and month. It lists gross, each Swiss deduction by component
   (AHV/IV/EO, ALV, BVG, UVG/NBU, KTG, FAK, Quellensteuer), net, the employer shares and the
   AHV number, and exports as Excel or CSV. It runs on the live site and on the HRMS copy.
+  For the declarations it has two more views (`bi_payroll/README.md` says what each is for): `Quellensteuer Abrechnung`,
+  the withholding per canton and per month or quarter for the cantonal return, and `Jahresdeklarationen`, the year's
+  wage sums per insurance (AHV/ALV, UVG and NBU, BVG, FAK, KTG) with the contributions, per employee and in total.
 
 **Decision 2026-10-10: payroll runs on the live site.** The live ERPNext is a test environment,
 so HRMS `v16.50.0` and `bi_payroll` are installed on the live site `frontend`, not only the copy.

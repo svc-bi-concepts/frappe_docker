@@ -26,9 +26,20 @@ frappe.query_reports["Payroll Hand-over"] = {
 			fieldname: "view",
 			label: __("View"),
 			fieldtype: "Select",
-			options: "Hand-over\nLohnausweis",
+			options: "Hand-over\nLohnausweis\nQuellensteuer Abrechnung\nJahresdeklarationen",
 			default: "Hand-over",
-			description: __("Lohnausweis: the amounts by the Form 11 lines"),
+			description: __(
+				"Lohnausweis: the amounts by the Form 11 lines. Quellensteuer Abrechnung: the withholding per canton. " +
+				"Jahresdeklarationen: the year's wage sums per insurance (the month is not used)"
+			),
+		},
+		{
+			fieldname: "period",
+			label: __("Period (Quellensteuer)"),
+			fieldtype: "Select",
+			options: "Month\nQuarter",
+			default: "Month",
+			description: __("Quellensteuer Abrechnung: one row per canton and month, or per quarter"),
 		},
 	],
 };

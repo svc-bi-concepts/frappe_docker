@@ -31,6 +31,9 @@ def withhold_qst(doc, method=None):
     # computed again, because the QST component's formula reads the field. Only when the amount changed, so a slip
     # saved again with the same gross is not computed twice.
     canton, code = frappe.db.get_value("Employee", doc.employee, ["swiss_qst_canton", "swiss_qst_code"]) or (None, None)
+    # the canton and code the tax was worked out with, kept on the slip for the Quellensteuer view of the hand-over report
+    doc.swiss_qst_canton = canton or None
+    doc.swiss_qst_code = code or None
     amount = 0
     if code:
         rows = frappe.get_all(

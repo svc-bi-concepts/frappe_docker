@@ -5,11 +5,13 @@ HRMS copy (Decision 2026-10-10). It requires `hrms`, so nothing here goes into `
 migrate on any site.
 
 - `bi_payroll/fixtures/salary_component.json`: the Salary Components with their formulas (AHV/IV/EO, ALV with
+- `bi_payroll/fixtures/salary_component.json`: the Salary Components with their formulas (AHV/IV/EO, ALV with
   the ceiling, BVG on a fixed yearly insured salary with the age bands, NBU, UVG, KTG, FAK), and Commission (an earning
   with no formula, paid by Additional Salary; see below). The abbreviations are the ones erpnextswiss's Salary
   Certificate reads (B, AHV, ALV, NBUV, PK). No 13th salary component: the data has none (see below).
-- `bi_payroll/fixtures/custom_field.json`: the rate copies on Salary Slip (one read-only section), and the
-  BVG insured salary on Salary Structure Assignment (fixed per year).
+- `bi_payroll/fixtures/custom_field.json`: the rate copies on Salary Slip (one read-only section), the Quellensteuer
+  canton and code on Salary Slip (copied from the Employee on validate), and the BVG insured salary on Salary Structure
+  Assignment (fixed per year).
 - `bi_payroll/swiss_rates.py`: the list of rate names, shared by the settings, the slip copies and the tests.
 - `bi_payroll/swiss_payroll.py`: `copy_rates_to_slip` (a `before_validate` on Salary Slip: the formulas see only the
   slip and the assignment, so each slip takes the rates from Payroll Swiss Settings when it is validated) and
@@ -24,6 +26,19 @@ migrate on any site.
   employee and year or per employee and month, for the trustee's filing (Excel or CSV). The rows are summed from the
   submitted slips and their Salary Detail lines; the logic is pure Python, so `bi_payroll/test_hand_over.py` tests it
   with invented employees. Its view `Lohnausweis` sums the rows into the Form 11 lines (map: `finance/docs/hrms.md`).
+  Two more views, for the Swiss declarations (`qst_rows` and `annual_rows` in `hand_over.py`, tests in `test_hand_over.py`):
+  - `Quellensteuer Abrechnung`: per canton, per month or per quarter (filter Period), one row per employee and code with
+    the slip's QST base (gross), the tax, the rate (tax over gross, the effective rate of the slips) and the canton's total.
+    The slip keeps the canton and the tariff code it was computed with (`swiss_qst_canton`, `swiss_qst_code`, set in
+    `withhold_qst`); only slips with a code are listed. The trustee fills the cantonal return from it and computes the
+    Bezugsprovision. A slip submitted before those fields existed has no canton and is not listed.
+  - `Jahresdeklarationen`: the whole year whatever the month, one row per employee and a total. Wage bases: AHV/IV/EO
+    (gross), ALV (to the ceiling the slip was computed with), UVG and NBU (to the maximum), BVG insured salary and its
+    coordinated part (the assignment's yearly salary, a twelfth per insured month, age 25 to 64, from the threshold on),
+    FAK and KTG (gross). Then the contributions per insurance, employee and employer. For the trustee: the AHV
+    Lohnbescheinigung, the UVG and KTG Lohnsummen, the BVG Lohnmeldung and the FAK declaration.
+  Export as Excel or CSV, like the other views. The Quellensteuer amount is not in the Jahresdeklarationen: it has its own
+  view.
 - `bi_payroll/bi_payroll/structure_site_test.py`: needs a site (not a `test_*.py`, so the offline gate skips it):
   `bench --site <site> run-tests --module bi_payroll.bi_payroll.structure_site_test`. The structure rows must carry
   their components' formulas, or every slip pays 0.
