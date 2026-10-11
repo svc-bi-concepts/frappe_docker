@@ -65,13 +65,32 @@ def refusal_code(err):
     return str(code or "no code")
 
 
-def http(method, url, headers, data):
-    """The one place a request leaves this module. Returns the body."""
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Redirects are followed by http() itself: urllib would send the bearer token to the new host."""
+
+    def redirect_request(self, *args, **kw):
+        return None
+
+
+OPENER = urllib.request.build_opener(NoRedirect)
+
+
+def http(method, url, headers, data, hops=3):
+    """The one place a request leaves this module. Returns the body.
+
+    Graph answers a file's /content with a redirect to a pre-authenticated download
+    URL. That one is fetched with GET and without the Authorization header, over https only.
+    """
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with OPENER.open(req, timeout=60) as resp:
             return resp.read()
     except urllib.error.HTTPError as err:
+        location = err.headers.get("Location") if err.headers else None
+        if method == "GET" and err.code in (301, 302, 303, 307, 308) and location:
+            if hops <= 0 or not location.startswith("https://"):
+                raise SharePointError("GET redirected somewhere it will not follow")
+            return http("GET", location, {}, None, hops - 1)
         raise SharePointError("%s refused with HTTP %d (%s)" % (method, err.code, refusal_code(err)))
     except urllib.error.URLError as err:
         raise SharePointError("%s failed: %s" % (method, err.reason))

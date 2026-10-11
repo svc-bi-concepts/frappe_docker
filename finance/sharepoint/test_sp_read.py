@@ -15,6 +15,8 @@ import subprocess
 import tempfile
 import unittest
 import urllib.error
+import urllib.parse
+import urllib.request
 from unittest import mock
 
 import sp_read
@@ -242,12 +244,48 @@ class RefusalTest(Keys):
     def test_refusals_name_the_status_and_code_but_not_the_url_or_message(self):
         body = json.dumps({"error": {"code": "accessDenied", "message": "drive-x item ins not shared"}}).encode()
         err = urllib.error.HTTPError(GRAPH + "/drives/drive-x/items/ins", 403, "Forbidden", {}, io.BytesIO(body))
-        with mock.patch("urllib.request.urlopen", side_effect=err):
+        with mock.patch.object(urllib.request.OpenerDirector, "open", side_effect=err):
             with self.assertRaises(SharePointError) as ctx:
                 sp_read.http("GET", GRAPH + "/drives/drive-x/items/ins", {}, None)
         text = str(ctx.exception)
         self.assertEqual(text, "GET refused with HTTP 403 (accessDenied)")
         self.assertNotIn("drive-x", text)
+
+
+class RedirectTest(unittest.TestCase):
+    def redirect(self, location):
+        return urllib.error.HTTPError(GRAPH + "/x", 302, "Found", {"Location": location}, io.BytesIO(b""))
+
+    class Resp(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            pass
+
+    def test_a_download_redirect_is_followed_without_the_bearer_token(self):
+        seen = []
+
+        def fake_open(opener, req, timeout=None):
+            seen.append((req.full_url, dict(req.header_items())))
+            if len(seen) == 1:
+                raise self.redirect("https://files.example/blob")
+            return self.Resp(b"body")
+
+        with mock.patch.object(urllib.request.OpenerDirector, "open", fake_open):
+            body = sp_read.http("GET", GRAPH + "/x", {"Authorization": "Bearer t"}, None)
+        self.assertEqual(body, b"body")
+        self.assertEqual(seen[1][0], "https://files.example/blob")
+        self.assertNotIn("Authorization", seen[1][1])
+
+    def test_a_redirect_to_plain_http_is_refused(self):
+        with mock.patch.object(urllib.request.OpenerDirector, "open",
+                               side_effect=self.redirect("http://files.example/blob")):
+            with self.assertRaises(SharePointError):
+                sp_read.http("GET", GRAPH + "/x", {"Authorization": "Bearer t"}, None)
+
+    def test_the_opener_does_not_follow_redirects_itself(self):
+        self.assertIsNone(sp_read.NoRedirect().redirect_request(None, None, 302, "", {}, "https://x"))
 
 
 class ConfigTest(unittest.TestCase):
