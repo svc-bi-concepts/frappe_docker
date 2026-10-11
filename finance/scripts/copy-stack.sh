@@ -3,10 +3,17 @@
 # children can prove their work on it (finance/docs/hrms.md, 'Copy stack for the HR train'). The live
 # stack is never started, stopped or changed from here.
 #
-# usage: finance/scripts/copy-stack.sh up <image-tag>   start the copy and restore a fresh live backup into it
-#        finance/scripts/copy-stack.sh refresh          restore a fresh live backup into the running copy
-#        finance/scripts/copy-stack.sh down             stop the copy (keeps its volumes)
-#        finance/scripts/copy-stack.sh remove           stop the copy and delete its volumes and staged backups
+# usage: finance/scripts/copy-stack.sh up <image-tag> [--jobs] [--websocket]
+#                                                          start the copy and restore a fresh live backup into it
+#        finance/scripts/copy-stack.sh refresh             restore a fresh live backup into the running copy
+#        finance/scripts/copy-stack.sh down                stop the copy (keeps its volumes; stops whatever runs)
+#        finance/scripts/copy-stack.sh remove              stop the copy and delete its volumes and staged backups
+#   up starts lean: db, redis-cache, backend, frontend (and the one-shot configurator and create-site). A Desk
+#   test needs no more. --jobs adds the background-job services (redis-queue, queue-short, queue-long, scheduler),
+#   for the steps that enqueue work: Payroll Entry over 30 employees, Overtime Slip over 30, cancelling a Payroll
+#   Entry with over 50 salary slips. --websocket adds websocket, for realtime updates in the Desk. frontend
+#   starts websocket anyway (its nginx needs the host at start), so the flag changes nothing on the frontend path.
+#   Down when the test is done (Benchi via IT, 2026-10-12: everything on the mini runs lean).
 #   The image frappe-finance-custom:<image-tag> must exist (build-image.sh copy builds it).
 #   The copy's frontend listens on 127.0.0.1:8815. Nothing is served on the tailnet here: the yardmaster
 #   does that with tailscale serve when Benchi needs to look.
@@ -16,7 +23,8 @@
 set -eu
 
 usage() {
-  echo "usage: finance/scripts/copy-stack.sh up <image-tag> | refresh | down | remove"
+  echo "usage: finance/scripts/copy-stack.sh up <image-tag> [--jobs] [--websocket] | refresh | down | remove"
+  echo "  up lean by default; --jobs adds redis-queue, queue-short, queue-long, scheduler; --websocket adds websocket"
 }
 
 case "${1:-}" in
@@ -24,10 +32,23 @@ case "${1:-}" in
 esac
 
 CMD="${1:-}"
+JOBS=0
+WEBSOCKET=0
 case "$CMD" in
   up)
-    if [ $# -ne 2 ]; then usage >&2; exit 2; fi
+    if [ $# -lt 2 ]; then usage >&2; exit 2; fi
     TAG="$2"
+    case "$TAG" in
+      -*) usage >&2; exit 2 ;;
+    esac
+    shift 2
+    for FLAG in "$@"; do
+      case "$FLAG" in
+        --jobs) JOBS=1 ;;
+        --websocket) WEBSOCKET=1 ;;
+        *) usage >&2; exit 2 ;;
+      esac
+    done
     ;;
   refresh|down|remove)
     if [ $# -ne 1 ]; then usage >&2; exit 2; fi
@@ -126,8 +147,9 @@ safety() {
   copy_compose exec -T backend bench --site frontend set-config -p mute_emails 1
   # The copy's nginx is in-network, so wkhtmltopdf finds assets; live's host_name comes from HOST_NAME in swiss-setup.sh and must never be copied here.
   copy_compose exec -T backend bench --site frontend set-config host_name http://frontend:8080
-  # The train image may carry patches the live site has not run.
-  copy_compose exec -T backend bench --site frontend migrate
+  # The train image may carry patches the live site has not run. --skip-search-index: migrate enqueues the
+  # website search index (frappe migrate.py), and on a lean copy no redis-queue is up to take the job.
+  copy_compose exec -T backend bench --site frontend migrate --skip-search-index
   copy_compose exec -T backend bench --site frontend set-maintenance-mode off
   # The bank API syncs (hourly on live) and outgoing mail, off on the copy.
   copy_compose exec -T backend bench --site frontend execute frappe.db.set_single_value --args '["Wise Settings", "sync_enabled", 0]'
@@ -152,7 +174,12 @@ up() {
   check_memory "$TAG"
   live_backup
   export COPY_IMAGE="frappe-finance-custom:$TAG"
-  copy_compose up -d --scale scheduler=0
+  # The lean set. The job services start only after safety, so the scheduler is paused before it can run.
+  if [ "$WEBSOCKET" = 1 ]; then
+    copy_compose up -d db redis-cache configurator create-site backend frontend websocket
+  else
+    copy_compose up -d db redis-cache configurator create-site backend frontend
+  fi
   # create-site makes the site the restore replaces; wait for it to finish (a few minutes on the first start).
   CS=$(copy_compose ps -aq create-site)
   if [ -z "$CS" ] || [ "$(docker wait "$CS")" != "0" ]; then
@@ -160,6 +187,9 @@ up() {
   fi
   restore_copy
   safety
+  if [ "$JOBS" = 1 ]; then
+    copy_compose up -d redis-queue queue-short queue-long scheduler
+  fi
   set_admin_password
   echo "copy up on 127.0.0.1:8815 from a fresh live backup, image frappe-finance-custom:$TAG; not on the tailnet"
 }

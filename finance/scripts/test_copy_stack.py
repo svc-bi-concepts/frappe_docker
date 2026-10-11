@@ -34,6 +34,11 @@ exit 0
 """
 
 
+def up_services(calls):
+    """The service names each 'up -d' call names, in call order."""
+    return [c.split(" up -d ", 1)[1].split() for c in calls if " up -d " in c]
+
+
 class CopyStack(unittest.TestCase):
     """copy-stack.sh in a scratch folder, with stub docker first on PATH."""
 
@@ -115,6 +120,58 @@ class CopyStack(unittest.TestCase):
         self.assertIn("is not running", r.stderr)
         self.assertFalse([c for c in self.calls() if c.startswith("exec") or " exec " in c])
 
+    def test_usage_is_a_usage_error_without_a_tag_or_with_an_unknown_flag(self):
+        for args in (["up", "--jobs"], ["up", "t1", "--bogus"], ["up", "t1", "--jobs", "extra"]):
+            with self.subTest(args=args):
+                r = self.run_script(args)
+                self.assertEqual(r.returncode, 2)
+                self.assertIn("usage:", r.stderr)
+        self.assertEqual(self.calls(), [], "a usage error must not reach docker")
+
+    def test_help_shows_the_flags(self):
+        r = self.run_script(["--help"])
+        self.assertEqual(r.returncode, 0)
+        self.assertIn("--jobs", r.stdout)
+        self.assertIn("--websocket", r.stdout)
+
+    def test_up_starts_only_the_lean_services(self):
+        r = self.run_script(["up", "t1"])
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(
+            up_services(self.calls()),
+            [["db", "redis-cache", "configurator", "create-site", "backend", "frontend"]],
+        )
+
+    def test_jobs_flag_starts_the_job_services_after_safety(self):
+        r = self.run_script(["up", "t1", "--jobs"])
+        self.assertEqual(r.returncode, 0, r.stderr)
+        calls = self.calls()
+        services = up_services(calls)
+        self.assertEqual(services[-1], ["redis-queue", "queue-short", "queue-long", "scheduler"])
+        self.assertEqual(len(services), 2)
+        jobs = [i for i, c in enumerate(calls) if c.endswith("up -d redis-queue queue-short queue-long scheduler")]
+        safety_end = [i for i, c in enumerate(calls) if '"Website Settings", "app_name"' in c]
+        self.assertTrue(jobs and safety_end and jobs[0] > safety_end[0], "the scheduler must start after pause_scheduler is set")
+
+    def test_websocket_flag_adds_websocket_and_nothing_else(self):
+        r = self.run_script(["up", "t1", "--websocket"])
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(
+            up_services(self.calls()),
+            [["db", "redis-cache", "configurator", "create-site", "backend", "frontend", "websocket"]],
+        )
+
+    def test_both_flags_in_either_order(self):
+        for args in (["up", "t1", "--jobs", "--websocket"], ["up", "t1", "--websocket", "--jobs"]):
+            with self.subTest(args=args):
+                if os.path.exists(self.log):
+                    os.remove(self.log)
+                r = self.run_script(args)
+                self.assertEqual(r.returncode, 0, r.stderr)
+                services = up_services(self.calls())
+                self.assertIn("websocket", services[0])
+                self.assertEqual(services[-1], ["redis-queue", "queue-short", "queue-long", "scheduler"])
+
     def test_up_backs_up_live_restores_then_applies_safety_in_order(self):
         r = self.run_script(["up", "t1"])
         self.assertEqual(r.returncode, 0, r.stderr)
@@ -128,12 +185,12 @@ class CopyStack(unittest.TestCase):
         order = [
             "run --rm --entrypoint cat frappe-finance-custom:t1 /proc/meminfo",
             "exec frappe-finance-backend-1 bench --site frontend backup --with-files",
-            "up -d --scale scheduler=0",
+            "up -d db redis-cache configurator create-site backend frontend",
             "restore /home/frappe/frappe-bench/sites/frontend/private/backups/20261011_120000-frontend-database.sql.gz",
             "set-config -p pause_scheduler 1",
             "set-config -p mute_emails 1",
             "set-config host_name http://frontend:8080",
-            "migrate",
+            "migrate --skip-search-index",
             "set-maintenance-mode off",
             '"Wise Settings", "sync_enabled", 0',
             '"Website Settings", "app_name"',

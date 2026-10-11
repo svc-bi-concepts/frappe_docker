@@ -1,7 +1,8 @@
 # Finance copy stack: a copy of the live books on a train image, for the HR train's tests (finance/docs/hrms.md,
 # 'Copy stack for the HR train'). Run it only through finance/scripts/copy-stack.sh, which sets the project name
 # and COPY_IMAGE. Never with -p frappe-finance: that is the live stack.
-#   docker compose -p frappe-finance-copy -f pwd.yml -f finance-copy.yml up -d --scale scheduler=0
+#   docker compose -p frappe-finance-copy -f pwd.yml -f finance-copy.yml up -d db redis-cache configurator create-site backend frontend
+# The job services (redis-queue, queue-short, queue-long, scheduler) start only with copy-stack.sh up --jobs.
 # It is started on demand, so no service restarts by itself (restart: "no" overrides pwd.yml's unless-stopped).
 # Its own volumes and network come from the project name. frontend listens on 127.0.0.1:8815 only, and nothing
 # is on the tailnet until the yardmaster serves it. The live stack keeps finance-local.yml.

@@ -493,7 +493,8 @@ The live stack is not touched by any of this.
   settings below are set after every restore. Do not turn them off.
 - Safety settings, after every restore: `pause_scheduler` 1 and `mute_emails` 1 (site config: no
   scheduled jobs, no mail). `migrate` runs after the restore, because the train image may carry
-  patches the live site has not run. PDFs work on the copy because `safety()` sets `host_name` to
+  patches the live site has not run; it runs with `--skip-search-index`, because migrate enqueues the website
+  search index and a lean copy has no queue to take it. PDFs work on the copy because `safety()` sets `host_name` to
   the copy's nginx at `http://frontend:8080`. Wise Settings and PayPal Settings `sync_enabled` 0 (the
   hourly bank syncs). Every Email Account has outgoing and incoming off. Every Webhook is
   disabled. Website Settings `app_name` is "COPY - finance copy, not live", the navbar brand.
@@ -509,8 +510,28 @@ Run from the repository root, with the copy's image built:
 **Start** (a fresh live backup; the first start creates the site, which takes a few minutes)
 
 ```sh
-finance/scripts/copy-stack.sh up <tag>
+finance/scripts/copy-stack.sh up <tag> [--jobs] [--websocket]
 ```
+
+Without flags the copy starts lean: db, redis-cache, backend and frontend, plus the one-shot configurator and
+create-site. That is what a Desk test needs. On the first start create-site waits up to two minutes for
+redis-queue, which is not up yet, and then goes on.
+
+- `--jobs` for a step that enqueues work: redis-queue, queue-short, queue-long and the scheduler start after
+  the restore and the safety settings, so the scheduler is already paused. The enqueue points on the copy:
+  - hrms Payroll Entry (`hrms/payroll/doctype/payroll_entry/payroll_entry.py`): create salary slips, submit
+    salary slips, and Overtime Slip create and submit, in the background above 30 employees; cancel above
+    50 linked salary slips.
+  - bi_finance and bi_payroll have no `frappe.enqueue` of their own. Their hourly Wise and PayPal syncs and
+    the monthly revaluation run from the scheduler, which stays paused on the copy.
+  - Prepared reports: none (every report of the two apps has `prepared_report` 0). Mails are muted here.
+- `--websocket` for realtime updates in the Desk (progress bars). frontend starts websocket anyway, because
+  its nginx resolves the websocket host at start, so on the frontend path the flag changes nothing.
+
+The lean start is not run on a copy yet: the stub-docker tests in `finance/scripts/test_copy_stack.py` prove
+the calls, and the first real start proves the restore and migrate without redis-queue.
+
+Down when the test is done (Benchi via IT, 2026-10-12: everything on the mini runs lean).
 
 **Refresh** (a fresh live backup replaces the copy's books; the copy must be up)
 
