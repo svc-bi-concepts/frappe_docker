@@ -114,7 +114,7 @@ insurer's or the Ausgleichskasse's own sheet before a live run.
 | FAK | Employer component on the AHV wage, rate by canton and Ausgleichskasse | Set by the fund | Config. Needs the fund's rate | none |
 | Quellensteuer | Not covered. erpnextswiss's Salary Certificate settings have a field "12 Quellensteuerabzug" that maps a component; it does not compute the tax | Cantonal tariffs, per year | **Gap.** Build (bi_finance) or outsource. See Questions | `erpnextswiss` `salary_certificate_settings.json` |
 | 13th salary | A Salary Component paid in December, or an accrual over the year (`accrual_component`) | Contract | Config. Choose the method (Question) | HRMS `salary_component` fields |
-| Lohnausweis (Form 11), per employee per year | erpnextswiss `Salary Certificate`: sums `Salary Slip` gross and net over the year, and the `Salary Detail` rows by `abbr` (B, AHV, ALV, NBUV, PK) into the form's fields. Fields are set in `Salary Certificate Settings` (dynamic configuration, step `lohnausweis`) | ESTV Wegleitung for Form 11 applies from 1 Jan 2026 | Needs HRMS. The field layout is checked line by line against the 2026 Wegleitung in "Lohnausweis map"; line 11 differs from the form (open item 1 there) | [ESTV Wegleitung 2026](https://www.estv.admin.ch/dam/de/sd-web/afP1GDFr8gE3/dbst-form-lohna-wegleitung-2026-de.pdf) (not opened in this study; from the search result) |
+| Lohnausweis (Form 11), per employee per year | erpnextswiss `Salary Certificate`: sums `Salary Slip` gross and net over the year, and the `Salary Detail` rows by `abbr` (B, AHV, ALV, NBUV, PK) into the form's fields. Fields are set in `Salary Certificate Settings` (dynamic configuration, step `lohnausweis`) | ESTV Wegleitung for Form 11 applies from 1 Jan 2026 | Needs HRMS. The field layout is checked line by line against the 2026 Wegleitung in "Lohnausweis map"; line 11 differs from the form (decision 1 there) | [ESTV Wegleitung 2026](https://www.estv.admin.ch/dam/de/sd-web/afP1GDFr8gE3/dbst-form-lohna-wegleitung-2026-de.pdf) (not opened in this study; from the search result) |
 | ELM / Swissdec transmission | Not in erpnextswiss `v16` (no ELM file in its tree), not in HRMS | ELM 4.0 switched off; ELM 5.0 required for the 2026 payroll year. Sources disagree on the 4.0 end date (30.06.2026 per BFS; end 2025 per one vendor). Transmission needs Swissdec-certified payroll software | **Gap.** See Questions and `elm.md` | [BFS](https://www.bfs.admin.ch/bfs/de/home/grundlagen/elm.html), [Swissdec](https://www.swissdec.ch/abschaltung-elm-4-0), [AXA](https://www.axa.ch/de/unternehmenskunden/melden-und-mutieren/melden/elektronische-lohnmeldung.html) |
 | Payslip layout | bi_payroll's `Lohnabrechnung` print format on Salary Slip (erp-h47v): Jinja template `lohnabrechnung.html`, German, generic (company and employee from the records at print time); the rows, bases and rates are prepared by `bi_payroll/payslip.py` (jinja method `payslip_data`) from the slip's own tables, with the employer shares in a separate block, year-to-date gross and net, and the masked AHV number and bank account. Installed and made the Salary Slip default by `swiss-setup.py` step `payslip`. erpnextswiss ships `kt_salary_slip.html`, a print for one of its own sample companies; used as a reference only | none | Done in the HR train; live install is a go-live step (no live write in a train child). PDF proof on the HRMS copy once the train image carries it | erpnextswiss `templates/print_formats/kt_salary_slip.html`; `finance/apps/bi_payroll/bi_payroll/lohnabrechnung.html` |
 | Net salary payment (pain.001) | erpnextswiss `Payment Proposal` with `Payment Proposal Salary Slip` (the salary side of the payment run). The run in `payment-runs.md` leaves salaries out while the site has no HRMS | pain.001.001.09 as in `payment-runs.md` | Test on a copy after HRMS (erp-xpmr) | `payment-runs.md`; erpnextswiss `payment_proposal_salary_slip` |
@@ -333,28 +333,28 @@ The ESTV PDF is kept under `private/payroll/forms/` (not in the repo).
 | G Kantinenverpflegung / Lunch-Checks (box) | Checkbox | `lunch_checks` | yes | **no**, unless Benchi says otherwise. Meal allowances in cash are line 1 (Rz 18), not this box |
 | H Name und Adresse | Employee | print format only | yes | Current residential address (`permanent_address`) |
 | Jahr, Ein-/Austritt | Certificate `year`, `start_date`, `end_date` | `year`, `start_date`, `end_date` | yes | Set on the certificate. The period is printed even for a full year |
-| 1. Lohn / Rente | Salary Component `Basic Salary` (abbr B) | `salary` | yes | `line_1` in the view. **Gap:** the Wegleitung counts every Zulage, commission and Taggeld paid by the employer here (Rz 13-18); the view sums only `Basic Salary`. Add each new earning (HR 3 commission) to both `salary` and `LOHNAUSWEIS` when it lands |
-| 2.1 Verpflegung und Unterkunft | none | — | heading | not in payroll; trustee |
-| 2.2 Privatanteil Geschäftsfahrzeug | none | — | heading | not in payroll; trustee |
-| 2.3 Weitere Gehaltsnebenleistungen | none | — | heading | not in payroll; trustee. Also the commute refund (Rz 17) and a GA without business need (Rz 19) |
-| 3. Unregelmässige Leistungen | none | — | heading | not in payroll; trustee |
-| 4. Kapitalleistungen | none | — | heading | not in payroll; trustee |
-| 5. Beteiligungsrechte | none | — | heading | not in payroll; trustee |
-| 6. Verwaltungsratsentschädigungen | none | — | heading | not in payroll; trustee |
-| 7. Andere Leistungen | none | — | heading | not in payroll; trustee. Also "Quellensteuer vom Arbeitgeber bezahlt", if the employer pays the tax |
+| 1. Lohn / Rente | Salary Component `Basic Salary` (abbr B) | `salary` | yes | `line_1` in the view. **Gap, decided:** the Wegleitung counts every Zulage, commission and Taggeld paid by the employer here (Rz 13-18); the view sums only `Basic Salary`. Every taxable earning goes to line 1 in erp-4yyn |
+| 2.1 Verpflegung und Unterkunft | none | `catering` | heading | not in payroll; trustee |
+| 2.2 Privatanteil Geschäftsfahrzeug | none | `car` | heading | not in payroll; trustee |
+| 2.3 Weitere Gehaltsnebenleistungen | none | `other_salary` | heading | not in payroll; trustee. Also the commute refund (Rz 17) and a GA without business need (Rz 19) |
+| 3. Unregelmässige Leistungen | none | `irregular` | heading | not in payroll; trustee |
+| 4. Kapitalleistungen | none | `capital` | heading | not in payroll; trustee |
+| 5. Beteiligungsrechte | none | `participation` | heading | not in payroll; trustee |
+| 6. Verwaltungsratsentschädigungen | none | `board` | heading | not in payroll; trustee |
+| 7. Andere Leistungen | none | `other` | heading | not in payroll; trustee. Also "Quellensteuer vom Arbeitgeber bezahlt", if the employer pays the tax |
 | 8. Bruttolohn total | Gross pay of the submitted slips | `gross_salary` (from `gross_pay`) | yes | The Wegleitung: total of lines 1 to 7. Equal to line 1 while only `Basic Salary` is an earning |
 | 9. Beiträge AHV/IV/EO/ALV/NBUV | `AHV/IV/EO Employee`, `ALV Employee`, `NBU Employee` (abbr AHV, ALV, NBUV) | `deduction_ahv` | yes | Employee shares only; employer shares are not on the form |
 | 10.1 Ordentliche Beiträge BVG | `BVG Employee` (abbr PK) | `deduction_pension` | yes | Ordinary contributions, as deducted from the gross |
-| 10.2 Beiträge Einkauf BVG | none | — | heading | not in payroll; trustee (buy-ins are paid by the employee outside payroll, Rz 46) |
-| 11. Nettolohn / Rente | Net pay of the slips (`net_pay`) | `net_salary` (from `net_pay`) | **no** | **Differs from the Wegleitung.** It defines line 11 as line 8 less lines 9 and 10 (Ziffer 11). `net_pay` also subtracts Quellensteuer and any KTG or other deduction. For a Quellensteuer employee the line is too low by the tax. Decision for Benchi and the trustee, see below |
+| 10.2 Beiträge Einkauf BVG | none | `deduction_pension_additional` | heading | not in payroll; trustee (buy-ins are paid by the employee outside payroll, Rz 46) |
+| 11. Nettolohn / Rente | Net pay of the slips (`net_pay`) | `net_salary` (from `net_pay`) | **no** | **Differs from the Wegleitung.** It defines line 11 as line 8 less lines 9 and 10 (Ziffer 11). `net_pay` also subtracts Quellensteuer and any KTG or other deduction. For a Quellensteuer employee the line is too low by the tax. Decided: line 8 less 9 and 10.1, built in erp-4yyn (below) |
 | 12. Quellensteuerabzug | `Quellensteuer Employee` (abbr QST), gross tax | `source_tax_deduction` | yes | Only for foreign employees with the tax at source; the tax is set on the slip from the gross per canton tariff (erp-6rrh) |
-| 13.1.1 Effektive Reise-/Verpflegungs-/Übernachtungsspesen | none | — | heading | not in payroll; trustee. Its box (`effective_expenses_travel_check`) is **no** unless a Spesenreglement is approved (Rz 52) |
-| 13.1.2 Effektive übrige Spesen | none | — | heading | not in payroll; trustee |
-| 13.2.1 Pauschalspesen Repräsentation | none | — | heading | not in payroll; trustee |
-| 13.2.2 Pauschalspesen Auto | none | — | heading | not in payroll; trustee |
-| 13.2.3 Pauschalspesen übrige | none | — | heading | not in payroll; trustee |
-| 13.3 Beiträge Weiterbildung | none | — | heading | not in payroll; trustee |
-| 14. Weitere Gehaltsnebenleistungen | none | — | heading | not in payroll; trustee |
+| 13.1.1 Effektive Reise-/Verpflegungs-/Übernachtungsspesen | none | `effective_expenses_travel` | heading | not in payroll; trustee. Its box (`effective_expenses_travel_check`) is **no** unless a Spesenreglement is approved (Rz 52) |
+| 13.1.2 Effektive übrige Spesen | none | `effective_other_expenses` | heading | not in payroll; trustee |
+| 13.2.1 Pauschalspesen Repräsentation | none | `representation_expenses` | heading | not in payroll; trustee |
+| 13.2.2 Pauschalspesen Auto | none | `car_expenses` | heading | not in payroll; trustee |
+| 13.2.3 Pauschalspesen übrige | none | `other_net_expenses` | heading | not in payroll; trustee |
+| 13.3 Beiträge Weiterbildung | none | `education` | heading | not in payroll; trustee |
+| 14. Weitere Gehaltsnebenleistungen | none | `other_salary_sides` | heading | not in payroll; trustee |
 | 15. Bemerkungen | Free text on the certificate | `remarks` | yes | Left free: the settings' remark table stays empty. Mandatory notes (several certificates in one year, KTG amounts, Privatanteil) are typed by the trustee |
 | (no line) KTG Employee | `KTG Employee` (abbr KTG) | none; view column `ktg_employee` | yes | The Wegleitung (Ziffer 9): employee-paid Krankentaggeld contributions may not be deducted from the gross; they can be shown under line 15. The trustee confirms before a deduction is used |
 
@@ -362,12 +362,12 @@ Unentgeltliche Beförderung and Kantinenverpflegung (boxes F and G) are not in p
 The employer shares (AHV, ALV, BVG, UVG, KTG, FAK) are not on the form's lines and stay in the
 hand-over view only.
 
-**Open for Benchi and the trustee (not decided here):**
+**Decided (ledgerdemain, 2026-10-11), built in erp-4yyn, not in this step:**
 
-1. **Line 11.** The form's net (Ziffer 11) is line 8 less lines 9 and 10. erpnextswiss takes the slip's `net_pay`, and so does the view `Lohnausweis`. Both agree with each other, and both differ from the form for every employee with Quellensteuer or a KTG deduction. The certificate's own button **Summen berechnen** computes net the Wegleitung's way (gross less lines 9 and 10), but it overwrites the stored value by hand and is not run by the fetch. Choices: make the fetch compute it (erpnextswiss's `fetch_dynamic`, or a bi_payroll override, so an image), or keep `net_pay` and have the trustee correct it on each certificate.
-2. **Line 1 and commissions.** The view sums `Basic Salary` only. Commissions (HR 3) and other Zulagen belong to line 1 by the Wegleitung. Fixed when HR 3 lands, in the same branch.
-3. **KTG.** The Wegleitung allows the employee's Krankentaggeld share on line 15 only, and not as a deduction from the gross. Whether the slips deduct it is not checked here: the `KTG Employee` component exists in the fixtures, and the trustee says where its amounts go.
-4. **Rounding.** erpnextswiss's print format prints whole francs (`{:,.0f}`). The Wegleitung states no rounding rule, so the trustee confirms that whole francs are fine.
+1. **Line 11** = line 8 less lines 9 and 10.1 (Wegleitung Ziffer 11), not the slip's `net_pay`: the fetch (erpnextswiss `fetch_dynamic`) and the view `Lohnausweis` both change. Until erp-4yyn lands, line 11 differs from the form for every employee with Quellensteuer or a KTG deduction.
+2. **Line 1** = every taxable earning on the slip (Basic Salary, Commission, Zulagen), not `Basic Salary` alone. Until then `salary` and the view sum `Basic Salary` only.
+3. **KTG**: the employee's share goes into line 15 as a remark, not onto a line.
+4. **Rounding**: the certificate prints whole francs (round half up); the view keeps rappen.
 
 ### Lohnausweis at year end (operating)
 
@@ -381,11 +381,11 @@ Each January, for the year that just closed (the first is 2027, the 2026 certifi
 2. Per employee with submitted slips in the year: a new **Salary Certificate**, the employee, the year, the
    period (1 January to 31 December, or the exit date), certificate type Salary. Then **Werte holen** (fetches the
    lines from the slips by posting date).
-3. Compare the lines with the view: equal per line, except line 11 until the decision above is taken.
+3. Compare the lines with the view: equal per line (after erp-4yyn; before it, lines 1 and 11 differ as described above).
 4. Boxes F and G stay **no**, and the box for 13.1.1 too, unless Benchi says otherwise. Line 15: free text,
    for example a second certificate of the year ("one of two" per Wegleitung Ziffer 15).
 5. Submit, then **PDF** (print format `605.040.18N Form. 11`) and hand the PDFs to the trustee with the view.
-6. The trustee checks lines 2 to 7, 10.2, 13 and 14, the open items above, and the printed layout.
+6. The trustee checks lines 2 to 7, 10.2, 13 and 14, the decisions above once erp-4yyn has landed, and the printed layout.
 
 An employee who left mid-year gets a certificate for the part of the year paid by us, with the exit date in the
 period. A certificate created in error is cancelled and amended, never deleted.
