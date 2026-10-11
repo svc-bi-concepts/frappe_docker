@@ -101,9 +101,14 @@ class Workspace(unittest.TestCase):
         self.assertEqual(shortcuts, [r["label"] for r in self.ws["shortcuts"]])
         self.assertEqual(len(shortcuts), len(set(shortcuts)))
 
-    def test_the_cash_shortcuts_are_reports_of_this_app(self):
-        cash = [r for r in self.ws["shortcuts"] if r["label"] in ("Cash Flow Forecast", "Cash Flow Forecast Lines", "Cash Conversion Cycle")]
-        self.assertEqual(sorted(r["label"] for r in cash), ["Cash Conversion Cycle", "Cash Flow Forecast", "Cash Flow Forecast Lines"])
+    def test_the_number_card_rows_are_labelled_with_their_names(self):
+        # the page matches a number card block to its row by label (frappe's block.js), so the two must agree
+        for row in self.ws["number_cards"]:
+            self.assertEqual(row["label"], row["number_card_name"])
+
+    def test_the_report_shortcuts_are_reports_of_this_app(self):
+        cash = [r for r in self.ws["shortcuts"] if r["label"] in ("Cash Flow Forecast", "MWST pro Quartal")]
+        self.assertEqual(sorted(r["label"] for r in cash), ["Cash Flow Forecast", "MWST pro Quartal"])
         for row in cash:
             self.assertEqual(row["type"], "Report")
             self.assertEqual(row["link_to"], row["label"])
@@ -163,6 +168,14 @@ class Cards(unittest.TestCase):
             self.assertTrue(set(chart) <= fields, set(chart) - fields)
             self.assertEqual((chart["chart_type"], chart["report_name"]), ("Report", report))
         self.assertEqual(load("dashboard_chart", "cash_position_history", "cash_position_history.json")["use_report_chart"], 1)
+
+    def test_the_charts_draw_their_months_as_a_time_series_and_the_position_chart_has_filters(self):
+        # without timeseries the x axis reads "2.." for every month; without filters_json the widget stays on "Loading..."
+        history = load("dashboard_chart", "cash_position_history", "cash_position_history.json")
+        trend = load("dashboard_chart", "cash_conversion_trend", "cash_conversion_trend.json")
+        self.assertEqual(history["timeseries"], 1)
+        self.assertEqual(trend["timeseries"], 1)
+        self.assertEqual(json.loads(history["filters_json"]), {})
 
 
 if __name__ == "__main__":

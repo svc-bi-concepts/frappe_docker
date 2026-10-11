@@ -53,7 +53,7 @@ Labels are in English, with the Swiss term where the ESTV or the paystub uses it
 brackets ("Normal (302)"), Quellensteuer, BVG, Bezugsteuer. Titles and series: a VAT Declaration is titled
 `MWST <period>` (`MWST 2026Q3`, `MWST 2026H1`), an ERPNext invoice keeps its `ACC-SINV` name, and a bexio number
 stays as bexio has it (in its own field, never renamed). Where a thing lives: the Swiss steps are on the Treasury
-workspace's Switzerland card, and nowhere else is a finance step only reachable by search. What a button does before
+workspace's cards, one per area with the same groups as the module sidebar, and nowhere else is a finance step only reachable by search. What a button does before
 it writes: every write has a preview or a dry run first (Fill from payments shows the figures, then writes only the
 draft on its own button); a submitted document is never changed by a button, and Download Transfer File only reads.
 See `finance/docs/operating.md` for the steps in the order they are done.

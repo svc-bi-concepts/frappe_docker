@@ -1,17 +1,18 @@
 # Operating the finance stack: month, quarter, payroll
 
 One page of the recurring work, in the order it is done. Every Swiss step is on the Treasury
-workspace's **Switzerland** card (Desk: Treasury, then Switzerland). The Desk place is in bold; the
+workspace's cards, one per area with the same groups as the module sidebar (Desk: Treasury, then
+the card: **Banking**, **Payments**, **MWST**, **Cash forecast**, **Payroll**). The Desk place is in bold; the
 document that explains the step is in brackets. Conventions for labels and buttons:
 `finance/docs/erpnext-setup.md`, "Desk conventions".
 
 ## Month
 
 1. **Wise and PayPal:** they sync each hour by themselves. Check on **Wise Settings** and
-   **PayPal Settings** (Switzerland card) that the hourly sync is on. [`finance/apps/bi_finance/README.md`]
+   **PayPal Settings** (Banking card) that the hourly sync is on. [`finance/apps/bi_finance/README.md`]
 2. **Bank Statement Upload:** upload the UBS camt file of the month (**Bank Statement Upload**,
-   Switzerland card). [`finance/apps/bi_finance/README.md`, bank_statement_upload]
-3. **Unreconciled bank lines:** clear what is left (Treasury shortcut). [`finance/docs/payment-runs.md`, the camt match]
+   Banking card). [`finance/apps/bi_finance/README.md`, bank_statement_upload]
+3. **Unreconciled bank lines:** clear what is left (Treasury shortcut **Unreconciled**). [`finance/docs/payment-runs.md`, the camt match]
    After each Wise sync and camt import the matching job reconciles the lines it is certain of (the
    creditor reference of an open Sales Invoice, a payment run's EndToEndId, one open invoice or bill of
    the named party within 5 days, a Bank Transaction Rule) and leaves the rest here. It runs only when
@@ -20,8 +21,8 @@ document that explains the step is in brackets. Conventions for labels and butto
    that line is not matched by it and stays for the Bank Reconciliation Tool. The month-end Exchange Rate
    Revaluation arrives as a draft on the 1st (only when an account has a gain or loss): review and submit
    it; the 31.12 one needs the ESTV year-end rate entered as a Currency Exchange row dated 31.12 first.
-4. **Bank Reconciliation Tool:** match the remaining lines to Payment Entries (Treasury shortcut).
-5. **Payment Proposal:** create for the due bills and the unpaid expense claims (Switzerland
+4. **Bank Reconciliation Tool:** match the remaining lines to Payment Entries (Banking card).
+5. **Payment Proposal:** create for the due bills and the unpaid expense claims (Payments
    card), check the list and the total, submit, then **Download bank file**. Upload that file in
    UBS e-banking; ERPNext sends nothing to a bank. [`finance/docs/payment-runs.md`, Run;
    `finance/docs/operating.md`, Expenses]
@@ -62,7 +63,7 @@ a flat sum, not for reimbursed receipts.
 1. **MWST pro Quartal vs bexio:** compare the quarter's Ziffern with bexio. Not yet in ERPNext: the page
    comes with erp-skbk. Until then the comparison is `finance/bexio/mwst_report.py --basis payment`,
    written to a private file. [`finance/docs/swiss.md`, VAT per quarter against bexio]
-2. **VAT Declaration, new draft:** Switzerland card, VAT Declaration, New. Start and End are the quarter
+2. **VAT Declaration, new draft:** MWST card, VAT Declaration, New. Start and End are the quarter
    (or the half-year, e.g. 2026H1); the title becomes `MWST <period>`.
 3. **Fill from payments:** press it on the draft. The dialog shows the figures first; **Write draft**
    writes the draft, nothing is submitted. A submitted declaration of the period is never changed.
@@ -77,12 +78,12 @@ a flat sum, not for reimbursed receipts.
 
 1. **Payroll Entry or Salary Slips:** run the month's payroll in HRMS (HR, Payroll Entry), then check the
    submitted Salary Slips. [`finance/docs/hrms.md`]
-2. **Payroll Swiss Settings:** the rates the slips use (Switzerland card). Check them against the
+2. **Payroll Swiss Settings:** the rates the slips use (Payroll card). Check them against the
    paystub of the month. [`finance/apps/bi_payroll/README.md`]
-3. **QST Tariff:** the Quellensteuer codes and their rows (Switzerland card) for employees who are
+3. **QST Tariff:** the Quellensteuer codes and their rows (Payroll card) for employees who are
    taxed at source.
 4. **Payroll Hand-over:** the report of the month per employee, gross, net and the Swiss components, for
-   the trustee (Switzerland card). It reads the submitted slips; it changes nothing.
+   the trustee (Payroll card). It reads the submitted slips; it changes nothing.
 5. **Still manual until erp-1jh5:** the BVG, UVG, NBU, KTG and FAK rates and the BVG insured salaries are
    placeholders until the fund and insurer sheets are in. Until then the slips are checked against the
    paystubs by hand.

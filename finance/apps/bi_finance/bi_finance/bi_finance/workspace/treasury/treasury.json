@@ -8,35 +8,35 @@
  "is_hidden": 0,
  "standard": 1,
  "icon": "wallet",
- "content": "[{\"id\": \"f1c3a7d902\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Cash Flow Forecast\", \"col\": 3}}, {\"id\": \"b7e4d18c25\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Cash Flow Forecast Lines\", \"col\": 3}}, {\"id\": \"c9a2f6b81d\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"MWST pro Quartal\", \"col\": 3}}, {\"id\": \"3c8e0a51f7\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Cash Forecast Settings\", \"col\": 3}}, {\"id\": \"5b0e7d21a4\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Cash Conversion Cycle\", \"col\": 3}}, {\"id\": \"a1d7e3c904\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Bank Transactions\", \"col\": 3}}, {\"id\": \"0f5b9c28e6\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Unreconciled bank lines\", \"col\": 3}}, {\"id\": \"d36a4e71b2\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Bank Reconciliation Tool\", \"col\": 3}}, {\"id\": \"9a4f2c71d8\", \"type\": \"card\", \"data\": {\"card_name\": \"Switzerland\", \"col\": 4}}, {\"id\": \"44559c07eb\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Cash Position Total\", \"col\": 4}}, {\"id\": \"84d6ad5962\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Cash Position 1000\", \"col\": 4}}, {\"id\": \"aa2ecadc9b\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Cash Position 1010\", \"col\": 4}}, {\"id\": \"609f9111a2\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Cash Position 1020\", \"col\": 4}}, {\"id\": \"6c0b18e0fd\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Cash Position 1021\", \"col\": 4}}, {\"id\": \"de64bbef1e\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Cash Position History\", \"col\": 12}}, {\"id\": \"3f9a1c6e27\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Cash Conversion CCC\", \"col\": 4}}, {\"id\": \"c8d24b0f93\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Cash Conversion Change\", \"col\": 4}}, {\"id\": \"7e61a9d5c0\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Cash Conversion Trend\", \"col\": 12}}]",
+ "content": "[{\"id\": \"a1d7e3c904\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Bank Transactions\", \"col\": 3}}, {\"id\": \"0f5b9c28e6\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Unreconciled\", \"col\": 3}}, {\"id\": \"f1c3a7d902\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Cash Flow Forecast\", \"col\": 3}}, {\"id\": \"c9a2f6b81d\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"MWST pro Quartal\", \"col\": 3}}, {\"id\": \"44559c07eb\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Cash Position Total\", \"col\": 3}}, {\"id\": \"84d6ad5962\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Cash Position 1000\", \"col\": 3}}, {\"id\": \"aa2ecadc9b\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Cash Position 1010\", \"col\": 3}}, {\"id\": \"609f9111a2\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Cash Position 1020\", \"col\": 3}}, {\"id\": \"6c0b18e0fd\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Cash Position 1021\", \"col\": 3}}, {\"id\": \"3f9a1c6e27\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Cash Conversion CCC\", \"col\": 3}}, {\"id\": \"c8d24b0f93\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Cash Conversion Change\", \"col\": 3}}, {\"id\": \"de64bbef1e\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Cash Position History\", \"col\": 12}}, {\"id\": \"7e61a9d5c0\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Cash Conversion Trend\", \"col\": 12}}, {\"id\": \"b2f0c4a913\", \"type\": \"card\", \"data\": {\"card_name\": \"Banking\", \"col\": 4}}, {\"id\": \"e83d5a0c17\", \"type\": \"card\", \"data\": {\"card_name\": \"Payments\", \"col\": 4}}, {\"id\": \"5d9c1e7b42\", \"type\": \"card\", \"data\": {\"card_name\": \"MWST\", \"col\": 4}}, {\"id\": \"91a6f3d0e8\", \"type\": \"card\", \"data\": {\"card_name\": \"Cash forecast\", \"col\": 4}}, {\"id\": \"4c7e2b9f06\", \"type\": \"card\", \"data\": {\"card_name\": \"Payroll\", \"col\": 4}}]",
  "number_cards": [
   {
    "number_card_name": "Cash Position Total",
-   "label": "Total CHF"
+   "label": "Cash Position Total"
   },
   {
    "number_card_name": "Cash Position 1000",
-   "label": "Account 1000"
+   "label": "Cash Position 1000"
   },
   {
    "number_card_name": "Cash Position 1010",
-   "label": "Account 1010"
+   "label": "Cash Position 1010"
   },
   {
    "number_card_name": "Cash Position 1020",
-   "label": "Account 1020"
+   "label": "Cash Position 1020"
   },
   {
    "number_card_name": "Cash Position 1021",
-   "label": "Account 1021"
+   "label": "Cash Position 1021"
   },
   {
    "number_card_name": "Cash Conversion CCC",
-   "label": "CCC, 12 months (days)"
+   "label": "Cash Conversion CCC"
   },
   {
    "number_card_name": "Cash Conversion Change",
-   "label": "CCC change, 12 months (days)"
+   "label": "Cash Conversion Change"
   }
  ],
  "charts": [
@@ -51,16 +51,25 @@
  ],
  "shortcuts": [
   {
+   "label": "Bank Transactions",
+   "type": "DocType",
+   "link_to": "Bank Transaction",
+   "doc_view": "List",
+   "stats_filter": "{}",
+   "url": ""
+  },
+  {
+   "label": "Unreconciled",
+   "type": "URL",
+   "link_to": "",
+   "doc_view": "",
+   "stats_filter": "",
+   "url": "/app/bank-transaction?status=Unreconciled"
+  },
+  {
    "label": "Cash Flow Forecast",
    "type": "Report",
    "link_to": "Cash Flow Forecast",
-   "doc_view": "",
-   "stats_filter": ""
-  },
-  {
-   "label": "Cash Flow Forecast Lines",
-   "type": "Report",
-   "link_to": "Cash Flow Forecast Lines",
    "doc_view": "",
    "stats_filter": ""
   },
@@ -70,58 +79,14 @@
    "link_to": "MWST pro Quartal",
    "doc_view": "",
    "stats_filter": ""
-  },
-  {
-   "label": "Cash Forecast Settings",
-   "type": "DocType",
-   "link_to": "Cash Forecast Settings",
-   "doc_view": "",
-   "stats_filter": "",
-   "url": ""
-  },
-  {
-   "label": "Cash Conversion Cycle",
-   "type": "Report",
-   "link_to": "Cash Conversion Cycle",
-   "report_ref_doctype": "GL Entry",
-   "doc_view": "",
-   "stats_filter": "",
-   "format": "",
-   "restrict_to_domain": "",
-   "url": "",
-   "kanban_board": ""
-  },
-  {
-   "label": "Bank Transactions",
-   "type": "DocType",
-   "link_to": "Bank Transaction",
-   "doc_view": "List",
-   "stats_filter": "",
-   "url": ""
-  },
-  {
-   "label": "Unreconciled bank lines",
-   "type": "URL",
-   "link_to": "",
-   "doc_view": "",
-   "stats_filter": "",
-   "url": "/app/bank-transaction?status=Unreconciled"
-  },
-  {
-   "label": "Bank Reconciliation Tool",
-   "type": "DocType",
-   "link_to": "Bank Reconciliation Tool",
-   "doc_view": "",
-   "stats_filter": "",
-   "url": ""
   }
  ],
  "links": [
   {
    "hidden": 0,
    "is_query_report": 0,
-   "label": "Switzerland",
-   "link_count": 0,
+   "label": "Banking",
+   "link_count": 6,
    "link_to": "",
    "link_type": "",
    "onboard": 0,
@@ -133,9 +98,9 @@
   {
    "hidden": 0,
    "is_query_report": 0,
-   "label": "VAT Declaration",
+   "label": "Bank Statement Upload",
    "link_count": 0,
-   "link_to": "VAT Declaration",
+   "link_to": "Bank Statement Upload",
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link",
@@ -147,9 +112,9 @@
   {
    "hidden": 0,
    "is_query_report": 0,
-   "label": "Payment Proposal",
+   "label": "Bank Transaction",
    "link_count": 0,
-   "link_to": "Payment Proposal",
+   "link_to": "Bank Transaction",
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link",
@@ -157,6 +122,20 @@
    "dependencies": "",
    "description": "",
    "doc_view": "List"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Bank Reconciliation Tool",
+   "link_count": 0,
+   "link_to": "Bank Reconciliation Tool",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link",
+   "only_for": "",
+   "dependencies": "",
+   "description": "",
+   "doc_view": ""
   },
   {
    "hidden": 0,
@@ -189,9 +168,36 @@
   {
    "hidden": 0,
    "is_query_report": 0,
-   "label": "Bank Statement Upload",
+   "label": "Bank Matching Settings",
    "link_count": 0,
-   "link_to": "Bank Statement Upload",
+   "link_to": "Bank Matching Settings",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link",
+   "only_for": "",
+   "dependencies": "",
+   "description": "",
+   "doc_view": ""
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Payments",
+   "link_count": 1,
+   "link_to": "",
+   "link_type": "",
+   "onboard": 0,
+   "type": "Card Break",
+   "only_for": "",
+   "dependencies": "",
+   "description": ""
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Payment Proposal",
+   "link_count": 0,
+   "link_to": "Payment Proposal",
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link",
@@ -199,6 +205,143 @@
    "dependencies": "",
    "description": "",
    "doc_view": "List"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "MWST",
+   "link_count": 2,
+   "link_to": "",
+   "link_type": "",
+   "onboard": 0,
+   "type": "Card Break",
+   "only_for": "",
+   "dependencies": "",
+   "description": ""
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "VAT Declaration",
+   "link_count": 0,
+   "link_to": "VAT Declaration",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link",
+   "only_for": "",
+   "dependencies": "",
+   "description": "",
+   "doc_view": "List"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "MWST pro Quartal",
+   "link_count": 0,
+   "link_to": "MWST pro Quartal",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link",
+   "only_for": "",
+   "dependencies": "",
+   "description": "",
+   "doc_view": ""
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Cash forecast",
+   "link_count": 5,
+   "link_to": "",
+   "link_type": "",
+   "onboard": 0,
+   "type": "Card Break",
+   "only_for": "",
+   "dependencies": "",
+   "description": ""
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Cash Position",
+   "link_count": 0,
+   "link_to": "Cash Position",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link",
+   "only_for": "",
+   "dependencies": "",
+   "description": "",
+   "doc_view": ""
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Cash Flow Forecast",
+   "link_count": 0,
+   "link_to": "Cash Flow Forecast",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link",
+   "only_for": "",
+   "dependencies": "",
+   "description": "",
+   "doc_view": ""
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Cash Flow Forecast Lines",
+   "link_count": 0,
+   "link_to": "Cash Flow Forecast Lines",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link",
+   "only_for": "",
+   "dependencies": "",
+   "description": "",
+   "doc_view": ""
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Cash Conversion Cycle",
+   "link_count": 0,
+   "link_to": "Cash Conversion Cycle",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link",
+   "only_for": "",
+   "dependencies": "",
+   "description": "",
+   "doc_view": ""
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Cash Forecast Settings",
+   "link_count": 0,
+   "link_to": "Cash Forecast Settings",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link",
+   "only_for": "",
+   "dependencies": "",
+   "description": "",
+   "doc_view": ""
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Payroll",
+   "link_count": 3,
+   "link_to": "",
+   "link_type": "",
+   "onboard": 0,
+   "type": "Card Break",
+   "only_for": "",
+   "dependencies": "",
+   "description": ""
   },
   {
    "hidden": 0,
@@ -247,7 +390,7 @@
  "roles": [],
  "custom_blocks": [],
  "creation": "2026-10-10 09:00:00.000000",
- "modified": "2026-10-11 12:00:01.000000",
+ "modified": "2026-10-11 23:45:00.000000",
  "modified_by": "Administrator",
  "owner": "Administrator",
  "docstatus": 0,
