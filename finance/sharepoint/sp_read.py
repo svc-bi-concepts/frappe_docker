@@ -44,8 +44,9 @@ ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
 # The insurer sheets payroll needs: the BVG plan sheet, and one sheet each for UVG, NBU, KTG and FAK.
 SHEETS = ("BVG", "UVG", "NBU", "KTG", "FAK")
 
-# The folder that holds the insurer sheets, by the name it has in the config.
-INSURANCE = "Insurance"
+# The folders searched for the insurer sheets, by the names they have in the config. Insurance
+# first; Finance holds the rest (the sheets are somewhere under it, per Benchi, 2026-10-11).
+SEARCHED = ("Insurance", "Finance")
 
 
 class SharePointError(Exception):
@@ -206,16 +207,24 @@ class Graph:
 
 
 def pick_sheets(files):
-    """{sheet: (folder path, item)}, one file per insurer sheet. Nothing is guessed: no match or several is an error."""
-    chosen = {}
+    """({sheet: (folder path, item)}, {sheet: reason}): the sheets found exactly once, and why each other one is not.
+
+    Nothing is guessed: no match or several is a reason, and that sheet is not downloaded. KTG
+    has two contracts in the folder (the application and the refusal are not the contract),
+    so only a name with 'Vertrag' counts for it.
+    """
+    chosen, problems = {}, {}
     for sheet in SHEETS:
         pattern = re.compile(r"(?<![A-Za-z])%s(?![A-Za-z])" % sheet, re.I)
         matches = [(folder, item) for folder, item in files if pattern.search(item["name"])]
-        if len(matches) != 1:
+        if sheet == "KTG":
+            matches = [(folder, item) for folder, item in matches if "vertrag" in item["name"].lower()]
+        if len(matches) == 1:
+            chosen[sheet] = matches[0]
+        else:
             names = ", ".join(item["name"] for _, item in matches) or "none"
-            raise SharePointError("%s: %d files match, want exactly 1 (%s)" % (sheet, len(matches), names))
-        chosen[sheet] = matches[0]
-    return chosen
+            problems[sheet] = "%d files match, want exactly 1 (%s)" % (len(matches), names)
+    return chosen, problems
 
 
 def target(out_dir, folder, name):
@@ -243,20 +252,35 @@ def list_folder(graph, folder_id, out=sys.stdout):
     out.write("%d files\n" % count)
 
 
-def fetch(graph, insurance_id, out_dir=OUT, out=sys.stdout):
-    """Download the insurer sheets. Every name is checked before the first download, so a refusal leaves nothing behind."""
-    chosen = pick_sheets(list(graph.walk(insurance_id)))
+def fetch(graph, roots, out_dir=OUT, out=sys.stdout):
+    """Download every insurer sheet found exactly once under roots [(name, folder id)]; report the rest.
+
+    A sheet that is missing or ambiguous is written to out and skipped; the others are still saved.
+    Every name is checked before the first download, so a refused name leaves nothing behind.
+    Each file keeps its folder names under its root's name, so two roots cannot collide.
+    """
+    files = []
+    for name, folder_id in roots:
+        files.extend(((name,) + folder, item) for folder, item in graph.walk(folder_id))
+    chosen, problems = pick_sheets(files)
     plan = {}
-    for sheet, (folder, item) in chosen.items():
-        plan[sheet] = (target(out_dir, folder, item["name"]), item)
     for sheet in SHEETS:
+        if sheet in chosen:
+            folder, item = chosen[sheet]
+            plan[sheet] = (target(out_dir, folder, item["name"]), item)
+    for sheet in SHEETS:
+        if sheet in problems:
+            out.write("MISSING %-4s %s\n" % (sheet, problems[sheet]))
+    for sheet in SHEETS:
+        if sheet not in plan:
+            continue
         path, item = plan[sheet]
         body = graph.download(item["id"])
         if len(body) != item.get("size", len(body)):
             raise SharePointError("%s: downloaded size differs from the listing" % sheet)
         save(path, body)
         out.write("%-4s %10d  %s\n" % (sheet, len(body), os.path.relpath(path, out_dir)))
-    out.write("%d sheets saved under %s\n" % (len(plan), out_dir))
+    out.write("%d of %d sheets saved under %s\n" % (len(plan), len(SHEETS), out_dir))
 
 
 def main(argv, out=sys.stdout):
@@ -272,7 +296,7 @@ def main(argv, out=sys.stdout):
         if argv[1] == "list":
             list_folder(graph, cfg["folders"][argv[2]], out)
         else:
-            fetch(graph, cfg["folders"][INSURANCE], OUT, out)
+            fetch(graph, [(name, cfg["folders"][name]) for name in SEARCHED], OUT, out)
     except SharePointError as err:
         sys.stderr.write("sp_read: %s\n" % err)
         return 1

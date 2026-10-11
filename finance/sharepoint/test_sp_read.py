@@ -171,15 +171,18 @@ class ClientTest(Keys):
 
 class FetchTest(Keys):
     INS = GRAPH + "/drives/%s/items/ins/children" % DRIVE
+    FIN = GRAPH + "/drives/%s/items/fin/children" % DRIVE
     BVG = GRAPH + "/drives/%s/items/f-bvg/children" % DRIVE
+    ROOTS = [("Insurance", "ins"), ("Finance", "fin")]
 
     def setUp(self):
         self.out = tempfile.mkdtemp(prefix="sp-out-")
         self.routes = {
             TOKEN_URL: json.dumps({"access_token": "fake-token"}).encode(),
             self.INS: page([folder("BVG", "f-bvg"), file_("UVG_2026.pdf", "uvg", 3),
-                            file_("NBU.pdf", "nbu", 2), file_("KTG.pdf", "ktg", 2),
-                            file_("FAK.pdf", "fak", 2)]),
+                            file_("NBU.pdf", "nbu", 2), file_("KTG Vertrag 2026.pdf", "ktg", 2),
+                            file_("KTG Antrag 2026.pdf", "ktg-app", 2), file_("FAK.pdf", "fak", 2)]),
+            self.FIN: page([]),
             self.BVG: page([file_("Plan 2026 BVG.xlsx", "bvg", 5)]),
             GRAPH + "/drives/%s/items/bvg/content" % DRIVE: b"BVG!!",
             GRAPH + "/drives/%s/items/uvg/content" % DRIVE: b"UVG",
@@ -196,45 +199,85 @@ class FetchTest(Keys):
         thumbprint = hashlib.sha1(self.cert_der).hexdigest()
         return fake, Graph(TENANT, CLIENT, thumbprint, DRIVE, self.key_pem, transport=fake)
 
-    def test_saves_each_sheet_under_its_folder_with_mode_600(self):
+    def test_saves_each_sheet_under_its_root_and_folder_with_mode_600(self):
         fake, g = self.graph()
         out = io.StringIO()
-        sp_read.fetch(g, "ins", self.out, out)
-        with open(os.path.join(self.out, "BVG", "Plan 2026 BVG.xlsx"), "rb") as f:
+        sp_read.fetch(g, self.ROOTS, self.out, out)
+        with open(os.path.join(self.out, "Insurance", "BVG", "Plan 2026 BVG.xlsx"), "rb") as f:
             self.assertEqual(f.read(), b"BVG!!")
-        with open(os.path.join(self.out, "UVG_2026.pdf"), "rb") as f:
+        with open(os.path.join(self.out, "Insurance", "UVG_2026.pdf"), "rb") as f:
             self.assertEqual(f.read(), b"UVG")
         for root, dirs, files in os.walk(self.out):
             for name in files:
                 mode = stat.S_IMODE(os.stat(os.path.join(root, name)).st_mode)
                 self.assertEqual(mode, 0o600, name)
-        self.assertIn("5 sheets saved under", out.getvalue())
+        self.assertIn("5 of 5 sheets saved under", out.getvalue())
+        self.assertNotIn("MISSING", out.getvalue())
 
-    def test_nothing_is_downloaded_when_a_sheet_has_no_file(self):
+    def test_a_missing_sheet_is_reported_and_the_others_are_still_saved(self):
         self.routes[self.INS] = page([folder("BVG", "f-bvg"), file_("UVG.pdf", "uvg", 3),
-                                      file_("NBU.pdf", "nbu", 2), file_("KTG.pdf", "ktg", 2)])
+                                      file_("NBU.pdf", "nbu", 2), file_("KTG Vertrag.pdf", "ktg", 2)])
         fake, g = self.graph()
-        with self.assertRaises(SharePointError) as ctx:
-            sp_read.fetch(g, "ins", self.out, io.StringIO())
-        self.assertIn("FAK: 0 files match", str(ctx.exception))
-        self.assertFalse([c for c in fake.calls if c[1].endswith("/content")])
-        self.assertEqual(os.listdir(self.out), [])
+        out = io.StringIO()
+        sp_read.fetch(g, self.ROOTS, self.out, out)
+        self.assertIn("MISSING FAK  0 files match, want exactly 1 (none)", out.getvalue())
+        self.assertIn("4 of 5 sheets saved under", out.getvalue())
+        downloaded = sorted(c[1] for c in fake.calls if c[1].endswith("/content"))
+        self.assertFalse([u for u in downloaded if "/fak/" in u])
+        self.assertEqual(len(downloaded), 4)
 
-    def test_nothing_is_guessed_when_a_sheet_matches_twice(self):
+    def test_a_sheet_that_matches_twice_is_reported_and_not_guessed(self):
         self.routes[self.INS] = page([folder("BVG", "f-bvg"), file_("UVG.pdf", "uvg", 3),
                                       file_("UVG old.pdf", "uvg2", 3), file_("NBU.pdf", "nbu", 2),
-                                      file_("KTG.pdf", "ktg", 2), file_("FAK.pdf", "fak", 2)])
+                                      file_("KTG Vertrag.pdf", "ktg", 2), file_("FAK.pdf", "fak", 2)])
         fake, g = self.graph()
-        with self.assertRaises(SharePointError) as ctx:
-            sp_read.fetch(g, "ins", self.out, io.StringIO())
-        self.assertIn("UVG: 2 files match", str(ctx.exception))
-        self.assertFalse([c for c in fake.calls if c[1].endswith("/content")])
+        out = io.StringIO()
+        sp_read.fetch(g, self.ROOTS, self.out, out)
+        self.assertIn("MISSING UVG  2 files match", out.getvalue())
+        downloaded = [c[1] for c in fake.calls if c[1].endswith("/content")]
+        self.assertFalse([u for u in downloaded if "/uvg" in u])
+
+    def test_ktg_takes_the_contract_and_never_the_application_or_refusal(self):
+        self.routes[self.INS] = page([folder("BVG", "f-bvg"), file_("UVG.pdf", "uvg", 3),
+                                      file_("NBU.pdf", "nbu", 2), file_("KTG Antrag.pdf", "ktg-app", 2),
+                                      file_("KTG Ablehnung.pdf", "ktg-no", 2), file_("KTG Vertrag.pdf", "ktg", 2),
+                                      file_("FAK.pdf", "fak", 2)])
+        fake, g = self.graph()
+        out = io.StringIO()
+        sp_read.fetch(g, self.ROOTS, self.out, out)
+        self.assertIn("Insurance/KTG Vertrag.pdf", out.getvalue())
+        downloaded = [c[1] for c in fake.calls if c[1].endswith("/content")]
+        self.assertIn(GRAPH + "/drives/%s/items/ktg/content" % DRIVE, downloaded)
+        self.assertFalse([u for u in downloaded if "ktg-app" in u or "ktg-no" in u])
+
+    def test_two_ktg_contracts_are_reported_as_ambiguous(self):
+        self.routes[self.INS] = page([folder("BVG", "f-bvg"), file_("UVG.pdf", "uvg", 3),
+                                      file_("NBU.pdf", "nbu", 2), file_("KTG Vertrag 2025.pdf", "ktg-25", 2),
+                                      file_("KTG Vertrag 2026.pdf", "ktg", 2), file_("FAK.pdf", "fak", 2)])
+        fake, g = self.graph()
+        out = io.StringIO()
+        sp_read.fetch(g, self.ROOTS, self.out, out)
+        self.assertIn("MISSING KTG  2 files match, want exactly 1", out.getvalue())
+        downloaded = [c[1] for c in fake.calls if c[1].endswith("/content")]
+        self.assertFalse([u for u in downloaded if "/ktg" in u])
+
+    def test_a_sheet_found_only_in_finance_is_saved_under_finance(self):
+        self.routes[self.INS] = page([file_("UVG.pdf", "uvg", 3), file_("NBU.pdf", "nbu", 2),
+                                      file_("KTG Vertrag.pdf", "ktg", 2), file_("FAK.pdf", "fak", 2)])
+        self.routes[self.FIN] = page([folder("Sozial", "f-soz")])
+        self.routes[GRAPH + "/drives/%s/items/f-soz/children" % DRIVE] = page([file_("BVG 2026.pdf", "bvg", 5)])
+        fake, g = self.graph()
+        out = io.StringIO()
+        sp_read.fetch(g, self.ROOTS, self.out, out)
+        with open(os.path.join(self.out, "Finance", "Sozial", "BVG 2026.pdf"), "rb") as f:
+            self.assertEqual(f.read(), b"BVG!!")
+        self.assertIn("5 of 5 sheets saved under", out.getvalue())
 
     def test_a_size_that_differs_from_the_listing_is_an_error(self):
         self.routes[GRAPH + "/drives/%s/items/ktg/content" % DRIVE] = b"KTG-LONGER"
         fake, g = self.graph()
         with self.assertRaises(SharePointError):
-            sp_read.fetch(g, "ins", self.out, io.StringIO())
+            sp_read.fetch(g, self.ROOTS, self.out, io.StringIO())
 
     def test_names_that_could_leave_the_output_folder_are_refused(self):
         for folder_part, name in [((".." ,), "x.pdf"), ((), ".."), (("a/b",), "x.pdf"), ((), "a/b.pdf")]:
