@@ -111,7 +111,7 @@ class PaymentProposal(SwissPaymentProposal):
             }).insert()
         # The claim rows: one Payment Entry per claim, paid from the same account as the bills,
         # to the claim's own payable account. The claim's amount is what the proposal row holds
-        # (grand_total, the 0002 patch), so the entry clears the claim in full and HRMS marks
+        # (grand_total, the 0005 patch), so the entry clears the claim in full and HRMS marks
         # it Paid when the entry is submitted.
         for row in self.expenses:
             claim = frappe.db.get_value("Expense Claim", row.expense_claim,
