@@ -113,6 +113,24 @@ class Stamps(unittest.TestCase):
         self.assertEqual(changed, [], "; ".join(f"{p} modified {current[p][1]} sha {current[p][0]}" for p in changed))
 
 
+class HandOverRoles(unittest.TestCase):
+    # erp-tatn: the API user runs the Payroll hand-over report through its System Manager role, so the
+    # synced report JSON keeps the three roles and the manifest keeps the file's stamp.
+    PATH = "bi_payroll/report/payroll_hand_over/payroll_hand_over.json"
+
+    def setUp(self):
+        with open(os.path.join(PACKAGE, self.PATH), encoding="utf-8") as f:
+            self.doc = json.load(f)
+        with open(MANIFEST, encoding="utf-8") as f:
+            self.recorded = json.load(f)[self.PATH]
+
+    def test_the_report_lists_the_three_roles(self):
+        self.assertEqual([r["role"] for r in self.doc["roles"]], ["HR Manager", "Accounts Manager", "System Manager"])
+
+    def test_the_manifest_stamp_is_the_files_modified(self):
+        self.assertEqual(self.recorded["modified"], self.doc["modified"])
+
+
 class StaleRule(unittest.TestCase):
     RECORDED = {"a.json": {"sha": "x", "modified": "2026-10-10 09:00:00.000000"}}
 

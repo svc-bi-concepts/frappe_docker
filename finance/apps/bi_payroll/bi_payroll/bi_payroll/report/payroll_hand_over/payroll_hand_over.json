@@ -7,7 +7,7 @@
  "doctype": "Report",
  "idx": 0,
  "is_standard": "Yes",
- "modified": "2026-10-10 15:00:00.000000",
+ "modified": "2026-10-11 12:59:41.765639",
  "modified_by": "Administrator",
  "module": "BI Payroll",
  "name": "Payroll Hand-over",
@@ -22,6 +22,9 @@
   },
   {
    "role": "Accounts Manager"
+  },
+  {
+   "role": "System Manager"
   }
  ]
 }

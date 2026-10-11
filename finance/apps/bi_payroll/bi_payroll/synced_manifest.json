@@ -3,10 +3,6 @@
   "modified": "2026-10-10 14:00:00.000000",
   "sha": "362fac8827aebf2c46025b76fe5fe8dbbfdf60c5ded44bb5372109778cd8c0c4"
  },
- "bi_payroll/report/payroll_hand_over/payroll_hand_over.json": {
-  "modified": "2026-10-10 15:00:00.000000",
-  "sha": "3f85259b1986a7e6d7ed6cd784d60abf105bdf58dc74d7647f4086ecb5484c3a"
- },
  "bi_payroll/doctype/qst_tariff/qst_tariff.json": {
   "modified": "2026-10-10 15:00:00.000000",
   "sha": "5c7d29275b7bca2a86427f490e0252eb7b99ba7175f8ed1591f1e1fc5d5f9e8e"
@@ -14,5 +10,9 @@
  "bi_payroll/doctype/qst_tariff_code/qst_tariff_code.json": {
   "modified": "2026-10-11 10:00:00.000000",
   "sha": "8420f392880988e51b4ab1c5ff0147545e49193499f912887a7d751faaa38573"
+ },
+ "bi_payroll/report/payroll_hand_over/payroll_hand_over.json": {
+  "modified": "2026-10-11 12:59:41.765639",
+  "sha": "11e71297d432a375cea5fe8a04b7e86dbe4e3e8aad80559faabf75f443170ec9"
  }
 }
