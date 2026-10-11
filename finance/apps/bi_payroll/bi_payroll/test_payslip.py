@@ -170,6 +170,16 @@ class DeductionRowsTest(unittest.TestCase):
         self.assertEqual(row["rate"], "")
         self.assertEqual(row["base"], "0.00")
 
+    def test_the_other_rates_print_without_a_birth_date_or_under_25(self):
+        # only BVG depends on the age group: AHV, ALV, NBU, KTG and the employer rates apply at any age
+        for employee in ({**EMPLOYEE, "date_of_birth": "2005-05-14"},
+                         {k: v for k, v in EMPLOYEE.items() if k != "date_of_birth"}):
+            d = prepared(employee=employee)
+            rows = by_label(d["deductions"])
+            self.assertEqual((rows["AHV/IV/EO"]["rate"], rows["ALV"]["rate"]), ("5.3 %", "1.1 %"))
+            self.assertEqual(rows["NBU"]["rate"], "0.5 %")
+            self.assertEqual(by_label(d["employer_shares"])["FAK"]["rate"], "0.75 %")
+
     def test_an_employee_without_birth_date_has_no_bvg_rate_or_base(self):
         d = prepared(employee={k: v for k, v in EMPLOYEE.items() if k != "date_of_birth"})
         row = by_label(d["deductions"])["BVG"]

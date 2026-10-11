@@ -117,7 +117,8 @@ def _rate(slip, rate_field, group):
     # The rate copied onto the slip; for BVG the age group's. None where the formula has none.
     if not rate_field:
         return None
-    if not group:
+    # only the BVG rates depend on the age group: AHV, ALV, NBU, KTG and the others apply at any age
+    if "{age}" in rate_field and not group:
         return None
     return _num(_value(slip, rate_field.format(age=group)))
 
