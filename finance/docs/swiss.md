@@ -312,8 +312,11 @@ cancelled entries and other companies.
   from ERPNext is 2027 Q1 (due end of May 2027): all of 2026 stays with bexio (Benchi
   D1). The 2026 Q3 dry run was the parallel check that the fill runs without refusal
   on a fresh quarter.
-  1. Fill: the API call `fill_payment_basis` with `"dry_run": 0` (or the button, once
-     one exists), which makes or updates the draft `MWST <period>`.
+  1. Fill: in the backend container, `bench --site frontend execute
+     bi_finance.vat_declaration.fill_payment_basis --kwargs '{"company": "<Company>",
+     "period": "2027Q1", "dry_run": 0}'` (or the button, once one exists), which makes
+     or updates the draft `MWST <period>`; with `"dry_run": 1` it only prints the fields.
+     It refuses a quarter that has a submitted declaration.
   2. Open the draft in ERPNext and check its figures against bexio's declaration.
   3. Download its XML from the form, and upload that file to the ESTV ePortal.
   4. Never press Get values on a payment-basis draft (see "The form's Get values"
