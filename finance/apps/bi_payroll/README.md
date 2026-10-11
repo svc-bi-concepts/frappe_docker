@@ -13,11 +13,12 @@ migrate on any site.
 - `bi_payroll/swiss_payroll.py`: `copy_rates_to_slip` (a `before_validate` on Salary Slip: the formulas see only the
   slip and the assignment, so each slip takes the rates from Payroll Swiss Settings when it is validated) and
   `ensure_structure` (one "Swiss Monthly" Salary Structure per Swiss company).
-- `bi_payroll/bi_payroll/doctype/payroll_swiss_settings`: the settings (single). The KTG fields hold the KTG contract's
-  values (erp-1jh5: the employer pays the premium, so no employee share; `finance/scripts/load-swiss-rates.sh` loads
-  them from the private rates CSV — dry run on the copy by default, the live stack only with `--live --backup`).
-  Still placeholders or empty until their sheets are found: the BVG age-band rates (placeholders, half the statutory
-  minimum), UVG, NBU and FAK (empty).
+- `bi_payroll/bi_payroll/doctype/payroll_swiss_settings`: the settings (single). All five insurers' values stay open
+  here, listed by token: the BVG age-band rates are placeholders (half the statutory minimum), UVG, NBU, KTG and FAK
+  are empty (ledgerdemain, 2026-10-11: no rate is set in erp-1jh5; a follow-up bead sets them once the documents are
+  provided). The KTG contract is fetched and read (erp-1jh5), its values sit in the private rates CSV.
+  `finance/scripts/load-swiss-rates.sh` is ready for that step: it reads the private CSV and sets the rows marked
+  set=yes — dry run on the copy by default, the live stack only with `--live --backup`.
 - `bi_payroll/hand_over.py` and `bi_payroll/bi_payroll/report/payroll_hand_over`: the report `Payroll hand-over`, per
   employee and year or per employee and month, for the trustee's filing (Excel or CSV). The rows are summed from the
   submitted slips and their Salary Detail lines; the logic is pure Python, so `bi_payroll/test_hand_over.py` tests it
