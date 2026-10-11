@@ -23,7 +23,7 @@ from datetime import datetime
 PACKAGE = os.path.dirname(os.path.abspath(__file__))
 APP = os.path.dirname(PACKAGE)
 MANIFEST = os.path.join(PACKAGE, "synced_manifest.json")
-SYNCED = {"doctype", "report", "workspace", "workspace_sidebar", "number_card", "dashboard_chart", "page"}
+SYNCED = {"doctype", "report", "workspace", "workspace_sidebar", "number_card", "dashboard_chart", "page", "sidebar"}
 STAMP = "%Y-%m-%d %H:%M:%S.%f"  # Frappe's 'modified' format
 
 

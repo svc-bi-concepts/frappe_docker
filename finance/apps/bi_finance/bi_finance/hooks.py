@@ -5,6 +5,8 @@ app_description = "Swiss QR-bill for Sales Invoice, drawn on our own server"
 app_license = "Proprietary"
 required_apps = ["erpnext", "erpnextswiss"]
 
+# Apps mode (the desk's default: Desktop Settings desktop_page = Apps) reads the shipped Sidebar document bi_finance/sidebar/bi_finance/bi_finance.json for the module's left-hand menu; the Workspace Sidebar and Desktop Icon fixtures count only if Desktop Settings is ever switched to Desktop Icons.
+
 # The apps screen lists bi_finance next to erpnextswiss's; the route is the Treasury workspace.
 add_to_apps_screen = [
     {
