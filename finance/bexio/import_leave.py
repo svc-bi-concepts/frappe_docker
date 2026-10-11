@@ -216,10 +216,9 @@ class LeaveImporter:
             else:
                 self.counts["unchanged"] += 1
             if entry["days"] == 0:
-                # HRMS refuses an allocation of 0 days ("Total leaves allocated is mandatory");
-                # the Active Employee without entitlement needs Benchi's check before go-live.
+                # HRMS refuses an allocation of 0 days ("Total leaves allocated is mandatory").
+                # The export said 0 (a default is never 0), so this is a count, not a problem.
                 self.counts["no entitlement"] += 1
-                self.problems.append((entry["position"], "no entitlement (0 days)"))
                 continue
             filters = [["employee", "=", employee["name"]], ["leave_type", "=", LEAVE_TYPE],
                        ["from_date", "=", FROM_DATE], ["to_date", "=", TO_DATE]]

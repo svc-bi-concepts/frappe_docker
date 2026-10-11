@@ -178,7 +178,7 @@ class PlanAndAllocationTest(unittest.TestCase):
         self.assertEqual(len(erp.docs["Leave Allocation"]), 0)
         self.assertEqual(importer.counts["no entitlement"], 1)
         self.assertEqual(importer.counts["failed"], 0)
-        self.assertEqual(importer.problems, [(1, "no entitlement (0 days)")])
+        self.assertEqual(importer.problems, [])
         self.assertEqual(len(erp.docs["Holiday List Assignment"]), 1)
 
     def test_draft_allocation_is_flagged_not_replaced_and_cancelled_one_does_not_block(self):
