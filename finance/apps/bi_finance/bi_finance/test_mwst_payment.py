@@ -185,5 +185,47 @@ class DeductionsTest(unittest.TestCase):
         self.assertIn("U00", str(caught.exception))
 
 
+def jline(voucher, account, amount, key="manual-1", day=datetime.date(2026, 8, 10)):
+    """A GL row of a Journal Entry as fetch_journal_lines() gives it: the net of debit less credit, keyed by bexio_id."""
+    return {"voucher": voucher, "posting_date": day, "account": account, "amount": D(amount), "key": key}
+
+
+# invented manual entry with sales tax: 1000.00 of revenue at 8.1 %, 81.00 of tax booked by hand on 2200
+MANUAL_SALE = [jline("J1", "3200", "-1000.00"), jline("J1", "2200", "-81.00"), jline("J1", "1020", "1081.00")]
+
+
+class JournalBasesTest(unittest.TestCase):
+    """A manual Journal Entry with sales tax: its base is Entgelt (Ziffer 200) as well as the rate row's base."""
+
+    def fields(self, sales=(), lines=()):
+        totals = mp.plan(list(sales), [], TEMPLATE_IDS)
+        mp.journal_totals(list(lines), totals)
+        return mp.declaration_fields(totals)
+
+    def test_a_journal_only_quarter_fills_with_200_equal_to_its_base(self):
+        fields = self.fields(lines=MANUAL_SALE)
+        self.assertEqual(fields["total_revenue"], D("1000.00"))
+        self.assertEqual(fields["normal_amount_2024"], D("1000.00"))
+        self.assertEqual(fields["normal_tax_2024"], D("81.00"))
+        self.assertEqual(fields["payable_tax"], D("81.00"))
+
+    def test_a_mixed_quarter_adds_the_journal_base_to_the_sales_base(self):
+        fields = self.fields(sales=[sale(datetime.date(2026, 8, 3), row("UN81 8.1% Normalsatz", "81.00"), net="1000.00")],
+                             lines=MANUAL_SALE)
+        self.assertEqual(fields["total_revenue"], D("2000.00"))
+        self.assertEqual(fields["normal_amount_2024"], D("2000.00"))
+        self.assertEqual(fields["normal_tax_2024"], D("162.00"))
+
+    def test_a_difference_names_the_rate_bases_that_make_it(self):
+        # invented: a sales document 5.00 over its taxed row, beside the manual entry: the refusal names both sources
+        with self.assertRaises(ValueError) as caught:
+            self.fields(sales=[sale(datetime.date(2026, 8, 3), row("UN81 8.1% Normalsatz", "81.00"), net="1005.00")],
+                        lines=MANUAL_SALE)
+        message = str(caught.exception)
+        self.assertIn("5.00", message)
+        self.assertIn("UN81 1000.00", message)
+        self.assertIn("journal entries 1000.00", message)
+
+
 if __name__ == "__main__":
     unittest.main()

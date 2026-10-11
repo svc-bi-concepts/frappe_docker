@@ -497,6 +497,15 @@ class JournalEntries(unittest.TestCase):
         t = booked([("E2", "2026-08-03", [("1170", "2.50", "0"), ("6570", "0", "0"), ("1020", "0", "2.50")])])
         self.assertEqual(t.tax_of("400"), D("2.50"))
 
+    def test_manual_sales_tax_base_is_entgelt_in_200_as_in_its_rate_row(self):
+        # invented: 1000.00 of revenue at 8.1 % booked by hand; the report's 200 takes the base as the rate row does
+        t = booked([("M1", "2026-08-03", [("3200", "0", "1000.00"), ("2200", "0", "81.00"), ("1020", "1081.00", "0")])],
+                   {"M1": "manual-1"})
+        self.assertEqual(t.base_of("200"), D("1000.00"))
+        self.assertEqual(t.base_of("303"), D("1000.00"))
+        self.assertEqual(t.tax_of("303"), D("81.00"))
+        self.assertEqual(mr.form_totals(t)[0]["200"][0], D("1000.00"))
+
     def test_move_from_2202_to_2200_is_not_counted_twice(self):
         t = booked([("M1", "2026-08-03", [("2202", "81.00", "0"), ("2200", "0", "81.00")])])
         self.assertEqual(t.tax_of("303"), D("0"))

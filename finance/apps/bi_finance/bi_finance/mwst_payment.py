@@ -14,6 +14,8 @@ from decimal import ROUND_HALF_UP, Decimal
 CENT = Decimal("0.01")
 ZERO = Decimal("0")
 HALF_CENT = Decimal("0.005")
+# The source of a rate base that a manual Journal Entry books (Totals.base_sources); a sales template's is its code.
+JOURNAL = "journal entries"
 
 # The Bezugsteuer owed moved from Ziffer 382 to 383 with the rate change; the form has one row each.
 # Date of the change as the form gives it (the bexio validity column is not used for this).
@@ -114,6 +116,7 @@ class Totals:
         self.undeducted_net = {}    # a zero-rate sales code with no deduction row: code -> the net it keeps out of them
         self.unsplit_net = {}       # a document whose zero-rate codes would share its net between rows: codes -> net
         self.base_drift = ZERO      # the most the derived bases of the sales rows can be off their documents' nets
+        self.base_sources = {}      # the bases of the rate rows by source: a sales template's code, or JOURNAL
 
     def add(self, row, base, tax):
         acc = self.rows.setdefault(row, [ZERO, ZERO])
@@ -122,8 +125,16 @@ class Totals:
         acc[1] += tax
 
     def add_journal(self, row, base, tax):
-        """A tax from a Journal Entry: in the row like a document's, and kept apart for the CSV's entries line."""
+        """A tax from a Journal Entry: in the row like a document's, and kept apart for the CSV's entries line. Its base
+        is Entgelt too, so Ziffer 200 takes it as the report does: the rate rows and 200 must agree for the 299 check."""
         self.add(row, base, tax)
+        self._keep_journal(row, base, tax)
+        if base is not None:
+            self.add("200", base, ZERO)
+            self._keep_journal("200", base, ZERO)
+            self.base_sources[JOURNAL] = self.base_sources.get(JOURNAL, ZERO) + base
+
+    def _keep_journal(self, row, base, tax):
         acc = self.journal.setdefault(row, [ZERO, ZERO])
         if base is not None:
             acc[0] += base
@@ -207,6 +218,7 @@ def _tax_row(totals, row, templates, posting_date, purchase):
     if base is not None and not purchase:
         # the tax is rounded to the rappen: half a rappen of tax is 0.5 / rate of base, and the base is rounded again
         totals.base_drift += HALF_CENT * 100 / Decimal(str(rate)) + HALF_CENT
+        totals.base_sources[code] = totals.base_sources.get(code, ZERO) + base
     return code, form_row, base
 
 def form_totals(totals):
@@ -334,7 +346,8 @@ def journal_totals(lines, totals):
     listed in the CSV's skipped moves; a 2203 row on a voucher of no other known kind stays uncounted too and is
     listed, until its origin is named. A voucher of no known kind (or with no key) is listed in the CSV, so a new
     voucher kind shows. The rate comes from the one non-VAT row of the voucher with the same sign (the net); a
-    sales tax without it, or at a rate not in the form, is counted apart in rate_unknown."""
+    sales tax without it, or at a rate not in the form, is counted apart in rate_unknown. The base of a counted sales tax
+    is Entgelt too: it goes into Ziffer 200 with its rate row (add_journal), so 200 less the deductions equals the rate bases."""
     vouchers = {}
     for line in lines:
         if line["account"] is not None:
@@ -465,6 +478,10 @@ def declaration_fields(totals):
                  for code, net in sorted(totals.undeducted_net.items())]
         named += ["the net of {:.2f} cannot be split between {}".format(net, " and ".join(codes))
                   for codes, net in sorted(totals.unsplit_net.items())]
+        if abs(difference) > tolerance and totals.base_sources:
+            # the bases the rate rows hold, by template and by journal entries: where a difference can come from
+            named.append("the rate bases come from " + ", ".join(
+                "{} {:.2f}".format(source, base) for source, base in sorted(totals.base_sources.items())))
         raise ValueError(
             "Ziffer 200 less the deductions ({}) differs from the rate bases ({}) by {},"
             " and the rounding allows {}{}".format(
