@@ -19,6 +19,8 @@
 {% set daddr = frappe.get_doc("Address", doc.customer_address) if doc.customer_address else none %}
 {% set iban = sales_invoice_iban(doc) %}
 {% set reference = sales_invoice_reference(doc) %}
+{# the slip's labels in the invoice's language (SIX: one language per slip), German when it is none of the four #}
+{% set L = slip_labels(doc) %}
 {# SIX: currency and amount in two parts, thousands separated by a space, no currency symbol #}
 {% set amount = "{:,.2f}".format(doc.rounded_total or doc.grand_total).replace(",", " ") %}
 
@@ -130,33 +132,33 @@
   <div class="vline"></div>
 
   <div class="receipt">
-    <h2>Empfangsschein</h2>
-    <div class="bi-label">Konto / Zahlbar an</div>
+    <h2>{{ L.receipt }}</h2>
+    <div class="bi-label">{{ L.account }}</div>
     <div>{{ iban }}<br>{{ cname }}<br>{{ caddr and caddr.address_line1 or "" }}<br>{{ caddr and ((caddr.pincode or "") ~ " " ~ (caddr.city or "")) or "" }}</div>
-    <div class="bi-label">Referenz</div>
+    <div class="bi-label">{{ L.reference }}</div>
     <div>{{ reference }}</div>
-    <div class="bi-label">Zahlbar durch</div>
+    <div class="bi-label">{{ L.payable_by }}</div>
     <div>{{ doc.customer_name or "" }}<br>{{ daddr and daddr.address_line1 or "" }}<br>{{ daddr and ((daddr.pincode or "") ~ " " ~ (daddr.city or "")) or "" }}</div>
-    <div class="bi-label">Währung / Betrag</div>
+    <div class="bi-label">{{ L.currency }} / {{ L.amount }}</div>
     <div class="amount">{{ doc.currency }} {{ amount }}</div>
-    <div class="bi-label" style="position: absolute; top: 84mm;">Annahmestelle</div>
+    <div class="bi-label" style="position: absolute; top: 84mm;">{{ L.acceptance }}</div>
   </div>
 
   <div class="payment">
-    <h2>Zahlteil</h2>
-    <div class="qr"><img src="{{ sales_invoice_qr_uri(doc) }}" alt="QR-Code"></div>
+    <h2>{{ L.payment_part }}</h2>
+    <div class="qr"><img src="{{ sales_invoice_qr_uri(doc) }}" alt="QR"></div>
     <div style="position: absolute; top: 0; left: 52mm; width: 86mm;">
-      <div class="bi-label">Konto / Zahlbar an</div>
+      <div class="bi-label">{{ L.account }}</div>
       <div>{{ iban }}<br>{{ cname }}<br>{{ caddr and caddr.address_line1 or "" }}<br>{{ caddr and ((caddr.pincode or "") ~ " " ~ (caddr.city or "")) or "" }}</div>
-      <div class="bi-label">Referenz</div>
+      <div class="bi-label">{{ L.reference }}</div>
       <div>{{ reference }}</div>
-      <div class="bi-label">Zahlbar durch</div>
+      <div class="bi-label">{{ L.payable_by }}</div>
       <div>{{ doc.customer_name or "" }}<br>{{ daddr and daddr.address_line1 or "" }}<br>{{ daddr and ((daddr.pincode or "") ~ " " ~ (daddr.city or "")) or "" }}</div>
-      <div class="bi-label">Zusätzliche Informationen</div>
-      <div>Rechnung {{ doc.name }}</div>
+      <div class="bi-label">{{ L.additional }}</div>
+      <div>{{ L.invoice }} {{ doc.name }}</div>
     </div>
     <div style="position: absolute; top: 72mm; left: 52mm; width: 86mm;">
-      <div class="bi-label">Währung / Betrag</div>
+      <div class="bi-label">{{ L.currency }} / {{ L.amount }}</div>
       <div class="amount">{{ doc.currency }} {{ amount }}</div>
     </div>
   </div>

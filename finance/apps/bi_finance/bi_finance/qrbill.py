@@ -213,6 +213,41 @@ def sales_invoice_iban(inv):
     return iban_text(_company_account(inv.company, inv.currency).iban)
 
 
+# The slip's labels in the four languages of SIX (Style Guide QR-bill, the multilingual headings
+# and field names table). A slip is in one language, labels and text alike, so the invoice's
+# language picks the set; "invoice" is the word of the additional information line ("Rechnung 1").
+SLIP_LABELS = {
+    "de": {
+        "payment_part": "Zahlteil", "receipt": "Empfangsschein", "account": "Konto / Zahlbar an",
+        "reference": "Referenz", "additional": "Zusätzliche Informationen", "payable_by": "Zahlbar durch",
+        "currency": "Währung", "amount": "Betrag", "acceptance": "Annahmestelle", "invoice": "Rechnung",
+    },
+    "fr": {
+        "payment_part": "Section paiement", "receipt": "Récépissé", "account": "Compte / Payable à",
+        "reference": "Référence", "additional": "Informations supplémentaires", "payable_by": "Payable par",
+        "currency": "Monnaie", "amount": "Montant", "acceptance": "Point de dépôt", "invoice": "Facture",
+    },
+    "it": {
+        "payment_part": "Sezione pagamento", "receipt": "Ricevuta", "account": "Conto / Pagabile da",
+        "reference": "Riferimento", "additional": "Informazioni supplementari", "payable_by": "Pagabile da",
+        "currency": "Valuta", "amount": "Importo", "acceptance": "Punto di accettazione", "invoice": "Fattura",
+    },
+    "en": {
+        "payment_part": "Payment part", "receipt": "Receipt", "account": "Account / Payable to",
+        "reference": "Reference", "additional": "Additional information", "payable_by": "Payable by",
+        "currency": "Currency", "amount": "Amount", "acceptance": "Acceptance point", "invoice": "Invoice",
+    },
+}
+
+
+def slip_labels(inv):
+    """The slip's labels for the Sales Invoice's language: the first two letters, so fr-CH is French.
+
+    Anything else, or no language, is German.
+    """
+    return SLIP_LABELS.get((inv.language or "")[:2].lower(), SLIP_LABELS["de"])
+
+
 def sales_invoice_reference(inv):
     """The SCOR creditor reference of a Sales Invoice, in groups of four for the slip."""
     return reference_text(creditor_reference(inv.name))
@@ -230,7 +265,7 @@ def sales_invoice_payload(inv):
         debtor[1] = _clip(inv.customer_name or debtor[1], NAME_MAX)
     return payload(
         account.iban, creditor, inv.rounded_total or inv.grand_total, inv.currency, debtor,
-        f"Rechnung {inv.name}", reference=creditor_reference(inv.name),
+        f"{slip_labels(inv)['invoice']} {inv.name}", reference=creditor_reference(inv.name),
     )
 
 

@@ -81,7 +81,7 @@ second has a gap of that height before the slip. That is one more wkhtmltopdf ru
 print, also for the HTML preview. The gap assumes A4 with the format's 15 mm top and
 1 mm bottom margins. The margins are set in the format's CSS: wkhtmltopdf reads
 `.print-format` margins, not the format's margin fields. The IBAN prints in groups of
-four; the QR text does not. The QR payload carries a SCOR creditor reference (ISO 11649)
+four; the QR text does not. The slip's labels follow the Sales Invoice's language (SIX: one language per slip): de, fr, it or en by its first two letters, German for any other or an empty one (`qrbill.py` `SLIP_LABELS`, `slip_labels`), and the invoice number line of the slip and of the QR text follows them too. The QR payload carries a SCOR creditor reference (ISO 11649)
 built from the invoice number (`ACC-SINV-2026-00001` → `RF38ACCSINV202600001`): the slip
 prints it as "Referenz" in groups of four in the receipt and the payment part, and the
 bank's camt.054 carries it back, so a payment can be matched to its invoice (planned,

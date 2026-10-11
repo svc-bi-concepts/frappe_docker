@@ -145,7 +145,7 @@ class SlipReference(unittest.TestCase):
             currency="CHF", grand_total=1234.5, rounded_total=0, rounding_adjustment=None,
             posting_date="2026-10-11", due_date="2026-10-25", address_display="Musterweg 7",
             items=[], taxes=[], terms=None, get_formatted=lambda field, *a, **kw: "1.00",
-            flags=SimpleNamespace(bi_qr_measure=False),
+            flags=SimpleNamespace(bi_qr_measure=False), language="",
         )
 
     def render(self, inv):
@@ -162,6 +162,7 @@ class SlipReference(unittest.TestCase):
             sales_invoice_reference=lambda inv: qrbill.reference_text(qrbill.creditor_reference(inv.name)),
             sales_invoice_qr_uri=lambda inv: "data:image/svg+xml;base64,",
             sales_invoice_slip_spacer=lambda inv: 0.8,
+            slip_labels=qrbill.slip_labels,
         )
 
     def test_the_slip_shows_the_grouped_reference_in_both_parts(self):
@@ -172,6 +173,81 @@ class SlipReference(unittest.TestCase):
         html = self.render(self.invoice())
         self.assertEqual(html.count("Referenz"), 2)  # receipt and payment part
         self.assertEqual(html.count("RF38 ACCS INV2 0260 0001"), 2)
+
+    def test_french_invoice_gets_a_french_slip(self):
+        try:
+            import jinja2  # noqa: F401
+        except ImportError as e:
+            self.skipTest(str(e))
+        inv = self.invoice()
+        inv.language = "fr"
+        # the slip starts at its id; the invoice body above it keeps its own text
+        slip = self.render(inv).split('id="bi-qr"', 1)[1]
+        for label in ("Récépissé", "Section paiement", "Compte / Payable à", "Référence", "Payable par",
+                      "Informations supplémentaires", "Monnaie / Montant", "Point de dépôt", "Facture ACC-SINV-2026-00001"):
+            with self.subTest(label=label):
+                self.assertIn(label, slip)
+        for german in ("Empfangsschein", "Zahlteil", "Konto", "Referenz", "Zahlbar", "Zusätzliche",
+                       "Währung", "Betrag", "Annahmestelle", "Rechnung", "QR-Code"):
+            with self.subTest(german=german):
+                self.assertNotIn(german, slip)
+
+
+class SlipLabels(unittest.TestCase):
+    # Invented invoices, only the language field matters here.
+    def pick(self, language):
+        from types import SimpleNamespace
+
+        return qrbill.slip_labels(SimpleNamespace(language=language))
+
+    def test_each_language_picks_its_set(self):
+        for code, receipt in (("de", "Empfangsschein"), ("fr", "Récépissé"), ("it", "Ricevuta"), ("en", "Receipt")):
+            with self.subTest(language=code):
+                self.assertIs(self.pick(code), qrbill.SLIP_LABELS[code])
+                self.assertEqual(self.pick(code)["receipt"], receipt)
+
+    def test_region_and_case_pick_the_language(self):
+        self.assertIs(self.pick("fr-CH"), qrbill.SLIP_LABELS["fr"])
+        self.assertIs(self.pick("EN-gb"), qrbill.SLIP_LABELS["en"])
+        self.assertIs(self.pick("it_IT"), qrbill.SLIP_LABELS["it"])
+
+    def test_unknown_and_empty_fall_back_to_german(self):
+        for language in ("es", "", None):
+            with self.subTest(language=language):
+                self.assertIs(self.pick(language), qrbill.SLIP_LABELS["de"])
+
+    def test_every_language_has_every_label(self):
+        keys = set(qrbill.SLIP_LABELS["de"])
+        for code, labels in qrbill.SLIP_LABELS.items():
+            with self.subTest(language=code):
+                self.assertEqual(set(labels), keys)
+                self.assertTrue(all(labels.values()))
+
+
+class PayloadLanguage(unittest.TestCase):
+    # The message of the QR text is the slip's "Zusätzliche Informationen" line, in the same language.
+    def message(self, language):
+        from types import SimpleNamespace
+        from unittest import mock
+
+        inv = SimpleNamespace(
+            name="ACC-SINV-2026-00001", company="Beispiel AG", company_address="ADDR-C", customer_address="ADDR-D",
+            customer_name="Muster GmbH", currency="CHF", grand_total=1234.5, rounded_total=0, language=language,
+        )
+        addresses = {"ADDR-C": CREDITOR, "ADDR-D": DEBTOR}
+        with mock.patch.object(qrbill, "frappe") as fake, \
+                mock.patch.object(qrbill, "_company_account", return_value=SimpleNamespace(iban=IBAN)), \
+                mock.patch.object(qrbill, "_address", side_effect=lambda name: list(addresses[name])):
+            fake.db.get_value.return_value = "Beispiel AG"
+            return qrbill.sales_invoice_payload(inv).split("\r\n")[29]
+
+    def test_message_follows_the_invoice_language(self):
+        self.assertEqual(self.message("fr"), "Facture ACC-SINV-2026-00001")
+        self.assertEqual(self.message("it"), "Fattura ACC-SINV-2026-00001")
+        self.assertEqual(self.message("en-GB"), "Invoice ACC-SINV-2026-00001")
+
+    def test_message_is_german_by_default(self):
+        self.assertEqual(self.message(""), "Rechnung ACC-SINV-2026-00001")
 
 
 class QrCode(unittest.TestCase):

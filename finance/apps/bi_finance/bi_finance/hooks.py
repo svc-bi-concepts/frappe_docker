@@ -29,6 +29,7 @@ jinja = {
         "bi_finance.qrbill.sales_invoice_qr_uri",
         "bi_finance.qrbill.sales_invoice_iban",
         "bi_finance.qrbill.sales_invoice_reference",
+        "bi_finance.qrbill.slip_labels",
         "bi_finance.qrbill.sales_invoice_slip_spacer",
     ]
 }
