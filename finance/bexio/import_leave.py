@@ -3,7 +3,7 @@
 Dry run is the default. Apply is intended for the later go-live bead only;
 this child bead must prove its behavior on a copy, not write to the live site.
 Payroll data stays private and output contains counts and record positions only.
-HRMS 16.50 resolves an Employee's holidays through a submitted Holiday List
+HRMS v16 resolves an Employee's holidays through a submitted Holiday List
 Assignment, so one is upserted per Active Employee; an Employee with a 0-day
 entitlement gets no allocation (HRMS refuses 0) and is counted, not failed.
 
@@ -159,7 +159,7 @@ class LeaveImporter:
         })
 
     def run_holiday_assignment(self, entry):
-        """Upsert one Holiday List Assignment per plan employee; HRMS 16.50 payroll
+        """Upsert one Holiday List Assignment per plan employee; HRMS v16 payroll
         resolves holidays through submitted assignments only, never Employee.holiday_list."""
         employee = entry["employee"]
         doc = {
@@ -199,7 +199,7 @@ class LeaveImporter:
         for entry in plan:
             employee = entry["employee"]
             self.run_holiday_assignment(entry)
-            # HRMS 16.50 ignores this field for payroll (the Holiday List Assignment above is
+            # HRMS v16 ignores this field for payroll (the Holiday List Assignment above is
             # the source); the field still exists on the Employee form, so it is kept filled.
             employee_patch = {"holiday_list": holiday_list_name or HOLIDAY_LIST}
             if differs(employee, employee_patch):

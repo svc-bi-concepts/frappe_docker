@@ -247,7 +247,7 @@ slot that ledgerdemain gives (`erpnext-setup.md`).
    Employee's code is picked from the QST Tariff Code list of its canton (erp-wvbn), and the loader makes those codes.
 4c. **Leave and holiday setup** (`finance/bexio/import_leave.py`): the 2026 canton-wide SZ public holidays
    from the Kanton Schwyz list, Ferien, the 2026 Leave Period and one submitted allocation per Active Employee.
-   HRMS 16.50 resolves an Employee's holidays through a submitted Holiday List Assignment, no longer through
+   HRMS v16 resolves an Employee's holidays through a submitted Holiday List Assignment, no longer through
    `Employee.holiday_list`, so the importer upserts one assignment per Active Employee (applicable_for Employee,
    the 2026 list, from 1 January) next to the still-existing field and keeps the Company default. An entitlement
    of 0 days gets no allocation (HRMS refuses 0); the run counts it as `no entitlement` (no failure) for Benchi to
