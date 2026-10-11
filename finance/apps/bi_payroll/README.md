@@ -101,9 +101,10 @@ migrate on any site.
   Quellensteuer Employee row") until the structure has it. The manual step, for a structure in use only: make the
   structure again with every row of `swiss_rates.py` (STRUCTURE_EARNINGS, STRUCTURE_DEDUCTIONS, the Quellensteuer
   Employee last, and STRUCTURE_EMPLOYER_CONTRIBUTIONS in the `employer_contributions` table), each row with its
-  component's formula (`structure_rows` does this), submit it, cancel the old one,
-  and move the employees' assignments to the new one. A Duplicate in Desk is not enough: it copies the old rows, and
-  HRMS keeps a row without its formula at 0. Employees with no tariff code are not affected.
+  component's formula (`structure_rows` does this), and submit it. Then cancel each employee's assignment on the old
+  structure, make the same assignment on the new one and submit it, and cancel the old structure last: HRMS refuses
+  to cancel a structure that still has submitted assignments (LinkExistsError). A Duplicate in Desk is not enough: it
+  copies the old rows, and HRMS keeps a row without its formula at 0. Employees with no tariff code are not affected.
 - Formulas: a structure row computes only with its formula stored (HRMS resets a row's formula on save to the value it
   had before validate). `ensure_structure` copies each component's formula onto its rows. A structure made before that
   change has empty formulas and computes 0 for every component; the live structure (erp-2s3c) was one of them.

@@ -49,13 +49,23 @@ def dob_for_age(end, age):
     return date(end.year - age, end.month, end.day)
 
 
+def evaluate(abbr, ctx):
+    return eval(COMPONENTS[abbr]["formula"], {"__builtins__": {}}, dict(SLIP_FUNCTIONS, **ctx))
+
+
 def run(abbr, end=date(2026, 10, 31), dob=date(1986, 3, 1), insured=0, rates=None, **slip):
     # the slip's fields, the copied rates and the assignment, then the component's own formula
     ctx = dict(rates or RATES, swiss_bvg_insured_salary=insured, end_date=end, date_of_birth=dob, **slip)
     # BVG Age comes before the BVG components in the structure, so it is in the context by its abbreviation
     if "BVGALTER" not in ctx:
         ctx["BVGALTER"] = run("BVGALTER", end=end, dob=dob) if abbr != "BVGALTER" else 0
-    return eval(COMPONENTS[abbr]["formula"], {"__builtins__": {}}, dict(SLIP_FUNCTIONS, **ctx))
+    return evaluate(abbr, ctx)
+
+
+def run_employer_pass(abbr, end=date(2026, 10, 31), dob=date(1986, 3, 1), insured=0, **slip):
+    # HRMS rebuilds the slip's data at the start of each pass: a statistical row (BVGALTER) is not in the employer pass
+    ctx = dict(RATES, swiss_bvg_insured_salary=insured, end_date=end, date_of_birth=dob, **slip)
+    return evaluate(abbr, ctx)
 
 
 class Alv(unittest.TestCase):
@@ -99,6 +109,18 @@ class Bvg(unittest.TestCase):
                                (60000 - 26460) / 12 * 7 / 100)
         # the employee share is not moved by the employer rate
         self.assertAlmostEqual(run("PK", insured=60000, rates=rates), (60000 - 26460) / 12 * 2 / 100)
+
+    def test_the_employer_share_has_its_age_without_the_bvg_age_row(self):
+        # erp-hzdn: the employer pass has no BVGALTER, so PK_AG works the age out of the dates itself. The rates
+        # here are equal, so the employer share must equal the employee's own PK in its pass (BVGALTER present)
+        end = date(2026, 10, 31)
+        expected = {24: 0, 25: 1, 34: 1, 35: 2, 44: 2, 45: 3, 54: 3, 55: 4, 64: 4, 65: 0}
+        for age, rate in expected.items():
+            with self.subTest(age=age):
+                dob = dob_for_age(end, age)
+                got = run_employer_pass("PK_AG", end=end, dob=dob, insured=60000)
+                self.assertAlmostEqual(got, (60000 - RATES["swiss_bvg_coordination"]) / 12 * rate / 100)
+                self.assertAlmostEqual(got, run("PK", end=end, dob=dob, insured=60000))
 
     def test_the_age_is_completed_years_at_the_period_end(self):
         # born 15 June 1990: 35 on 14 June 2026, 36 on 15 June 2026
@@ -263,6 +285,18 @@ class EmployerShares(unittest.TestCase):
                 self.assertEqual(c["type"], "Employer Contribution")
                 self.assertEqual(c["statistical_component"], 0)
                 self.assertEqual(c["do_not_include_in_total"], 1)
+
+    def test_no_employer_share_reads_a_statistical_row(self):
+        # erp-hzdn: HRMS's employer pass has no statistical row in the context (BVGALTER is 0 there, so PK_AG dropped
+        # out of every slip). An employer formula names only the slip's fields, rates and its own inline values.
+        statistical = {c["salary_component_abbr"] for c in COMPONENTS.values() if c["statistical_component"]}
+        self.assertTrue(statistical)  # not vacuous: the guard only means something while a statistical row exists
+        for c in COMPONENTS.values():
+            if c["type"] != "Employer Contribution" or not c["formula"]:
+                continue
+            names = {n.id for n in ast.walk(ast.parse(c["formula"], mode="eval")) if isinstance(n, ast.Name)}
+            with self.subTest(abbr=c["salary_component_abbr"]):
+                self.assertEqual(names & statistical, set())
 
 
 if __name__ == "__main__":

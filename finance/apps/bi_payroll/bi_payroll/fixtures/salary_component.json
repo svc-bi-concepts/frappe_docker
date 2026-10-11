@@ -238,7 +238,7 @@
   "salary_component_abbr": "PK_AG",
   "type": "Employer Contribution",
   "amount_based_on_formula": 1,
-  "formula": "max(0, swiss_bvg_insured_salary - swiss_bvg_coordination) / 12 * (swiss_bvg_ag_25 if BVGALTER < 35 else swiss_bvg_ag_35 if BVGALTER < 45 else swiss_bvg_ag_45 if BVGALTER < 55 else swiss_bvg_ag_55) / 100 if swiss_bvg_insured_salary >= swiss_bvg_threshold and 25 <= BVGALTER < 65 else 0",
+  "formula": "max(0, swiss_bvg_insured_salary - swiss_bvg_coordination) / 12 * (swiss_bvg_ag_25 if (getdate(end_date).year - getdate(date_of_birth).year - ((getdate(end_date).month, getdate(end_date).day) < (getdate(date_of_birth).month, getdate(date_of_birth).day))) < 35 else swiss_bvg_ag_35 if (getdate(end_date).year - getdate(date_of_birth).year - ((getdate(end_date).month, getdate(end_date).day) < (getdate(date_of_birth).month, getdate(date_of_birth).day))) < 45 else swiss_bvg_ag_45 if (getdate(end_date).year - getdate(date_of_birth).year - ((getdate(end_date).month, getdate(end_date).day) < (getdate(date_of_birth).month, getdate(date_of_birth).day))) < 55 else swiss_bvg_ag_55) / 100 if swiss_bvg_insured_salary >= swiss_bvg_threshold and 25 <= (getdate(end_date).year - getdate(date_of_birth).year - ((getdate(end_date).month, getdate(end_date).day) < (getdate(date_of_birth).month, getdate(date_of_birth).day))) < 65 else 0",
   "statistical_component": 0,
   "do_not_include_in_total": 1,
   "depends_on_payment_days": 0,
