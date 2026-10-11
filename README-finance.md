@@ -91,7 +91,9 @@ roles Accounts User, Sales User, Purchase User and Stock User.
 
 `.yardr/check` is the merge gate for this depot. It runs
 `docker compose -f pwd.yml -f finance-local.yml config -q`, so the two compose
-files must parse together. Upstream's pre-commit lint runs only if `pre-commit`
-is installed.
+files must parse together. It disables Python bytecode and uses a fresh cache
+directory because Python keys cached bytecode by source mtime and size; reviewers
+probing mutations no longer need to purge the user cache manually. Upstream's
+pre-commit lint runs only if `pre-commit` is installed.
 
 Not covered here: backups and upgrades. Those come in later beads.
