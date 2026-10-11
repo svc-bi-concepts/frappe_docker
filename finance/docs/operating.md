@@ -99,3 +99,83 @@ paragraphs of `finance/docs/erpnext-setup.md` and `finance/docs/hrms.md`.
 **The rules (D1/D5):** from 1.1.2027 nothing is booked in bexio; it stays read-only for Benchi and ERPNext
 leads. bexio stays readable until its last filings are done from it — the 2026 Q4 MWST declaration and the
 Lohnausweis 2026 — then the bexio account is cancelled and its API token revoked (Benchi).
+
+**The rule (D4, 2026-10-11):** patch releases of the pinned minors monthly at night by agents, backup before, checks
+after; a minor or major move is a decision bead first.
+
+## Monthly update (D4)
+
+The pins: `FRAPPE_TAG` in `finance/scripts/build-image.sh`; the `branch` of erpnext and hrms in
+`finance/apps.json` and `finance/apps-copy.json`; erpnextswiss on branch `v16` with the commit in `apps.json`. The
+record of what runs is the Apps row in `finance/docs/erpnext-setup.md`. The first slot is the night of 1 to 2
+November 2026.
+
+Who: a builder prepares the bump (steps 2 to 4, in a bead); the yardmaster runs the live steps (5 to 11). The auto
+mode denies a builder's docker writes. Notes give counts and totals only, never a figure from the books.
+
+1. **Slot.** First week of the month, after 01:00 Europe/Zurich, with no ERPNext session writing. Check it, and
+   the disk (a build needs 20G free; under that, stop with outcome question):
+
+       yardr session list --running
+       df -h /System/Volumes/Data
+
+2. **What is new.** Read only, one line per app, nothing written:
+
+       sh finance/scripts/update-check.sh --minor
+
+   `update`: go on with step 3 for that app. `current`: nothing for that app this month. `minor: ask
+   ledgerdemain`: a minor move, not this procedure; it is a decision bead. erpnextswiss: a newer commit on v16 is
+   only reported; moving its pin is ledgerdemain's call, after its patches are checked against the new commit
+   (`finance/docs/erpnextswiss-patches.md`). If no app says `update`, the month ends here.
+3. **Bump** (builder). `FRAPPE_TAG` in `build-image.sh` and the erpnext and hrms `branch` in both app lists go to the
+   newest patch tag `v16.<minor>.<patch>`. The image tag is `v16.<minor>.<patch>-swiss-bi<N>`, N one above the live
+   one in `finance-local.yml`.
+4. **Pin tests** (builder). Then commit; the note carries the `test:` line.
+
+       sh .yardr/check
+
+5. **Build** (yardmaster, on the capped builder; never the default builder on the mini):
+
+       finance/scripts/build-image.sh live v16.<minor>.<patch>-swiss-bi<N>
+
+6. **Backup** (yardmaster, before the switch, no other session writing). Note the BACKUP_ID, the timestamp prefix of
+   the new set in `sites/frontend/private/backups`:
+
+       docker exec frappe-finance-backend-1 bench --site frontend backup --with-files
+
+7. **Before** (yardmaster, before the switch). Save under `private/`, never in the repo or a note:
+   - counts: `python3 finance/bexio/delta_counts.py > private/d4-counts-before.txt`
+   - trial balance: ERPNext's standard Trial Balance report in the Desk, for the same period, per account, saved as
+     `private/d4-trial-balance-before.csv`.
+8. **Switch** (yardmaster):
+
+       finance/scripts/switch-image.sh v16.<minor>.<patch>-swiss-bi<N>
+
+   It sets the tag in `finance-local.yml`, brings the stack up, restarts `frontend` and `websocket`, and waits for
+   ping 200. On 200 it removes the previous image and the new image's `-base` layer. On no ping it rolls back by
+   itself and keeps the previous image. It does not migrate: step 9 does.
+9. **Migrate** (yardmaster; the bi_finance `after_migrate` hook runs with it):
+
+       docker compose -p frappe-finance exec -T backend bench --site frontend migrate
+
+10. **Restart and ping** (yardmaster). The ping must print 200:
+
+        docker compose -p frappe-finance restart frontend websocket
+        curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/api/method/ping
+
+11. **Checks** (yardmaster). Every one must hold:
+    - trial balance: the Trial Balance report for the same period equals `private/d4-trial-balance-before.csv` per account;
+    - counts: `python3 finance/bexio/delta_counts.py > private/d4-counts-after.txt` equals the before file per doctype;
+    - QR: the bi_finance QR print format is the default, and the erpnextswiss QR formats show as disabled (Desk, Print Format);
+    - erpnextswiss patches: the build applied them (`apply-patches.sh` stops the build on a patch that does not
+      apply); by hand as `finance/docs/erpnextswiss-patches.md` says;
+    - the Treasury and Payroll workspaces open in the Desk.
+
+    Then delete the `private/d4-*` files that served these checks; the totals go in the note.
+12. **Rollback.**
+    - A ping that fails in step 8: `switch-image.sh` rolls back by itself to the previous tag, which it kept. Ping
+      again; the stack is back on the old tag.
+    - A check that fails after a 200 ping: stop and mail ledgerdemain. Do not roll back by hand: step 8 already
+      removed the previous image, so going back means building the old tag again, and a restore from the step 6
+      backup needs the same ERPNext version and has not been tested (`finance/docs/archiving.md`). Only a person
+      decides which way.
