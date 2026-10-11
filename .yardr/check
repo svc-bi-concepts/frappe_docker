@@ -6,6 +6,12 @@ set -e
 # The finance stack's compose files (live and the HRMS copy) must parse together.
 docker compose -f pwd.yml -f finance-local.yml config -q
 docker compose -f pwd.yml -f finance-copy.yml config -q
+# The copy stack is started on demand: no service in it restarts by itself after a reboot.
+docker compose -f pwd.yml -f finance-copy.yml config --format json | python3 -c "
+import json, sys
+s = json.load(sys.stdin)['services']
+assert all(v.get('restart') != 'unless-stopped' for v in s.values()), [n for n, v in s.items() if v.get('restart') == 'unless-stopped']
+"
 # The long-running services come back after a VM restart (restart: unless-stopped); the one-shot ones do not.
 docker compose -f pwd.yml -f finance-local.yml config --format json | python3 -c "
 import json, sys
@@ -26,7 +32,8 @@ assert all(s[n].get('restart') != 'unless-stopped' for n in ['configurator', 'cr
 (cd finance/sharepoint && python3 -m unittest discover -s . -p "test_*.py")
 # The image app lists (live without hrms, copy with it) and build-image.sh's modes; no docker.
 # switch-image.sh's decisions (which tag runs, which images go at rest) with stub docker and curl.
-(cd finance/scripts && python3 -m unittest test_build_image test_switch_image)
+# The copy stack's guards (live project and missing image refused) with stub docker, and its compose file's restarts and ports.
+(cd finance/scripts && python3 -m unittest test_build_image test_switch_image test_copy_stack)
 # Upstream's own lint, when pre-commit is installed (optional for now).
 if command -v pre-commit >/dev/null; then
   pre-commit run --all-files

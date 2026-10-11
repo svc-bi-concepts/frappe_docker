@@ -4,7 +4,7 @@ Decision document for running Swiss payroll in ERPNext v16 (ERPNext `v16.50.0`),
 the way `swiss.md` decides the Swiss accounting. Benchi decided on 2026-10-10: full
 HRMS in ERPNext, with the payroll history from bexio included. This document says how,
 and what is still open. HRMS is in `finance/apps.json` (live) and `finance/apps-copy.json` (the copy
-site, see [Copy site](#copy-site)). Payroll runs on the live site too (Decision 2026-10-10, below):
+site, see [Copy stack for the HR train](#copy-stack-for-the-hr-train)). Payroll runs on the live site too (Decision 2026-10-10, below):
 the live stack runs the HRMS image named in `finance-local.yml` (bi11), with `hrms` and `bi_payroll`
 installed on `frontend`.
 
@@ -42,7 +42,7 @@ Benchi decided on 2026-10-10:
 **Decision 2026-10-10: payroll runs on the live site.** The live ERPNext is a test environment,
 so HRMS `v16.50.0` and `bi_payroll` are installed on the live site `frontend`, not only the copy.
 This replaces the rule "live = base + bi_finance, HRMS on the copy only". `apps.json` lists hrms,
-and `build-image.sh` builds `bi_payroll` on top of `bi_finance`. The copy site stays as a sandbox.
+and `build-image.sh` builds `bi_payroll` on top of `bi_finance`. The copy stack stays as a sandbox.
 
 **Open:** certified ELM transmitter: inquiry later.
 
@@ -294,81 +294,75 @@ Unentgeltliche Beförderung and Kantinenverpflegung (checkboxes on the form) are
 The employer shares (AHV, ALV, BVG, UVG, KTG, FAK) are not on the form's lines and stay in the
 hand-over view only.
 
-## Copy site
+## Copy stack for the HR train
 
-A copy of the live books with HRMS installed, to try the payroll work on before live. It is
-a separate compose project, `frappe-finance-copy`, with its own volumes and network. It
-listens on `127.0.0.1:8081` and on the tailnet only, on port 8462
-(`https://<machine>.<tailnet>.ts.net:8462`), never Funnel. It holds the full books, so it
-stays on this machine and the tailnet. The live stack is not touched by any of this.
+A copy of the live books on a train image, so the HR train's children can prove their work
+before it reaches live. The live site runs live's code and proves nothing for the train, so the
+copy is a separate stack: the compose project `frappe-finance-copy`, with its own volumes and
+network, started on demand. It holds the full books, so it stays on this Mac mini. It listens on
+`127.0.0.1:8815` only. Nothing is on the tailnet until the yardmaster serves it with
+`tailscale serve` on the next free finance tailnet port (from 8462) when Benchi needs to look.
+The live stack is not touched by any of this.
 
-- Image: `frappe-finance-custom:v16.50.0-swiss-hrms1` (ERPNext and HRMS 16.50.0, erpnextswiss
-  1.34.1, bi_finance), built on `v16.50.0-swiss-hrms1-base`.
-  Live runs the image in `finance-local.yml`. bi_payroll is a layer on top of bi_finance on both images.
-- Build: from `finance/apps-copy.json`, under a tag that does not exist yet (the script
-  refuses an existing one, so the live tags cannot be overwritten):
+- Script: `finance/scripts/copy-stack.sh` runs every step below. It refuses the live project
+  (`frappe-finance`) and an image that is not built, and before `up` it checks that the VM has
+  2.5 GiB free (MemAvailable).
+- Image: `frappe-finance-custom:<tag>`, the train image, built from `finance/apps-copy.json`
+  with `finance/scripts/build-image.sh copy <tag>` (see `swiss.md`, Build). `finance-copy.yml`
+  takes the tag from `COPY_IMAGE`, which the script sets. The live image is built from
+  `finance/apps.json`: `finance/scripts/build-image.sh live <tag>`.
+- Every `up` and `refresh` takes a fresh backup of the live site (it only reads the books),
+  stages its four files in `private/copy-restore/` (mode 700), copies them into the copy and
+  restores them. The restore brings the live site config and database back, so the safety
+  settings below are set after every restore. Do not turn them off.
+- Safety settings, after every restore: `pause_scheduler` 1 and `mute_emails` 1 (site config: no
+  scheduled jobs, no mail). `migrate` runs after the restore, because the train image may carry
+  patches the live site has not run. Wise Settings and PayPal Settings `sync_enabled` 0 (the
+  hourly bank syncs). Every Email Account has outgoing and incoming off. Every Webhook is
+  disabled. Website Settings `app_name` is "COPY - finance copy, not live", the navbar brand.
+  bexio has no sync setting in bi_finance (its data comes in by the importers only), so none is
+  switched off.
+- The copy's Administrator password is in `private/.erpnext-admin-copy` (mode 600). The script
+  makes it the first time. It is never in the repo, and `finance-copy.yml` holds no secrets.
+- The copy's frontend port is 8815, from the finance reserve. `integrations/PORTS.md` lists the
+  old copy's 8081 for the same purpose, and IT decides whether 8815 is added there.
 
-  ```sh
-  finance/scripts/build-image.sh copy <new-tag>
-  ```
+Run from the repository root, with the copy's image built:
 
-  The live image is built the same way, from `finance/apps.json` (with HRMS):
-  `finance/scripts/build-image.sh live <new-tag>`. See `swiss.md`, Build.
-- Safety settings on the copy's site, set after every restore, do not turn them off:
-  `pause_scheduler` 1 and `mute_emails` 1 (no scheduled jobs, no mail), no enabled Webhook,
-  no outgoing Email Account, `host_name` the copy's own URL, and the app name starts with
-  `COPY`, so it cannot be mistaken for live.
-- The copy's Administrator password is in `private/.erpnext-admin-copy` (mode 600), never in
-  the repo. The compose override `finance-copy.yml` holds no secrets.
-
-Every command below names the project `frappe-finance-copy` and the override file. Never
-`-p frappe-finance` here: that is the live stack.
-
-**Start**
+**Start** (a fresh live backup; the first start creates the site, which takes a few minutes)
 
 ```sh
-docker compose -p frappe-finance-copy -f pwd.yml -f finance-copy.yml up -d --scale scheduler=0
-/opt/homebrew/bin/tailscale serve --bg --https=8462 http://127.0.0.1:8081
+finance/scripts/copy-stack.sh up <tag>
 ```
 
-`--scale scheduler=0` keeps the scheduler off. The first start creates a new site named
-`frontend` (a few minutes). It is replaced by the restore below.
+**Refresh** (a fresh live backup replaces the copy's books; the copy must be up)
+
+```sh
+finance/scripts/copy-stack.sh refresh
+```
 
 **Stop** (keeps the volumes)
 
 ```sh
-/opt/homebrew/bin/tailscale serve --https=8462 off
-docker compose -p frappe-finance-copy -f pwd.yml -f finance-copy.yml down
+finance/scripts/copy-stack.sh down
 ```
 
-**Refresh from a new backup**
-
-1. A fresh backup of the live site. It only reads the books:
-   `docker exec frappe-finance-backend-1 bench --site frontend backup --with-files`.
-   Note the timestamp prefix of the four files it writes.
-2. Copy the four files (`*-database.sql.gz`, `*-site_config_backup.json`, `*-files.tar`,
-   `*-private-files.tar`) out of `frappe-finance-backend-1:/home/frappe/frappe-bench/sites/frontend/private/backups/`
-   with `docker cp` into `private/copy-restore/` (mode 700), then into the same folder in
-   `frappe-finance-copy-backend-1`.
-3. Restore into the copy, with the container paths:
-   `docker exec frappe-finance-copy-backend-1 bench --site frontend restore <database.sql.gz> --with-public-files <files.tar> --with-private-files <private-files.tar> --db-root-password admin --force`
-4. The restore replaces the copy's database with the live one, including the live password
-   hash. Check `bench --site frontend list-apps`: if `hrms` is missing, run
-   `bench --site frontend install-app hrms`, then `bench --site frontend migrate`. Then set the
-   safety settings again, and the copy's own password:
-   `bench --site frontend set-admin-password "$(cat private/.erpnext-admin-copy)"`.
-
-The `admin` database root password is the upstream default in `pwd.yml`, for the copy's own
-MariaDB, which only this stack reaches.
-
-**Remove** (deletes the copy's books on this machine)
+**Remove** (deletes the copy's books on this machine: its volumes, the staged backups in
+`private/copy-restore/` and the Administrator password file)
 
 ```sh
-/opt/homebrew/bin/tailscale serve --https=8462 off
-docker compose -p frappe-finance-copy -f pwd.yml -f finance-copy.yml down -v
+finance/scripts/copy-stack.sh remove
 ```
 
-Then delete `private/copy-restore/` and `private/.erpnext-admin-copy`.
+**Tailnet** (the yardmaster, only when Benchi needs to look; the port goes in `integrations/PORTS.md`)
+
+```sh
+/opt/homebrew/bin/tailscale serve --bg --https=<next free finance port> http://127.0.0.1:8815
+/opt/homebrew/bin/tailscale serve --https=<same port> off
+```
+
+Every compose command the script runs names the project `frappe-finance-copy` and the override
+file `finance-copy.yml`. Never `-p frappe-finance` here: that is the live stack.
 
 ## Sources
 

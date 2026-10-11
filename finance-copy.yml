@@ -1,24 +1,39 @@
-# Finance copy site: a separate stack for trying HRMS on a copy of the live books (finance/docs/hrms.md,
-# 'Copy site'). Run it only as its own compose project, never with -p frappe-finance:
-#   docker compose -p frappe-finance-copy -f pwd.yml -f finance-copy.yml up -d
-# It gets its own volumes and network, on 127.0.0.1:8081 only. The live stack keeps finance-local.yml.
+# Finance copy stack: a copy of the live books on a train image, for the HR train's tests (finance/docs/hrms.md,
+# 'Copy stack for the HR train'). Run it only through finance/scripts/copy-stack.sh, which sets the project name
+# and COPY_IMAGE. Never with -p frappe-finance: that is the live stack.
+#   docker compose -p frappe-finance-copy -f pwd.yml -f finance-copy.yml up -d --scale scheduler=0
+# It is started on demand, so no service restarts by itself (restart: "no" overrides pwd.yml's unless-stopped).
+# Its own volumes and network come from the project name. frontend listens on 127.0.0.1:8815 only, and nothing
+# is on the tailnet until the yardmaster serves it. The live stack keeps finance-local.yml.
 # No secrets here: the copy's admin password is set on the site and kept in private/.
 services:
   frontend:
-    image: frappe-finance-custom:v16.50.0-swiss-hrms1
+    image: ${COPY_IMAGE:-frappe-finance-custom:copy-not-set}
+    restart: "no"
     ports: !override
-      - "127.0.0.1:8081:8080"
+      - "127.0.0.1:8815:8080"
   backend:
-    image: frappe-finance-custom:v16.50.0-swiss-hrms1
+    image: ${COPY_IMAGE:-frappe-finance-custom:copy-not-set}
+    restart: "no"
   configurator:
-    image: frappe-finance-custom:v16.50.0-swiss-hrms1
+    image: ${COPY_IMAGE:-frappe-finance-custom:copy-not-set}
   create-site:
-    image: frappe-finance-custom:v16.50.0-swiss-hrms1
+    image: ${COPY_IMAGE:-frappe-finance-custom:copy-not-set}
   queue-long:
-    image: frappe-finance-custom:v16.50.0-swiss-hrms1
+    image: ${COPY_IMAGE:-frappe-finance-custom:copy-not-set}
+    restart: "no"
   queue-short:
-    image: frappe-finance-custom:v16.50.0-swiss-hrms1
+    image: ${COPY_IMAGE:-frappe-finance-custom:copy-not-set}
+    restart: "no"
   scheduler:
-    image: frappe-finance-custom:v16.50.0-swiss-hrms1
+    image: ${COPY_IMAGE:-frappe-finance-custom:copy-not-set}
+    restart: "no"
   websocket:
-    image: frappe-finance-custom:v16.50.0-swiss-hrms1
+    image: ${COPY_IMAGE:-frappe-finance-custom:copy-not-set}
+    restart: "no"
+  db:
+    restart: "no"
+  redis-queue:
+    restart: "no"
+  redis-cache:
+    restart: "no"
