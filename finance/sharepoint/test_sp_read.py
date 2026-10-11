@@ -337,5 +337,21 @@ class ErrorPathTest(Keys):
         opener.open.assert_not_called()
 
 
+class HardeningTest(unittest.TestCase):
+    """The file is blessed by hash, so what it runs with is pinned here: the shebang and the openssl path."""
+
+    def test_the_first_line_is_the_av_inject_shebang_with_isolated_python(self):
+        path = os.path.join(os.path.dirname(os.path.abspath(sp_read.__file__)), "sp_read.py")
+        with open(path) as f:
+            first = f.readline().rstrip("\n")
+        self.assertEqual(first, "#!/usr/local/bin/av inject +SP_CERT_KEY /usr/bin/python3 -I")
+
+    def test_the_signing_call_runs_openssl_by_absolute_path(self):
+        done = mock.Mock(returncode=0, stdout=b"sig")
+        with mock.patch.object(sp_read.subprocess, "run", return_value=done) as run:
+            self.assertEqual(sp_read.sign_rs256(b"data", "key"), b"sig")
+        self.assertEqual(run.call_args[0][0][0], "/usr/bin/openssl")
+
+
 if __name__ == "__main__":
     unittest.main()

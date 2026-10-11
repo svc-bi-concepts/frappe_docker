@@ -1,4 +1,4 @@
-#!/usr/local/bin/av inject +SP_CERT_KEY /usr/bin/python3
+#!/usr/local/bin/av inject +SP_CERT_KEY /usr/bin/python3 -I
 """Read-only SharePoint reader for the documents payroll needs.
 
 Talks to Microsoft Graph using a client-credentials token
@@ -12,8 +12,8 @@ private/graph-cert/sharepoint.json, which must be mode 600. The private key
 comes from the environment (SP_CERT_KEY, injected by Automic Vault). It reaches
 openssl through a pipe, so it is never written to disk, logged or put in an error.
 
-    av inject +SP_CERT_KEY /usr/bin/python3 finance/sharepoint/sp_read.py list Insurance
-    av inject +SP_CERT_KEY /usr/bin/python3 finance/sharepoint/sp_read.py fetch
+    ./sp_read.py list Insurance        (from finance/sharepoint; the shebang runs it under av inject)
+    finance/sharepoint/sp_read.py fetch
 
 Standard library only, plus the openssl binary, so it runs on the system Python.
 """
@@ -122,7 +122,7 @@ def sign_rs256(data, key_pem):
         os.close(w)
     try:
         proc = subprocess.run(
-            ["openssl", "dgst", "-sha256", "-sign", "/dev/fd/%d" % r],
+            ["/usr/bin/openssl", "dgst", "-sha256", "-sign", "/dev/fd/%d" % r],
             input=data, stdout=subprocess.PIPE, stderr=subprocess.PIPE, pass_fds=(r,))
     finally:
         os.close(r)
