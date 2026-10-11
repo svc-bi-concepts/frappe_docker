@@ -118,7 +118,7 @@ insurer's or the Ausgleichskasse's own sheet before a live run.
 | 13th salary | A Salary Component paid in December, or an accrual over the year (`accrual_component`) | Contract | None in the data (Question 5). No component until a contract says so | HRMS `salary_component` fields |
 | Lohnausweis (Form 11), per employee per year | erpnextswiss `Salary Certificate`: sums `Salary Slip` gross and net over the year, and the `Salary Detail` rows by component name (the names in its tables, e.g. Basic Salary, AHV/IV/EO Employee) into the form's fields. Fields are set in `Salary Certificate Settings` (dynamic configuration, step `lohnausweis`; see "Lohnausweis map" for why by name, not abbr). Its Nettolohn (Ziffer 11) and its component SQL are corrected by our patches (`finance/patches/erpnextswiss` 0002-0004) | ESTV Wegleitung for Form 11 applies from 1 Jan 2026 | Needs HRMS. The field layout is checked line by line against the 2026 Wegleitung in "Lohnausweis map"; lines 1, 11 and 15 follow the Wegleitung since erp-4yyn (the copy proof stays step 6) | [ESTV Wegleitung 2026](https://www.estv.admin.ch/dam/de/sd-web/afP1GDFr8gE3/dbst-form-lohna-wegleitung-2026-de.pdf); the PDF is read (Ziffer 1, 10.1, 11, 15), `private/payroll/forms/wegleitung-lohnausweis-2026.pdf` |
 | ELM / Swissdec transmission | Not in erpnextswiss `v16` (no ELM file in its tree), not in HRMS | ELM 4.0 switched off; ELM 5.0 required for the 2026 payroll year. Sources disagree on the 4.0 end date (30.06.2026 per BFS; end 2025 per one vendor). Transmission needs Swissdec-certified payroll software | **Gap.** See Questions and `elm.md` | [BFS](https://www.bfs.admin.ch/bfs/de/home/grundlagen/elm.html), [Swissdec](https://www.swissdec.ch/abschaltung-elm-4-0), [AXA](https://www.axa.ch/de/unternehmenskunden/melden-und-mutieren/melden/elektronische-lohnmeldung.html) |
-| Payslip layout | bi_payroll's `Lohnabrechnung` print format on Salary Slip (erp-h47v): Jinja template `lohnabrechnung.html`, German, generic (company and employee from the records at print time); the rows, bases and rates are prepared by `bi_payroll/payslip.py` (jinja method `payslip_data`) from the slip's own tables, with the employer shares in a separate block, year-to-date gross and net, and the masked AHV number and bank account. Installed and made the Salary Slip default by `swiss-setup.py` step `payslip`. erpnextswiss ships `kt_salary_slip.html`, a print for one of its own sample companies; used as a reference only | none | Done in the HR train; live install is a go-live step (no live write in a train child). PDF proof on the HRMS copy once the train image carries it | erpnextswiss `templates/print_formats/kt_salary_slip.html`; `finance/apps/bi_payroll/bi_payroll/lohnabrechnung.html` |
+| Payslip layout | bi_payroll's `Lohnabrechnung` print format on Salary Slip (erp-h47v): Jinja template `lohnabrechnung.html`, German, generic (company and employee from the records at print time); the rows, bases and rates are prepared by `bi_payroll/payslip.py` (jinja method `payslip_data`) from the slip's own tables, with the employer shares in a separate block, year-to-date gross and net, and the masked AHV number and bank account. Installed and made the Salary Slip default by `swiss-setup.py` step `payslip`. erpnextswiss ships `kt_salary_slip.html`, a print for one of its own sample companies; used as a reference only | none | Done in the HR train; installed live 2026-10-11 (erp-zg4p) and made the Salary Slip default. PDF proof on the HRMS copy (erp-rqxs); a payslip PDF printed on live itself is still open | erpnextswiss `templates/print_formats/kt_salary_slip.html`; `finance/apps/bi_payroll/bi_payroll/lohnabrechnung.html` |
 | Net salary payment (pain.001) | erpnextswiss `Payment Proposal` with `Payment Proposal Salary Slip` (the salary side of the payment run). The run in `payment-runs.md` leaves salaries out while the site has no HRMS | pain.001.001.09 as in `payment-runs.md` | Test on a copy after HRMS (erp-xpmr) | `payment-runs.md`; erpnextswiss `payment_proposal_salary_slip` |
 | Employee AHV number | erpnextswiss custom fields `social_security_number` and `old_social_security_number` on Employee | n/a | Present in `v16` (`custom/employee.json`) | erpnextswiss `v16` |
 
@@ -151,9 +151,11 @@ What HRMS v16.50.0 installs and what the `hr` setup step makes of it
   directly. `hr --check` prints the counts (enabled users with HR or payroll
   roles, employees with a user, Employee Onboarding documents) and, with
   `HR_USER` set, compares the wanted state, exit 1 on a difference.
-- **No live write in this bead** (train rule): the step and its check are proven
-  on the HRMS copy; the live run (`HR_USER=<user> sh finance/scripts/swiss-setup.sh hr`,
-  backup first, one writer, rerun 0) is listed for the go-live bead (erp-zg4p).
+- **No live write in this bead** (train rule): the step and its check were proven
+  on the HRMS copy; the live run is the go-live bead's and is done (erp-zg4p,
+  2026-10-11): `HR_USER` read from User (the one enabled human System User, never
+  written here), 1 role added, 2 Payroll Settings values changed, rerun 0, and
+  `HR_USER=<user> sh finance/scripts/swiss-setup.sh hr --check` exits 0.
 
 ## Migration from bexio
 
@@ -220,7 +222,12 @@ slot that ledgerdemain gives (`erpnext-setup.md`).
    bead after the train lands (erp-nqyb's done note): migrate with the fixtures; `swiss-setup.sh payroll_accounts`;
    remake the live "Swiss Monthly" structure with `employer_contributions` (a new version, new assignments for the
    Active employees from the existing ones, the old structure left unused). The accrual JE is proven on the copy
-   before go-live.
+   before go-live. **Live 2026-10-11 (erp-zg4p):** done, as one idempotent script
+   (`finance/scripts/swiss-structure-remake.sh`, commit 4c6057d): the default payroll payable set to 1091 first,
+   then "Swiss Monthly BI Concepts 2" submitted with the 2 earnings, 7 deductions and all 6 employer
+   contributions, the 3 assignments moved (same base, same insured salary; the payable filled by validate), the
+   old structure cancelled last. Read-backs green: 0 submitted assignment with a null payroll_payable_account,
+   and a Payroll Entry preview finds every Active employee.
 4. **Employee load from the bexio export.** Offline importer, the same shape as
    `import_master.py`, writing Employee fields including the AHV number and BI Payroll's
    employment level, weekly hours and stay permit fields. Mocked data in tests.
@@ -229,6 +236,8 @@ slot that ledgerdemain gives (`erpnext-setup.md`).
    `python3 finance/bexio/import_employees.py --dry-run` and `--apply`: 9 Employees on live
    (3 Active, 6 Left), rerun 0 new, nobody without a joining date (`private/payroll/needs-dates.txt`
    says 0). Counts only here; the importer prints counts and changed field names by row position.
+   The go-live rerun (erp-zg4p, 2026-10-11) filled the three payroll fields (employment level, weekly hours,
+   stay permit): 9 updated, 0 created, 0 failed, rerun 0.
 4b. **Payroll inputs from the paystubs** (erp-y4yf, `finance/bexio/import_assignments.py`). Derived from the
    parsed figures (`parse_paystubs.py`): one submitted Salary Structure Assignment per Active employee on
    the "Swiss Monthly" structure, base = the monthly salary (1001 up to 2025, 1000 from 2025) of the latest
@@ -251,6 +260,8 @@ slot that ledgerdemain gives (`erpnext-setup.md`).
    still awaited; the BVG bands stay calibrated from the paystubs. The QST
    Tariff rows are loaded by `bi_payroll.swiss_payroll.load_tariff` from the ESTV file before the codes resolve; the
    Employee's code is picked from the QST Tariff Code list of its canton (erp-wvbn), and the loader makes those codes.
+   Live (erp-zg4p, 2026-10-11): the assignments sit on the new structure (moved by the remake above); a rerun of
+   the importer plans nothing (3 already made, 0 settings to fill, 4 Employee fields unchanged).
 4c. **Leave and holiday setup** (`finance/bexio/import_leave.py`): the 2026 canton-wide SZ public holidays
    from the Kanton Schwyz list, Ferien, the 2026 Leave Period and one submitted allocation per Active Employee.
    HRMS v16 resolves an Employee's holidays through a submitted Holiday List Assignment, no longer through
@@ -261,6 +272,11 @@ slot that ledgerdemain gives (`erpnext-setup.md`).
    `leave-defaults.txt` list is for Benchi to check. Absence history stays out because bexio's export is empty.
    Dry run and repeatability are covered by invented-data tests. The train rule reserves all setup and live writes
    for the HR go-live bead; no live write in this child.
+   Live (erp-zg4p, 2026-10-11; the yardmaster ran the `--apply`, the builder's write was denied by the auto mode):
+   created 6, updated 4, failed 0, one Holiday List Assignment per Active Employee (3). The 2 default allocations
+   of `leave-defaults.txt` (Benchi's H3: 0 days for those 2) were cancelled afterwards, kept as cancelled for the
+   audit trail, so live holds 1 submitted allocation. A rerun plans those 2 defaults again: do not rerun until
+   erp-tn1a (an explicit 0 in an overrides list wins) has landed.
 5. **Payslip history as reference** (erp-2c3a, `finance/bexio/import_paystubs.py`). Replaces the
    earlier plan of one submitted Salary Slip per employee and month (Decision, ledgerdemain, 2026-10-10).
    No Salary Slips for the history: the export holds no figures per slip (bexio's paystub overview
@@ -349,8 +365,9 @@ Certificate gets the same net rule through our patches (`finance/patches/erpnext
 The step `lohnausweis` sets each table by the component's name (column 2, the fixture's name), not by abbr: the
 live-era standard component 'Basic' holds abbr B from before bi_payroll, so the fixture's 'Basic Salary' gets B_1 and
 an abbr lookup would find 'Basic', and line 1 would be 0. When a second component holds one of the fixtures' abbrs, the
-step prints `lohnausweis: abbr B is held by 'Basic', ...` and changes nothing else; which one keeps the abbr is a
-go-live question (erp-zg4p).
+step prints `lohnausweis: abbr B is held by 'Basic', ...` and changes nothing else. Run live 2026-10-11 (erp-zg4p);
+the abbr question it printed was decided: 'Basic' keeps B (the settings map by name, nothing reads abbr B) — left
+as is, cosmetic.
 
 Checked against ESTV, Wegleitung zum Ausfüllen des Lohnausweises 2026 (Formular 11, the 2027 edition
 when published): **yes** = the Wegleitung's text for the line was read and the source below fits it;
@@ -431,7 +448,8 @@ hand-over view only.
 
 Once per live site, after the go-live bead: `finance/scripts/swiss-setup.sh lohnausweis` (idempotent; it sets
 Salary Certificate Settings to the mapping above and warns if BI Concepts has no primary address). Its
-dynamic configuration is needed: the static mode has no table for line 12.
+dynamic configuration is needed: the static mode has no table for line 12. The first run is done (erp-zg4p,
+2026-10-11); reruns say in place.
 
 Each January, for the year that just closed (the first is 2027, the 2026 certificates are bexio's):
 
