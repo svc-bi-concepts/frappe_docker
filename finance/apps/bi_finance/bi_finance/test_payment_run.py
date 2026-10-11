@@ -17,6 +17,8 @@ import frappe
 import jinja2
 from erpnextswiss.erpnextswiss.doctype.payment_proposal import payment_proposal as swiss
 
+from frappe.utils import getdate
+
 from bi_finance import payment_run
 from bi_finance.payment_run import PaymentProposal, create_payment_proposal, iban_is_valid, paid_amount
 
@@ -34,7 +36,6 @@ def setUpModule():
 
 FAR_FUTURE = datetime.date(2099, 1, 1)
 LONG_AGO = datetime.date(2000, 1, 1)
-TODAY = datetime.date.today()
 APPS_ROOT = "/home/frappe/frappe-bench/apps/erpnextswiss"
 PAY_FROM = "1020 - UBS Kontokorrent - Test"
 COMPANY = "Test BI Concepts AG"
@@ -214,14 +215,16 @@ class ClaimPaymentEntries(unittest.TestCase):
 
 class SubmitOnDownload(unittest.TestCase):
     def test_drafts_are_submitted_dated_no_later_than_today(self):
+        """Today is frappe's date, as the clamp reads it: the host clock and frappe's zone (Asia/Kolkata without a site) disagree from 18:30 UTC, the 20:30 to 24:00 CEST flake."""
+        today = getdate()
         doc = proposal([invoice("PINV-1", "Lieferant Alpha AG", 1000.0)], date=FAR_FUTURE)
         entry = mock.MagicMock(posting_date=FAR_FUTURE)
         with mock.patch.object(PaymentProposal, "payment_entry_names", return_value=["ACC-PAY-1"]), \
                 mock.patch.object(frappe, "get_doc", return_value=entry):
             doc.submit_payment_entries()
         entry.submit.assert_called_once()
-        self.assertEqual(entry.posting_date, TODAY)
-        self.assertEqual(entry.reference_date, TODAY)
+        self.assertEqual(entry.posting_date, today)
+        self.assertEqual(entry.reference_date, today)
 
     def test_a_failed_file_check_submits_nothing(self):
         doc = proposal([invoice("PINV-1", "Lieferant Alpha AG", 1000.0)])
