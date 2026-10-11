@@ -117,8 +117,23 @@ class Totals:
         self.unsplit_net = {}       # a document whose zero-rate codes would share its net between rows: codes -> net
         self.base_drift = ZERO      # the most the derived bases of the sales rows can be off their documents' nets
         self.base_sources = {}      # the bases of the rate rows by source: a sales template's code, or JOURNAL
+        # The vouchers each row came from, for the reports' drill-down ('MWST pro Quartal'): (row, doctype, name)
+        # -> [base, tax, first posting date]. Only recorded while a source is set; plan() and journal_totals()
+        # set one per document and clear it. Callers that add without a source (mwst_bexio) track nothing.
+        self.vouchers = {}
+        self._source = None
+
+    def _note(self, row, base, tax):
+        if self._source is None:
+            return
+        doctype, name, day = self._source
+        acc = self.vouchers.setdefault((row, doctype, name), [ZERO, ZERO, day])
+        if base is not None:
+            acc[0] += base
+        acc[1] += tax
 
     def add(self, row, base, tax):
+        self._note(row, base, tax)
         acc = self.rows.setdefault(row, [ZERO, ZERO])
         if base is not None:
             acc[0] += base
@@ -156,6 +171,7 @@ def plan(sales, purchases, templates, totals=None):
     of its zero-rate code (_zero_rate_net): the per-row net is not in the data, only the document's."""
     totals = totals or Totals()
     for doc in sales:
+        totals._source = _source_of(doc)
         net = Decimal(str(doc["base_net_total"]))
         totals.add("200", net, ZERO)
         rated_base, zero_codes = ZERO, []
@@ -167,8 +183,10 @@ def plan(sales, purchases, templates, totals=None):
                 zero_codes.append((code, form_row))
         _zero_rate_net(totals, net - rated_base, zero_codes)
     for doc in purchases:
+        totals._source = _source_of(doc)
         for row in doc["taxes"]:
             _tax_row(totals, row, templates, doc["posting_date"], purchase=True)
+    totals._source = None
     return totals
 
 def _zero_rate_net(totals, remainder, codes_rows):
@@ -190,6 +208,13 @@ def _zero_rate_net(totals, remainder, codes_rows):
             totals.undeducted_net[codes[0]] = totals.undeducted_net.get(codes[0], ZERO) + remainder
             return
     totals.unsplit_net[codes] = totals.unsplit_net.get(codes, ZERO) + remainder
+
+def _source_of(doc):
+    """(doctype, name, posting date) of a payment-basis document, for the drill-down; None without a name,
+    so callers whose documents carry no ERPNext voucher (mwst_bexio) track nothing."""
+    if doc.get("payment"):
+        return "Payment Entry", doc["payment"], doc["posting_date"]
+    return None
 
 def _tax_row(totals, row, templates, posting_date, purchase):
     """Add one tax row of a document to the totals. Returns (code, form row, base): the code and the form row of
@@ -267,6 +292,8 @@ def payment_documents(payments, invoices):
                 "posting_date": pay["posting_date"],
                 "base_net_total": share_of(inv["base_net_total"], share),
                 "taxes": taxes,
+                # the paying voucher, for the drill-down's totals.vouchers; None when the caller has no name
+                "payment": pay.get("name"),
             }
             (sales if ref["reference_doctype"] == "Sales Invoice" else purchases).append(doc)
     return sales, purchases, unallocated
@@ -329,6 +356,7 @@ def _manual_group_rate(sales_tax, key, vouchers):
 def journal_totals(lines, totals):
     """Journal Entries' VAT rows into the Ziffern, by posting date: the same on both bases (a bank or card entry is
     dated by the payment). fetch_journal_lines() gives the lines, each with its voucher's bexio_id key.
+    Each voucher is the drill-down source of the rows it brings while it is processed.
 
     Per voucher, by the accounts it touches. The settlement stays out (a voucher with 2201, whose 1171 row is the
     period's moves and direct lines in one). The rest decides by key, not by account pair: a voucher keyed
@@ -353,6 +381,7 @@ def journal_totals(lines, totals):
         if line["account"] is not None:
             vouchers.setdefault(line["voucher"], []).append(line)
     for rows in vouchers.values():
+        totals._source = ("Journal Entry", rows[0]["voucher"], rows[0]["posting_date"])
         net = {}
         for line in rows:
             net[line["account"]] = net.get(line["account"], ZERO) + line["amount"]
@@ -390,6 +419,16 @@ def journal_totals(lines, totals):
                 totals.rate_unknown += sales_tax
             else:
                 totals.add_journal(row, base, sales_tax)
+    totals._source = None
+
+
+def voucher_rows(totals, ziffer):
+    """The vouchers a Ziffer's figure came from: (doctype, name, first posting date, base, tax), the oldest first.
+    A Payment Entry paying invoices of several Ziffern stands under each with its shares; its rows are summed."""
+    out = [[doctype, name, acc[2], acc[0], acc[1]]
+           for (row, doctype, name), acc in totals.vouchers.items() if row == ziffer]
+    out.sort(key=lambda voucher: (voucher[2], voucher[1]))
+    return out
 
 
 # The VAT Declaration's fields by Ziffer: erpnextswiss's create_transfer_file maps them this way, the XML reads them.

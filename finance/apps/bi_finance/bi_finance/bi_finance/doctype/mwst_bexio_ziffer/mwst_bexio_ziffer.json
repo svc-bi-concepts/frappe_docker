@@ -1,0 +1,92 @@
+{
+ "actions": [],
+ "autoname": "format:MWST-BEXIO-{quarter}-{ziffer}",
+ "creation": "2026-10-11 00:25:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "quarter",
+  "ziffer",
+  "base",
+  "tax",
+  "source"
+ ],
+ "fields": [
+  {
+   "description": "The quarter of the declaration, as 2026Q3. bexio declares up to 2026Q3.",
+   "fieldname": "quarter",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Quartal",
+   "reqd": 1
+  },
+  {
+   "description": "The ESTV Ziffer of the form (200, 302, 400, ...).",
+   "fieldname": "ziffer",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Ziffer",
+   "reqd": 1
+  },
+  {
+   "description": "The Entgelt of the Ziffer in the quarter, as bexio declared it (CHF).",
+   "fieldname": "base",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Entgelt"
+  },
+  {
+   "description": "The Steuer of the Ziffer in the quarter, as bexio declared it (CHF).",
+   "fieldname": "tax",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Steuer"
+  },
+  {
+   "default": "bexio export 2026-10-10",
+   "description": "Where the row came from: the export the loader read.",
+   "fieldname": "source",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Quelle"
+  }
+ ],
+ "links": [],
+ "modified": "2026-10-11 00:25:00.000000",
+ "modified_by": "Administrator",
+ "module": "BI Finance",
+ "name": "MWST bexio Ziffer",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "print": 0,
+   "read": 1,
+   "report": 1,
+   "role": "Accounts Manager",
+   "share": 0,
+   "write": 1
+  },
+  {
+   "create": 0,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "print": 0,
+   "read": 1,
+   "report": 1,
+   "role": "Accounts User",
+   "share": 0,
+   "write": 0
+  }
+ ],
+ "read_only": 0,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

@@ -98,3 +98,18 @@ Invoice prints, with the QR code drawn on our own server (no external host, see
 - Synced JSON (the module folder): migrate skips a file whose `modified` the site already has, so a change without a new stamp never ships.
   Change a synced JSON, bump its `modified` to now (UTC, `2026-10-10 10:35:00.000000`), then update its `sha` and `modified` in
   `bi_finance/synced_manifest.json`. `python3 -m unittest bi_finance.test_layout` fails until it does and prints the new sha and stamp.
+- `bi_finance/mwst_quarterly.py`: the "MWST pro Quartal" report's pure half: the form rows (Ziffer, label, whether the
+  row shows the Entgelt or the Steuer), a year's quarters, the bexio join per quarter and Ziffer with the difference
+  (blank where bexio has no row), and the drill-down of one Ziffer. Pure Python.
+- `bi_finance/bi_finance/report/mwst_pro_quartal/`: the Script Report "MWST pro Quartal" (module BI Finance, roles
+  Accounts Manager and Accounts User). Per quarter of a filter year (or one quarter) the payment-basis figures of
+  `mwst_payment.py`, fetched the way the VAT Declaration's fill does (`vat_declaration._payment_totals`); columns ERPNext,
+  bexio, difference; the message names the basis. The view "Belege" lists one Ziffer's vouchers (Payment Entries with
+  their shares, Journal Entries); a click on a Ziffern row opens it. Shortcut on the Treasury workspace.
+- `bi_finance/bi_finance/doctype/mwst_bexio_ziffer/`: the doctype "MWST bexio Ziffer", one row per quarter and ESTV
+  Ziffer as bexio declared it (Entgelt, Steuer, Quelle). The name is MWST-BEXIO-<quarter>-<ziffer>, so the pair is
+  unique. Loaded once from the host: `finance/bexio/load_mwst_bexio.py` upserts the private CSV of `mwst_bexio.py`
+  through the API (dry run counts by default, `--write` is the one live write), idempotent, stdout shows counts only.
+- `bi_finance/test_mwst_quarterly.py`: offline tests of the rows, the join and the drill-down, invented figures;
+  `python3 -m unittest bi_finance.test_mwst_quarterly` from this directory. `finance/bexio/test_load_mwst_bexio.py`
+  tests the loader with a stub Erp.

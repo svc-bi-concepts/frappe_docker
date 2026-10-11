@@ -96,7 +96,7 @@ def _payment_totals(company, start, end):
             key = (ref["reference_doctype"], ref["reference_name"])
             if ref["reference_doctype"] in mwst_payment.INVOICE_DOCTYPES and key not in invoices:
                 invoices[key] = frappe.get_doc(*key).as_dict()
-        payments.append({"posting_date": p.posting_date, "references": references})
+        payments.append({"name": p.name, "posting_date": p.posting_date, "references": references})
 
     sales, purchases, _unallocated = mwst_payment.payment_documents(payments, invoices)
     totals = mwst_payment.plan(sales, purchases, templates)
