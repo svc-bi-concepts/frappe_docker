@@ -29,18 +29,18 @@ done
 
 if [ -n "$LIVE" ]; then
   PROJECT="frappe-finance"
-  FILES="pwd.yml finance-local.yml"
+  FILES="-f pwd.yml -f finance-local.yml"
 else
   # The copy is the default: a builder's dry run must never touch the live stack.
   PROJECT="frappe-finance-copy"
-  FILES="pwd.yml finance-copy.yml"
+  FILES="-f pwd.yml -f finance-copy.yml"
 fi
 
 RATES_JSON=$(python3 finance/scripts/load_swiss_rates.py --prepare "$CSV")
 export RATES_JSON
 
 if [ -n "$BACKUP" ]; then
-  docker compose -p "$PROJECT" -f $FILES exec -T backend \
+  docker compose -p "$PROJECT" $FILES exec -T backend \
     bench --site frontend backup --with-files
 fi
 
@@ -49,6 +49,6 @@ if [ -n "$APPLY" ]; then
   MODE=--apply
 fi
 
-docker compose -p "$PROJECT" -f $FILES exec -T backend \
+docker compose -p "$PROJECT" $FILES exec -T -e RATES_JSON backend \
   sh -c 'cd /home/frappe/frappe-bench/sites && exec ../env/bin/python - "$@"' sh "$MODE" \
   < finance/scripts/load_swiss_rates.py

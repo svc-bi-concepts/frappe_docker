@@ -107,7 +107,7 @@ insurer's or the Ausgleichskasse's own sheet before a live run.
 | ALV (incl. ceiling) | Component with `min(base, ceiling)`: 1.10% employee, 1.10% employer | 2.20% total up to CHF 148,200 a year (unchanged from 2025). No contribution above the ceiling: the 1% solidarity contribution (ALV 2) lapsed on 1 Jan 2023 | Config, no code. Nothing above the ceiling | same sources; [law.ch](https://law.ch/lawnews/2022/10/arbeitslosenversicherung-solidaritaetsprozent-entfaellt-per-01-01-2023/) |
 | BVG (coordinated salary) | Component on `salary - coordination deduction`, with an entry threshold, and the age-based rates of the Pensionskasse. The split and the rates are the fund's plan, not the law | Entry threshold CHF 22,680; coordination deduction CHF 26,460 | Config is possible (the formula reads the employee's date of birth). The plan rates are open | [convit](https://convit.ch/wissen/bvg-koordinationsabzug), [auditrium](https://www.auditrium.ch/blog/articles/koordinationsabzug-2026-wichtige-aenderungen-fuer-unternehmen) |
 | UVG / NBU | Components with the insurer's percentage on the insured salary. BU/UVG employer share, NBU employee share | Set by the insurer per policy | Config. Needs the policy sheets | none; insurer documents |
-| KTG | Component with the insurer's rate on the insured salary | Set by the insurer | Config. Needs the policy sheet | none |
+| KTG | Component with the insurer's rate on the insured salary | Set by the insurer | Config. The KTG contract is read (erp-1jh5, 2026-10-11): the employer rate is set and the employer pays the premium, so there is no employee share; waiting period and benefit stay in the private CSV; the contract names a second rate column the settings cannot carry | the contract in `private/payroll-insurance/` |
 | FAK | Employer component on the AHV wage, rate by canton and Ausgleichskasse | Set by the fund | Config. Needs the fund's rate | none |
 | Quellensteuer | Not covered. erpnextswiss's Salary Certificate settings have a field "12 Quellensteuerabzug" that maps a component; it does not compute the tax | Cantonal tariffs, per year | **Gap.** Build (bi_finance) or outsource. See Questions | `erpnextswiss` `salary_certificate_settings.json` |
 | 13th salary | A Salary Component paid in December, or an accrual over the year (`accrual_component`) | Contract | Config. Choose the method (Question) | HRMS `salary_component` fields |
@@ -193,8 +193,9 @@ slot that ledgerdemain gives (`erpnext-setup.md`).
    are placeholders, so the insured salary is worked back from the paystub's 5050 through them, to reproduce
    that amount in the BVG Employee formula. Without it the first payroll would deduct no BVG. Each calibrated
    value is listed in `private/payroll/bvg-calibration.txt`; both are replaced when the fund's plan sheet arrives.
-   **Stays manual:** the employer rates (AHV, ALV, UVG, KTG, FAK: the insurers' sheets), KTG (printed on no
-   paystub), and the BVG plan (the band rates in the settings, then the insured salaries with them). The QST
+   **Stays manual:** the employer rates (AHV, ALV, UVG, FAK: the insurers' sheets; KTG's employer rate is set from
+   the contract, erp-1jh5 — KTG is printed on no paystub), and the BVG plan (the band rates in the settings, then the
+   insured salaries with them). The QST
    Tariff rows are loaded by `bi_payroll.swiss_payroll.load_tariff` from the ESTV file before the codes resolve; the
    Employee's code is picked from the QST Tariff Code list of its canton (erp-wvbn), and the loader makes those codes.
 5. **Payslip history as reference** (erp-2c3a, `finance/bexio/import_paystubs.py`). Replaces the
