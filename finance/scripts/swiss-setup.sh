@@ -11,11 +11,15 @@
 #   HR_USER=<user> finance/scripts/swiss-setup.sh hr          # the HR roles on that user and the HR settings
 #   finance/scripts/swiss-setup.sh freeze 2025-12-31          # dry run: what a freeze would set
 #   finance/scripts/swiss-setup.sh freeze 2025-12-31 --apply  # sets accounts frozen till that date
+#   FINANCE_PROJECT=frappe-finance-copy finance/scripts/swiss-setup.sh hr  # run a step on the copy
 #
 # host sets the site's host_name from HOST_NAME (the URL the backend can reach, e.g.
 # https://<machine>.<tailnet>.ts.net:8448); it is skipped when HOST_NAME is empty.
 # expenses sets the Expense Approver role on the user in HR_USER (Benchi); skipped when empty.
 set -eu
+
+# Override for rehearsals on the copy; normal runs keep the live project.
+PROJECT="${FINANCE_PROJECT:-frappe-finance}"
 
 # Compose files live at the repo root, two levels up from this script.
 cd "$(dirname "$0")/../.."
@@ -32,7 +36,7 @@ export TAXES_JSON ACCOUNTS_JSON
 
 # bench's own Python loads the site; the script goes in on stdin so the
 # container needs no copy of it.
-docker compose -p frappe-finance -f pwd.yml -f finance-local.yml exec -T \
+docker compose -p "$PROJECT" -f pwd.yml -f finance-local.yml exec -T \
   -e BANKS="${BANKS:-}" -e HOST_NAME="${HOST_NAME:-}" -e HR_USER="${HR_USER:-}" \
   -e TAXES_JSON -e ACCOUNTS_JSON backend \
   sh -c 'cd /home/frappe/frappe-bench/sites && exec ../env/bin/python - "$@"' sh "$@" \

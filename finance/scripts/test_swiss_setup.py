@@ -5,7 +5,10 @@ Run with: python3 -m unittest discover -s finance/scripts -p 'test_*.py'
 
 import importlib.util
 import os
+import pathlib
+import subprocess
 import sys
+import tempfile
 import types
 import unittest
 from unittest import mock
@@ -25,6 +28,40 @@ _spec.loader.exec_module(swiss_setup)
 # directory goes on the path so the comparison test can import the list.
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(_path), "..", "apps", "bi_payroll")))
 from bi_payroll.test_payroll_accounts import BEXIO_ADDED  # noqa: E402
+
+
+class SwissSetupProjectTest(unittest.TestCase):
+    def run_wrapper(self, project=None):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = pathlib.Path(tmp)
+            docker = tmp_path / "docker"
+            docker.write_text(
+                "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$DOCKER_ARGS_FILE\"\ncat >/dev/null\n",
+                encoding="utf-8",
+            )
+            docker.chmod(0o755)
+            args_file = tmp_path / "docker-args"
+            env = {"PATH": f"{tmp}:{os.environ['PATH']}", "DOCKER_ARGS_FILE": str(args_file)}
+            patch = mock.patch.dict(os.environ, env, clear=False)
+            with patch:
+                if project is None:
+                    os.environ.pop("FINANCE_PROJECT", None)
+                else:
+                    os.environ["FINANCE_PROJECT"] = project
+                subprocess.run(
+                    ["sh", os.path.join(os.path.dirname(_path), "swiss-setup.sh"), "hr"],
+                    check=True,
+                    stdin=subprocess.DEVNULL,
+                )
+            return args_file.read_text(encoding="utf-8").splitlines()
+
+    def test_wrapper_defaults_to_live_project(self):
+        args = self.run_wrapper()
+        self.assertEqual(args[args.index("-p") + 1], "frappe-finance")
+
+    def test_wrapper_uses_configured_project(self):
+        args = self.run_wrapper("frappe-finance-copy")
+        self.assertEqual(args[args.index("-p") + 1], "frappe-finance-copy")
 
 
 class DeleteRevokesTest(unittest.TestCase):

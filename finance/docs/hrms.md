@@ -456,6 +456,7 @@ The live stack is not touched by any of this.
 - Script: `finance/scripts/copy-stack.sh` runs every step below. It refuses the live project
   (`frappe-finance`) and an image that is not built, and before `up` it checks that the VM has
   2.5 GiB free (MemAvailable).
+- A setup step can be rehearsed through the same script with `FINANCE_PROJECT=frappe-finance-copy`.
 - Image: `frappe-finance-custom:<tag>`, the train image, built from `finance/apps-copy.json`
   with `finance/scripts/build-image.sh copy <tag>` (see `swiss.md`, Build). `finance-copy.yml`
   takes the tag from `COPY_IMAGE`, which the script sets. The live image is built from
