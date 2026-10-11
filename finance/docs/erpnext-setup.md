@@ -420,6 +420,8 @@ docker run --rm -v "$PWD/finance/apps/bi_finance:/home/frappe/frappe-bench/apps/
 ```
 
 The Cash Position report has its own offline tests, in the same way (`bi_finance.test_cash_position`).
+The modules that import frappe (`test_payment_run`, `test_treasury`, `test_bank_list`, `test_bank_statement_upload`) run
+in the image as one gate step in `.yardr/check`.
 The whole package runs with one command, the one to run before a test line (0 errors, 0 failures):
 
 ```sh

@@ -184,13 +184,15 @@ class Cards(unittest.TestCase):
             self.assertEqual((chart["chart_type"], chart["report_name"]), ("Report", report))
         self.assertEqual(load("dashboard_chart", "cash_position_history", "cash_position_history.json")["use_report_chart"], 1)
 
-    def test_the_charts_draw_their_months_as_a_time_series_and_the_position_chart_has_filters(self):
-        # without timeseries the x axis reads "2.." for every month; without filters_json the widget stays on "Loading..."
-        history = load("dashboard_chart", "cash_position_history", "cash_position_history.json")
-        trend = load("dashboard_chart", "cash_conversion_trend", "cash_conversion_trend.json")
-        self.assertEqual(history["timeseries"], 1)
-        self.assertEqual(trend["timeseries"], 1)
-        self.assertEqual(json.loads(history["filters_json"]), {})
+    def test_the_charts_are_report_charts_without_timespan_dropdowns_and_with_empty_filters(self):
+        # use_report_chart draws the report's own 24-month chart; timeseries 0 keeps the dashboard widget from drawing
+        # timespan and interval dropdowns a Report chart ignores (their headers read "undefined"); without filters_json
+        # {} the widget throws at chart_widget.js:901
+        for name in ["cash_position_history", "cash_conversion_trend"]:
+            chart = load("dashboard_chart", name, name + ".json")
+            self.assertEqual(chart["use_report_chart"], 1, name)
+            self.assertEqual(chart["timeseries"], 0, name)
+            self.assertEqual(json.loads(chart["filters_json"]), {}, name)
 
 
 class RetiredCards(unittest.TestCase):

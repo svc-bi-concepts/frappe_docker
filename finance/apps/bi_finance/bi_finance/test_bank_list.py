@@ -66,9 +66,9 @@ class Fixtures(unittest.TestCase):
         self.assertEqual(sorted(f["dt"] for f in hooks.fixtures),
                          ["Custom Field", "List View Settings", "Property Setter"])
 
-    def test_the_custom_fields_are_booking_date_and_value_date_on_bank_transaction(self):
+    def test_the_custom_fields_are_booking_date_value_date_and_end_to_end_id_on_bank_transaction(self):
         fields = {f["fieldname"]: f for f in fixture("custom_field.json")}
-        self.assertEqual(sorted(fields), ["booking_date", "value_date"])
+        self.assertEqual(sorted(fields), ["booking_date", "end_to_end_id", "value_date"])
         field = fields["booking_date"]
         self.assertEqual(field["doctype"], "Custom Field")
         self.assertEqual(field["name"], "Bank Transaction-booking_date")
@@ -113,7 +113,8 @@ class Fixtures(unittest.TestCase):
     def test_the_standard_filters_are_bank_account_status_and_both_dates(self):
         standard = {name for name, f in bank_transaction_fields().items() if f.get("in_standard_filter")}
         self.assertTrue({"bank_account", "status"} <= standard)
-        self.assertEqual({f["fieldname"] for f in fixture("custom_field.json") if f["in_standard_filter"]}, {"booking_date", "value_date"})
+        # end_to_end_id is a lookup for Bank Matching, not a filter: it has no in_standard_filter key
+        self.assertEqual({f["fieldname"] for f in fixture("custom_field.json") if f.get("in_standard_filter")}, {"booking_date", "value_date"})
 
 
 class Feeds(unittest.TestCase):
@@ -134,7 +135,7 @@ class Feeds(unittest.TestCase):
     def test_a_camt_line_is_booked_on_its_booking_date(self):
         tx = {"rule": "new", "reference": "camt-ref-1", "booking_date": "2026-03-05", "value_date": "2026-03-04",
               "deposit": Decimal("0"), "withdrawal": Decimal("12.50"), "reference_number": "", "description": "Test",
-              "bank_party_name": "", "bank_party_iban": ""}
+              "bank_party_name": "", "bank_party_iban": "", "end_to_end_id": None}
         account = {"name": "UBS Test", "company": "Testfirma AG", "currency": "CHF"}
         with mock.patch.object(camt_import.frappe, "get_doc", return_value=mock.Mock()) as get_doc:
             self.assertEqual(camt_import._write(account, [tx]), 1)
@@ -147,7 +148,7 @@ class Feeds(unittest.TestCase):
     def test_a_camt_line_without_a_value_date_takes_its_booking_date(self):
         tx = {"rule": "new", "reference": "camt-ref-2", "booking_date": "2026-03-05", "value_date": None,
               "deposit": Decimal("0"), "withdrawal": Decimal("3.00"), "reference_number": "", "description": "Test",
-              "bank_party_name": "", "bank_party_iban": ""}
+              "bank_party_name": "", "bank_party_iban": "", "end_to_end_id": None}
         account = {"name": "UBS Test", "company": "Testfirma AG", "currency": "CHF"}
         with mock.patch.object(camt_import.frappe, "get_doc", return_value=mock.Mock()) as get_doc:
             self.assertEqual(camt_import._write(account, [tx]), 1)
@@ -191,11 +192,10 @@ class Treasury(unittest.TestCase):
         self.rows = {r["label"]: r for r in self.ws["shortcuts"]}
 
     def test_the_bank_shortcuts_open_the_desk_pages(self):
+        # the page's bank shortcuts after erp-9021 (one card per area): labels as the page reads them, col 3 with its count
         expected = {
-            "Bank Transactions": ("DocType", "Bank Transaction"),
-            "Unreconciled bank lines": ("URL", "/app/bank-transaction?status=Unreconciled"),
-            "Bank Reconciliation Tool": ("DocType", "Bank Reconciliation Tool"),
-            "Bank Statement Upload": ("DocType", "Bank Statement Upload"),
+            "Transactions": ("DocType", "Bank Transaction"),
+            "Unreconciled": ("URL", "/app/bank-transaction?status=Unreconciled"),
         }
         for label, (kind, target) in expected.items():
             row = self.rows[label]
