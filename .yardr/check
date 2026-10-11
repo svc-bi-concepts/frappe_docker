@@ -22,6 +22,8 @@ assert all(s[n].get('restart') != 'unless-stopped' for n in ['configurator', 'cr
 (cd finance/apps/bi_payroll && python3 -m unittest bi_payroll.test_swiss_payroll bi_payroll.test_quellensteuer bi_payroll.test_hand_over bi_payroll.test_structure_gap bi_payroll.test_qst_codes bi_payroll.test_layout)
 # The bexio importers' unit tests, stdlib only, about half a second.
 (cd finance/bexio && python3 -m unittest discover -s . -p "test_*.py")
+# The SharePoint reader's tests on a fake Graph (no network), with openssl for the signing check.
+(cd finance/sharepoint && python3 -m unittest discover -s . -p "test_*.py")
 # The image app lists (live without hrms, copy with it) and build-image.sh's modes; no docker.
 # switch-image.sh's decisions (which tag runs, which images go at rest) with stub docker and curl.
 (cd finance/scripts && python3 -m unittest test_build_image test_switch_image)
