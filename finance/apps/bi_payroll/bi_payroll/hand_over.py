@@ -100,7 +100,7 @@ def qst_rows(slips, period):
     rows = {}
     for slip in slips:
         # the code is part of the key: an employee whose code changed in the period has a row for each
-        key = (slip["swiss_qst_canton"], period_of(slip), slip["employee"], slip["swiss_qst_code"])
+        key = (slip["swiss_qst_canton"] or "", period_of(slip), slip["employee"], slip["swiss_qst_code"] or "")
         row = rows.get(key)
         if row is None:
             row = rows[key] = dict(

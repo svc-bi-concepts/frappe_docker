@@ -244,6 +244,13 @@ class QuellensteuerByQuarter(unittest.TestCase):
         rows = [r for r in qst_rows(slips, "quarter") if r["employee"]]
         self.assertEqual([(r["tariff_code"], r["amount"]) for r in rows], [("T1", 50), ("T9", 60)])
 
+    def test_a_slip_with_a_code_but_no_canton_is_listed_first_not_a_crash(self):
+        # an Employee with a code and no canton: the slip's canton is None, which must not break the sort
+        slips = QST_SLIPS + [qst_slip("Q-7", 2, 1000, 50, None, "T3", employee="EMP-TEST-004", employee_name="Test Four")]
+        rows = qst_rows(slips, "month")
+        self.assertEqual(rows[0]["canton"], "")
+        self.assertEqual(rows[0]["employee"], "EMP-TEST-004")
+
     def test_an_unknown_period_is_refused(self):
         with self.assertRaises(ValueError):
             qst_rows(QST_SLIPS, "year")

@@ -5,7 +5,6 @@ HRMS copy (Decision 2026-10-10). It requires `hrms`, so nothing here goes into `
 migrate on any site.
 
 - `bi_payroll/fixtures/salary_component.json`: the Salary Components with their formulas (AHV/IV/EO, ALV with
-- `bi_payroll/fixtures/salary_component.json`: the Salary Components with their formulas (AHV/IV/EO, ALV with
   the ceiling, BVG on a fixed yearly insured salary with the age bands, NBU, UVG, KTG, FAK), and Commission (an earning
   with no formula, paid by Additional Salary; see below). The abbreviations are the ones erpnextswiss's Salary
   Certificate reads (B, AHV, ALV, NBUV, PK). No 13th salary component: the data has none (see below).
@@ -31,7 +30,7 @@ migrate on any site.
     the slip's QST base (gross), the tax, the rate (tax over gross, the effective rate of the slips) and the canton's total.
     The slip keeps the canton and the tariff code it was computed with (`swiss_qst_canton`, `swiss_qst_code`, set in
     `withhold_qst`); only slips with a code are listed. The trustee fills the cantonal return from it and computes the
-    Bezugsprovision. A slip submitted before those fields existed has no canton and is not listed.
+    Bezugsprovision. A slip submitted before those fields existed has no canton and is not listed. A quarterly view ignores the Month filter (it would cut the quarter).
   - `Jahresdeklarationen`: the whole year whatever the month, one row per employee and a total. Wage bases: AHV/IV/EO
     (gross), ALV (to the ceiling the slip was computed with), UVG and NBU (to the maximum), BVG insured salary and its
     coordinated part (the assignment's yearly salary, a twelfth per insured month, age 25 to 64, from the threshold on),

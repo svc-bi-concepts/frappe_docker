@@ -46,13 +46,15 @@ def execute(filters=None):
     year = int(filters.year)
     view = filters.view or HAND_OVER
     annual = view == ANNUAL_VIEW
-    month = int(filters.month) if filters.month and not annual else None
+    period = (filters.period or "Month").lower()
+    # the whole year for the annual view, the whole quarter for the quarterly return: a month filter would cut them
+    whole = annual or (view == QST_VIEW and period == "quarter")
+    month = int(filters.month) if filters.month and not whole else None
     if month:
         start = datetime.date(year, month, 1)
         end = datetime.date(year, month, calendar.monthrange(year, month)[1])
     else:
         start, end = datetime.date(year, 1, 1), datetime.date(year, 12, 31)
-    period = (filters.period or "Month").lower()
     columns_of = {
         HAND_OVER: lambda: columns(bool(month)),
         LOHNAUSWEIS_VIEW: lambda: lohnausweis_columns(bool(month)),
@@ -77,7 +79,6 @@ def execute(filters=None):
     if not slips:
         return columns_of(), []
 
-    employees = list({s.employee for s in slips})
     employees = list({s.employee for s in slips})
     employees_query = frappe.get_all(
         "Employee", filters={"name": ["in", employees]}, fields=["name", "social_security_number", "date_of_birth"]
