@@ -43,7 +43,7 @@ after_migrate = ["bi_finance.setup.after_migrate"]
 # Booking Date, newest first) and the list's columns. The Sales Invoice Property Setter keeps 'BI Sales Invoice QR'
 # the default print format. Frappe applies the files in fixtures/ on migrate.
 fixtures = [
-    {"dt": "Custom Field", "filters": [["dt", "=", "Bank Transaction"], ["fieldname", "in", ["booking_date", "value_date"]]]},
+    {"dt": "Custom Field", "filters": [["dt", "=", "Bank Transaction"], ["fieldname", "in", ["booking_date", "value_date", "end_to_end_id"]]]},
     # one entry: export-fixtures writes one file per doctype, a second Property Setter entry would overwrite the first
     {"dt": "Property Setter", "filters": [["doc_type", "in", ["Bank Transaction", "Sales Invoice"]], ["property", "in", ["sort_field", "sort_order", "default_print_format"]]]},
     {"dt": "List View Settings", "filters": [["name", "=", "Bank Transaction"]]},

@@ -147,6 +147,7 @@ def _write(account, decisions, upload=None):
                 "value_date": tx["value_date"] or tx["booking_date"],
                 "deposit": float(tx["deposit"]), "withdrawal": float(tx["withdrawal"]),
                 "transaction_id": tx["reference"], "reference_number": tx["reference_number"] or "",
+                "end_to_end_id": tx["end_to_end_id"] or "",
                 "description": tx["description"] or "", "bank_party_name": tx["bank_party_name"] or "",
                 "bank_party_iban": tx["bank_party_iban"] or "",
             })

@@ -7,16 +7,16 @@ from this app's directory. Part of the depot's light gate (.yardr/check).
 
 import unittest
 
-from bi_finance import bank_match
+from bi_finance import bank_match, bank_rules
 from bi_finance.reference import creditor_reference
 
 
-def line(name, amount, description="", date="2026-09-10", reference=None, transaction_id=None, currency="CHF"):
+def line(name, amount, description="", date="2026-09-10", reference=None, transaction_id=None, currency="CHF", end_to_end=None):
     deposit = amount if amount > 0 else 0
     withdrawal = -amount if amount < 0 else 0
     return {
         "name": name, "date": date, "deposit": deposit, "withdrawal": withdrawal, "description": description,
-        "reference_number": reference, "transaction_id": transaction_id, "currency": currency,
+        "reference_number": reference, "transaction_id": transaction_id, "end_to_end_id": end_to_end, "currency": currency,
         "company": "Test Co", "bank_account": "Test Bank CHF",
     }
 
@@ -97,6 +97,25 @@ class PassesTest(unittest.TestCase):
         decisions = bank_match.decide([line("L1", -80.0, reference="PINV-0007")], [], [pay], [])
         self.assertEqual(decisions[0]["pass"], "payment_reference")
         self.assertEqual(decisions[0]["target"], ("Payment Entry", "PE-0001"))
+
+    def test_end_to_end_id_names_the_payment_before_the_reference_number(self):
+        by_end_to_end = payment("PE-0002", 80.0, "PAY-0042")
+        by_reference = payment("PE-0003", 80.0, "PINV-0008")
+        decisions = bank_match.decide(
+            [line("L1", -80.0, reference="PINV-0008", end_to_end="PAY-0042")], [], [by_reference, by_end_to_end], [])
+        self.assertEqual(decisions[0]["pass"], "payment_reference")
+        self.assertEqual(decisions[0]["target"], ("Payment Entry", "PE-0002"))
+
+    def test_reference_number_names_the_payment_when_no_end_to_end_id_fits(self):
+        pay = payment("PE-0004", 80.0, "PINV-0009")
+        decisions = bank_match.decide(
+            [line("L1", -80.0, reference="PINV-0009", end_to_end="PAY-9999")], [], [pay], [])
+        self.assertEqual(decisions[0]["target"], ("Payment Entry", "PE-0004"))
+
+    def test_end_to_end_id_of_a_payment_of_another_amount_does_not_match(self):
+        pay = payment("PE-0005", 79.0, "PAY-0043")
+        decisions = bank_match.decide([line("L1", -80.0, end_to_end="PAY-0043")], [], [pay], [])
+        self.assertEqual(decisions[0]["state"], "none")
 
     def test_party_within_the_anchor_is_matched_when_only_one_fits(self):
         inv = invoice("Sales Invoice", "ACC-SINV-2026-00003", 120.0, party_name="Beispiel Holding AG", date="2026-09-08")
@@ -202,6 +221,39 @@ class RuleTest(unittest.TestCase):
         fee = rule("fees", transaction_type="Deposit", checks=[("Contains", "beispiel")])
         decisions = bank_match.decide([line("L1", 50.0, "Beispiel", reference=ref)], [inv], [], [fee])
         self.assertEqual(decisions[0]["pass"], "reference")
+
+
+class SeedRulesTest(unittest.TestCase):
+    """bank_rules.RULES as the patch makes them, against the texts the feed and the bank write (invented amounts)."""
+
+    def rules(self):
+        return [
+            rule(spec["rule_name"], transaction_type=spec["transaction_type"], checks=[("Contains", text) for text in spec["texts"]])
+            for spec in bank_rules.RULES
+        ]
+
+    def taken_by(self, amount, description):
+        found = bank_match.rule_for(line("L1", amount, description), self.rules())[0]
+        return found["name"] if found else None
+
+    def test_a_payout_fee_row_takes_the_wise_fee_rule(self):
+        self.assertEqual(self.taken_by(-4.5, "Wise fee: Ihre Überweisung 42"), "Wise fees")
+
+    def test_bank_fees_take_the_ubs_fee_rule(self):
+        self.assertEqual(self.taken_by(-12.0, "Kontoführung Q3"), "UBS bank fees")
+
+    def test_interest_takes_the_rule_of_its_direction(self):
+        self.assertEqual(self.taken_by(2.1, "Zins Guthaben"), "UBS interest received")
+        self.assertEqual(self.taken_by(-7.4, "Zins Kredit"), "UBS interest paid")
+
+    def test_a_line_of_no_rule_stays(self):
+        self.assertIsNone(self.taken_by(-120.0, "Miete Testlokal"))
+
+    def test_each_rule_has_an_account_number_and_texts(self):
+        for spec in bank_rules.RULES:
+            with self.subTest(rule=spec["rule_name"]):
+                self.assertTrue(spec["account_number"].isdigit())
+                self.assertTrue(spec["texts"])
 
 
 class SummaryTest(unittest.TestCase):

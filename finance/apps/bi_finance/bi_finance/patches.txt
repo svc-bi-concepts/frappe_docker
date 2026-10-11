@@ -1,3 +1,5 @@
 [pre_model_sync]
 
 [post_model_sync]
+# the seed Bank Transaction Rules of the recurring lines without an invoice (bank_rules.py), once per company
+bi_finance.patches.bank_transaction_rules

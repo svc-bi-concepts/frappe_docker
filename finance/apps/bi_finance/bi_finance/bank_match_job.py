@@ -28,7 +28,14 @@ from erpnext.accounts.doctype.bank_reconciliation_tool.bank_reconciliation_tool 
 # required, not defaulted), so 0 books no rounding line; ledgerdemain may change it here.
 REVALUATION_ROUNDING_LOSS_ALLOWANCE = 0.0
 
-LINE_FIELDS = ["name", "date", "deposit", "withdrawal", "description", "reference_number", "transaction_id", "currency", "company"]
+LINE_FIELDS = [
+    "name", "date", "deposit", "withdrawal", "description", "reference_number", "transaction_id", "end_to_end_id", "currency",
+    "company",
+]
+
+# Bank Matching Settings (a single doctype, both off until ledgerdemain's go): enabled turns the matching on after each
+# import and sync; rules_enabled lets it book the lines a Bank Transaction Rule takes (the rules are read either way).
+SETTINGS = "Bank Matching Settings"
 
 
 def run(bank_account, dry_run=True, from_date=None, to_date=None):
@@ -56,8 +63,12 @@ def run(bank_account, dry_run=True, from_date=None, to_date=None):
         return report
 
     by_name = {line["name"]: line for line in lines}
+    rules_enabled = bool(frappe.db.get_single_value(SETTINGS, "rules_enabled"))
     for decision in decisions:
         if decision["state"] != "match":
+            continue
+        if decision["pass"] == "rule" and not rules_enabled:
+            # a rule's line stays for a person until Bank Matching Settings allows the rule bookings
             continue
         try:
             _book(by_name[decision["line"]], decision, gl_account)
@@ -77,7 +88,10 @@ def match_account(bank_account):
 
 def match_after_import(bank_account):
     """match_account for the callers that have already committed their import: a failure is logged, never raised, so
-    the import stands. Returns {booked, errors, summary}, or {failed: True}."""
+    the import stands. Returns {booked, errors, summary}, {failed: True}, or {skipped: True} while Bank Matching Settings
+    is off."""
+    if not frappe.db.get_single_value(SETTINGS, "enabled"):
+        return {"skipped": True}
     try:
         report = match_account(bank_account)
     except Exception:
@@ -237,6 +251,9 @@ def revaluation_draft(company, posting_date):
     ERPNext takes the accounts in a foreign currency and their rates from the Currency Exchange rows of the date. No
     draft is made when no account has a gain or loss that month, and an existing revaluation of the company at that date
     is left as it is. Returns the draft's name, or None.
+
+    The 31.12 revaluation must use the ESTV year-end rate (Jahresendkurs): it is entered as a Currency Exchange row
+    dated 31.12 before the January run, since the Currency Exchange rows are the only rate source here.
     """
     existing = frappe.db.get_value("Exchange Rate Revaluation", {"company": company, "posting_date": posting_date, "docstatus": ["<", 2]})
     if existing:

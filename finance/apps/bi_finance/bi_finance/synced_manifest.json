@@ -7,6 +7,10 @@
   "modified": "2026-10-10 09:00:00.000000",
   "sha": "9e81bc34cba2a18aaa800426780164b0e0d009fde547695a9ea177ac29794c3f"
  },
+ "bi_finance/doctype/bank_matching_settings/bank_matching_settings.json": {
+  "modified": "2026-10-11 09:00:00.000000",
+  "sha": "8a72aad35e6ac0c3854f83cb3be0e365301ae3cbc3689fdd6c6300dccf43e573"
+ },
  "bi_finance/doctype/bank_statement_upload/bank_statement_upload.json": {
   "modified": "2026-10-10 12:00:00.000000",
   "sha": "1f1829a0936924997a5720e7af25eae9eb281de8e0b45a11cbfe8bd3a2a3bf1d"

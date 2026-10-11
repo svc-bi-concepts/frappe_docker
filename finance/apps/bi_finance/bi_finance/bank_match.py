@@ -6,8 +6,8 @@ A line is decided by the first pass that names exactly one document of the right
 
 1. reference: the line's reference (camt's creditor reference, Wise's reference number) is the SCOR creditor reference
    of an open Sales Invoice (reference.creditor_reference, the number printed on the slip).
-2. payment reference: the line's reference or transaction id is the reference_no of an unallocated Payment Entry, which
-   is how a payment run names the payment it made (payment_run.py).
+2. payment reference: the line's EndToEndId (camt), else its reference or transaction id, is the reference_no of an
+   unallocated Payment Entry, which is how a payment run names the payment it made (payment_run.py).
 3. party: the description names a party (a word of its name in common) and exactly one open invoice or bill of that party
    has the amount, dated within ANCHOR_DAYS of the line. The party is the one the description names; no other link.
 4. rule: no document is named, and the first Bank Transaction Rule (by priority) that matches books the line to its
@@ -87,7 +87,13 @@ def by_reference(line, docs):
 
 
 def by_payment_reference(line, payments):
-    """Pass 2: the unallocated Payment Entries named by the line's reference or transaction id, that fit the line."""
+    """Pass 2: the unallocated Payment Entries that name the line. The line's EndToEndId (camt) is the payment run's own
+    reference, so it is tried first; only when no Payment Entry of that id fits does the line's reference number or
+    transaction id count."""
+    end_to_end = {key(line.get("end_to_end_id"))} - {""}
+    found = [payment for payment in payments if payment.get("reference") in end_to_end and fits(line, payment)]
+    if found:
+        return found
     names = {key(line.get("reference_number")), key(line.get("transaction_id"))} - {""}
     return [payment for payment in payments if payment.get("reference") in names and fits(line, payment)]
 

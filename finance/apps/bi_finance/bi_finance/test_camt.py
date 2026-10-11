@@ -274,5 +274,29 @@ class Balances(unittest.TestCase):
         self.assertEqual(camt.check_balances({}, {}), {})
 
 
+class EndToEndIdTest(unittest.TestCase):
+    """The payment run's EndToEndId of a detail (invented ids and parties) is the transaction's end_to_end_id."""
+
+    def transactions(self, refs):
+        version = "camt.054.001.08"
+        paid = entry(version, "80.00", "DBIT", "2026-10-05", "2026-10-05", "", detail(
+            "80.00", "DBIT", refs, "Cdtr", "Lieferant Eins AG", "CH93 0076 2011 6238 5295 7", "Rechnung 1001"))
+        return camt.parse(statement_xml(version, [paid]))["transactions"]
+
+    def test_end_to_end_id_is_read_from_the_detail(self):
+        tx = self.transactions("<EndToEndId>PAY-2026-0042</EndToEndId><TxId>TX-E2E-1</TxId>")[0]
+        self.assertEqual(tx["end_to_end_id"], "PAY-2026-0042")
+        self.assertEqual(tx["reference"], "TX-E2E-1")
+
+    def test_not_provided_is_no_end_to_end_id(self):
+        tx = self.transactions("<EndToEndId>NOTPROVIDED</EndToEndId><TxId>TX-E2E-2</TxId>")[0]
+        self.assertIsNone(tx["end_to_end_id"])
+
+    def test_a_plain_entry_has_none(self):
+        tx = camt.parse(standard("camt.053.001.08"))["transactions"][0]
+        self.assertIn("end_to_end_id", tx)
+        self.assertIsNone(tx["end_to_end_id"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -175,6 +175,7 @@ def _transaction(entry, txd, single):
 
     remittance = _first(txd, "RmtInf")
     text = " ".join(_texts(remittance, "Ustrd")) or " ".join(_texts(entry, "AddtlNtryInf"))
+    end_to_end = _text(refs, "EndToEndId")
     parties = _first(txd, "RltdPties")
     side = "Dbtr" if direction == "CRDT" else "Cdtr"
     if value and value != booking:
@@ -183,6 +184,8 @@ def _transaction(entry, txd, single):
     return {
         "reference": reference, "booking_date": booking, "value_date": value, "currency": currency,
         "deposit": deposit, "withdrawal": withdrawal,
+        # the payment run's EndToEndId, which bank_match finds on the Payment Entry; NOTPROVIDED is the standard's 'none'
+        "end_to_end_id": None if end_to_end in (None, "NOTPROVIDED") else end_to_end,
         "bank_party_name": _text(parties, side, "Nm"), "bank_party_iban": _iban(_text(parties, side + "Acct", "Id", "IBAN")),
         "reference_number": _text(remittance, "Strd", "CdtrRefInf", "Ref"),
         "description": text[:DESCRIPTION_LENGTH] or None,
