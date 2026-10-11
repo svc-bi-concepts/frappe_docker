@@ -1,6 +1,6 @@
 """Swiss setup of company BI Concepts, run inside the backend container by
 swiss-setup.sh. Steps are named on the command line (coa, vat, fiscal,
-fields, currencies, banks, gebuev, qrbill, payslip, host, payments, hr, payroll_accounts); each one is re-runnable and skips what
+fields, currencies, banks, gebuev, qrbill, payslip, host, payments, hr, payroll_accounts, lohnausweis); each one is re-runnable and skips what
 already exists. `freeze <date> [--apply]` is a separate command: it closes the
 books up to a date and is a dry run unless --apply is given."""
 import csv
@@ -749,6 +749,61 @@ def payslip_default():
     say(f"payslip: default print format of Salary Slip set to {LOHNABRECHNUNG}")
 
 
+# The Form 11 mapping of erpnextswiss's Salary Certificate Settings (a single doctype): the form field each table
+# fills, and the abbrs of the Salary Components it sums (bi_payroll's fixtures). Dynamic configuration reads the
+# components of each table; the static one reads the abbrs too, but has no table for line 12. Lines 2 to 7, 10.2 and
+# 13 to 14 are not in payroll (finance/docs/hrms.md, Lohnausweis map), line 15 stays free text.
+LOHNAUSWEIS = {
+    "salary": ["B"],                        # 1 Lohn
+    "deduction_ahv": ["AHV", "ALV", "NBUV"],  # 9 AHV/IV/EO, ALV, NBU
+    "deduction_pension": ["PK"],            # 10.1 BVG
+    "source_tax_deduction": ["QST"],        # 12 Quellensteuer
+}
+
+
+def lohnausweis_components(components, mapping=LOHNAUSWEIS):
+    """components: abbr -> the name of its Salary Component. The component names per Settings table; an abbr with no
+    component raises KeyError."""
+    return {field: [components[abbr] for abbr in abbrs] for field, abbrs in mapping.items()}
+
+
+def lohnausweis_changes(dynamic_config, current, wanted):
+    """current: field -> the component names its table holds now. Returns whether dynamic configuration must be switched
+    on, and the tables that differ from wanted. A second run finds nothing to change."""
+    return not dynamic_config, [field for field in wanted if current.get(field, []) != wanted[field]]
+
+
+def lohnausweis():
+    # The company's address on the form is the primary address of the Company record (erpnextswiss's print format reads
+    # it through the employee's company): nothing about the company is written here, only checked.
+    components = {}
+    for abbr in sorted({abbr for abbrs in LOHNAUSWEIS.values() for abbr in abbrs}):
+        name = frappe.db.get_value("Salary Component", {"salary_component_abbr": abbr})
+        if not name:
+            say(f"lohnausweis: no Salary Component with abbr {abbr}; the bi_payroll fixtures are not installed")
+            return
+        components[abbr] = name
+    wanted = lohnausweis_components(components)
+    settings = frappe.get_single("Salary Certificate Settings")
+    current = {field: [row.component for row in settings.get(field) or []] for field in wanted}
+    turn_on, fields = lohnausweis_changes(settings.dynamic_config, current, wanted)
+    if turn_on or fields:
+        settings.dynamic_config = 1
+        for field in fields:
+            settings.set(field, [{"component": name} for name in wanted[field]])
+        settings.save()
+        frappe.db.commit()
+        say(f"lohnausweis: Salary Certificate Settings set, tables {', '.join(fields) or 'none'}")
+    else:
+        say("lohnausweis: Salary Certificate Settings in place")
+    primary = frappe.db.sql(
+        """SELECT a.name FROM `tabAddress` a INNER JOIN `tabDynamic Link` dl ON dl.parent = a.name
+        WHERE dl.parenttype = 'Address' AND dl.link_doctype = 'Company' AND dl.link_name = %s AND a.is_primary_address = 1""",
+        COMPANY)
+    if not primary:
+        say(f"lohnausweis: {COMPANY} has no primary address; the Form 11 address will be empty")
+
+
 def banks():
     # Bank needs System Manager, which the API user lacks. The names are company
     # data, so they come from the BANKS environment variable (one per line),
@@ -834,7 +889,7 @@ def payroll_accounts():
 
 STEPS = {"coa": coa, "vat": vat, "fiscal": fiscal, "fields": fields, "currencies": currencies, "banks": banks,
          "gebuev": gebuev, "qrbill": qrbill, "payslip": payslip, "host": host, "payments": payments, "hr": hr,
-         "payroll_accounts": payroll_accounts}
+         "payroll_accounts": payroll_accounts, "lohnausweis": lohnausweis}
 
 if __name__ == "__main__":
     args = sys.argv[1:]

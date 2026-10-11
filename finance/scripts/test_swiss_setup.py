@@ -98,6 +98,9 @@ class StepsTest(unittest.TestCase):
     def test_payslip_is_a_step(self):
         self.assertIn("payslip", swiss_setup.STEPS)
 
+    def test_lohnausweis_is_a_step(self):
+        self.assertIn("lohnausweis", swiss_setup.STEPS)
+
     def test_the_payslip_html_is_the_bi_payroll_app_s_template(self):
         self.assertIn("apps/bi_payroll/bi_payroll/lohnabrechnung.html", swiss_setup.PAYSLIP_HTML)
 
@@ -218,6 +221,58 @@ class PayrollAccountsTest(unittest.TestCase):
         frappe, _, say = self.run_step(current="1091 - Lohndurchlaufkonto - BIC")
         frappe.db.set_value.assert_not_called()
         self.assertIn("already set", say.call_args[0][0])
+
+
+# The bi_payroll fixtures: the components the Lohnausweis mapping names must exist there, under the same abbr.
+PAYROLL_FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "apps", "bi_payroll", "bi_payroll",
+                                "fixtures", "salary_component.json")
+
+
+class LohnausweisTest(unittest.TestCase):
+    def setUp(self):
+        import json
+        with open(PAYROLL_FIXTURES, encoding="utf-8") as f:
+            self.fixtures = {row["salary_component_abbr"]: row["name"] for row in json.load(f)}
+        self.components = dict(self.fixtures)
+
+    def test_each_table_names_the_components_of_its_form_line(self):
+        wanted = swiss_setup.lohnausweis_components(self.components)
+        self.assertEqual(wanted, {
+            "salary": ["Basic Salary"],
+            "deduction_ahv": ["AHV/IV/EO Employee", "ALV Employee", "NBU Employee"],
+            "deduction_pension": ["BVG Employee"],
+            "source_tax_deduction": ["Quellensteuer Employee"],
+        })
+
+    def test_every_abbr_of_the_mapping_is_a_fixture_component(self):
+        for abbrs in swiss_setup.LOHNAUSWEIS.values():
+            for abbr in abbrs:
+                self.assertIn(abbr, self.fixtures)
+
+    def test_an_abbr_without_a_component_raises(self):
+        with self.assertRaises(KeyError):
+            swiss_setup.lohnausweis_components({"B": "Basic Salary"})
+
+    def test_fresh_settings_need_the_switch_and_every_table(self):
+        wanted = swiss_setup.lohnausweis_components(self.components)
+        turn_on, fields = swiss_setup.lohnausweis_changes(0, {}, wanted)
+        self.assertTrue(turn_on)
+        self.assertEqual(fields, list(wanted))
+
+    def test_a_second_run_changes_nothing(self):
+        wanted = swiss_setup.lohnausweis_components(self.components)
+        self.assertEqual(swiss_setup.lohnausweis_changes(1, wanted, wanted), (False, []))
+
+    def test_a_table_changed_by_hand_is_set_back(self):
+        wanted = swiss_setup.lohnausweis_components(self.components)
+        current = dict(wanted, salary=["Basic Salary", "Some other earning"])
+        self.assertEqual(swiss_setup.lohnausweis_changes(1, current, wanted), (False, ["salary"]))
+
+    def test_tables_outside_the_mapping_are_not_looked_at(self):
+        # Lines the mapping does not fill (2.1, 13 ...) are left as they are: the list of changes names only the four.
+        wanted = swiss_setup.lohnausweis_components(self.components)
+        current = dict(wanted, catering=["Anything"])
+        self.assertEqual(swiss_setup.lohnausweis_changes(1, current, wanted), (False, []))
 
 
 # Invented IBANs and account names only: the test data is not company data.
