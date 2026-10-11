@@ -48,6 +48,20 @@ SHEETS = ("BVG", "UVG", "NBU", "KTG", "FAK")
 # first; Finance holds the rest (the sheets are somewhere under it, per Benchi, 2026-10-11).
 SEARCHED = ("Insurance", "Finance")
 
+# A sheet's token, found anywhere in a path part as long as no letter follows it: a token glued
+# to the insurer's name counts (VersichererKTG_Vertrag), and so does one at a word edge, but a
+# letter right after keeps a Faktura from passing for the FAK sheet.
+TOKEN = {sheet: re.compile(r"%s(?![A-Za-z])" % sheet, re.I) for sheet in SHEETS}
+
+
+def token_hits(sheet, folder, name):
+    """True when a file's path carries the sheet's token: in the file's own name, glued or not,
+    or in one of its folder names (the KTG contract sits in a folder that names KTG and a file
+    that glues the insurer to the token, so neither the old word-edge rule alone nor names only
+    find it).
+    """
+    return bool(TOKEN[sheet].search(name) or any(TOKEN[sheet].search(part) for part in folder))
+
 
 class SharePointError(Exception):
     pass
@@ -209,14 +223,14 @@ class Graph:
 def pick_sheets(files):
     """({sheet: (folder path, item)}, {sheet: reason}): the sheets found exactly once, and why each other one is not.
 
-    Nothing is guessed: no match or several is a reason, and that sheet is not downloaded. KTG
-    has two contracts in the folder (the application and the refusal are not the contract),
-    so only a name with 'Vertrag' counts for it.
+    Nothing is guessed: no match or several is a reason, and that sheet is not downloaded. A
+    file counts for a sheet when token_hits() finds the token in its path. KTG has two
+    contracts in the folder (the application and the refusal are not the contract), so only a
+    name with 'Vertrag' counts for it.
     """
     chosen, problems = {}, {}
     for sheet in SHEETS:
-        pattern = re.compile(r"(?<![A-Za-z])%s(?![A-Za-z])" % sheet, re.I)
-        matches = [(folder, item) for folder, item in files if pattern.search(item["name"])]
+        matches = [(folder, item) for folder, item in files if token_hits(sheet, folder, item["name"])]
         if sheet == "KTG":
             matches = [(folder, item) for folder, item in matches if "vertrag" in item["name"].lower()]
         if len(matches) == 1:

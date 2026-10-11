@@ -261,6 +261,53 @@ class FetchTest(Keys):
         downloaded = [c[1] for c in fake.calls if c[1].endswith("/content")]
         self.assertFalse([u for u in downloaded if "/ktg" in u])
 
+    def test_a_token_glued_to_the_insurers_name_counts(self):
+        # The contract's real name glues the insurer to the token with no separator and the
+        # folder names the topic; invented names in that shape, since the word-edge matcher
+        # alone found nothing there.
+        self.routes[self.INS] = page([folder("SickPay", "f-sick"),
+                                      file_("UVG.pdf", "uvg", 3), file_("NBU.pdf", "nbu", 2),
+                                      file_("FAK.pdf", "fak", 2)])
+        self.routes[GRAPH + "/drives/%s/items/f-sick/children" % DRIVE] = page([
+            file_("20260401_VersichererKTG_Vertrag.pdf", "ktg", 2),
+            file_("20260301_VersichererKTG_Antrag.pdf", "ktg-app", 2)])
+        fake, g = self.graph()
+        out = io.StringIO()
+        sp_read.fetch(g, self.ROOTS, self.out, out)
+        self.assertIn("Insurance/SickPay/20260401_VersichererKTG_Vertrag.pdf", out.getvalue())
+        self.assertIn("MISSING BVG", out.getvalue())
+        downloaded = [c[1] for c in fake.calls if c[1].endswith("/content")]
+        self.assertIn(GRAPH + "/drives/%s/items/ktg/content" % DRIVE, downloaded)
+        self.assertFalse([u for u in downloaded if "ktg-app" in u])
+
+    def test_a_token_only_in_the_folder_name_counts(self):
+        self.routes[self.INS] = page([folder("SickPay KTG", "f-sick"),
+                                      file_("UVG.pdf", "uvg", 3), file_("NBU.pdf", "nbu", 2),
+                                      file_("FAK.pdf", "fak", 2)])
+        self.routes[GRAPH + "/drives/%s/items/f-sick/children" % DRIVE] = page([
+            file_("Vertrag 2026.pdf", "ktg-ver", 2),
+            file_("Antrag 2026.pdf", "ktg-app", 2)])
+        self.routes[GRAPH + "/drives/%s/items/ktg-ver/content" % DRIVE] = b"KT"
+        fake, g = self.graph()
+        out = io.StringIO()
+        sp_read.fetch(g, self.ROOTS, self.out, out)
+        self.assertIn("Insurance/SickPay KTG/Vertrag 2026.pdf", out.getvalue())
+        downloaded = [c[1] for c in fake.calls if c[1].endswith("/content")]
+        self.assertFalse([u for u in downloaded if "ktg-app" in u])
+
+    def test_a_word_with_a_letter_right_after_the_token_is_no_match(self):
+        # 'Faktura' carries 'fak' but is not the FAK sheet: a letter directly after the token
+        # keeps it out, so a lone Faktura leaves FAK missing instead of fetching an invoice.
+        self.routes[self.INS] = page([file_("Faktura 2026.pdf", "inv", 2),
+                                      file_("UVG.pdf", "uvg", 3), file_("NBU.pdf", "nbu", 2),
+                                      file_("KTG Vertrag.pdf", "ktg", 2)])
+        fake, g = self.graph()
+        out = io.StringIO()
+        sp_read.fetch(g, self.ROOTS, self.out, out)
+        self.assertIn("MISSING FAK  0 files match, want exactly 1 (none)", out.getvalue())
+        downloaded = [c[1] for c in fake.calls if c[1].endswith("/content")]
+        self.assertFalse([u for u in downloaded if "/inv/" in u])
+
     def test_a_sheet_found_only_in_finance_is_saved_under_finance(self):
         self.routes[self.INS] = page([file_("UVG.pdf", "uvg", 3), file_("NBU.pdf", "nbu", 2),
                                       file_("KTG Vertrag.pdf", "ktg", 2), file_("FAK.pdf", "fak", 2)])
