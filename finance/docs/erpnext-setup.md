@@ -67,8 +67,11 @@ runs all steps. Every step skips what exists, so a second run changes nothing.
 `finance/apps/bi_finance/bi_finance/bi_sales_invoice_qr.html`, the file the
 image installs. The QR code comes from the app's `qrbill.py`, drawn on the
 server with pyqrcode (Frappe's own package), so no invoice data leaves it.
-The format is enabled but not the default print format: Benchi chooses that
-after seeing a sample. The slip is 105 mm at the foot of the last page, whatever the
+The format is the default print format of Sales Invoice (Benchi's word,
+2026-10-11): the Property Setter `Sales Invoice-main-default_print_format`
+is a fixture of bi_finance, and this step sets it when it is missing, so a
+fresh site gets it from the step and an existing site keeps it through a
+migrate. The slip is 105 mm at the foot of the last page, whatever the
 number of pages: a short invoice keeps it on page 1, a long one gets it at the foot of
 its last page, or on a page of its own when the body leaves less than 105 mm. The page
 cannot measure its body (wkhtmltopdf runs with JavaScript off), so the format renders
@@ -78,8 +81,15 @@ second has a gap of that height before the slip. That is one more wkhtmltopdf ru
 print, also for the HTML preview. The gap assumes A4 with the format's 15 mm top and
 1 mm bottom margins. The margins are set in the format's CSS: wkhtmltopdf reads
 `.print-format` margins, not the format's margin fields. The IBAN prints in groups of
-four; the QR text does not.
-
+four; the QR text does not. The QR payload carries a SCOR creditor reference (ISO 11649)
+built from the invoice number (`ACC-SINV-2026-00001` → `RF38ACCSINV202600001`): the slip
+prints it as "Referenz" in groups of four in the receipt and the payment part, and the
+bank's camt.054 carries it back, so a payment can be matched to its invoice (planned,
+erp-f5ss). A number that leaves more than 21 characters after the strip is refused. The
+payload passed the official swiss-qr-bill.org validator with no findings (see
+`finance/docs/swiss.md`, Risks 2). After every migrate the app's `after_migrate` hook
+(`bi_finance/setup.py`) disables the erpnextswiss print formats whose HTML names
+`data.libracore.ch`, so erpnextswiss's own fixtures cannot turn them back on.
 **host.** Sets the site's `host_name` from the `HOST_NAME` environment variable, the
 URL the containers can reach (`https://<machine>.<tailnet>.ts.net:8448`, the tailnet
 name of the host). Without it, `wkhtmltopdf` fetches `/assets` from `frontend` port 80,

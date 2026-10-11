@@ -380,9 +380,24 @@ Build result: see the bead note.
    a data URI; it makes no request to any host. erpnextswiss's QR formats stay
    off. Checked on a rendered sample (2026-10-10): the HTML has no http(s) URL;
    the QR is an inline data URI.
+   **Kept off by code (2026-10-11, erp-5zk7):** the erpnextswiss QR print formats that name the
+   host ("QR Sales Invoice", "QR Sales Invoice Switzerland Rounding - Description Details") are
+   switched off after every migrate by bi_finance's `after_migrate` hook (`bi_finance/setup.py`):
+   any Print Format whose HTML names data.libracore.ch is set disabled = 1, so erpnextswiss's own
+   fixtures, which re-enable theirs on each migrate, cannot turn them back on. Idempotent; a rerun
+   of the migrate changes nothing.
 2. **Unverified QR-bill layout.** The slip is hand-built HTML, not a checked
    Swiss QR-bill. Compare a generated slip against a bank's validator before
-   use. **Open for Benchi:** no validator run yet; the IBAN prints in groups of four.
+   use. **Validator pass (2026-10-11, erp-5zk7):** the QR content is checked with the official
+   swiss-qr-bill.org validator, which needs no account (its check page puts the QR text to
+   `partout.cresus.ch/swiss-qr-invoice/v2/validate` and a base64 image to `.../decode`). A payload
+   with invented data (checksum-valid invented IBAN, Beispiel/Muster names, 8000-range ZIPs, the
+   SCOR reference of an invented invoice number) validates with no findings, and the validator
+   decodes the rendered QR image back to that payload. It refuses a wrong reference check digit
+   (`RmtInf.Ref: CreditorReferenceInvalid`) and a non-checksum-valid IBAN (`CdtrInf.IBAN`), so the
+   checks bite. The SCOR reference itself is new in erp-5zk7: RF + check digits (ISO 11649) from
+   the invoice number, printed on the slip in groups of four. What this does not show: a real
+   payment coming back on the reference (erp-f5ss).
    **Layout, fixed on the sample (2026-10-10):** the 105 mm payment part did not
    fit page 1. wkhtmltopdf reads the margins from `.print-format` rules, not from
    the format's margin fields, so the format sets them itself (top 15 mm, bottom

@@ -514,19 +514,19 @@ def host():
 
 
 def qrbill():
-    # Enabled, but not the default format: Benchi picks the default after a sample.
+    # The slip format; qrbill_default() sets it as the default print format of Sales Invoice.
     with open(QRBILL_HTML, encoding="utf-8") as f:
         html = f.read()
     if frappe.db.exists("Print Format", PRINT_FORMAT):
         doc = frappe.get_doc("Print Format", PRINT_FORMAT)
         if doc.html == html and not doc.disabled and doc.margin_bottom == 1:
             say("qrbill: print format in place")
-            return
-        doc.html = html
-        doc.disabled = 0
-        doc.margin_bottom = 1
-        doc.save()
-        say(f"qrbill: print format {PRINT_FORMAT} updated")
+        else:
+            doc.html = html
+            doc.disabled = 0
+            doc.margin_bottom = 1
+            doc.save()
+            say(f"qrbill: print format {PRINT_FORMAT} updated")
     else:
         frappe.get_doc({
             "doctype": "Print Format",
@@ -543,6 +543,20 @@ def qrbill():
         }).insert()
         say(f"qrbill: print format {PRINT_FORMAT} created")
     frappe.db.commit()
+    qrbill_default()
+
+
+def qrbill_default():
+    # The default print format of Sales Invoice (Benchi: 'default now', 2026-10-11), as a Property
+    # Setter so a migrate keeps it; the fixtures of bi_finance hold the same row.
+    filters = {"doc_type": "Sales Invoice", "doctype_or_field": "DocType", "property": "default_print_format"}
+    if frappe.db.get_value("Property Setter", filters, "value") == PRINT_FORMAT:
+        say(f"qrbill: default print format of Sales Invoice is {PRINT_FORMAT} already")
+        return
+    frappe.make_property_setter("Sales Invoice", None, "default_print_format", PRINT_FORMAT, "Data", for_doctype=True)
+    frappe.clear_cache(doctype="Sales Invoice")
+    frappe.db.commit()
+    say(f"qrbill: default print format of Sales Invoice set to {PRINT_FORMAT}")
 
 
 def banks():

@@ -28,15 +28,23 @@ jinja = {
     "methods": [
         "bi_finance.qrbill.sales_invoice_qr_uri",
         "bi_finance.qrbill.sales_invoice_iban",
+        "bi_finance.qrbill.sales_invoice_reference",
         "bi_finance.qrbill.sales_invoice_slip_spacer",
     ]
 }
 
+# After every migrate: erpnextswiss's fixtures re-enable their QR print formats (they render
+# through data.libracore.ch), so the hook switches them off again (bi_finance/setup.py,
+# finance/docs/swiss.md Risks 1).
+after_migrate = ["bi_finance.setup.after_migrate"]
+
 # Bank lines in Desk: the Booking Date and Value Date fields, their place in the Bank Transaction list (sorted by
-# Booking Date, newest first) and the list's columns. Frappe applies the files in fixtures/ on migrate.
+# Booking Date, newest first) and the list's columns. The Sales Invoice Property Setter keeps 'BI Sales Invoice QR'
+# the default print format. Frappe applies the files in fixtures/ on migrate.
 fixtures = [
     {"dt": "Custom Field", "filters": [["dt", "=", "Bank Transaction"], ["fieldname", "in", ["booking_date", "value_date"]]]},
     {"dt": "Property Setter", "filters": [["doc_type", "=", "Bank Transaction"], ["property", "in", ["sort_field", "sort_order"]]]},
+    {"dt": "Property Setter", "filters": [["doc_type", "=", "Sales Invoice"], ["property", "=", "default_print_format"]]},
     {"dt": "List View Settings", "filters": [["name", "=", "Bank Transaction"]]},
 ]
 

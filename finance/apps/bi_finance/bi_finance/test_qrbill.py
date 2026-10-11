@@ -42,6 +42,12 @@ class Payload(unittest.TestCase):
         self.assertEqual(lines[27:30], ["NON", "", "Rechnung 1"])
         self.assertEqual(lines[30], "EPD")
 
+    def test_scor_reference_sits_where_non_stood(self):
+        lines = self.lines(reference="RF18539007547034")
+        self.assertEqual(lines[27:30], ["SCOR", "RF18539007547034", "Rechnung 1"])
+        # the message stays beside the reference (SIX: zusätzliche Informationen)
+        self.assertEqual(len(lines), 31)
+
     def test_no_debtor_leaves_seven_empty_lines(self):
         self.assertEqual(self.lines(debtor=None)[20:27], [""] * 7)
 
@@ -86,6 +92,86 @@ class Payload(unittest.TestCase):
         self.assertEqual(qrbill.iban_text(IBAN), "CH21 0900 0000 2500 9779 8")
         # the QR text keeps the IBAN unspaced
         self.assertEqual(self.lines()[3], "CH2109000000250097798")
+
+
+class CreditorReference(unittest.TestCase):
+    # The SCOR creditor reference (ISO 11649) built from the invoice number: RF + check digits + the
+    # number stripped of everything but letters and digits. Invented numbers only.
+    def test_iso_example_vector(self):
+        # the ISO 11649 example RF18 5390 0754 7034
+        self.assertEqual(qrbill.creditor_reference("539007547034"), "RF18539007547034")
+
+    def test_built_from_an_invented_invoice_number(self):
+        self.assertEqual(qrbill.creditor_reference("ACC-SINV-2026-00001"), "RF38ACCSINV202600001")
+
+    def test_reference_passes_the_mod_97_check(self):
+        # independent check: rearranged (first four characters moved to the end) mod 97 is 1
+        for name in ("ACC-SINV-2026-00001", "SINV-00042", "A1", "539007547034"):
+            with self.subTest(name=name):
+                reference = qrbill.creditor_reference(name)
+                rearranged = reference[4:] + reference[:4]
+                digits = "".join(str(int(c, 36)) for c in rearranged)
+                self.assertEqual(int(digits) % 97, 1)
+
+    def test_separators_and_case_are_stripped(self):
+        self.assertEqual(qrbill.creditor_reference("acc sinv 2026 00001"), "RF38ACCSINV202600001")
+
+    def test_twenty_one_characters_fill_twenty_five(self):
+        self.assertEqual(len(qrbill.creditor_reference("A" * 21)), 25)
+
+    def test_longer_or_empty_numbers_are_refused(self):
+        for bad in ("A" * 22, "", "  -  ", None):
+            with self.subTest(number=bad), self.assertRaises(ValueError):
+                qrbill.creditor_reference(bad)
+
+    def test_reference_prints_in_groups_of_four(self):
+        self.assertEqual(qrbill.reference_text("RF38ACCSINV202600001"), "RF38 ACCS INV2 0260 0001")
+        # the QR text keeps the reference unspaced
+        self.assertEqual(self.lines(reference="RF38ACCSINV202600001")[28], "RF38ACCSINV202600001")
+
+    def lines(self, **kw):
+        return qrbill.payload(IBAN, CREDITOR, 1234.5, "CHF", reference=kw.get("reference")).split("\r\n")
+
+
+class SlipReference(unittest.TestCase):
+    # The slip shows the reference: the real template rendered with stubbed globals, in the image
+    # (jinja2 ships with frappe).
+    def invoice(self):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(
+            doctype="Sales Invoice", name="ACC-SINV-2026-00001", company="Beispiel AG",
+            company_address=None, customer_address=None, customer="MUSTER", customer_name="Muster GmbH",
+            currency="CHF", grand_total=1234.5, rounded_total=0, rounding_adjustment=None,
+            posting_date="2026-10-11", due_date="2026-10-25", address_display="Musterweg 7",
+            items=[], taxes=[], terms=None, get_formatted=lambda field, *a, **kw: "1.00",
+            flags=SimpleNamespace(bi_qr_measure=False),
+        )
+
+    def render(self, inv):
+        import jinja2
+        from types import SimpleNamespace
+
+        with open(TEMPLATE, encoding="utf-8") as f:
+            template = jinja2.Template(f.read())
+        company = SimpleNamespace(company_name="Beispiel AG")
+        fake = SimpleNamespace(get_doc=lambda doctype, name: company if doctype == "Company" else None)
+        return template.render(
+            doc=inv, frappe=fake,
+            sales_invoice_iban=lambda inv: qrbill.iban_text(IBAN),
+            sales_invoice_reference=lambda inv: qrbill.reference_text(qrbill.creditor_reference(inv.name)),
+            sales_invoice_qr_uri=lambda inv: "data:image/svg+xml;base64,",
+            sales_invoice_slip_spacer=lambda inv: 0.8,
+        )
+
+    def test_the_slip_shows_the_grouped_reference_in_both_parts(self):
+        try:
+            import jinja2  # noqa: F401
+        except ImportError as e:
+            self.skipTest(str(e))
+        html = self.render(self.invoice())
+        self.assertEqual(html.count("Referenz"), 2)  # receipt and payment part
+        self.assertEqual(html.count("RF38 ACCS INV2 0260 0001"), 2)
 
 
 class QrCode(unittest.TestCase):

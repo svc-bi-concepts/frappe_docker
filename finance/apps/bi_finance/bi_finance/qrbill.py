@@ -7,8 +7,8 @@ erpnextswiss's QR format sends the same data to data.libracore.ch, which is
 why it stays off (finance/docs/swiss.md, Risks 1).
 
 Payload per SIX Implementation Guidelines QR-bill v2.3: one data element per
-line, structured addresses (type S), no QR reference (a QR-IBAN is refused
-until a QRR path with bank reconciliation exists).
+line, structured addresses (type S), a SCOR creditor reference built from the invoice number
+(a QR-IBAN is refused until a QRR path with bank reconciliation exists).
 """
 
 import base64
@@ -52,6 +52,25 @@ def iban_text(iban):
     return " ".join(compact[i:i + 4] for i in range(0, len(compact), 4))
 
 
+def creditor_reference(invoice_name):
+    """SCOR creditor reference (ISO 11649) from the invoice number: 'RF' + check digits + the number.
+
+    The number keeps only its letters and digits (ACC-SINV-2026-00001 -> RF..ACCSINV202600001), so
+    the reference fits the 25 characters of the guidelines; a longer number is refused.
+    """
+    body = re.sub(r"[^A-Z0-9]", "", (invoice_name or "").upper())
+    if not body or len(body) > 21:
+        raise ValueError(f"invoice number {invoice_name} gives no creditor reference of 1 to 21 characters")
+    # the mod 97 check of the IBAN, on the number moved to the end with RF00 in its place
+    digits = "".join(str(int(c, 36)) for c in body + "RF00")
+    return f"RF{98 - int(digits) % 97:02d}{body}"
+
+
+def reference_text(reference):
+    """The reference in groups of four, as the slip prints it (SIX); the QR text keeps it unspaced."""
+    return " ".join(reference[i:i + 4] for i in range(0, len(reference), 4))
+
+
 def is_qr_iban(iban):
     # IID 30000 to 31999 at positions 5 to 9 marks a QR-IBAN.
     return 30000 <= int(iban[4:9]) <= 31999
@@ -78,10 +97,11 @@ def address_lines(name="", street="", building="", postal="", town="", country="
     ]
 
 
-def payload(iban, creditor, amount, currency, debtor=None, message=""):
+def payload(iban, creditor, amount, currency, debtor=None, message="", reference=None):
     """The 31 data elements of the QR text, joined with CRLF.
 
-    creditor and debtor are address_lines() results; debtor may be None.
+    creditor and debtor are address_lines() results; debtor may be None. reference is a
+    creditor_reference() (SCOR); without one the payload says NON.
     """
     iban = iban.replace(" ", "").upper()
     if is_qr_iban(iban):
@@ -92,7 +112,7 @@ def payload(iban, creditor, amount, currency, debtor=None, message=""):
         *EMPTY_ADDRESS,  # ultimate creditor, not used
         amount_text(amount, currency), currency,
         *(debtor or EMPTY_ADDRESS),
-        "NON", "",  # no reference
+        *(["SCOR", reference] if reference else ["NON", ""]),
         _clip(message, MESSAGE_MAX),
         "EPD",
     ]
@@ -193,8 +213,13 @@ def sales_invoice_iban(inv):
     return iban_text(_company_account(inv.company, inv.currency).iban)
 
 
+def sales_invoice_reference(inv):
+    """The SCOR creditor reference of a Sales Invoice, in groups of four for the slip."""
+    return reference_text(creditor_reference(inv.name))
+
+
 def sales_invoice_payload(inv):
-    """QR text of a Sales Invoice: the bank account, the company as creditor, the customer as debtor."""
+    """QR text of a Sales Invoice: the bank account, the company as creditor, the customer as debtor, the reference."""
     account = _company_account(inv.company, inv.currency)
     creditor = _address(inv.company_address)
     if not creditor or not (creditor[4] and creditor[5]):
@@ -203,7 +228,10 @@ def sales_invoice_payload(inv):
     debtor = _address(inv.customer_address)
     if debtor:
         debtor[1] = _clip(inv.customer_name or debtor[1], NAME_MAX)
-    return payload(account.iban, creditor, inv.rounded_total or inv.grand_total, inv.currency, debtor, f"Rechnung {inv.name}")
+    return payload(
+        account.iban, creditor, inv.rounded_total or inv.grand_total, inv.currency, debtor,
+        f"Rechnung {inv.name}", reference=creditor_reference(inv.name),
+    )
 
 
 def sales_invoice_qr_uri(inv):

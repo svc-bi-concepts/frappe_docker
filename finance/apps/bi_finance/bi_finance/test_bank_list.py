@@ -57,9 +57,14 @@ class Fixtures(unittest.TestCase):
             for doc in fixture(name):
                 self.assertTrue(set(doc) <= fields, (name, set(doc) - fields))
 
-    def test_the_hook_declares_the_three_fixture_files(self):
-        self.assertEqual(sorted(os.listdir(FIXTURES)), ["custom_field.json", "list_view_settings.json", "property_setter.json"])
-        self.assertEqual(sorted(f["dt"] for f in hooks.fixtures), ["Custom Field", "List View Settings", "Property Setter"])
+    def test_the_hook_declares_the_fixture_files(self):
+        jsons = [f for f in os.listdir(FIXTURES) if f.endswith(".json")]
+        self.assertEqual(sorted(jsons), ["custom_field.json", "list_view_settings.json", "property_setter.json"])
+        # the eCH-0217 example the VAT Declaration page offers for download (erp-fzae)
+        self.assertEqual([f for f in os.listdir(FIXTURES) if not f.endswith(".json")],
+                         ["eCH-0217_V2.0.0_example_effectiveReportingMethod.xml"])
+        self.assertEqual(sorted(f["dt"] for f in hooks.fixtures),
+                         ["Custom Field", "List View Settings", "Property Setter", "Property Setter"])
 
     def test_the_custom_fields_are_booking_date_and_value_date_on_bank_transaction(self):
         fields = {f["fieldname"]: f for f in fixture("custom_field.json")}
@@ -86,7 +91,7 @@ class Fixtures(unittest.TestCase):
         self.assertEqual((field["in_list_view"], field["in_standard_filter"]), (1, 1))
 
     def test_the_list_sorts_by_booking_date_newest_first(self):
-        settings = {p["property"]: p for p in fixture("property_setter.json")}
+        settings = {p["property"]: p for p in fixture("property_setter.json") if p["doc_type"] == "Bank Transaction"}
         self.assertEqual(sorted(settings), ["sort_field", "sort_order"])
         self.assertEqual(settings["sort_field"]["value"], "booking_date")
         self.assertEqual(settings["sort_order"]["value"], "DESC")

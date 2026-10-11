@@ -4,7 +4,15 @@ Frappe app for BI Concepts' finance site. It adds the Swiss QR-bill to Sales
 Invoice prints, with the QR code drawn on our own server (no external host, see
 `finance/docs/swiss.md`).
 
-- `bi_finance/qrbill.py`: payload per SIX QR-bill v2.3 and the QR image.
+- `bi_finance/qrbill.py`: payload per SIX QR-bill v2.3 with the SCOR creditor reference built
+  from the invoice number (`RF` + check digits per ISO 11649; the slip prints it in groups of
+  four), and the QR image. The payload passed the official swiss-qr-bill.org validator with no
+  findings (`finance/docs/swiss.md`, Risks 2).
+- `bi_finance/setup.py`: run after every migrate (`hooks.py` `after_migrate`), it sets
+  `disabled = 1` on every Print Format whose HTML names data.libracore.ch (erpnextswiss's QR
+  formats; their fixtures re-enable theirs on each migrate). `bi_finance/fixtures/property_setter.json`
+  keeps "BI Sales Invoice QR" the default print format of Sales Invoice through a migrate;
+  `finance/scripts/swiss-setup.sh qrbill` sets it when it is missing.
 - `bi_finance/bi_sales_invoice_qr.html`: the print format "BI Sales Invoice QR",
   installed by `finance/scripts/swiss-setup.sh qrbill`.
 - `bi_finance/qrbill.py` `sales_invoice_slip_spacer`: the gap that puts the slip at the
