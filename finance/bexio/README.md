@@ -627,6 +627,26 @@ nothing. It ends with the trial balance check against bexio's journal (read only
 - Not part of the delta: the employees and the paystub PDFs (HR reference data, not the books; the 2026 payroll
   runs in bexio).
 
+## Uploading a bill (the only write to bexio)
+
+`upload_bill.py` puts a bill PDF into bexio's file inbox (Dateneingang), from which bexio turns it
+into a bill. This is the only write to bexio: Benchi's exception of 2026-10-12. Nothing else is
+written, and the client, the broker and `SCOPE` stay read-only.
+
+```sh
+varlock run -p /Users/bsaladin/ws_yardr_finance/secrets -- python3 finance/bexio/oauth.py login --export-scope
+python3 finance/bexio/upload_bill.py /Users/bsaladin/ws_yardr_finance/private/bills/<file>.pdf        # dry run
+python3 finance/bexio/upload_bill.py --yes /Users/bsaladin/ws_yardr_finance/private/bills/<file>.pdf
+varlock run -p /Users/bsaladin/ws_yardr_finance/secrets -- python3 finance/bexio/oauth.py logout --export-scope
+```
+
+- The default is a dry run: it prints what it would upload and sends nothing. `--yes` uploads.
+- The one request is `POST /3.0/files` (multipart, the PDF in the field `file`). Any other method or
+  path is refused in code. The bexio file id of each upload is printed; the token never is.
+- Only `.pdf` files under `private/` are sent, each checked before the first upload.
+- It uses the export login (its `file` scope), not the broker: `BEXIO_BROKER=1` is refused.
+- Run `logout --export-scope` after the uploads; the script prints that command.
+
 ## Tests never touch private/
 
 Every unit test run (`python3 -m unittest discover -s finance/bexio -p 'test_*.py'`) points private/
