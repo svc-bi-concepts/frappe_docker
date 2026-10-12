@@ -35,17 +35,19 @@ assert all(s[n].get('restart') != 'unless-stopped' for n in ['configurator', 'cr
 (cd finance/sharepoint && python3 -m unittest discover -s . -p "test_*.py")
 # The image app lists (live without hrms, copy with it) and build-image.sh's modes; no docker.
 # switch-image.sh's decisions (which tag runs, which images go at rest) with stub docker and curl.
+# gate-image.sh's choice of the gate's image (main's pin, the branch's, the one at rest) with stub git and docker.
 # The copy stack's guards (live project and missing image refused) with stub docker, and its compose file's restarts and ports.
 # The D4 patch check (update-check.sh): invented tag lists, the upstream replaced, no network.
 # swiss-setup.py's pure helpers (frappe mocked): the payslip and the hr steps among them.
 # The structure remake's plan (frappe mocked): create, move, restore, the wrapper's project.
-(cd finance/scripts && python3 -m unittest test_build_image test_switch_image test_copy_stack test_update_check test_load_swiss_rates test_swiss_setup test_swiss_structure_remake)
+(cd finance/scripts && python3 -m unittest test_build_image test_switch_image test_gate_image test_copy_stack test_update_check test_load_swiss_rates test_swiss_setup test_swiss_structure_remake)
 # The bi_finance test modules that import frappe need the image: every one of them runs here, in one container
 # start, so a change to a synced JSON cannot leave one of them red on main unseen (erp-jta3). The image is the tag
-# finance-local.yml names, so it never goes stale; mounted read-only, no ports, as finance/docs/payment-runs.md does.
+# gate-image.sh picks: main's deploy pin first, so a branch cut before the last switch still runs (erp-0f93); mounted
+# read-only, no ports, as finance/docs/payment-runs.md does.
 # frappe's logger writes ../logs from the working directory (apps/logs here) when erpnext is imported, so that folder is made too.
 # A flake that depends on the clock (erp-c7wk) blocks a landing here instead of hiding in the how-to.
-IMAGE=$(docker compose -f pwd.yml -f finance-local.yml config --format json | python3 -c "import json, sys; print(json.load(sys.stdin)['services']['backend']['image'])")
+IMAGE=$(sh finance/scripts/gate-image.sh)
 docker run --rm -v "$PWD/finance/apps/bi_finance:/home/frappe/frappe-bench/apps/bi_finance:ro" "$IMAGE" \
   sh -c 'mkdir -p /home/frappe/logs /home/frappe/frappe-bench/apps/logs && cd /home/frappe/frappe-bench/apps/bi_finance && ../../env/bin/python -m unittest bi_finance.test_payment_run bi_finance.test_treasury bi_finance.test_bank_list bi_finance.test_bank_statement_upload'
 # Upstream's own lint, when pre-commit is installed (optional for now).
