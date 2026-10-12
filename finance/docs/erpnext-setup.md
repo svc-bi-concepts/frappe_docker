@@ -347,6 +347,9 @@ The full asset build (hrms and erpnextswiss bundles included) needs `capped-5g`:
 builder the asset step is SIGKILLed (status 137) and buildkit reports ResourceExhausted, as on
 2026-10-12. Build with `BUILDER=capped-5g finance/scripts/build-image.sh live <tag>`.
 The script needs free disk for the scratch layouts (about the size of the image, twice).
+IT's ci-bridge launchd job reclaims under 20G free every 5 minutes: a stopped container, then every image no running
+container uses. A built image left idle is removed (on 2026-10-12 bi23 went that way), so switch or remove it at once,
+and keep 20G free after a build. Remove images by tag only (`docker rmi frappe-finance-custom:<tag>`), never `docker image prune -a`.
 
 ## Switching the stack to a new image
 

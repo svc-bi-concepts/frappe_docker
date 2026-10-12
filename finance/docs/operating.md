@@ -153,6 +153,8 @@ mode denies a builder's docker writes. Notes give counts and totals only, never 
        yardr session list --running
        df -h /System/Volumes/Data
 
+   IT's ci-bridge reclaims unused images under 20G free every 5 minutes, so a built image left idle goes; remove images by tag only, never `docker image prune -a` (`erpnext-setup.md`, Building an image).
+
 2. **What is new.** Read only, one line per app, nothing written:
 
        sh finance/scripts/update-check.sh --minor
