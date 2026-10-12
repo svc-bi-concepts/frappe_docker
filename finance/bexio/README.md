@@ -634,18 +634,19 @@ into a bill. This is the only write to bexio: Benchi's exception of 2026-10-12. 
 written, and the client, the broker and `SCOPE` stay read-only.
 
 ```sh
-varlock run -p /Users/bsaladin/ws_yardr_finance/secrets -- python3 finance/bexio/oauth.py login --export-scope
-python3 finance/bexio/upload_bill.py /Users/bsaladin/ws_yardr_finance/private/bills/<file>.pdf        # dry run
-python3 finance/bexio/upload_bill.py --yes /Users/bsaladin/ws_yardr_finance/private/bills/<file>.pdf
-varlock run -p /Users/bsaladin/ws_yardr_finance/secrets -- python3 finance/bexio/oauth.py logout --export-scope
+varlock run -p /Users/bsaladin/ws_yardr_finance/secrets -- python3 finance/bexio/upload_bill.py <file>.pdf        # dry run
+varlock run -p /Users/bsaladin/ws_yardr_finance/secrets -- python3 finance/bexio/upload_bill.py --yes <file>.pdf
 ```
 
 - The default is a dry run: it prints what it would upload and sends nothing. `--yes` uploads.
-- The one request is `POST /3.0/files` (multipart, the PDF in the field `file`). Any other method or
-  path is refused in code. The bexio file id of each upload is printed; the token never is.
+- It authenticates with the personal access token `BEXIO_TOKEN` (injected by varlock) and refuses to run
+  without it. No OAuth login, no keychain; the token is never printed.
+- The one request is `POST /3.0/files` (multipart, the PDF in the field `file`; if bexio answers 422,
+  `UPLOAD_FIELD` is the one word to try as `upFile`). Any other method or path is refused in code. The
+  bexio file id and uuid of each upload are printed. A POST is never retried: after an error, look in the
+  inbox before sending the file again.
 - Only `.pdf` files under `private/` are sent, each checked before the first upload.
-- It uses the export login (its `file` scope), not the broker: `BEXIO_BROKER=1` is refused.
-- Run `logout --export-scope` after the uploads; the script prints that command.
+- `BEXIO_BROKER=1` is refused: the broker answers GET only and stays that way.
 
 ## Tests never touch private/
 

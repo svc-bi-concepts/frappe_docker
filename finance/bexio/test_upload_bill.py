@@ -42,23 +42,32 @@ def _run(argv):
     return out.getvalue()
 
 
+def setUp_token(case):
+    patcher = mock.patch.dict(os.environ, {"BEXIO_TOKEN": TOKEN})
+    patcher.start()
+    case.addCleanup(patcher.stop)
+
+
 class DryRunTest(unittest.TestCase):
+    def setUp(self):
+        setUp_token(self)
+
     def test_default_is_a_dry_run_that_sends_nothing(self):
         path = _pdf()
-        with mock.patch.object(ub.client, "resolve_token") as resolve, \
-                mock.patch.object(ub.urllib.request, "urlopen") as urlopen:
+        with mock.patch.object(ub.urllib.request, "urlopen") as urlopen:
             out = _run([path])
-        resolve.assert_not_called()
         urlopen.assert_not_called()
         self.assertIn("dry run: would upload bill-a.pdf", out)
         self.assertIn("nothing sent", out)
 
 
 class UploadTest(unittest.TestCase):
+    def setUp(self):
+        setUp_token(self)
+
     def test_posts_the_pdf_once_to_the_file_endpoint(self):
         path = _pdf()
-        with mock.patch.object(ub.client, "resolve_token", return_value=(TOKEN, "oauth-export")), \
-                mock.patch.object(ub.urllib.request, "urlopen", return_value=_answer(b'{"id": "file-invented-1"}')) as urlopen:
+        with mock.patch.object(ub.urllib.request, "urlopen", return_value=_answer(b'[{"id": 4711, "uuid": "uuid-invented-1"}]')) as urlopen:
             out = _run(["--yes", path])
         self.assertEqual(urlopen.call_count, 1)
         req = urlopen.call_args[0][0]
@@ -68,13 +77,12 @@ class UploadTest(unittest.TestCase):
         self.assertIn(b'name="file"; filename="bill-a.pdf"', req.data)
         self.assertIn(PDF, req.data)
         self.assertEqual(req.get_header("Authorization"), "Bearer " + TOKEN)
-        self.assertIn("bexio file id file-invented-1", out)
+        self.assertIn("bexio file id 4711 (uuid uuid-invented-1)", out)
         self.assertNotIn(TOKEN, out)
 
     def test_refused_file_stops_before_any_request(self):
         good = _pdf()
-        with mock.patch.object(ub.client, "resolve_token", return_value=(TOKEN, "oauth-export")), \
-                mock.patch.object(ub.urllib.request, "urlopen") as urlopen:
+        with mock.patch.object(ub.urllib.request, "urlopen") as urlopen:
             with self.assertRaises(SystemExit):
                 _run(["--yes", good, os.path.join(ub.PRIVATE, "bills", "missing.pdf")])
         urlopen.assert_not_called()
@@ -82,8 +90,7 @@ class UploadTest(unittest.TestCase):
     def test_http_error_is_reported_with_status_and_no_token(self):
         path = _pdf()
         err = urllib.error.HTTPError("u", 400, "bad", {}, io.BytesIO(b'{"error": "invented"}'))
-        with mock.patch.object(ub.client, "resolve_token", return_value=(TOKEN, "oauth-export")), \
-                mock.patch.object(ub.urllib.request, "urlopen", side_effect=err):
+        with mock.patch.object(ub.urllib.request, "urlopen", side_effect=err):
             with self.assertRaises(SystemExit) as cm:
                 _run(["--yes", path])
         self.assertIn("HTTP 400", str(cm.exception))
@@ -91,10 +98,10 @@ class UploadTest(unittest.TestCase):
 
     def test_answer_without_id_is_an_error(self):
         path = _pdf()
-        with mock.patch.object(ub.client, "resolve_token", return_value=(TOKEN, "oauth-export")), \
-                mock.patch.object(ub.urllib.request, "urlopen", return_value=_answer(b"{}")):
-            with self.assertRaises(SystemExit):
-                _run(["--yes", path])
+        for body in (b"{}", b"[]", b"[{}]"):
+            with self.subTest(body=body), mock.patch.object(ub.urllib.request, "urlopen", return_value=_answer(body)):
+                with self.assertRaises(SystemExit):
+                    _run(["--yes", path])
 
 
 class RequestGuardTest(unittest.TestCase):
@@ -151,7 +158,22 @@ class FileGuardTest(unittest.TestCase):
         self.assertEqual(ub.check_pdf(path), os.path.realpath(path))
 
 
+class TokenTest(unittest.TestCase):
+    def test_refuses_without_the_token_even_for_a_dry_run(self):
+        path = _pdf()
+        with mock.patch.dict(os.environ, clear=False) as env, mock.patch.object(ub.urllib.request, "urlopen") as urlopen:
+            env.pop("BEXIO_TOKEN", None)
+            for argv in ([path], ["--yes", path]):
+                with self.subTest(argv=argv), self.assertRaises(SystemExit) as cm:
+                    _run(argv)
+                self.assertIn("BEXIO_TOKEN", str(cm.exception))
+        urlopen.assert_not_called()
+
+
 class BrokerTest(unittest.TestCase):
+    def setUp(self):
+        setUp_token(self)
+
     def test_refuses_to_run_through_the_broker(self):
         path = _pdf()
         with mock.patch.dict(os.environ, {"BEXIO_BROKER": "1"}), \

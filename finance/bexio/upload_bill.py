@@ -5,16 +5,14 @@ Benchi decided on this one exception to "bexio is read-only" (2026-10-12). Nothi
 else is written: the one request the script can make is POST /3.0/files with the
 PDF as the multipart field "file", and _send refuses any other method or path.
 
-It uses the export login (oauth.EXPORT_SCOPE, which holds the bexio `file` scope),
-and never the Varlock broker, which answers GET only. The export login is removed
-afterwards with `oauth.py logout --export-scope`; this script prints that command
-and does not run it.
+It authenticates with the personal access token only: BEXIO_TOKEN, injected by varlock.
+Not the OAuth login, not the keychain, and never the Varlock broker, which answers GET only.
 
 Only .pdf files under private/ are sent. A dry run is the default: it prints what
 it would upload and makes no request; a real upload needs --yes.
 
-    python3 finance/bexio/upload_bill.py /Users/bsaladin/ws_yardr_finance/private/bills/<file>.pdf
-    python3 finance/bexio/upload_bill.py --yes /Users/bsaladin/ws_yardr_finance/private/bills/<file>.pdf
+    varlock run -p /Users/bsaladin/ws_yardr_finance/secrets -- python3 finance/bexio/upload_bill.py <file>.pdf
+    varlock run -p /Users/bsaladin/ws_yardr_finance/secrets -- python3 finance/bexio/upload_bill.py --yes <file>.pdf
 
 Standard library only, like client.py.
 """
@@ -39,11 +37,6 @@ PRIVATE = os.environ.get("BEXIO_PRIVATE") or "/Users/bsaladin/ws_yardr_finance/p
 UPLOAD_METHOD = "POST"
 UPLOAD_PATH = "/3.0/files"
 UPLOAD_FIELD = "file"
-
-LOGOUT_COMMAND = (
-    "varlock run -p /Users/bsaladin/ws_yardr_finance/secrets -- "
-    "python3 finance/bexio/oauth.py logout --export-scope"
-)
 
 
 class RefusedRequest(Exception):
@@ -101,15 +94,19 @@ def multipart(filename, content):
 
 
 def upload(path, token):
-    """Upload one checked PDF; returns the bexio file id from the answer."""
+    """Upload one checked PDF; returns (id, uuid) of the stored file from the answer.
+
+    bexio answers with an array of file objects (one for the one file sent).
+    """
     with open(path, "rb") as f:
         content = f.read()
     content_type, body = multipart(path, content)
     answer = _send(UPLOAD_METHOD, UPLOAD_PATH, body, content_type, token)
-    file_id = answer.get("id") if isinstance(answer, dict) else None
-    if not file_id:
-        raise SystemExit("bexio answered the upload without a file id")
-    return file_id
+    stored = answer[0] if isinstance(answer, list) and answer and isinstance(answer[0], dict) else answer
+    file_id = stored.get("id") if isinstance(stored, dict) else None
+    if file_id is None:
+        raise SystemExit("bexio answered the upload without a file id; the file may be stored, check the inbox before sending it again")
+    return file_id, stored.get("uuid")
 
 
 def main(argv):
@@ -121,6 +118,10 @@ def main(argv):
     if os.environ.get("BEXIO_BROKER") == "1":
         raise SystemExit("the upload does not go through the Varlock broker (it answers GET only); unset BEXIO_BROKER")
 
+    token = os.environ.get("BEXIO_TOKEN")
+    if not token:
+        raise SystemExit("BEXIO_TOKEN is not set; run through varlock (see finance/bexio/README.md)")
+
     # Every file is checked before the first upload, so a bad name sends nothing.
     paths = [check_pdf(f) for f in args.files]
 
@@ -130,14 +131,9 @@ def main(argv):
         print("dry run: nothing sent; add --yes to upload")
         return
 
-    token, kind = client.resolve_token(export_scope=True)
-    print("bexio token: {}".format(client.TOKEN_NAMES[kind]), file=sys.stderr)
-    try:
-        for path in paths:
-            file_id = upload(path, token)
-            print("uploaded {}: bexio file id {}".format(os.path.basename(path), file_id))
-    finally:
-        print("when the uploads are done, remove the export login: " + LOGOUT_COMMAND)
+    for path in paths:
+        file_id, file_uuid = upload(path, token)
+        print("uploaded {}: bexio file id {} (uuid {})".format(os.path.basename(path), file_id, file_uuid))
 
 
 if __name__ == "__main__":
