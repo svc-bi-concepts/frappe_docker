@@ -104,6 +104,12 @@ class GateImage(unittest.TestCase):
         self.assertEqual(run.stdout.strip(), "frappe-finance-custom:t-new")
         self.assertIn("rebase onto main", run.stderr)
 
+    def test_warns_when_the_gate_runs_a_tag_main_does_not_pin(self):
+        run = self.run_gate("t-main", "t-main", ["t-new"])
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(run.stdout.strip(), "frappe-finance-custom:t-new")
+        self.assertIn("rebase onto main", run.stderr)
+
     def test_refuses_when_no_image_fits(self):
         for at_rest in ([], ["t-a", "t-b"]):
             run = self.run_gate("t-branch", "t-main", at_rest)

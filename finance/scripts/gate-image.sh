@@ -41,7 +41,7 @@ else
   TAG=$1
 fi
 
-if [ "$BRANCH" != "$MAIN" ]; then
+if [ "$BRANCH" != "$MAIN" ] || [ "$TAG" != "$MAIN" ]; then
   echo "gate-image: origin/main pins $REPO:${MAIN:-(unreadable)}, this branch pins $REPO:$BRANCH, the gate runs $REPO:$TAG: rebase onto main" >&2
 fi
 
