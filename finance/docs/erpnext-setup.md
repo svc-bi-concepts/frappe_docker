@@ -342,6 +342,10 @@ the RAM it sees, which on 2026-10-11 got the bi14 hrms vite step SIGKILLed (stat
 capped builders. The Containerfile therefore runs `bench init --skip-assets`, applies that patch
 and then `bench build --production`. A different value is an env setting,
 `NODE_HEAP_MB=1536 finance/scripts/build-image.sh live <tag>`, and must be a number.
+The mini has three capped builders: `capped` (1.2 GiB), `capped-2g` (2 GiB) and `capped-5g` (5 GiB).
+The full asset build (hrms and erpnextswiss bundles included) needs `capped-5g`: on the 1.2 GiB
+builder the asset step is SIGKILLed (status 137) and buildkit reports ResourceExhausted, as on
+2026-10-12. Build with `BUILDER=capped-5g finance/scripts/build-image.sh live <tag>`.
 The script needs free disk for the scratch layouts (about the size of the image, twice).
 
 ## Switching the stack to a new image
