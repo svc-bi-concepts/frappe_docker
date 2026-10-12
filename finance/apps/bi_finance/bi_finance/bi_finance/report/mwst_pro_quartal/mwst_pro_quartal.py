@@ -10,6 +10,8 @@ The view 'Belege' lists one Ziffer's vouchers (the Payment Entries with their sh
 Entries), which the Ziffern view's row click opens.
 """
 
+from decimal import Decimal
+
 import frappe
 from frappe.utils import flt, getdate, nowdate
 
@@ -33,9 +35,10 @@ def execute(filters=None):
     for quarter in quarters:
         start, end = mwst_payment.period_bounds(quarter)
         figures[quarter] = mwst_quarterly.figures_of(_payment_totals(company, start, end))
+    # the module computes in Decimal, so the doctype's floats come in as Decimals; the report converts back at the edge
     for row in frappe.get_all("MWST bexio Ziffer", filters=[["quarter", "in", quarters]],
                               fields=["quarter", "ziffer", "base", "tax"]):
-        bexio.setdefault(row.quarter, {})[row.ziffer] = [flt(row.base), flt(row.tax)]
+        bexio.setdefault(row.quarter, {})[row.ziffer] = [Decimal(str(row.base or 0)), Decimal(str(row.tax or 0))]
 
     rows = mwst_quarterly.ziffern_rows(quarters, figures, bexio)
     for row in rows:

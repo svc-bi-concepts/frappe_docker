@@ -130,6 +130,35 @@ class ZiffernRowsTest(unittest.TestCase):
         self.assertIn("220", text)
 
 
+class DoctypeFloatsTest(unittest.TestCase):
+    """The doctype hands bexio's figures as floats (a Currency column), the report's read as Decimals: the rows
+    must not depend on which, and a Ziffer the module does not fill must subtract the zero it shows."""
+
+    def test_floats_from_the_doctype_give_the_rows_the_decimals_do(self):
+        figures = {Q1: {"302": [D("909.09"), D("70.00")], "399": [ZERO, D("70.00")]}}
+        bexio_decimal = {Q1: {"302": [D("909.08"), D("70.00")], "399": [ZERO, D("70.00")]}}
+        bexio_float = {Q1: {"302": [909.08, 70.0], "399": [0.0, 70.0]}}
+        self.assertEqual(mq.ziffern_rows([Q1], figures, bexio_float),
+                         mq.ziffern_rows([Q1], figures, bexio_decimal))
+
+    def test_a_float_difference_is_cent_exact(self):
+        rows = {r["ziffer"]: r for r in mq.ziffern_rows([Q1], {Q1: {"302": [D("909.09"), D("70.00")]}},
+                                                        {Q1: {"302": [909.08, 70.0]}})}
+        self.assertEqual(rows["302"]["{} differenz".format(Q1)], D("0.01"))
+
+    def test_bexio_without_a_module_figure_shows_zero_and_the_negative_difference(self):
+        rows = {r["ziffer"]: r for r in mq.ziffern_rows([Q1], {}, {Q1: {"225": [1000.0, 0.0]}})}
+        self.assertEqual(rows["225"]["{} erpnext".format(Q1)], ZERO)
+        self.assertEqual(rows["225"]["{} bexio".format(Q1)], D("1000.00"))
+        self.assertEqual(rows["225"]["{} differenz".format(Q1)], D("-1000.00"))
+
+    def test_a_ziffer_without_a_bexio_row_keeps_both_columns_blank(self):
+        rows = {r["ziffer"]: r for r in mq.ziffern_rows([Q1], {Q1: {"302": [D("909.09"), D("70.00")]}}, {})}
+        self.assertEqual(rows["302"]["{} erpnext".format(Q1)], D("909.09"))
+        self.assertIsNone(rows["302"]["{} bexio".format(Q1)])
+        self.assertIsNone(rows["302"]["{} differenz".format(Q1)])
+
+
 class BelegeTest(unittest.TestCase):
     """The drill-down: a Ziffer's vouchers, their shares summed per voucher, the journal entries among them."""
 

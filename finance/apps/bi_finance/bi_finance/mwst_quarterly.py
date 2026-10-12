@@ -79,21 +79,32 @@ def _figure(acc, kind):
     return acc[0] if kind == "Entgelt" else acc[1]
 
 
+def _decimal(value):
+    """A bexio figure as the module computes it. The doctype's Currency comes out as a float, whose str()
+    keeps the digits the export had; the cent rounding matches the ERPNext figures."""
+    if not isinstance(value, Decimal):
+        value = Decimal(str(value))
+    return value.quantize(CENT, rounding=ROUND_HALF_UP)
+
+
 def ziffern_rows(quarters, figures_by_quarter, bexio_by_quarter):
     """One report row per form Ziffer: the Ziffer, its label, and per quarter the ERPNext figure, bexio's
     figure (None where the doctype has no row) and the difference (None without bexio's). figures_by_quarter
-    maps a quarter to figures_of()'s dict, bexio_by_quarter to {Ziffer: [base, tax]}."""
+    maps a quarter to figures_of()'s dict, bexio_by_quarter to {Ziffer: [base, tax]} as the doctype gives
+    them (floats) or as Decimals."""
     rows = []
     for ziffer, label, kind in ROWS:
         row = {"ziffer": ziffer, "label": label, "kind": kind}
         for quarter in quarters:
             erp = _figure(figures_by_quarter.get(quarter, {}).get(ziffer), kind)
-            bex = _figure(bexio_by_quarter.get(quarter, {}).get(ziffer), kind)
+            acc = bexio_by_quarter.get(quarter, {}).get(ziffer)
+            bex = _figure(None if acc is None else [_decimal(value) for value in acc], kind)
             # a Ziffer the module did not fill is a true zero (it adds up the whole quarter); bexio without
             # its own row stays blank, so the column says 'no declaration' and not 'nothing declared'
-            row["{} erpnext".format(quarter)] = ZERO if erp is None else erp
+            shown = ZERO if erp is None else erp
+            row["{} erpnext".format(quarter)] = shown
             row["{} bexio".format(quarter)] = bex
-            row["{} differenz".format(quarter)] = None if bex is None else erp - bex
+            row["{} differenz".format(quarter)] = None if bex is None else shown - bex
         rows.append(row)
     return rows
 
