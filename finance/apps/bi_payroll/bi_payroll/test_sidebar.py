@@ -9,6 +9,8 @@ app-rooted, mount_on erpnext: one shell with the HR part, Benchi 2026-10-12). Th
 Ownership: `is_default_module` claims an entity for this shell, so it is set only on bi_payroll's own documents and
 reports. Frappe HR's documents (Payroll Entry, Salary Slip, Salary Register, Salary Structure, Salary Component) are
 linked unclaimed: they open in this shell when reached from here and in their own shell when reached bare.
+The Salary Certificate (Lohnausweis) is erpnextswiss's: it is linked and claimed here under Year end, so the
+year-end step is reachable on ERPNext's rail and a bare route to it opens in this shell.
 """
 
 import json
@@ -31,8 +33,11 @@ HRMS = {
     "Salary Component": "DocType",
 }
 
+# erpnextswiss's own document, claimed here (the reason is in the module docstring): present, never ours to ship
+ERPNEXTSWISS = {"Salary Certificate": "DocType"}
+
 # the sections in the order the menu shows them, and whether each opens
-SECTIONS = [("Reports", 0), ("Setup", 1)]
+SECTIONS = [("Reports", 0), ("Year end", 0), ("Setup", 1)]
 
 
 def load(path):
@@ -88,13 +93,24 @@ class Sidebar(unittest.TestCase):
     def test_the_rows_sit_under_their_section_in_the_asked_order(self):
         order = [(item["label"], item["type"]) for item in self.doc["items"]]
         reports = order.index(("Reports", "Section Break"))
+        year_end = order.index(("Year end", "Section Break"))
         setup = order.index(("Setup", "Section Break"))
-        self.assertEqual([label for label, kind in order[reports + 1:setup] if kind == "Link"],
+        self.assertEqual([label for label, kind in order[reports + 1:year_end] if kind == "Link"],
                          ["Payroll Hand-over", "Salary Register"])
+        self.assertEqual([label for label, kind in order[year_end + 1:setup] if kind == "Link"],
+                         ["Salary Certificate"])
         self.assertEqual([label for label, kind in order[setup + 1:] if kind == "Link"],
                          ["Payroll Swiss Settings", "QST Tariff Code", "QST Tariff", "Salary Structure", "Salary Component"])
 
-    def test_every_doctype_and_report_row_names_something_that_ships_or_is_hrms(self):
+    def test_the_salary_certificate_is_claimed_under_year_end(self):
+        by_label = {link["label"]: link for link in self.links}
+        for label, link_type in ERPNEXTSWISS.items():
+            self.assertEqual(by_label[label]["link_type"], link_type)
+            self.assertEqual(by_label[label]["link_to"], label)
+            self.assertEqual(by_label[label]["indent"], 0)
+            self.assertTrue(by_label[label].get("is_default_module"), label)
+
+    def test_every_doctype_and_report_row_names_something_that_ships_or_is_hrms_or_erpnextswiss(self):
         own = own_names("doctype") | own_names("report")
         for link in self.links:
             if link["link_type"] not in ("DocType", "Report"):
@@ -102,14 +118,19 @@ class Sidebar(unittest.TestCase):
             if link["label"] in HRMS:
                 self.assertEqual(HRMS[link["label"]], link["link_type"], link["label"])
                 self.assertNotIn(scrub(link["link_to"]), own, link["label"])
+            elif link["label"] in ERPNEXTSWISS:
+                self.assertEqual(ERPNEXTSWISS[link["label"]], link["link_type"], link["label"])
+                self.assertNotIn(scrub(link["link_to"]), own, link["label"])
             else:
                 self.assertIn(scrub(link["link_to"]), own, link["label"])
 
-    def test_ownership_is_claimed_only_on_the_app_s_own_rows(self):
+    def test_ownership_is_claimed_only_on_the_app_s_own_rows_and_the_erpnextswiss_document(self):
         own = own_names("doctype") | own_names("report")
         for link in self.links:
             claimed = bool(link.get("is_default_module"))
-            should = link["link_type"] in ("DocType", "Report") and scrub(link["link_to"]) in own
+            should = link["link_type"] in ("DocType", "Report") and (
+                scrub(link["link_to"]) in own or link["label"] in ERPNEXTSWISS
+            )
             self.assertEqual(claimed, should, link["label"])
 
     def test_the_hr_rows_are_linked_to_their_own_names(self):

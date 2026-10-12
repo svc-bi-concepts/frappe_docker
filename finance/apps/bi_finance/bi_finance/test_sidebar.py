@@ -9,9 +9,9 @@ Finance menu, which the computed sidebar cannot show. Offline, stdlib only:
 
 Ownership: `is_default_module` on an item claims the entity for this shell. It is set on
 bi_finance's own doctypes and reports, and on the two erpnextswiss documents Benchi works in
-every day (VAT Declaration, Payment Proposal): without the claim a bare route to them (a
-workspace card, a search result, the Add button of a bare list) opens erpnextswiss's
-60-item computed shell. It is never set on ERPNext's own bank rows (Bank Transaction,
+every day (VAT Declaration, Payment Proposal), and on ERPNextSwiss Settings (planning_days of the
+payment run, under Setup): without the claim a bare route to them (a workspace card, a search
+result, the Add button of a bare list) opens erpnextswiss's 60-item computed shell. It is never set on ERPNext's own bank rows (Bank Transaction,
 Bank Reconciliation Tool, Bank Account): ERPNext's shell keeps them, and the two bank pages
 resolve here by being listed.
 """
@@ -41,11 +41,12 @@ KEEP = (
     "MWST pro Quartal",
 )
 
-# the two erpnextswiss documents Benchi works in daily: present here and claimed, so a bare route
+# the three erpnextswiss documents Benchi works in: present here and claimed, so a bare route
 # to them opens in this shell (the reason is in the module docstring)
 CLAIMED = {
     "VAT Declaration": "DocType",
     "Payment Proposal": "DocType",
+    "ERPNextSwiss Settings": "DocType",
 }
 
 # ERPNext's own bank rows: present here, never claimed (ERPNext's shell keeps them)
@@ -88,6 +89,7 @@ class Sidebar(unittest.TestCase):
             self.assertIn(label, labels)
 
     def test_the_erpnextswiss_documents_are_claimed_and_the_erpnext_rows_are_not(self):
+        self.assertEqual(len(CLAIMED), 3)
         by_label = {link["label"]: link for link in self.links}
         for label, link_type in CLAIMED.items():
             self.assertEqual(by_label[label]["link_type"], link_type)

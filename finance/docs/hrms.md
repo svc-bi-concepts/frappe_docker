@@ -460,6 +460,9 @@ Salary Certificate Settings to the mapping above and warns if BI Concepts has no
 dynamic configuration is needed: the static mode has no table for line 12. The first run is done (erp-zg4p,
 2026-10-11); reruns say in place.
 
+The Salary Certificate is on ERPNext's rail under Swiss Payroll, section Year end (bi_payroll's sidebar, claimed, so
+it opens there; the erpnextswiss shell is not reached from the rail).
+
 Each January, for the year that just closed (the first is 2027, the 2026 certificates are bexio's):
 
 1. Check the year's view: report `Payroll hand-over`, view `Lohnausweis`, filter the year. Counts only go in notes.

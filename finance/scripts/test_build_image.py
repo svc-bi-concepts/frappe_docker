@@ -362,6 +362,39 @@ FORM11_JSON = r'''{
  "disabled": 0,
 }'''
 
+# The first 27 lines of erpnextswiss hooks.py at the pin (5d85c45): the add_to_apps_screen block
+# (lines 16 to 24) is patch 0008's target, and line 27 is its last context line. The rest of the
+# file is cut: git apply needs the hunk's context, not the whole file.
+HOOKS_PATH = "erpnextswiss/hooks.py"
+HOOKS_HEAD = '''# -*- coding: utf-8 -*-
+from __future__ import unicode_literals
+from . import __version__ as app_version
+
+app_name = "erpnextswiss"
+app_title = "Schweizer Buchhaltung"
+app_publisher = "libracore (https://www.libracore.com)"
+app_description = "Schweizer Banking, QR-Rechnung, MwSt und E-Rechnung für ERPNext"
+app_icon = "fa fa-diamond"
+app_color = "#92d050"
+app_email = "info@libracore.com"
+app_license = "AGPL"
+app_home = "/desk/schweizer-buchhaltung"
+app_logo_url = "/assets/erpnextswiss/images/schweizer_buchhaltung.svg"
+
+add_to_apps_screen = [
+    {
+        "name": "erpnextswiss",
+        "logo": "/assets/erpnextswiss/images/schweizer_buchhaltung.svg",
+        "title": "Schweizer Buchhaltung",
+        "route": "schweizer-buchhaltung",
+    }
+]
+
+# Includes in <head>
+# ------------------
+
+'''
+
 # hrms's shipped dock at the pin v16.50.0 (hrms/dock/hrms/hrms.json, 87 lines, upstream content):
 # the whole file, so the patch's context is the file's own. The patch adds one key, mount_on.
 HRMS_DOCK_PATH = "hrms/dock/hrms/hrms.json"
@@ -548,6 +581,7 @@ class PatchStep(unittest.TestCase):
         self.commit("erpnextswiss/erpnextswiss/doctype/payment_proposal/payment_proposal.py", PAYMENT_PROPOSAL)
         self.commit("erpnextswiss/erpnextswiss/common_functions.py", COMMON_FUNCTIONS)
         self.commit(FORM11_JSON_PATH, FORM11_JSON)
+        self.commit(HOOKS_PATH, HOOKS_HEAD)
 
     def patch(self, name, text):
         with open(os.path.join(self.patches, name), "w") as f:
@@ -677,6 +711,18 @@ class PatchStep(unittest.TestCase):
         css = json.loads("{" + css_line.rstrip(",") + "}")["css"]
         self.assertIn(".form11 {\n   zoom: 0.69;\n", css)
         self.assertIn("width: 980px", css)
+
+    def test_our_erpnextswiss_tile_patch_drops_add_to_apps_screen(self):
+        # Regression: erpnextswiss's add_to_apps_screen put a second "Schweizer Buchhaltung" tile on
+        # /apps next to ERPNext. 0008 removes the block and nothing else in hooks.py.
+        self.commit_pin_sources()
+        run = subprocess.run(["sh", APPLY, PATCH_DIR, self.app], capture_output=True, text=True)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        hooks = self.read(HOOKS_PATH)
+        self.assertNotIn("add_to_apps_screen", hooks)
+        self.assertIn('app_home = "/desk/schweizer-buchhaltung"\n', hooks)
+        self.assertIn('app_logo_url = "/assets/erpnextswiss/images/schweizer_buchhaltung.svg"\n', hooks)
+        self.assertIn("# Includes in <head>\n# ------------------\n\n", hooks)
 
     def test_our_bundler_patch_keeps_the_node_options_the_build_was_given(self):
         # Regression: frappe's bundler replaced NODE_OPTIONS with 75% of the RAM it sees, so the heap
