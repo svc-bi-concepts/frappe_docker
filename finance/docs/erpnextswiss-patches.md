@@ -86,6 +86,10 @@ order is clear. If a patch does not apply, the build stops with
 The same step runs for the live image and the copy image, since both use the same app
 fetch. Patches are kept in the repository, so a rebuild applies the same fixes.
 
+The build also removes erpnextswiss's `workspace`, `desktop_icon` and `workspace_sidebar` folders, after the
+hrms patch (`images/custom/Containerfile`, the `rm -r` line; `test_the_containerfile_removes_the_erpnextswiss_desk_folders`
+in `finance/scripts/test_build_image.py`). Its after-migrate skips a missing folder, so the desk rows stay gone.
+
 ## Adding a patch
 
 1. Make the change in a checkout of the pinned commit, then take the diff with

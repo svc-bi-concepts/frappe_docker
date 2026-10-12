@@ -66,8 +66,12 @@ order the apps are installed (`sites/apps.txt`: bi_finance, bi_payroll, erpnext,
 The order, and hiding an entry, is arranged in the Desk with a Workspace Manager (the site layer, no code).
 The apps screen (`/apps`) shows ERPNext only: a mounted app is kept off it (`finance/patches/frappe/0002`), and
 erpnextswiss's own Schweizer Buchhaltung tile is gone (`finance/patches/erpnextswiss/0008`, its `add_to_apps_screen`
-block). frappe itself, the Framework, never had a tile there. The erpnextswiss shell stays installed but is not
-reached from the rail: its four documents that Benchi works in are claimed on ERPNext's rail (below).
+block). frappe itself, the Framework, never had a tile there. The erpnextswiss shell has no workspaces, icon or
+sidebar of its own any more: the Containerfile removes the three shipped folders (`workspace`, `desktop_icon`,
+`workspace_sidebar`), and bi_finance's patch `erpnextswiss_desk_records` deleted the rows the site held once. So the
+search bar offers no Schweizer Buchhaltung workspace. A bare route to an erpnextswiss document that is not claimed
+still opens in the ERPNextSwiss shell frappe builds from the module's doctypes; its four documents that Benchi works
+in are claimed on ERPNext's rail (below).
 
 BI Finance is a companion of ERPNext, not an app of its own in the apps screen (Benchi, 2026-10-12). Its
 shipped documents are a Dock mounted on erpnext (`dock/bi_finance/bi_finance.json`: one rail entry, Treasury, after

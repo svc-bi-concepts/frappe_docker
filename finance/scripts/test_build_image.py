@@ -783,6 +783,22 @@ class PatchStep(unittest.TestCase):
         self.assertLess(text.index("apply-patches.sh /home/frappe/patches/frappe apps/frappe"), hrms)
         self.assertLess(hrms, text.index("bench build --production"))
 
+    def test_the_containerfile_removes_the_erpnextswiss_desk_folders(self):
+        # Regression: erpnextswiss shipped its five workspaces, a desktop icon and a v16 sidebar archive row, and its
+        # after_migrate upserted them on every migrate. A missing folder is skipped by its ensure function, so the
+        # removal is the whole fix; it must run after the patches that touch erpnextswiss and before the asset build.
+        with open(CONTAINERFILE) as f:
+            text = f.read()
+        removals = [line.strip() for line in text.splitlines() if line.strip().startswith("rm -r apps/erpnextswiss")]
+        self.assertEqual(len(removals), 1, removals)
+        self.assertIn("apps/erpnextswiss/erpnextswiss/erpnextswiss/workspace ", removals[0])
+        self.assertIn("apps/erpnextswiss/erpnextswiss/desktop_icon ", removals[0])
+        self.assertIn("apps/erpnextswiss/erpnextswiss/workspace_sidebar ", removals[0])
+        removed = text.index(removals[0])
+        self.assertLess(text.index("apply-patches.sh /home/frappe/patches/erpnextswiss apps/erpnextswiss"), removed)
+        self.assertLess(text.index("apply-patches.sh /home/frappe/patches/hrms apps/hrms"), removed)
+        self.assertLess(removed, text.index("bench build --production"))
+
 
 if __name__ == "__main__":
     unittest.main()

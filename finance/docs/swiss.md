@@ -512,7 +512,7 @@ live site ran `bi10` then) and on the HRMS copy image `hrms1`.
 | --- | --- | --- | --- |
 | 1 | `erpnextswiss/scripts/item_tools.py` line 43 | Stray comma after a SQL string: `SyntaxError: invalid syntax`. | None at runtime. The module is a maintenance script, not hooked, and nothing we use imports or calls it. Its two `@frappe.whitelist()` functions (`get_next_item_code`, `get_voucher_value`) cannot be called while it does not compile; no app in the image references them. It breaks erpnextswiss's own test discovery and `test_item_cleanup_native`. |
 | 2 | `tests/test_ebics_automation` | 6 of 33 tests error, `ImportError: not properly registered`. | None. EBICS stays disabled (Risks 6). erpnextswiss's own tests are not part of our gate. |
-| 3 | `tests/test_workspace_routes_native` | 2 of 7 tests error: `Schweizer Buchhaltung is an archive of the previous navigation and can no longer be edited`. | None. The archived workspace is not used. |
+| 3 | `tests/test_workspace_routes_native` | 2 of 7 tests error: `Schweizer Buchhaltung is an archive of the previous navigation and can no longer be edited`. | None. The archived workspace is not used. Since erp-ydgw the image ships neither the workspace nor the sidebar archive row, and bi_finance's patch `erpnextswiss_desk_records` deleted the site's rows, so the archive is gone there; whether these two tests then pass is not read yet (check on the next image). |
 
 **Confirmed (read-only):** item 1 on `bi9`, `bi10` and `hrms1` with `py_compile`
 (all three fail the same way). Items 2 and 3 were run on `hrms1` only, on a throwaway

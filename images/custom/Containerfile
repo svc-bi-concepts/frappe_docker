@@ -160,6 +160,9 @@ RUN --mount=type=secret,id=apps_json,target=/opt/frappe/apps.json,uid=1000,gid=0
   sh /home/frappe/patches/apply-patches.sh /home/frappe/patches/erpnextswiss apps/erpnextswiss && \
   sh /home/frappe/patches/apply-patches.sh /home/frappe/patches/frappe apps/frappe && \
   sh /home/frappe/patches/apply-patches.sh /home/frappe/patches/hrms apps/hrms && \
+  # The erpnextswiss shell's workspaces, icon and v16 sidebar archive are not shipped: its after_migrate skips each
+  # store whose folder is missing, so nothing recreates them (Benchi, 2026-10-12: no Schweizer Buchhaltung on the desk).
+  rm -r apps/erpnextswiss/erpnextswiss/erpnextswiss/workspace apps/erpnextswiss/erpnextswiss/desktop_icon apps/erpnextswiss/erpnextswiss/workspace_sidebar && \
   # The asset build runs after the frappe patch: bench init would build before it, and frappe's
   # bundler replaces the NODE_OPTIONS it is given with 75% of the RAM it sees (about 2.9G in the
   # builder VM), so the heap cap never reached the vite build of hrms, which was SIGKILLed.

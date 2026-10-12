@@ -5,3 +5,5 @@
 bi_finance.patches.bank_transaction_rules
 # the seven Treasury cards that carried their document names, removed after the workspace names the new ones (number_card_names.py)
 bi_finance.patches.number_card_names
+# the erpnextswiss desk rows (icon, sidebar archive, five workspaces) the image no longer ships, deleted once (erpnextswiss_desk_records.py)
+bi_finance.patches.erpnextswiss_desk_records
