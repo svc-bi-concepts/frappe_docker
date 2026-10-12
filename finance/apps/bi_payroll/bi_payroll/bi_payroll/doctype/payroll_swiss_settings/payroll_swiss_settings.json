@@ -102,7 +102,7 @@
    "label": "BVG employee % age 25-34",
    "fieldtype": "Percent",
    "default": "3.5",
-   "description": "PLACEHOLDER: half of the statutory minimum total (BVG Art. 16: 7/10/15/18 percent by age band, split 50/50). Replace with the fund's plan rate from private/payroll-insurance/.",
+   "description": "Until the pension fund's plan rate is entered: half of the statutory minimum for the age band (BVG Art. 16).",
    "precision": "2"
   },
   {
@@ -110,7 +110,7 @@
    "label": "BVG employee % age 35-44",
    "fieldtype": "Percent",
    "default": "5",
-   "description": "PLACEHOLDER: half of the statutory minimum total (BVG Art. 16: 7/10/15/18 percent by age band, split 50/50). Replace with the fund's plan rate from private/payroll-insurance/.",
+   "description": "Until the pension fund's plan rate is entered: half of the statutory minimum for the age band (BVG Art. 16).",
    "precision": "2"
   },
   {
@@ -118,7 +118,7 @@
    "label": "BVG employee % age 45-54",
    "fieldtype": "Percent",
    "default": "7.5",
-   "description": "PLACEHOLDER: half of the statutory minimum total (BVG Art. 16: 7/10/15/18 percent by age band, split 50/50). Replace with the fund's plan rate from private/payroll-insurance/.",
+   "description": "Until the pension fund's plan rate is entered: half of the statutory minimum for the age band (BVG Art. 16).",
    "precision": "2"
   },
   {
@@ -126,7 +126,7 @@
    "label": "BVG employee % age 55-64",
    "fieldtype": "Percent",
    "default": "9",
-   "description": "PLACEHOLDER: half of the statutory minimum total (BVG Art. 16: 7/10/15/18 percent by age band, split 50/50). Replace with the fund's plan rate from private/payroll-insurance/.",
+   "description": "Until the pension fund's plan rate is entered: half of the statutory minimum for the age band (BVG Art. 16).",
    "precision": "2"
   },
   {
@@ -134,7 +134,7 @@
    "label": "BVG employer % age 25-34",
    "fieldtype": "Percent",
    "default": "3.5",
-   "description": "PLACEHOLDER: half of the statutory minimum total (BVG Art. 16: 7/10/15/18 percent by age band, split 50/50). Replace with the fund's plan rate from private/payroll-insurance/.",
+   "description": "Until the pension fund's plan rate is entered: half of the statutory minimum for the age band (BVG Art. 16).",
    "precision": "2"
   },
   {
@@ -142,7 +142,7 @@
    "label": "BVG employer % age 35-44",
    "fieldtype": "Percent",
    "default": "5",
-   "description": "PLACEHOLDER: half of the statutory minimum total (BVG Art. 16: 7/10/15/18 percent by age band, split 50/50). Replace with the fund's plan rate from private/payroll-insurance/.",
+   "description": "Until the pension fund's plan rate is entered: half of the statutory minimum for the age band (BVG Art. 16).",
    "precision": "2"
   },
   {
@@ -150,7 +150,7 @@
    "label": "BVG employer % age 45-54",
    "fieldtype": "Percent",
    "default": "7.5",
-   "description": "PLACEHOLDER: half of the statutory minimum total (BVG Art. 16: 7/10/15/18 percent by age band, split 50/50). Replace with the fund's plan rate from private/payroll-insurance/.",
+   "description": "Until the pension fund's plan rate is entered: half of the statutory minimum for the age band (BVG Art. 16).",
    "precision": "2"
   },
   {
@@ -158,12 +158,12 @@
    "label": "BVG employer % age 55-64",
    "fieldtype": "Percent",
    "default": "9",
-   "description": "PLACEHOLDER: half of the statutory minimum total (BVG Art. 16: 7/10/15/18 percent by age band, split 50/50). Replace with the fund's plan rate from private/payroll-insurance/.",
+   "description": "Until the pension fund's plan rate is entered: half of the statutory minimum for the age band (BVG Art. 16).",
    "precision": "2"
   },
   {
    "fieldname": "section_insurers",
-   "label": "Insurers (open: empty until the policy sheets are in)",
+   "label": "Insurers",
    "fieldtype": "Section Break",
    "collapsible": 0
   },
@@ -171,46 +171,46 @@
    "fieldname": "swiss_uvg_max",
    "label": "UVG/NBU maximum insured salary (yearly)",
    "fieldtype": "Currency",
-   "description": "Open. From the insurer's policy."
+   "description": "From the insurer's policy for the year; empty until entered, then the slips compute with it."
   },
   {
    "fieldname": "swiss_uvg_ag",
    "label": "UVG employer share (BU, %)",
    "fieldtype": "Percent",
-   "description": "Open. From the insurer's policy.",
+   "description": "From the insurer's policy for the year; empty until entered, then the slips compute with it.",
    "precision": "2"
   },
   {
    "fieldname": "swiss_nbu_ee",
    "label": "NBU employee share (%)",
    "fieldtype": "Percent",
-   "description": "Open. From the insurer's policy.",
+   "description": "From the insurer's policy for the year; empty until entered, then the slips compute with it.",
    "precision": "2"
   },
   {
    "fieldname": "swiss_ktg_ee",
    "label": "KTG employee share (%)",
    "fieldtype": "Percent",
-   "description": "Open. From the insurer's policy.",
+   "description": "From the insurer's policy for the year; empty until entered, then the slips compute with it.",
    "precision": "2"
   },
   {
    "fieldname": "swiss_ktg_ag",
    "label": "KTG employer share (%)",
    "fieldtype": "Percent",
-   "description": "Open. From the insurer's policy.",
+   "description": "From the insurer's policy for the year; empty until entered, then the slips compute with it.",
    "precision": "2"
   },
   {
    "fieldname": "swiss_fak_ag",
    "label": "FAK employer share (%)",
    "fieldtype": "Percent",
-   "description": "Open. From the fund's rate for the canton.",
+   "description": "From the fund's rate for the canton; empty until entered, then the slips compute with it.",
    "precision": "2"
   }
  ],
  "issingle": 1,
- "modified": "2026-10-10 14:00:00.000000",
+ "modified": "2026-10-12 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "BI Payroll",
  "name": "Payroll Swiss Settings",

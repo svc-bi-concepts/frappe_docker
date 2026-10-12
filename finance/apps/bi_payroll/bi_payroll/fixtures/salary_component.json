@@ -428,7 +428,7 @@
   "depends_on_payment_days": 0,
   "is_tax_applicable": 0,
   "remove_if_zero_valued": 1,
-  "description": "Swiss payroll (bi_payroll). The withholding tax of the ESTV tariff for the employee's code, set on the slip by withhold_qst.",
+  "description": "Swiss payroll. The withholding tax of the ESTV tariff for the employee's code, set on the slip.",
   "accounts": [
    {
     "doctype": "Salary Component Account",

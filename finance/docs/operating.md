@@ -2,7 +2,7 @@
 
 One page of the recurring work, in the order it is done. Every Swiss step is on the Treasury
 workspace's cards, one per area (Desk: ERPNext › Treasury, then
-the card: **Banking**, **Payments**, **MWST**, **Cash forecast**). Payroll is not on that page: it is
+the card: **Banking**, **Payments**, **MWST**, **Cash Forecast**). Payroll is not on that page: it is
 **ERPNext › Swiss Payroll**, on ERPNext's rail. The Desk place is in bold; the
 document that explains the step is in brackets. Conventions for labels and buttons:
 `finance/docs/erpnext-setup.md`, "Desk conventions".

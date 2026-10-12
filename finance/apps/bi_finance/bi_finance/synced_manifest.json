@@ -8,12 +8,12 @@
   "sha": "2bd0924fa67d8fb7cfeab53b84bbf9dce7139ec29e6f685b55f45c284370fc03"
  },
  "bi_finance/doctype/bank_matching_settings/bank_matching_settings.json": {
-  "modified": "2026-10-11 09:00:00.000000",
-  "sha": "8a72aad35e6ac0c3854f83cb3be0e365301ae3cbc3689fdd6c6300dccf43e573"
+  "modified": "2026-10-12 12:00:00.000000",
+  "sha": "a588b9de5807b61bbcf4eb112db5d8f4416473cfbb3c6a42691097ff5b67b96f"
  },
  "bi_finance/doctype/bank_statement_upload/bank_statement_upload.json": {
-  "modified": "2026-10-10 12:00:00.000000",
-  "sha": "1f1829a0936924997a5720e7af25eae9eb281de8e0b45a11cbfe8bd3a2a3bf1d"
+  "modified": "2026-10-12 12:00:00.000000",
+  "sha": "9b64f35b67f59baea417195418ebb3cd8d72f0fe85516a03a9a5fe6bc4a44196"
  },
  "bi_finance/doctype/cash_forecast_manual_line/cash_forecast_manual_line.json": {
   "modified": "2026-10-10 17:00:00.000000",
@@ -24,12 +24,12 @@
   "sha": "6f6a41b7c0b5a863fd49238d093e7969da48ef014289ffcc19b6e4780c2d16e3"
  },
  "bi_finance/doctype/paypal_settings/paypal_settings.json": {
-  "modified": "2026-10-10 12:00:00.000000",
-  "sha": "a25887ba72d6d0de4af28cd42f17e419e8122255276cd63cea66822364627468"
+  "modified": "2026-10-12 12:00:00.000000",
+  "sha": "b2b940d62c540db13f44c81ab7a5eedc0796d0803af6f364ed844ce220b1c72b"
  },
  "bi_finance/doctype/wise_settings/wise_settings.json": {
-  "modified": "2026-10-10 10:00:00.000000",
-  "sha": "6af390eb9c9cb4ecc77905094dd93164cda0cc7ae6d5d0d8f08264a6a7dcd0a7"
+  "modified": "2026-10-12 12:00:00.000000",
+  "sha": "6e8860c2e2626bf15724996913123bee77a928cec068aaaeb22951738f3abf97"
  },
  "bi_finance/number_card/account_1000/account_1000.json": {
   "modified": "2026-10-12 09:00:00.000000",
@@ -76,16 +76,16 @@
   "sha": "e97c1cc5a35c712e1ccfb82324513a3af4024cf20c0fc3ca678820094f4492df"
  },
  "bi_finance/workspace/treasury/treasury.json": {
-  "modified": "2026-10-12 10:00:00.000000",
-  "sha": "11ea7d6eb00ada17819c6e350976f617db7fdd2afb9b7d8a8b2b6b53ef00290c"
+  "modified": "2026-10-12 12:00:00.000000",
+  "sha": "44b28edea44f7aa0fc291607cbbf7f57761d95b927594526ce4c7749bc6893fc"
  },
  "bi_finance/workspace_sidebar/treasury/treasury.json": {
   "modified": "2026-10-11 15:00:00.000000",
   "sha": "00a3ef1295b4e16df36858fdaa289c4aaa70bb74529daf3f376b0abe33326d87"
  },
  "bi_finance/doctype/mwst_bexio_ziffer/mwst_bexio_ziffer.json": {
-  "modified": "2026-10-12 01:33:00.000000",
-  "sha": "010e364dc4b8ed551bbf2a8a862484268fcdc82b3531991f80f3c1f6077cfdd2"
+  "modified": "2026-10-12 12:00:00.000000",
+  "sha": "59f0f7ca0006dc3567facf774ef2334fdf5bedd5d15fb9a893fe7ffe30343c05"
  },
  "bi_finance/report/mwst_pro_quartal/mwst_pro_quartal.json": {
   "modified": "2026-10-11 00:25:00.000000",

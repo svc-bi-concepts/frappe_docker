@@ -1,6 +1,10 @@
 frappe.ui.form.on("Bank Statement Upload", {
 	refresh(frm) {
-		if (frm.is_new() || frm.doc.status === "Imported") return;
+		if (frm.is_new()) {
+			frm.set_intro(__("Upload the UBS camt.053 or camt.054 of the month, then Dry run, then Import."));
+			return;
+		}
+		if (frm.doc.status === "Imported") return;
 		frm.add_custom_button(__("Dry run"), () => run(frm, "dry_run"));
 		if (frm.doc.status === "Dry run") {
 			frm.add_custom_button(__("Import"), () => {

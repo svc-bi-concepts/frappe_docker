@@ -11,7 +11,7 @@
  "fields": [
   {
    "default": "0",
-   "description": "Match the new bank lines after each Wise sync and each camt import: a line that is certain reconciles with its invoice, bill or payment. Off until the first dry run on the deployed image is reviewed.",
+   "description": "Match the new bank lines after each Wise sync and each camt import: a line that is certain reconciles with its invoice, bill or payment. Off until the first dry run is reviewed.",
    "fieldname": "enabled",
    "fieldtype": "Check",
    "label": "Match after each import"
@@ -26,7 +26,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-10-11 09:00:00.000000",
+ "modified": "2026-10-12 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "BI Finance",
  "name": "Bank Matching Settings",

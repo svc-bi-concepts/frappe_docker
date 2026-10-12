@@ -13,13 +13,13 @@
  ],
  "fields": [
   {
-   "description": "The client id of the PayPal REST app (live, with Transaction Search on).",
+   "description": "The client id of the PayPal REST app with Transaction Search enabled.",
    "fieldname": "client_id",
    "fieldtype": "Data",
    "label": "Client id"
   },
   {
-   "description": "The secret of the same REST app. Stored as a Password field; the code reads it with get_password.",
+   "description": "The secret of the same REST app.",
    "fieldname": "client_secret",
    "fieldtype": "Password",
    "label": "Client secret"
@@ -47,7 +47,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-10-10 12:00:00.000000",
+ "modified": "2026-10-12 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "BI Finance",
  "name": "PayPal Settings",

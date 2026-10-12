@@ -13,7 +13,7 @@
  ],
  "fields": [
   {
-   "description": "A read-only token from Wise Business. Stored as a Password field; the code reads it with get_password.",
+   "description": "A read-only API token from Wise Business.",
    "fieldname": "api_token",
    "fieldtype": "Password",
    "label": "API token",
@@ -48,7 +48,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-10-10 10:00:00.000000",
+ "modified": "2026-10-12 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "BI Finance",
  "name": "Wise Settings",

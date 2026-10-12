@@ -45,7 +45,7 @@
   },
   {
    "default": "bexio export 2026-10-10",
-   "description": "Where the row came from: the export the loader read.",
+   "description": "Where the row came from: the bexio export it was loaded from.",
    "fieldname": "source",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -53,7 +53,7 @@
   }
  ],
  "links": [],
- "modified": "2026-10-12 01:33:00.000000",
+ "modified": "2026-10-12 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "BI Finance",
  "name": "MWST bexio Ziffer",

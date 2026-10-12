@@ -27,7 +27,7 @@ AREAS = [
     ]),
     ("Payments", ["Payment Proposal"]),
     ("MWST", ["VAT Declaration", "MWST pro Quartal"]),
-    ("Cash forecast", [
+    ("Cash Forecast", [
         "Cash Position",
         "Cash Flow Forecast",
         "Cash Flow Forecast Lines",
