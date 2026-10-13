@@ -35,7 +35,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import client  # noqa: E402
 
-# The vendor, from vebego.ch's Impressum (researched 2026-10-12). Public company data, not the books.
+# The vendor, from invoice 926672 (the branch it bills from, Dietikon), not vebego.ch's Impressum
+# (Hauptsitz Zürich): the contact in the books matches the creditor on the invoice and QR-bill.
+# Same legal entity (UID CHE-105.953.190). No phone or fax: the invoice does not print one.
 # bexio's contact_type_id 1 is a company (import_master.py reads it the same way).
 VENDOR_NAME = "Vebego AG"
 VENDOR_SEARCH = "vebego"  # matched case-insensitively against name_1 of every contact
@@ -43,13 +45,11 @@ VENDOR_COUNTRY = "CH"
 VENDOR_FIELDS = {
     "contact_type_id": 1,
     "name_1": VENDOR_NAME,
-    "street_name": "Albisriederstrasse",
-    "house_number": "253",
-    "postcode": "8047",
-    "city": "Zürich",
-    "mail": "info@vebego.ch",
-    "phone_fixed": "+41 43 322 94 94",
-    "fax": "+41 43 322 94 20",
+    "street_name": "Kanalstrasse",
+    "house_number": "6",
+    "postcode": "8953",
+    "city": "Dietikon",
+    "mail": "zuerich@vebego.ch",
     "vat_number": "CHE-105.953.190",
 }
 

@@ -105,6 +105,9 @@ class PlanTest(unittest.TestCase):
         self.assertIn("would create", out)
         self.assertIn("dry run: nothing created", out)
         self.assertIn('"name_1": "Vebego AG"', out)
+        self.assertIn('"street_name": "Kanalstrasse"', out)
+        self.assertIn('"city": "Dietikon"', out)
+        self.assertNotIn("Albisriederstrasse", out)
         self.assertIn('"country_id": 5', out)
         self.assertIn('"owner_id": 9', out)
         self.assertIn('"attachment_ids": [\n    "uuid-invented-1"', out)
@@ -247,12 +250,15 @@ class ArgumentTest(unittest.TestCase):
 
 
 class ContactBodyTest(unittest.TestCase):
-    def test_the_vendor_has_the_address_from_its_impressum(self):
+    def test_the_vendor_has_the_address_from_the_invoice(self):
         body = cb.contact_body(9, 5)
-        self.assertEqual(body["street_name"], "Albisriederstrasse")
-        self.assertEqual(body["house_number"], "253")
-        self.assertEqual(body["postcode"], "8047")
-        self.assertEqual(body["city"], "Zürich")
+        self.assertEqual(body["street_name"], "Kanalstrasse")
+        self.assertEqual(body["house_number"], "6")
+        self.assertEqual(body["postcode"], "8953")
+        self.assertEqual(body["city"], "Dietikon")
+        self.assertEqual(body["mail"], "zuerich@vebego.ch")
+        self.assertNotIn("phone_fixed", body)
+        self.assertNotIn("fax", body)
         self.assertEqual((body["user_id"], body["owner_id"]), (9, 9))
 
 
