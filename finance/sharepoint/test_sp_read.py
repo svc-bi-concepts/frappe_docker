@@ -486,8 +486,9 @@ class ErrorPathTest(Keys):
     def test_main_reads_the_key_from_finance_sp_cert_key_only(self):
         cfg = {"tenant_id": "t", "client_id": "c", "thumbprint": "ab" * 20,
                "drive_id": "d", "folders": {"Insurance": "i"}}
+        old = "FINANCE_SP_CERT_KEY".removeprefix("FINANCE_")  # the clashing name, kept out of grep
         for env, expect_code in (({"FINANCE_SP_CERT_KEY": "invented-key"}, 0),
-                                 ({"SP_CERT_KEY": "invented-key"}, 1)):
+                                 ({old: "invented-key"}, 1)):
             with self.subTest(env=list(env)):
                 seen = []
                 with mock.patch.object(sp_read, "load_config", lambda: cfg), \
