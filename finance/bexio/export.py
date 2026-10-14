@@ -1,3 +1,4 @@
+#!/usr/local/bin/av inject +BEXIO_CLIENT_ID +BEXIO_CLIENT_SECRET +BEXIO_REFRESH_TOKEN +BEXIO_EXPORT_REFRESH_TOKEN +BEXIO_TOKEN -- /usr/bin/python3 -I
 """Export the bexio data to private JSON files: master data, accounting history, documents.
 
 Step one of the pipelines: import_master.py reads the master-data files and puts
@@ -6,8 +7,8 @@ them into ERPNext; the posting plan reads the journal and the documents. GET onl
 of the account's data, so they go to /Users/bsaladin/ws_yardr_finance/private/
 (directory mode 700, files 600) and never into the repository.
 
-Run it as:
-    varlock run -p /Users/bsaladin/ws_yardr_finance/secrets -- python3 finance/bexio/export.py [--out DIR] [--only ENTITY ...]
+Run it as (an av launcher, its first line is the shebang):
+    finance/bexio/export.py [--out DIR] [--only ENTITY ...]
 
 --out defaults to <private>/bexio-export/<YYYY-MM-DD>/. Besides the entity
 files the directory gets manifest.json: per entity the file, the record count
@@ -20,10 +21,11 @@ the others; without it every entity is exported.
 
 Four entities need the accounting and file scopes, which bexio grants only with
 write access. With BEXIO_BROKER=1 they are read through the Varlock broker, which
-holds the token and allows GET only; no varlock run and no login is needed then.
+holds the token and allows GET only; no login is needed then.
 Without the broker they are read with the export login (oauth.py login --export-scope,
-its own keychain item), and everything else with the read-only login. Once the
-run is done, `oauth.py logout --export-scope` removes the export login again.
+its own vault value BEXIO_EXPORT_REFRESH_TOKEN), and everything else with the read-only
+login. Once the run is done, `oauth.py logout --export-scope` says how to remove the
+export login again (av cannot delete a vault value, so that step is by hand).
 
 Documents come with their positions: invoices, orders, offers, deliveries and purchase bills
 are read as a list, then one call per record adds the positions to it. The
@@ -660,7 +662,7 @@ def main(argv):
     out = args.out or default_out()
     names = list(args.only or ENTITIES)
     # Each login is only opened when a requested entity needs it: the export login
-    # stops the run before anything is written when it is not in the keychain.
+    # stops the run before anything is written when it is not in the vault.
     client = Client() if any(name not in EXPORT_SCOPE_ENTITIES for name in names) else None
     export_client = Client(export_scope=True) if any(name in EXPORT_SCOPE_ENTITIES for name in names) else None
     manifest = export(client, out, only=args.only, export_client=export_client)

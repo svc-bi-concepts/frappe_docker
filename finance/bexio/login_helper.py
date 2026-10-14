@@ -1,17 +1,18 @@
-"""Tailnet login page for the bexio login: log in from the MacBook, no varlock command on the mini.
+#!/usr/local/bin/av inject +BEXIO_CLIENT_ID +BEXIO_CLIENT_SECRET -- /usr/bin/python3 -I
+"""Tailnet login page for the bexio login: log in from the MacBook, no launcher command on the mini.
 
-The helper runs on the Mac mini as a LaunchAgent in Benchi's user session, under
-varlock, so the client id and secret come from the keychain and never from a file.
-It binds 127.0.0.1 only. `tailscale serve` puts it on the tailnet over https, never
-Funnel (see finance/bexio/README.md):
+The helper runs on the Mac mini as a LaunchAgent in Benchi's user session. Its first
+line is an av launcher, so the client id and secret come from the Automic Vault and
+never from a file. It binds 127.0.0.1 only. `tailscale serve` puts it on the tailnet
+over https, never Funnel (see finance/bexio/README.md):
 
     tailscale serve --bg --https=<port> http://127.0.0.1:8814
 
 - /login starts one PKCE login: the read-only scopes, or /login?scope=export for
   the export login. The browser is redirected to bexio.
-- /callback takes bexio's code, exchanges it, and saves the rotated refresh token in
-  the same keychain item oauth.py uses. The page says "logged in" and the granted
-  scopes. It never shows a token, and nothing is logged.
+- /callback takes bexio's code, exchanges it, and saves the new refresh token in
+  the same vault value oauth.py uses (av save, Benchi approves it there). The page
+  says "logged in" and the granted scopes. It never shows a token, and nothing is logged.
 
 Each login has its own one-time state, valid for oauth.LOGIN_TIMEOUT seconds. A
 state is used once: a second callback with it is refused, and a new /login replaces
@@ -31,12 +32,15 @@ Standard library only, so it runs on the system Python.
 import argparse
 import html
 import http.server
+import os
 import secrets
 import sys
 import time
 import urllib.parse
 
-import oauth
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import oauth  # noqa: E402
 
 DEFAULT_PORT = 8814  # loopback only; tailscale serve forwards the tailnet https port to it
 
@@ -89,15 +93,15 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             return
         export_scope = login["export_scope"]
         scope = oauth.EXPORT_SCOPE if export_scope else oauth.SCOPE
-        account = oauth.EXPORT_KEYCHAIN_ACCOUNT if export_scope else oauth.KEYCHAIN_ACCOUNT
+        key = oauth.EXPORT_REFRESH_KEY if export_scope else oauth.REFRESH_KEY
         try:
             body = oauth.exchange_code(code, login["verifier"], self.server.redirect_uri)
             refresh = body.get("refresh_token")
             if not refresh:
                 raise oauth.OAuthError("bexio sent no refresh token; the login needs offline_access in its scopes")
-            oauth.write_refresh_token(refresh, account)
-        except (oauth.OAuthError, oauth.KeychainError, ValueError) as err:
-            # The messages carry bexio's error code or a keychain status, never a token.
+            oauth.save_refresh_token(refresh, key)
+        except (oauth.OAuthError, oauth.VaultError, ValueError) as err:
+            # The messages carry bexio's error code or av's exit status, never a token.
             self._page(502, "login failed: {}".format(err))
             return
         self._page(200, "logged in, scopes: {}".format(body.get("scope") or scope))
@@ -141,7 +145,7 @@ def main(argv):
                         help="the tailnet login allowed to log in, as tailscale shows it (the only identity the page accepts)")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="loopback port (default %(default)s)")
     args = parser.parse_args(argv)
-    oauth._client_credentials()  # stops here, with the varlock hint, when the client id or secret is not injected
+    oauth._client_credentials()  # stops here when the client id or secret is not injected (run it through its av launcher)
     try:
         server = make_server(args.redirect_uri, args.tailnet_user, args.port)
     except OSError as err:

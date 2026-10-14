@@ -2,21 +2,23 @@
 
 GET only: this module has no way to write to bexio, so the scripts cannot
 change the account. The access token comes from the OAuth refresh token in the
-keychain (oauth.refresh_access_token()); only where no refresh token exists
-does the BEXIO_TOKEN environment variable (a personal access token, injected
-by varlock) stand in. The export login (export_scope=True, for the few entities
-of export.py that need the accounting and file scopes) reads its own keychain
-item and never falls back to BEXIO_TOKEN. Which of these was used is printed to
+environment, where the av launcher injected it from the Automic Vault
+(oauth.refresh_access_token()); only where no refresh token exists does the
+BEXIO_TOKEN environment variable (a personal access token, injected the same
+way) stand in. The export login (export_scope=True, for the few entities of
+export.py that need the accounting and file scopes) reads its own refresh token
+and never falls back to BEXIO_TOKEN. Which of these was used is printed to
 stderr; the token itself is never stored, printed or put in an error message.
 
 BEXIO_BROKER=1 replaces all of that: the requests go through the Varlock broker
 (a local HTTPS proxy on 127.0.0.1), which puts the real token on GET requests to
 api.bexio.com and refuses every other method. This process only ever sees a
-placeholder, and reads no keychain. It is the way to run the export without a
+placeholder, and reads no token. It is the way to run the export without a
 person at the screen.
 
-Run the scripts that use it as:
-    varlock run -p /Users/bsaladin/ws_yardr_finance/secrets -- python3 finance/bexio/inventory.py
+The scripts that use it are launchers (their first line is the av shebang), so
+they run as:
+    finance/bexio/inventory.py
 
 Standard library only, so it runs on the system Python.
 """
@@ -77,36 +79,30 @@ def resolve_token(export_scope=False):
     kind is "broker", "oauth", "oauth-export" or "pat". A refresh token that exists but is
     refused is an error, not a reason to fall back: a stale PAT would hide a login
     that needs renewing. The export login (export_scope) has no fallback at all:
-    the PAT cannot stand in for the accounting and file scopes. A keychain that
-    cannot be opened at all (no macOS Security framework) counts as no refresh token.
+    the PAT cannot stand in for the accounting and file scopes.
     """
     if broker_mode():
         return BROKER_TOKEN, "broker"
-    import oauth  # lazy: the Security framework is only loaded when a token is needed
+    import oauth  # lazy: only the OAuth path needs it
 
-    keychain_account = oauth.EXPORT_KEYCHAIN_ACCOUNT if export_scope else oauth.KEYCHAIN_ACCOUNT
+    key = oauth.EXPORT_REFRESH_KEY if export_scope else oauth.REFRESH_KEY
     kind = "oauth-export" if export_scope else "oauth"
-    try:
-        has_login = oauth.read_refresh_token(keychain_account) is not None
-    except OSError:
-        has_login = False
-    except oauth.KeychainError as err:
-        raise SystemExit("keychain: {}".format(err))
-    if has_login:
+    if oauth.read_refresh_token(key) is not None:
         try:
             return oauth.refresh_access_token(export_scope=export_scope), kind
-        except (oauth.OAuthError, oauth.KeychainError) as err:
+        except (oauth.OAuthError, oauth.VaultError) as err:
             raise SystemExit("bexio login: {}".format(err))
     if export_scope:
         raise SystemExit(
-            "no bexio export login in the keychain; log in with `{}` (see finance/bexio/README.md)".format(oauth.EXPORT_LOGIN_COMMAND)
+            "no bexio export refresh token ({} is not set); log in with `{}` (see finance/bexio/README.md)".format(
+                key, oauth.EXPORT_LOGIN_COMMAND)
         )
     pat = os.environ.get("BEXIO_TOKEN")
     if pat:
         return pat, "pat"
     raise SystemExit(
-        "no bexio refresh token in the keychain and BEXIO_TOKEN is not set; "
-        "log in with `{}` (see finance/bexio/README.md)".format(oauth.LOGIN_COMMAND)
+        "no bexio refresh token ({} is not set) and BEXIO_TOKEN is not set; "
+        "log in with `{}` (see finance/bexio/README.md)".format(oauth.REFRESH_KEY, oauth.LOGIN_COMMAND)
     )
 
 

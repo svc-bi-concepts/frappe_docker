@@ -179,11 +179,11 @@ class TokenSourceTest(unittest.TestCase):
     # The access token comes from the OAuth login; the PAT only stands in
     # where no refresh token exists. The kind is printed, the value never.
 
-    def _resolve(self, refresh_token=None, refresh_result="access-from-oauth", pat=None, read_error=None):
+    def _resolve(self, refresh_token=None, refresh_result="access-from-oauth", pat=None):
         import oauth
 
         env = {"BEXIO_TOKEN": pat} if pat else {}
-        read = mock.patch.object(oauth, "read_refresh_token", return_value=refresh_token, side_effect=read_error)
+        read = mock.patch.object(oauth, "read_refresh_token", return_value=refresh_token)
         refresh = mock.patch.object(oauth, "refresh_access_token", return_value=refresh_result)
         with read, refresh as refreshed, mock.patch.dict(os.environ, env, clear=True):
             try:
@@ -201,9 +201,13 @@ class TokenSourceTest(unittest.TestCase):
         self.assertEqual((token, kind), ("pat-value", "pat"))
         refreshed.assert_not_called()
 
-    def test_unopenable_keychain_counts_as_no_login(self):
-        (token, kind), _ = self._resolve(pat="pat-value", read_error=OSError("no Security framework"))
-        self.assertEqual(kind, "pat")
+    def test_empty_refresh_token_variable_counts_as_no_login(self):
+        import oauth
+
+        with mock.patch.dict(os.environ, {"BEXIO_TOKEN": "pat-value", oauth.REFRESH_KEY: ""}, clear=True), \
+                mock.patch.object(oauth, "refresh_access_token") as refreshed:
+            self.assertEqual(client.resolve_token(), ("pat-value", "pat"))
+        refreshed.assert_not_called()
 
     def test_refused_refresh_token_does_not_fall_back_to_the_pat(self):
         import oauth
@@ -234,8 +238,8 @@ class TokenSourceTest(unittest.TestCase):
 
 
 class ExportTokenTest(unittest.TestCase):
-    # The export login reads its own keychain item, the accounting and file scopes
-    # it was granted; the PAT never stands in for it.
+    # The export login reads its own refresh token (its own vault value), the accounting
+    # and file scopes it was granted; the PAT never stands in for it.
 
     def test_export_login_refreshes_its_own_token(self):
         import oauth
@@ -243,7 +247,7 @@ class ExportTokenTest(unittest.TestCase):
         with mock.patch.object(oauth, "read_refresh_token", return_value="refresh-export") as read, \
                 mock.patch.object(oauth, "refresh_access_token", return_value="access-export") as refresh:
             self.assertEqual(client.resolve_token(export_scope=True), ("access-export", "oauth-export"))
-        read.assert_called_once_with(oauth.EXPORT_KEYCHAIN_ACCOUNT)
+        read.assert_called_once_with(oauth.EXPORT_REFRESH_KEY)
         refresh.assert_called_once_with(export_scope=True)
 
     def test_export_login_never_falls_back_to_the_pat(self):
@@ -259,16 +263,16 @@ class ExportTokenTest(unittest.TestCase):
 
 class BrokerModeTest(unittest.TestCase):
     # BEXIO_BROKER=1: the requests go through the Varlock broker with a placeholder
-    # token. No keychain is read, no OAuth refresh runs, and urlopen is not used.
+    # token. No refresh token is read, no OAuth refresh runs, and urlopen is not used.
 
     def _broker_env(self, extra=None):
         return mock.patch.dict(os.environ, dict({"BEXIO_BROKER": "1"}, **(extra or {})), clear=True)
 
-    def test_broker_token_needs_no_keychain_and_no_oauth(self):
+    def test_broker_token_needs_no_refresh_token_and_no_oauth(self):
         import oauth
 
         with self._broker_env(), \
-                mock.patch.object(oauth, "read_refresh_token", side_effect=AssertionError("keychain read")) as read, \
+                mock.patch.object(oauth, "read_refresh_token", side_effect=AssertionError("refresh token read")) as read, \
                 mock.patch.object(oauth, "refresh_access_token", side_effect=AssertionError("refresh")):
             self.assertEqual(client.resolve_token(), (client.BROKER_TOKEN, "broker"))
             self.assertEqual(client.resolve_token(export_scope=True), (client.BROKER_TOKEN, "broker"))

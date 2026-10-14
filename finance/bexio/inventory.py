@@ -1,8 +1,9 @@
-"""Read-only inventory of a bexio account, printed as Markdown.
+#!/usr/local/bin/av inject +BEXIO_CLIENT_ID +BEXIO_CLIENT_SECRET +BEXIO_REFRESH_TOKEN +BEXIO_TOKEN -- /usr/bin/python3 -I
+"""Read-only inventory of a bexio account, written as Markdown.
 
 For each entity it records the record count, the date range, the counts of
 one grouping field (type or status) and one sample record with personal
-data masked. Chart of accounts, account groups and VAT rates are printed in
+data masked. Chart of accounts, account groups and VAT rates are written in
 full, because the Swiss setup needs them and they hold no personal data.
 
 Uses client.py, which only issues GET requests. An entity the token has no
@@ -10,13 +11,16 @@ scope for (403) or the API does not know (404) is reported and skipped, so
 one gap does not stop the run.
 
 Run it as:
-    varlock run -p /Users/bsaladin/ws_yardr_finance/secrets -- python3 finance/bexio/inventory.py > report.md
+    finance/bexio/inventory.py
 
-The output holds counts and masked samples, but it is still the account's
-data: keep it out of the repository.
+The report goes to private/bexio-inventory/last-report.md (the path is printed
+to stderr): av inject drops stdout. The output holds counts and masked samples,
+but it is still the account's data: it stays in private/, never in the repository.
 """
 
+import contextlib
 import datetime
+import io
 import json
 import os
 import re
@@ -28,6 +32,10 @@ from client import BexioError, Client  # noqa: E402
 
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}")
 CURRENCY_RE = re.compile(r"^[A-Z]{3}$")
+
+PRIVATE = os.environ.get("BEXIO_PRIVATE") or "/Users/bsaladin/ws_yardr_finance/private"
+REPORT_FOLDER = "bexio-inventory"
+REPORT_FILE = "last-report.md"
 
 
 def offset(path, params=None):
@@ -207,7 +215,7 @@ def vat_codes(client):
     return lines, len(rows)
 
 
-def main():
+def print_report():
     client = Client()
     today = datetime.date.today().isoformat()
     results = []
@@ -245,6 +253,19 @@ def main():
 
     print()
     print("Requests issued: {}".format(client.requests))
+
+
+def main():
+    report = io.StringIO()
+    with contextlib.redirect_stdout(report):
+        print_report()
+    folder = os.path.join(PRIVATE, REPORT_FOLDER)
+    os.makedirs(folder, mode=0o700, exist_ok=True)
+    path = os.path.join(folder, REPORT_FILE)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(report.getvalue())
+    print("inventory written to {}".format(path), file=sys.stderr)
 
 
 if __name__ == "__main__":

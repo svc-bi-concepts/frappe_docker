@@ -1,4 +1,4 @@
-"""Offline tests for oauth.py: login exchange, refresh with rotation, refusals, scopes. No network, no keychain.
+"""Offline tests for oauth.py: login exchange, refresh with rotation, refusals, scopes, the launchers. No network, no av.
 
 Run with: python3 -m unittest discover -s finance/bexio -p 'test_*.py'
 """
@@ -6,15 +6,29 @@ Run with: python3 -m unittest discover -s finance/bexio -p 'test_*.py'
 import contextlib
 import io
 import os
+import types
 import unittest
 import urllib.error
 from unittest import mock
 
 import oauth
-from oauth import KeychainError, OAuthError
-from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
+import private_guard
+from oauth import OAuthError, VaultError
 
+HERE = os.path.dirname(os.path.abspath(__file__))
 FAKE_ENV = {"BEXIO_CLIENT_ID": "client-id-not-real", "BEXIO_CLIENT_SECRET": "secret-not-real"}
+SAVE_ARGV = [
+    "/usr/local/bin/av", "save", "--stdin", "--project-directory", "/Users/bsaladin/ws_yardr_finance",
+    "BEXIO_REFRESH_TOKEN",
+]
+
+
+def setUpModule():
+    private_guard.setUpModule()  # every test below runs against a temp private folder, never the real one
+    # oauth's subprocess is replaced for the whole module: a save that no test mocks fails here instead of writing the real vault.
+    guard = mock.patch.object(oauth, "subprocess")
+    guard.start().run.side_effect = AssertionError("a test reached av")
+    unittest.addModuleCleanup(guard.stop)
 
 
 class ScopeTest(unittest.TestCase):
@@ -47,19 +61,19 @@ class ExportScopeTest(unittest.TestCase):
         )
         self.assertFalse(any(s.endswith("_edit") for s in oauth.EXPORT_SCOPE.split()))
 
-    def test_export_login_has_its_own_keychain_item(self):
-        self.assertNotEqual(oauth.EXPORT_KEYCHAIN_ACCOUNT, oauth.KEYCHAIN_ACCOUNT)
+    def test_export_login_has_its_own_vault_value(self):
+        self.assertNotEqual(oauth.EXPORT_REFRESH_KEY, oauth.REFRESH_KEY)
 
-    def test_export_login_asks_for_the_export_scope_and_saves_to_its_own_item(self):
+    def test_export_login_asks_for_the_export_scope_and_saves_to_its_own_value(self):
         self._login(export_scope=True)
         self.authorize.assert_called_once()
         self.assertEqual(self.authorize.call_args.args[2], oauth.EXPORT_SCOPE)
-        self.write.assert_called_once_with("refresh-not-real", oauth.EXPORT_KEYCHAIN_ACCOUNT)
+        self.save.assert_called_once_with("refresh-not-real", oauth.EXPORT_REFRESH_KEY)
 
-    def test_default_login_stays_read_only_and_saves_to_the_read_item(self):
+    def test_default_login_stays_read_only_and_saves_to_the_read_value(self):
         self._login(export_scope=False)
         self.assertEqual(self.authorize.call_args.args[2], oauth.SCOPE)
-        self.write.assert_called_once_with("refresh-not-real", oauth.KEYCHAIN_ACCOUNT)
+        self.save.assert_called_once_with("refresh-not-real", oauth.REFRESH_KEY)
 
     def _login(self, export_scope):
         body = {"access_token": "access-not-real", "refresh_token": "refresh-not-real"}
@@ -68,44 +82,31 @@ class ExportScopeTest(unittest.TestCase):
                 mock.patch.object(oauth.webbrowser, "open"), \
                 mock.patch.object(oauth, "wait_for_code", return_value="code-not-real"), \
                 mock.patch.object(oauth, "exchange_code", return_value=body), \
-                mock.patch.object(oauth, "write_refresh_token") as self.write, \
-                contextlib.redirect_stdout(io.StringIO()):
+                mock.patch.object(oauth, "save_refresh_token") as self.save, \
+                contextlib.redirect_stderr(io.StringIO()):
             oauth.login(export_scope=export_scope)
 
 
 class LogoutTest(unittest.TestCase):
-    def test_logout_removes_only_the_export_item(self):
-        with mock.patch.object(oauth, "delete_refresh_token", return_value=True) as delete, \
-                contextlib.redirect_stdout(io.StringIO()):
-            oauth.main(["logout", "--export-scope"])
-        delete.assert_called_once_with(oauth.EXPORT_KEYCHAIN_ACCOUNT)
+    def test_logout_cannot_remove_the_vault_value_and_says_so(self):
+        # av has no delete, so logout names the value to remove by hand and touches nothing itself.
+        with mock.patch.object(oauth, "subprocess") as sub:
+            with self.assertRaises(SystemExit) as ctx:
+                oauth.main(["logout", "--export-scope"])
+        self.assertIn("BEXIO_EXPORT_REFRESH_TOKEN", str(ctx.exception))
+        sub.run.assert_not_called()
 
-    def test_logout_without_export_scope_is_refused_and_removes_nothing(self):
-        with mock.patch.object(oauth, "delete_refresh_token") as delete:
-            with self.assertRaises(SystemExit):
+    def test_logout_without_export_scope_is_refused(self):
+        with mock.patch.object(oauth, "subprocess") as sub:
+            with self.assertRaises(SystemExit) as ctx:
                 oauth.main(["logout"])
-        delete.assert_not_called()
+        self.assertEqual(str(ctx.exception), oauth.USAGE)
+        sub.run.assert_not_called()
 
     def test_login_flag_selects_the_export_login(self):
         with mock.patch.object(oauth, "login") as login:
             oauth.main(["login", "--export-scope"])
         login.assert_called_once_with(True)
-
-    def test_delete_of_a_missing_item_is_not_an_error(self):
-        sec = mock.Mock()
-        sec.SecKeychainFindGenericPassword.return_value = oauth._ERR_ITEM_NOT_FOUND
-        with mock.patch.object(oauth, "_security", return_value=sec):
-            self.assertFalse(oauth.delete_refresh_token(oauth.EXPORT_KEYCHAIN_ACCOUNT))
-        sec.SecKeychainItemDelete.assert_not_called()
-
-    def test_delete_names_the_export_item_and_deletes_it(self):
-        sec = mock.Mock()
-        sec.SecKeychainFindGenericPassword.return_value = 0
-        sec.SecKeychainItemDelete.return_value = 0
-        with mock.patch.object(oauth, "_security", return_value=sec), mock.patch.object(oauth, "_release"):
-            self.assertTrue(oauth.delete_refresh_token(oauth.EXPORT_KEYCHAIN_ACCOUNT))
-        self.assertEqual(sec.SecKeychainFindGenericPassword.call_args.args[4], b"finance:local:BEXIO_EXPORT_REFRESH_TOKEN")
-        sec.SecKeychainItemDelete.assert_called_once()
 
 
 class PkceTest(unittest.TestCase):
@@ -144,40 +145,105 @@ class LoginExchangeTest(unittest.TestCase):
         self.assertEqual(fields["client_secret"], "secret-not-real")
 
 
+class ReadTokenTest(unittest.TestCase):
+    def test_refresh_token_is_read_from_the_environment(self):
+        with mock.patch.dict(os.environ, {oauth.REFRESH_KEY: "refresh-from-env"}):
+            self.assertEqual(oauth.read_refresh_token(), "refresh-from-env")
+            self.assertEqual(oauth.read_refresh_token(oauth.REFRESH_KEY), "refresh-from-env")
+
+    def test_unset_or_empty_refresh_token_is_none(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertIsNone(oauth.read_refresh_token())
+        with mock.patch.dict(os.environ, {oauth.EXPORT_REFRESH_KEY: ""}, clear=True):
+            self.assertIsNone(oauth.read_refresh_token(oauth.EXPORT_REFRESH_KEY))
+
+
 class RefreshTest(unittest.TestCase):
     def test_refresh_returns_access_token_and_saves_the_rotated_refresh_token(self):
         answer = {"access_token": "access-new", "refresh_token": "refresh-rotated"}
         with mock.patch.dict(os.environ, FAKE_ENV), \
                 mock.patch.object(oauth, "read_refresh_token", return_value="refresh-old"), \
                 mock.patch.object(oauth, "_token_request", return_value=answer) as request, \
-                mock.patch.object(oauth, "write_refresh_token") as write:
+                mock.patch.object(oauth, "save_refresh_token") as save:
             self.assertEqual(oauth.refresh_access_token(), "access-new")
         fields = request.call_args.args[0]
         self.assertEqual(fields["grant_type"], "refresh_token")
         self.assertEqual(fields["refresh_token"], "refresh-old")
-        write.assert_called_once_with("refresh-rotated", oauth.KEYCHAIN_ACCOUNT)
+        save.assert_called_once_with("refresh-rotated", oauth.REFRESH_KEY)
 
-    def test_export_refresh_uses_its_own_keychain_item(self):
-        answer = {"access_token": "access-export", "refresh_token": "refresh-export-rotated"}
+    def test_rotated_token_goes_to_av_on_stdin_and_never_on_argv(self):
+        answer = {"access_token": "access-new", "refresh_token": "refresh-rotated"}
         with mock.patch.dict(os.environ, FAKE_ENV), \
+                mock.patch.object(oauth, "read_refresh_token", return_value="refresh-old"), \
+                mock.patch.object(oauth, "_token_request", return_value=answer), \
+                mock.patch.object(oauth, "subprocess") as sub:
+            sub.run.return_value = types.SimpleNamespace(returncode=0)
+            self.assertEqual(oauth.refresh_access_token(), "access-new")
+        sub.run.assert_called_once()
+        self.assertEqual(sub.run.call_args.args[0], SAVE_ARGV)
+        self.assertEqual(sub.run.call_args.kwargs["input"], b"refresh-rotated")
+        self.assertTrue(sub.run.call_args.kwargs["capture_output"])  # av's output is dropped, never shown
+        self.assertNotIn("refresh-rotated", " ".join(sub.run.call_args.args[0]))
+
+    def test_the_rotated_token_is_the_one_the_rest_of_the_run_reads(self):
+        # bexio spent the old token, so a second Client in the same run must read the new one.
+        answer = {"access_token": "access-new", "refresh_token": "refresh-rotated"}
+        with mock.patch.dict(os.environ, dict(FAKE_ENV, **{oauth.REFRESH_KEY: "refresh-old"})), \
+                mock.patch.object(oauth, "_token_request", return_value=answer), \
+                mock.patch.object(oauth, "subprocess") as sub:
+            sub.run.return_value = types.SimpleNamespace(returncode=0)
+            oauth.refresh_access_token()
+            self.assertEqual(oauth.read_refresh_token(), "refresh-rotated")
+
+    def test_failed_save_stops_the_refresh_and_hands_out_no_access_token(self):
+        answer = {"access_token": "access-new", "refresh_token": "refresh-rotated"}
+        with mock.patch.dict(os.environ, FAKE_ENV), \
+                mock.patch.object(oauth, "read_refresh_token", return_value="refresh-old"), \
+                mock.patch.object(oauth, "_token_request", return_value=answer), \
+                mock.patch.object(oauth, "subprocess") as sub:
+            sub.run.return_value = types.SimpleNamespace(returncode=1)
+            with self.assertRaises(OAuthError) as ctx:
+                oauth.refresh_access_token()
+        message = str(ctx.exception)
+        self.assertIn("could not be saved", message)
+        self.assertIn("a new login is needed", message)
+        self.assertIn("login_helper.py", message)
+        self.assertNotIn("refresh-rotated", message)
+        self.assertNotIn("access-new", message)
+
+    def test_av_that_cannot_run_stops_the_refresh_too(self):
+        answer = {"access_token": "access-new", "refresh_token": "refresh-rotated"}
+        with mock.patch.dict(os.environ, FAKE_ENV), \
+                mock.patch.object(oauth, "read_refresh_token", return_value="refresh-old"), \
+                mock.patch.object(oauth, "_token_request", return_value=answer), \
+                mock.patch.object(oauth, "subprocess") as sub:
+            sub.run.side_effect = FileNotFoundError(2, "No such file or directory")
+            with self.assertRaises(OAuthError) as ctx:
+                oauth.refresh_access_token()
+        self.assertIn("login_helper.py", str(ctx.exception))
+        self.assertNotIn("refresh-rotated", str(ctx.exception))
+
+    def test_export_refresh_uses_its_own_vault_value(self):
+        answer = {"access_token": "access-export", "refresh_token": "refresh-export-rotated"}
+        with mock.patch.dict(os.environ, dict(FAKE_ENV, **{oauth.EXPORT_REFRESH_KEY: "refresh-export-old"})), \
                 mock.patch.object(oauth, "read_refresh_token", return_value="refresh-export-old") as read, \
                 mock.patch.object(oauth, "_token_request", return_value=answer), \
-                mock.patch.object(oauth, "write_refresh_token") as write:
+                mock.patch.object(oauth, "save_refresh_token") as save:
             self.assertEqual(oauth.refresh_access_token(export_scope=True), "access-export")
-        read.assert_called_once_with(oauth.EXPORT_KEYCHAIN_ACCOUNT)
-        write.assert_called_once_with("refresh-export-rotated", oauth.EXPORT_KEYCHAIN_ACCOUNT)
+        read.assert_called_once_with(oauth.EXPORT_REFRESH_KEY)
+        save.assert_called_once_with("refresh-export-rotated", oauth.EXPORT_REFRESH_KEY)
 
     def test_refused_refresh_token_asks_for_a_new_login(self):
         with mock.patch.dict(os.environ, FAKE_ENV), \
                 mock.patch.object(oauth, "read_refresh_token", return_value="refresh-old"), \
                 mock.patch.object(oauth, "_token_request", side_effect=OAuthError("bexio answered HTTP 400 (invalid_grant)")), \
-                mock.patch.object(oauth, "write_refresh_token") as write:
+                mock.patch.object(oauth, "save_refresh_token") as save:
             with self.assertRaises(OAuthError) as ctx:
                 oauth.refresh_access_token()
         self.assertIn("invalid_grant", str(ctx.exception))
         self.assertIn("oauth.py login", str(ctx.exception))
         self.assertNotIn("refresh-old", str(ctx.exception))
-        write.assert_not_called()
+        save.assert_not_called()
 
     def test_missing_refresh_token_asks_for_a_login(self):
         with mock.patch.object(oauth, "read_refresh_token", return_value=None), \
@@ -187,26 +253,14 @@ class RefreshTest(unittest.TestCase):
         self.assertIn("oauth.py login", str(ctx.exception))
         request.assert_not_called()
 
-    def test_failed_save_of_the_rotated_token_says_so_and_hides_it(self):
-        answer = {"access_token": "access-new", "refresh_token": "refresh-rotated"}
-        with mock.patch.dict(os.environ, FAKE_ENV), \
-                mock.patch.object(oauth, "read_refresh_token", return_value="refresh-old"), \
-                mock.patch.object(oauth, "_token_request", return_value=answer), \
-                mock.patch.object(oauth, "write_refresh_token", side_effect=KeychainError("could not update (keychain status -1)")):
-            with self.assertRaises(OAuthError) as ctx:
-                oauth.refresh_access_token()
-        self.assertIn("could not be saved", str(ctx.exception))
-        self.assertIn("oauth.py login", str(ctx.exception))
-        self.assertNotIn("refresh-rotated", str(ctx.exception))
-
     def test_answer_without_tokens_is_an_error(self):
         with mock.patch.dict(os.environ, FAKE_ENV), \
                 mock.patch.object(oauth, "read_refresh_token", return_value="refresh-old"), \
                 mock.patch.object(oauth, "_token_request", return_value={"access_token": "a"}), \
-                mock.patch.object(oauth, "write_refresh_token") as write:
+                mock.patch.object(oauth, "save_refresh_token") as save:
             with self.assertRaises(OAuthError):
                 oauth.refresh_access_token()
-        write.assert_not_called()
+        save.assert_not_called()
 
 
 class TokenRequestTest(unittest.TestCase):
@@ -278,6 +332,37 @@ class CallbackHandlerTest(unittest.TestCase):
             handler = oauth._CallbackHandler.__new__(oauth._CallbackHandler)
             handler.log_message("%s", "GET /callback?code=code-not-real")
         self.assertEqual(err.getvalue(), "")
+
+
+class LauncherTest(unittest.TestCase):
+    """The launchers are blessed by hash, so what they run with is pinned here: the shebang, the mode, no varlock or keychain."""
+
+    PYTHON = "/usr/bin/python3 -I"
+    LAUNCHERS = {
+        "oauth.py": "+BEXIO_CLIENT_ID +BEXIO_CLIENT_SECRET",
+        "login_helper.py": "+BEXIO_CLIENT_ID +BEXIO_CLIENT_SECRET",
+        "inventory.py": "+BEXIO_CLIENT_ID +BEXIO_CLIENT_SECRET +BEXIO_REFRESH_TOKEN +BEXIO_TOKEN",
+        "export.py": "+BEXIO_CLIENT_ID +BEXIO_CLIENT_SECRET +BEXIO_REFRESH_TOKEN +BEXIO_EXPORT_REFRESH_TOKEN +BEXIO_TOKEN",
+    }
+    # Lines that name varlock or the keychain are only the broker's, which is not a keychain.
+    TEXTS = list(LAUNCHERS) + ["client.py", "ch.bi-concepts.bexio-login.plist"]
+
+    def test_the_first_line_is_the_av_inject_shebang_with_isolated_python(self):
+        for name, keys in self.LAUNCHERS.items():
+            with open(os.path.join(HERE, name)) as f:
+                first = f.readline().rstrip("\n")
+            self.assertEqual(first, "#!/usr/local/bin/av inject {} -- {}".format(keys, self.PYTHON), name)
+
+    def test_the_launchers_are_executable(self):
+        for name in self.LAUNCHERS:
+            self.assertTrue(os.access(os.path.join(HERE, name), os.X_OK), "chmod +x {}".format(name))
+
+    def test_no_keychain_or_varlock_is_left_outside_the_broker(self):
+        for name in self.TEXTS:
+            with open(os.path.join(HERE, name)) as f:
+                stray = [line for line in f if ("varlock" in line.lower() or "keychain" in line.lower())
+                         and "broker" not in line.lower()]
+            self.assertEqual(stray, [], name)
 
 
 if __name__ == "__main__":

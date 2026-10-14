@@ -8,28 +8,29 @@ bexio enforces the scopes, so the token cannot change the account, whatever the 
 On the Mac mini's desktop Terminal:
 
 ```sh
-varlock run -p /Users/bsaladin/ws_yardr_finance/secrets -- python3 finance/bexio/oauth.py login
+finance/bexio/oauth.py login
 ```
 
-The command prints the bexio authorize URL and opens it in the browser. Approve the
+The command is an av launcher (its first line injects the client id and secret from the
+Automic Vault). It prints the bexio authorize URL and opens it in the browser. Approve the
 login there (the export login, `login --export-scope`, is described above). The browser then returns to `http://localhost:8765/callback`, the local
 listener on 127.0.0.1:8765 takes the code, and the refresh token is saved in the
-macOS keychain (service `varlock`, account `finance:local:BEXIO_REFRESH_TOKEN`).
+Automic Vault as `BEXIO_REFRESH_TOKEN` (`av save`; Benchi approves the save in the vault app).
 The token itself is never printed.
 
 ## Log in from the MacBook (tailnet login page)
 
 Instead of the Mac mini's desktop Terminal, the login can be started from the MacBook
 through a page on the tailnet. `finance/bexio/login_helper.py` serves it on
-127.0.0.1:8814, under varlock, so the client id and secret come from the keychain and
-never from a file. `tailscale serve` puts it on the tailnet over https. Never Funnel:
+127.0.0.1:8814, as an av launcher, so the client id and secret come from the Automic Vault
+and never from a file. `tailscale serve` puts it on the tailnet over https. Never Funnel:
 the page starts logins and must not be public.
 
 - `/login` redirects the browser to bexio with the read-only scopes; `/login?scope=export`
   is the export login. Each login has a one-time state, valid 300 seconds. A new `/login`
   replaces a waiting one.
-- `/callback` exchanges the code and saves the rotated refresh token in the same keychain
-  item as `oauth.py login`. The page shows `logged in, scopes: ...`, never a token.
+- `/callback` exchanges the code and saves the new refresh token in the same vault value
+  as `oauth.py login`. The page shows `logged in, scopes: ...`, never a token.
 - Only Benchi's tailnet login gets in: every request must carry the `Tailscale-User-Login`
   header that `tailscale serve` adds, and it must equal `--tailnet-user`. Anything else is 403.
   Nothing is logged; the page and the terminal print only the outcome.
@@ -129,7 +130,7 @@ attachments) say so in their refusals; read those in the manifest first.
 
 Without the broker, the export has a second login with `EXPORT_SCOPE` (the
 read-only scopes plus `accounting` and `file`). It is kept apart from the
-read-only one: its own keychain item (account `finance:local:BEXIO_EXPORT_REFRESH_TOKEN`),
+read-only one: its own vault value (`BEXIO_EXPORT_REFRESH_TOKEN`),
 and only `export.py` uses it, for `manual_entries`, `journal`, `bank_transactions`
 and `files`. Every other entity still goes through the read-only login. The
 client stays GET-only in both cases.
@@ -137,21 +138,26 @@ client stays GET-only in both cases.
 Run it on the Mac mini's desktop Terminal, before the export run:
 
 ```sh
-varlock run -p /Users/bsaladin/ws_yardr_finance/secrets -- python3 finance/bexio/oauth.py login --export-scope
-varlock run -p /Users/bsaladin/ws_yardr_finance/secrets -- python3 finance/bexio/export.py --out /Users/bsaladin/ws_yardr_finance/private/bexio-export/<date>-full --only manual_entries --only journal --only bank_transactions --only files
-varlock run -p /Users/bsaladin/ws_yardr_finance/secrets -- python3 finance/bexio/oauth.py logout --export-scope
+finance/bexio/oauth.py login --export-scope
+finance/bexio/export.py --out /Users/bsaladin/ws_yardr_finance/private/bexio-export/<date>-full --only manual_entries --only journal --only bank_transactions --only files
+finance/bexio/oauth.py logout --export-scope
 ```
 
-Afterwards, `logout --export-scope` deletes the export keychain item. It does not
-revoke anything at bexio: revoke the app's access in bexio as well. If that revoke
-also kills the read-only refresh token, log in again with `oauth.py login` (the read-only one).
-A login that is never removed keeps the write scopes in the keychain, so the logout is not optional.
+Afterwards, `logout --export-scope` does not delete anything: `av` cannot remove a vault
+value, so it prints the step to do by hand. Delete `BEXIO_EXPORT_REFRESH_TOKEN` in the
+Automic Vault app. It does not revoke anything at bexio: revoke the app's access in bexio
+as well. If that revoke also kills the read-only refresh token, log in again with
+`oauth.py login` (the read-only one).
+A login that is never removed keeps the write scopes in the vault, so the logout is not optional.
 
 ## How the scripts use it
 
-Each run refreshes the access token from the keychain. bexio rotates the refresh token
-on every refresh, so the new one is saved back into the same keychain item. The access
-token is kept in memory only.
+Each run takes the refresh token from the environment, where the launcher's av line
+injected it from the Automic Vault. bexio rotates the refresh token on every refresh:
+the new one is saved back to the same vault value with `av save --stdin` (Benchi approves
+each save in the vault app), before the new access token is used. If that save fails the
+script stops: the rotated token is then spent, so a new login is needed (`login_helper.py`
+or `oauth.py login`). The access token is kept in memory only.
 
 ## Log in again
 
@@ -165,9 +171,9 @@ bexio once the scripts run on this login.
 
 ## Master-data pipeline (export, then import)
 
-1. Export, read-only, to private JSON files (needs the bexio login, so under varlock):
+1. Export, read-only, to private JSON files (needs the bexio login, an av launcher):
 
-       varlock run -p /Users/bsaladin/ws_yardr_finance/secrets -- python3 finance/bexio/export.py
+       finance/bexio/export.py
 
 2. One-off per site, as Administrator in the backend container (the API user may not
    write these): `finance/scripts/swiss-setup.sh fields currencies`, and the banks

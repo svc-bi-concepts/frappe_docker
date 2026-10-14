@@ -1,6 +1,6 @@
-"""Offline tests for login_helper.py: the tailnet login page. No network, no keychain.
+"""Offline tests for login_helper.py: the tailnet login page. No network, no av.
 
-The token endpoint and the keychain write are mocked; the server runs on a free
+The token endpoint and the av save are mocked; the server runs on a free
 loopback port. Invented client id, code and token values only.
 
 Run with: python3 -m unittest discover -s finance/bexio -p 'test_*.py'
@@ -35,7 +35,7 @@ class LoginHelperTest(unittest.TestCase):
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
         self.exchange = mock.patch.object(oauth, "exchange_code", return_value={"refresh_token": FAKE_TOKEN, "access_token": "fake-access", "scope": "openid offline_access contact_show"}).start()
-        self.write = mock.patch.object(oauth, "write_refresh_token").start()
+        self.write = mock.patch.object(oauth, "save_refresh_token").start()
         self.addCleanup(mock.patch.stopall)
         self.addCleanup(self._stop)
 
@@ -73,11 +73,11 @@ class LoginHelperTest(unittest.TestCase):
         self.assertEqual(query["code_challenge_method"], ["S256"])
         self.assertEqual(query["client_id"], ["fake-client-id"])
 
-    def test_export_login_uses_export_scope_and_its_own_keychain_item(self):
+    def test_export_login_uses_export_scope_and_its_own_vault_value(self):
         location = self._start_login("/login?scope=export")
         self.assertEqual(urllib.parse.parse_qs(urllib.parse.urlsplit(location).query)["scope"], [oauth.EXPORT_SCOPE])
         self._get("/callback?state={}&code=fake-code".format(self._state_of(location)))
-        self.write.assert_called_once_with(FAKE_TOKEN, oauth.EXPORT_KEYCHAIN_ACCOUNT)
+        self.write.assert_called_once_with(FAKE_TOKEN, oauth.EXPORT_REFRESH_KEY)
 
     def test_unknown_login_scope_is_refused(self):
         status, _, _ = self._get("/login?scope=everything")
@@ -100,7 +100,7 @@ class LoginHelperTest(unittest.TestCase):
         self.assertEqual(code, "fake-code")
         self.assertEqual(self.exchange.call_args.args[2], REDIRECT)
         self.assertEqual(oauth._challenge(verifier), challenge)  # PKCE: the verifier matches the login that started
-        self.write.assert_called_once_with(FAKE_TOKEN, oauth.KEYCHAIN_ACCOUNT)
+        self.write.assert_called_once_with(FAKE_TOKEN, oauth.REFRESH_KEY)
 
     def test_a_state_is_used_once(self):
         state = self._state_of(self._start_login())
@@ -153,12 +153,12 @@ class LoginHelperTest(unittest.TestCase):
         self.assertIn("no refresh token", body)
         self.write.assert_not_called()
 
-    def test_a_keychain_failure_is_shown_without_the_token(self):
+    def test_a_failed_av_save_is_shown_without_the_token(self):
         state = self._state_of(self._start_login())
-        self.write.side_effect = oauth.KeychainError("could not create the bexio refresh token (keychain status -25308)")
+        self.write.side_effect = oauth.VaultError("av did not save BEXIO_REFRESH_TOKEN (exit status 1)")
         status, _, body = self._get("/callback?state={}&code=fake-code".format(state))
         self.assertEqual(status, 502)
-        self.assertIn("keychain status -25308", body)
+        self.assertIn("exit status 1", body)
         self.assertNotIn(FAKE_TOKEN, body)
 
     def test_the_page_is_not_cached_and_the_login_is_not_logged(self):

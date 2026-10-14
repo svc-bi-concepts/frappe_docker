@@ -3,20 +3,14 @@
      Install into ~/Library/LaunchAgents on the Mac mini, see finance/bexio/README.md.
      Replace REDIRECT_URI_PLACEHOLDER with the callback URL registered at bexio, and
      TAILNET_USER_PLACEHOLDER with Benchi's tailnet login (as tailscale shows it). No secret here:
-     varlock injects the client id and secret from the keychain at start. -->
+     the script's av launcher line injects the client id and secret from the Automic Vault at start. -->
 <plist version="1.0">
 <dict>
     <key>Label</key>
     <string>ch.bi-concepts.bexio-login</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/opt/homebrew/bin/varlock</string>
-        <string>run</string>
-        <string>-p</string>
-        <string>/Users/bsaladin/ws_yardr_finance/secrets</string>
-        <string>--</string>
-        <string>/usr/bin/python3</string>
-        <string>finance/bexio/login_helper.py</string>
+        <string>/Users/bsaladin/ws_yardr_finance/frappe_docker/finance/bexio/login_helper.py</string>
         <string>--port</string>
         <string>8814</string>
         <string>--redirect-uri</string>
