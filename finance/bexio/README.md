@@ -80,6 +80,34 @@ BEXIO_BROKER=1 python3 finance/bexio/export.py --out /Users/bsaladin/ws_yardr_fi
 The export login below is only the fallback, for a machine without the broker. The
 temporary write scope it needs is not used when the broker is.
 
+## av proxy and the read-only path
+
+IT asked whether `av proxy +BEXIO_TOKEN` (Automic Vault) could take the broker's place as
+the read-only path. It cannot. What `av proxy` authorizes is a Proxy Session, one canonical
+origin and exact Secret Names; the HTTP method plays no part in it. The command has no method
+flag (`av proxy --help`, installed build av 4.19.0), the CLI reference scopes destination
+rules "per session and origin" (automicvault.com/docs/cli/index.md), the Secret Proxy page
+binds session approval to "the exact canonical origin and exact Secret Names", and the
+helper's fail-closed list (private destinations, ambiguous DNS, invalid TLS, protocol
+upgrades, bodies over 10 MiB, transactions over 30 seconds) does not mention methods. Once
+api.bexio.com is allowed for a session, POST, PUT, PATCH and DELETE pass exactly like GET.
+Automic Vault's own ADR 0017 says the same in so many words: exact-origin rules "cannot
+prevent misuse of an approved service" (source repo automic-vault/automic-vault,
+docs/secret-proxy.md and docs/adr/0017, checked against the 4.18.0 docs of October 2026).
+Behind it would sit the export login with the write scopes `accounting` and `file`, so a
+write to bexio would be one approved request away.
+
+If it were ever used anyway, `BEXIO_BROKER=1` could not keep its fixed addresses. `av proxy`
+wraps one command (the session lives and dies with that process; there is no launchd
+service) and hands out a per-session proxy address and CA only as environment variables
+(`HTTPS_PROXY`, `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, among others), refusing to start over
+an existing proxy or CA environment unless `--replace-existing-env` is given. `client.py`
+would have to read `HTTPS_PROXY` and one of the CA variables instead of the hardcoded
+`BROKER_PROXY` (127.0.0.1:18899) and `BROKER_CA` (/private/var/vlbroker/ca/combined-ca.pem),
+and every session start needs an Approval in the Vault app; "Allow for Session" remembers
+origin and names only until the command exits. No code change was made for this: the broker
+stays the read-only path, and IT decides on any switch.
+
 ## One run for everything (`--complete`)
 
 `export.py --complete` exports every entity, the document PDFs (invoices, offers, orders,
