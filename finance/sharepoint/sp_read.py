@@ -1,4 +1,4 @@
-#!/usr/local/bin/av inject +SP_CERT_KEY /usr/bin/python3 -I
+#!/usr/local/bin/av inject +FINANCE_SP_CERT_KEY /usr/bin/python3 -I
 """Read-only SharePoint reader for the documents payroll needs.
 
 Talks to Microsoft Graph using a client-credentials token
@@ -9,7 +9,7 @@ POST, and nothing else.
 
 The tenant, client, certificate thumbprint, drive and folder ids come from
 private/graph-cert/sharepoint.json, which must be mode 600. The private key
-comes from the environment (SP_CERT_KEY, injected by Automic Vault). It reaches
+comes from the environment (FINANCE_SP_CERT_KEY, injected by Automic Vault). It reaches
 openssl through a pipe, so it is never written to disk, logged or put in an error.
 
     ./sp_read.py list Insurance        (from finance/sharepoint; the shebang runs it under av inject)
@@ -334,9 +334,9 @@ def main(argv, out=sys.stdout):
         return 2
     try:
         cfg = load_config()
-        key = os.environ.get("SP_CERT_KEY")
+        key = os.environ.get("FINANCE_SP_CERT_KEY")
         if not key:
-            raise SharePointError("SP_CERT_KEY is not set: run this through Automic Vault")
+            raise SharePointError("FINANCE_SP_CERT_KEY is not set: run this through Automic Vault")
         graph = Graph(cfg["tenant_id"], cfg["client_id"], cfg["thumbprint"], cfg["drive_id"], key)
         if argv[1] == "list":
             list_folder(graph, cfg["folders"][argv[2]], out)

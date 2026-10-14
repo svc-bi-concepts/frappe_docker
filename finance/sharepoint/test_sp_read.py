@@ -480,7 +480,7 @@ class ErrorPathTest(Keys):
                 mock.patch("sys.stderr", err):
             code = sp_read.main(["sp_read.py", "fetch"])
         self.assertEqual(code, 1)
-        self.assertIn("SP_CERT_KEY", err.getvalue())
+        self.assertIn("FINANCE_SP_CERT_KEY", err.getvalue())
         opener.open.assert_not_called()
 
 
@@ -491,7 +491,7 @@ class HardeningTest(unittest.TestCase):
         path = os.path.join(os.path.dirname(os.path.abspath(sp_read.__file__)), "sp_read.py")
         with open(path) as f:
             first = f.readline().rstrip("\n")
-        self.assertEqual(first, "#!/usr/local/bin/av inject +SP_CERT_KEY /usr/bin/python3 -I")
+        self.assertEqual(first, "#!/usr/local/bin/av inject +FINANCE_SP_CERT_KEY /usr/bin/python3 -I")
 
     def test_the_signing_call_runs_openssl_by_absolute_path(self):
         done = mock.Mock(returncode=0, stdout=b"sig")
