@@ -13,7 +13,7 @@ finance/bexio/oauth.py login
 
 The command is an av launcher (its first line injects the client id and secret from the
 Automic Vault). It prints the bexio authorize URL and opens it in the browser. Approve the
-login there (the export login, `login --export-scope`, is described above). The browser then returns to `http://localhost:8765/callback`, the local
+login there. The browser then returns to `http://localhost:8765/callback`, the local
 listener on 127.0.0.1:8765 takes the code, and the refresh token is saved in the
 Automic Vault as `BEXIO_REFRESH_TOKEN` (`av save`; Benchi approves the save in the vault app).
 The token itself is never printed.
@@ -26,9 +26,8 @@ through a page on the tailnet. `finance/bexio/login_helper.py` serves it on
 and never from a file. `tailscale serve` puts it on the tailnet over https. Never Funnel:
 the page starts logins and must not be public.
 
-- `/login` redirects the browser to bexio with the read-only scopes; `/login?scope=export`
-  is the export login. Each login has a one-time state, valid 300 seconds. A new `/login`
-  replaces a waiting one.
+- `/login` redirects the browser to bexio with the read-only scopes. Each login has a
+  one-time state, valid 300 seconds. A new `/login` replaces a waiting one.
 - `/callback` exchanges the code and saves the new refresh token in the same vault value
   as `oauth.py login`. The page shows `logged in, scopes: ...`, never a token.
 - Only Benchi's tailnet login gets in: every request must carry the `Tailscale-User-Login`
@@ -69,15 +68,16 @@ takes it for every GET where it is set, and a personal access token does not rot
 anything, so a read never spends or re-saves the stored OAuth refresh token. Only where no
 read token is set does `client.py` run the read-only OAuth login, whose refresh token
 (`BEXIO_REFRESH_TOKEN`) the launchers inject from the Automic Vault. bexio enforces the
-scopes, so neither token can change the account. Which calls still need the OAuth login is
-to be confirmed: the live check of `inventory.py` with only the read token (compared
-against the OAuth report of 2026-10-14) decides what the read token cannot reach.
+scopes, so neither token can change the account.
 
-The accounting journal, manual entries, bank transactions and files are the exception: bexio
-grants their `accounting` and `file` scopes only with write access, so they are read with the
-export login (`oauth.py login --export-scope`, its own vault value `BEXIO_EXPORT_REFRESH_TOKEN`;
-the section below has the run). Without that login in the vault, the export stops before
-anything is written:
+The export reads with the same one token. Live check of 2026-10-14 (yardmaster ran
+`inventory.py` with only `BEXIO_READ_TOKEN`, against the OAuth report of the same day):
+the read token reaches every entity the OAuth login did, plus the ones the OAuth login
+had refused with "no access (token scope)" — manual entries, journal lines, banking
+transactions and files/attachments — because bexio grants their `accounting` and `file`
+scopes only with write access. The export login of before (`oauth.py login
+--export-scope`, its own vault value `BEXIO_EXPORT_REFRESH_TOKEN`) is therefore gone;
+see "Why there is no export login" below. The accounting/file run needs no login step:
 
 ```sh
 finance/bexio/export.py --out /Users/bsaladin/ws_yardr_finance/private/bexio-export/<date>-full --only manual_entries --only journal --only bank_transactions --only files
@@ -95,9 +95,9 @@ does not come from a proxy at all: it comes from the credential. The Automic Vau
 `BEXIO_READ_TOKEN`, a read-scoped personal access token (IT proposal, Benchi approved):
 `inventory.py` injects only that name with its av line — no client id, no client secret, no
 refresh token ride along, so the blessed read script holds nothing write-capable — and
-`client.py` takes the read token for every GET where it is set. `export.py` still injects
-the OAuth logins alongside the read token, for the entities that may need them (which
-those are: to be confirmed, see above). The write-capable `BEXIO_TOKEN` stays with
+`client.py` takes the read token for every GET where it is set. `export.py` injects only
+that name too: it reads everything with the read token (live finding of 2026-10-14, see
+above). The write-capable `BEXIO_TOKEN` stays with
 `upload_bill.py` and `create_contact_and_bill.py`, which POST.
 
 ## One run for everything (`--complete`)
@@ -112,34 +112,24 @@ its own manifest. The top manifest has a count per entity, the refused records u
 finance/bexio/export.py --complete
 ```
 
-It needs both logins (the read-only one and the export one, as below).
+It reads everything with the read token, as the default run does.
 A document PDF is asked raw first and, on HTTP 415, in the JSON form (base64 content). Entities
 whose paths are not yet checked against the live API (credit vouchers, file usage, expense
 attachments) say so in their refusals; read those in the manifest first.
 
-## Export login (one run, then removed)
+## Why there is no export login
 
-The export has a second login with `EXPORT_SCOPE` (the
-read-only scopes plus `accounting` and `file`). It is kept apart from the
-read-only one: its own vault value (`BEXIO_EXPORT_REFRESH_TOKEN`),
-and only `export.py` uses it, for `manual_entries`, `journal`, `bank_transactions`
-and `files`. Every other entity still goes through the read-only login. The
-client stays GET-only in both cases.
-
-Run it on the Mac mini's desktop Terminal, before the export run:
-
-```sh
-finance/bexio/oauth.py login --export-scope
-finance/bexio/export.py --out /Users/bsaladin/ws_yardr_finance/private/bexio-export/<date>-full --only manual_entries --only journal --only bank_transactions --only files
-finance/bexio/oauth.py logout --export-scope
-```
-
-Afterwards, `logout --export-scope` does not delete anything: `av` cannot remove a vault
-value, so it prints the step to do by hand. Delete `BEXIO_EXPORT_REFRESH_TOKEN` in the
-Automic Vault app. It does not revoke anything at bexio: revoke the app's access in bexio
-as well. If that revoke also kills the read-only refresh token, log in again with
-`oauth.py login` (the read-only one).
-A login that is never removed keeps the write scopes in the vault, so the logout is not optional.
+Until 2026-10-14 the export had a second OAuth login with the `accounting` and `file`
+scopes (vault value `BEXIO_EXPORT_REFRESH_TOKEN`, `oauth.py login --export-scope`), meant
+for manual entries, journal, bank transactions and files: bexio grants those scopes only
+with write access, so the read-only OAuth login could not read them. The live check of
+that day (yardmaster, `inventory.py` with only the read token, against the OAuth report
+of the same day) found the read token reaches all of them anyway — plus file and bill
+attachments. The export refresh token had also never been stored in the vault, so the
+run died at `av inject`. The export login was therefore removed instead of set up:
+`export.py` injects only `BEXIO_READ_TOKEN`, `oauth.py` and the tailnet login page have
+only the read-only login, and the vault keeps one bexio value. Nothing to log in, nothing
+to remove after a run.
 
 ## How the scripts use it
 
@@ -168,7 +158,7 @@ bexio once the scripts run on this login.
 
 ## Master-data pipeline (export, then import)
 
-1. Export, read-only, to private JSON files (needs the bexio login, an av launcher):
+1. Export, read-only, to private JSON files (needs the read token, an av launcher):
 
        finance/bexio/export.py
 

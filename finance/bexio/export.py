@@ -1,4 +1,4 @@
-#!/usr/local/bin/av inject +BEXIO_CLIENT_ID +BEXIO_CLIENT_SECRET +BEXIO_REFRESH_TOKEN +BEXIO_EXPORT_REFRESH_TOKEN +BEXIO_READ_TOKEN /bin/bash
+#!/usr/local/bin/av inject +BEXIO_READ_TOKEN /bin/bash
 # The Python below reaches python3 on stdin, inside this one blessed file.
 # av runs a Blessed Script as /dev/fd/N, and the mini's Python 3.9 reads a
 # /dev/fd script from where its zip check left the shared offset: a script
@@ -24,11 +24,12 @@ the run; the exit status is 2 when a required entity is missing.
 --only reruns the named entities (repeatable) and keeps the manifest entries of
 the others; without it every entity is exported.
 
-Four entities need the accounting and file scopes, which bexio grants only with
-write access. They are read with the export login (oauth.py login --export-scope,
-its own vault value BEXIO_EXPORT_REFRESH_TOKEN), and everything else with the read-only
-login. Once the run is done, `oauth.py logout --export-scope` says how to remove the
-export login again (av cannot delete a vault value, so that step is by hand).
+Every entity is read with BEXIO_READ_TOKEN, the read-scoped personal access token the av
+line above injects — no OAuth credentials ride along. The live check of 2026-10-14 found
+the read token reaches manual entries, journal lines, banking transactions and
+files/attachments, which the read-only OAuth login had refused with "no access (token
+scope)" (bexio grants their accounting and file scopes only with write access), so the
+export login of before is gone: one token reads the whole account.
 
 Documents come with their positions: invoices, orders, offers, deliveries and purchase bills
 are read as a list, then one call per record adds the positions to it. The
@@ -41,8 +42,8 @@ Their content goes to files/<uuid>.pdf, the same folder as files.json's.
 
 --complete is the one run for the whole account: every entity above, the document PDFs (invoices,
 offers, orders, deliveries, credit vouchers) and the payroll under payroll/, all into
-<private>/bexio-export/<YYYY-MM-DD>-complete/ with one manifest per part. It needs both logins
-(the read-only one and the export one), as the default run does.
+<private>/bexio-export/<YYYY-MM-DD>-complete/ with one manifest per part. It reads with the
+one read token, as the default run does.
 
 --payroll exports the payroll module instead (employees, absences per year, payslip PDFs
 per month and the company reads) to <private>/bexio-payroll/, with its
@@ -178,13 +179,6 @@ ENTITIES = {
     # Last: it reads the entity files above, so it runs after them (see download_document_pdfs).
     DOCUMENT_PDFS_ENTITY: (("pdfs", None), False),
 }
-
-
-# The entities read with the export login; every other one uses the read-only login.
-# bill_attachments and expense_attachments need the file scope for their content, as files does,
-# and so do the links of the files.
-EXPORT_SCOPE_ENTITIES = frozenset({"manual_entries", "journal", "bank_transactions", FILES, FILE_LINKS,
-                                   BILL_ATTACHMENTS, EXPENSE_ATTACHMENTS})
 
 
 def default_out(today=None):
@@ -405,11 +399,8 @@ def read_manifest(out):
         return json.load(f)
 
 
-def export(client, out, entities=None, only=None, export_client=None):
-    """Write the entities (all, or just `only`) to `out` and return the manifest (also written there).
-
-    The entities of EXPORT_SCOPE_ENTITIES go through export_client, the others through client.
-    """
+def export(client, out, entities=None, only=None):
+    """Write the entities (all, or just `only`) to `out` and return the manifest (also written there)."""
     entities = entities or ENTITIES
     os.makedirs(out, mode=0o700, exist_ok=True)
     os.chmod(out, 0o700)
@@ -417,13 +408,12 @@ def export(client, out, entities=None, only=None, export_client=None):
     manifest["exported_on"] = datetime.date.today().isoformat()
     for name in (only or entities):
         spec, required = entities[name]
-        source = export_client if name in EXPORT_SCOPE_ENTITIES and export_client is not None else client
         entry = {"file": name + ".json", "required": required}
         try:
             if spec[0] == "pdfs":
-                rows, summary = download_document_pdfs(source, out)
+                rows, summary = download_document_pdfs(client, out)
             else:
-                rows, summary = read_entity(source, spec), {}
+                rows, summary = read_entity(client, spec), {}
         except BexioError as err:
             # A stale file from an earlier run must not pass for this run's data.
             stale = os.path.join(out, entry["file"])
@@ -433,7 +423,7 @@ def export(client, out, entities=None, only=None, export_client=None):
         else:
             # the content first: a download adds the size of each row, which the JSON must carry
             if name in CONTENT_PATHS:
-                entry.update(download_files(source, rows, out, CONTENT_PATHS[name]))
+                entry.update(download_files(client, rows, out, CONTENT_PATHS[name]))
             entry.update(summary)
             # a row that carries an error is a refused record: the manifest names it
             refused = [row.get("id", row.get("file_id")) for row in rows if "error" in row]
@@ -620,7 +610,7 @@ def print_manifest(manifest):
 def run_complete(out, years):
     """Every entity into out, the payroll into out/payroll: one run, one manifest for each part. Returns the status."""
     client = Client()
-    manifest = export(client, out, export_client=Client(export_scope=True))
+    manifest = export(client, out)
     print("exported to {}".format(out))
     print_manifest(manifest)
     payroll = export_payroll(client, os.path.join(out, PAYROLL_SUBDIR), years)
@@ -664,12 +654,7 @@ def main(argv):
     if args.year:
         parser.error("--year goes with --payroll or --complete")
     out = args.out or default_out()
-    names = list(args.only or ENTITIES)
-    # Each login is only opened when a requested entity needs it: the export login
-    # stops the run before anything is written when it is not in the vault.
-    client = Client() if any(name not in EXPORT_SCOPE_ENTITIES for name in names) else None
-    export_client = Client(export_scope=True) if any(name in EXPORT_SCOPE_ENTITIES for name in names) else None
-    manifest = export(client, out, only=args.only, export_client=export_client)
+    manifest = export(Client(), out, only=args.only)
     print("exported to {}".format(out))
     print_manifest(manifest)
     missing = failed_required(manifest)

@@ -6,15 +6,14 @@ first, the read-scoped personal access token the read launchers inject from
 the Automic Vault: a personal access token does not rotate anything, so a
 read never spends or re-saves the stored OAuth refresh token. Only where no
 read token is set does the OAuth refresh token in the environment run
-(oauth.refresh_access_token()). The export login (export_scope=True, for the
-few entities of export.py that need the accounting and file scopes) reads its
-own refresh token and never falls back to a personal access token. Which
-calls still need the OAuth login is to be confirmed: the live check of
-inventory.py with only the read token (compared against the OAuth report of
-2026-10-14) decides what the read token cannot reach. The write-capable
-BEXIO_TOKEN of the upload scripts is never read here: the read-only path takes
-its credential, not the write one. Which of these was used is printed to
-stderr; the token itself is never stored, printed or put in an error message.
+(oauth.refresh_access_token()). The export takes the same token as every
+read: the live check of 2026-10-14 (inventory.py with only the read token,
+against the OAuth report of the same day) found the read token reaches the
+accounting and file entities too, so the export login of before is gone.
+The write-capable BEXIO_TOKEN of the upload scripts is never read here: the
+read-only path takes its credential, not the write one. Which of these was
+used is printed to stderr; the token itself is never stored, printed or put
+in an error message.
 
 The scripts that use it are launchers (their first line is the av shebang), so
 they run as:
@@ -56,41 +55,31 @@ class BexioError(Exception):
 
 TOKEN_NAMES = {
     "oauth": "OAuth refresh token",
-    "oauth-export": "OAuth export refresh token (accounting and file scopes)",
     "pat": "read-scoped personal access token (BEXIO_READ_TOKEN)",
 }
 
 
-def resolve_token(export_scope=False):
+def resolve_token():
     """(token, kind) for the API: the read token first, the OAuth login only without one.
 
-    kind is "oauth", "oauth-export" or "pat". Reads take BEXIO_READ_TOKEN when
-    it is set: the OAuth login is not touched at all, so a read neither spends
-    nor rotates the stored refresh token. Without a read token the OAuth login
-    runs, and a refresh token that exists but is refused is an error, not a
-    reason to fall back. The export login (export_scope) is as it was: its own
-    refresh token, no personal access token standing in (it cannot have the
-    accounting and file scopes).
+    kind is "oauth" or "pat". Reads take BEXIO_READ_TOKEN when it is set: the
+    OAuth login is not touched at all, so a read neither spends nor rotates
+    the stored refresh token. Without a read token the OAuth login runs, and
+    a refresh token that exists but is refused is an error, not a reason to
+    fall back. The export asks for no token of its own: it reads with the one
+    token chosen here, as every script does.
     """
-    if not export_scope:
-        read_token = os.environ.get("BEXIO_READ_TOKEN")
-        if read_token:
-            return read_token, "pat"
+    read_token = os.environ.get("BEXIO_READ_TOKEN")
+    if read_token:
+        return read_token, "pat"
     import launcher  # lazy: only the OAuth path needs it
     oauth = launcher.load("oauth.py")  # oauth.py is a bash launcher; its python body is what runs here
 
-    key = oauth.EXPORT_REFRESH_KEY if export_scope else oauth.REFRESH_KEY
-    kind = "oauth-export" if export_scope else "oauth"
-    if oauth.read_refresh_token(key) is not None:
+    if oauth.read_refresh_token(oauth.REFRESH_KEY) is not None:
         try:
-            return oauth.refresh_access_token(export_scope=export_scope), kind
+            return oauth.refresh_access_token(), "oauth"
         except (oauth.OAuthError, oauth.VaultError) as err:
             raise SystemExit("bexio login: {}".format(err))
-    if export_scope:
-        raise SystemExit(
-            "no bexio export refresh token ({} is not set); log in with `{}` (see finance/bexio/README.md)".format(
-                key, oauth.EXPORT_LOGIN_COMMAND)
-        )
     raise SystemExit(
         "no bexio read token (BEXIO_READ_TOKEN is not set) and no refresh token ({} is not set); "
         "log in with `{}` (see finance/bexio/README.md)".format(oauth.REFRESH_KEY, oauth.LOGIN_COMMAND)
@@ -98,9 +87,9 @@ def resolve_token(export_scope=False):
 
 
 class Client:
-    def __init__(self, token=None, base_url=BASE_URL, export_scope=False):
+    def __init__(self, token=None, base_url=BASE_URL):
         if token is None:
-            token, self.token_kind = resolve_token(export_scope)
+            token, self.token_kind = resolve_token()
             print("bexio token: {}".format(TOKEN_NAMES[self.token_kind]), file=sys.stderr)
         else:
             self.token_kind = "given"

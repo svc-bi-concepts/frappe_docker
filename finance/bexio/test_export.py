@@ -76,9 +76,13 @@ def answering(client, answers):
     return client
 
 
-def fake_client(missing=()):
-    """A Client whose GETs answer from the fixtures: [] for unknown lists, 404 for unknown files, 403 for `missing`."""
-    c = Client(token="test-token-not-real")
+def fake_client(missing=(), from_env=False):
+    """A Client whose GETs answer from the fixtures: [] for unknown lists, 404 for unknown files, 403 for `missing`.
+
+    With from_env the client is built by Client() itself, so its token comes from the
+    environment (BEXIO_READ_TOKEN) and the kind is resolved as in a real run.
+    """
+    c = Client() if from_env else Client(token="test-token-not-real")
 
     def fake_get(path, params=None, raw=False, accept=None):
         if path in missing:
@@ -255,25 +259,24 @@ class ExportTest(unittest.TestCase):
         methods = {call.args[0].get_method() for call in opened.call_args_list}
         self.assertEqual(methods, {"GET"})
 
-    def test_export_scope_entities_go_through_the_export_client_only(self):
-        read, write = fake_client(), fake_client()
-        asked_read, asked_write = recording(read), recording(write)
-        export.export(read, self.out, export_client=write)
-        export_paths = ["/3.0/accounting/journal", "/3.0/accounting/manual_entries", "/3.0/banking/transactions", "/3.0/files"]
-        for path in export_paths:
-            self.assertIn(path, asked_write)
-            self.assertNotIn(path, asked_read)
-        self.assertIn("/3.0/files/9/download", asked_write)  # file contents need the file scope too
-        self.assertNotIn("/3.0/files/9/download", asked_read)
-        self.assertIn("/3.0/files/u-1/download", asked_write)  # and so do the bill attachments
-        self.assertNotIn("/3.0/files/u-1/download", asked_read)
-        self.assertIn("/2.0/contact", asked_read)
-        self.assertNotIn("/2.0/contact", asked_write)
+    def test_export_with_only_the_read_token_reaches_the_accounting_and_file_entities(self):
+        # The live finding of 2026-10-14: the read token reaches manual entries, journal,
+        # bank transactions and files, so the export runs on one client, as every read does.
+        with mock.patch.dict(os.environ, {"BEXIO_READ_TOKEN": "test-token-not-real"}, clear=True):
+            c = fake_client(from_env=True)
+        self.assertEqual(c.token_kind, "pat")
+        asked = recording(c)
+        export.export(c, self.out)
+        for path in ("/3.0/accounting/journal", "/3.0/accounting/manual_entries",
+                     "/3.0/banking/transactions", "/3.0/files", "/3.0/files/9/download"):
+            self.assertIn(path, asked)
 
-    def test_the_export_scope_set_is_the_entities_with_file_contents_or_files(self):
-        self.assertEqual(export.EXPORT_SCOPE_ENTITIES,
-                         {"manual_entries", "journal", "bank_transactions", "files", "file_links",
-                          "bill_attachments", "expense_attachments"})
+    def test_the_export_scope_split_is_gone(self):
+        # One client reads everything; there is no second client and no entity set for it.
+        import inspect
+
+        self.assertFalse(hasattr(export, "EXPORT_SCOPE_ENTITIES"))
+        self.assertNotIn("export_client", inspect.signature(export.export).parameters)
 
     def test_credit_vouchers_are_read_by_the_ids_in_the_payment_rows(self):
         c = answering(fake_client(), {
@@ -443,8 +446,8 @@ class ExportTest(unittest.TestCase):
                          os.path.join(export.PRIVATE, "bexio-export", "2026-10-10-complete"))
 
     def test_complete_writes_the_entities_and_the_payroll_into_one_folder(self):
-        # Both logins answer from the fixtures (the payroll reads come back empty), so only the layout is checked.
-        with mock.patch.object(export, "Client", side_effect=[fake_client(), fake_client()]):
+        # The one client answers from the fixtures (the payroll reads come back empty), so only the layout is checked.
+        with mock.patch.object(export, "Client", side_effect=[fake_client()]):
             self.assertEqual(export.run_complete(self.out, [2026]), 0)
         self.assertTrue(os.path.exists(os.path.join(self.out, "contacts.json")))
         self.assertTrue(os.path.exists(os.path.join(self.out, "manifest.json")))

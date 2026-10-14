@@ -9,6 +9,7 @@ import os
 import types
 import unittest
 import urllib.error
+import urllib.parse
 from unittest import mock
 
 import launcher
@@ -57,60 +58,49 @@ class ScopeTest(unittest.TestCase):
         )
 
 
-class ExportScopeTest(unittest.TestCase):
-    def test_export_scope_is_the_read_scopes_plus_accounting_and_file(self):
-        self.assertEqual(
-            set(oauth.EXPORT_SCOPE.split()),
-            set(oauth.SCOPE.split()) | {"accounting", "file"},
-        )
-        self.assertFalse(any(s.endswith("_edit") for s in oauth.EXPORT_SCOPE.split()))
+class ExportLoginGoneTest(unittest.TestCase):
+    # The export login is gone: the read-scoped personal access token reaches the
+    # accounting and file entities too (live check of 2026-10-14), so the vault keeps
+    # only the read-only login and the export-scope constants and flags are removed.
 
-    def test_export_login_has_its_own_vault_value(self):
-        self.assertNotEqual(oauth.EXPORT_REFRESH_KEY, oauth.REFRESH_KEY)
+    def test_there_is_no_export_scope_and_no_export_key(self):
+        self.assertFalse(hasattr(oauth, "EXPORT_SCOPE"))
+        self.assertFalse(hasattr(oauth, "EXPORT_REFRESH_KEY"))
+        self.assertFalse(hasattr(oauth, "EXPORT_LOGIN_COMMAND"))
 
-    def test_export_login_asks_for_the_export_scope_and_saves_to_its_own_value(self):
-        self._login(export_scope=True)
-        self.authorize.assert_called_once()
-        self.assertEqual(self.authorize.call_args.args[2], oauth.EXPORT_SCOPE)
-        self.save.assert_called_once_with("refresh-not-real", oauth.EXPORT_REFRESH_KEY)
-
-    def test_default_login_stays_read_only_and_saves_to_the_read_value(self):
-        self._login(export_scope=False)
-        self.assertEqual(self.authorize.call_args.args[2], oauth.SCOPE)
-        self.save.assert_called_once_with("refresh-not-real", oauth.REFRESH_KEY)
-
-    def _login(self, export_scope):
-        body = {"access_token": "access-not-real", "refresh_token": "refresh-not-real"}
-        with mock.patch.dict(os.environ, FAKE_ENV), \
-                mock.patch.object(oauth, "authorize_url", return_value="https://example.invalid/") as self.authorize, \
-                mock.patch.object(oauth.webbrowser, "open"), \
-                mock.patch.object(oauth, "wait_for_code", return_value="code-not-real"), \
-                mock.patch.object(oauth, "exchange_code", return_value=body), \
-                mock.patch.object(oauth, "save_refresh_token") as self.save, \
-                contextlib.redirect_stderr(io.StringIO()):
-            oauth.login(export_scope=export_scope)
-
-
-class LogoutTest(unittest.TestCase):
-    def test_logout_cannot_remove_the_vault_value_and_says_so(self):
-        # av has no delete, so logout names the value to remove by hand and touches nothing itself.
-        with mock.patch.object(oauth, "subprocess") as sub:
+    def test_the_export_flag_selects_no_login_any_more(self):
+        with mock.patch.object(oauth, "login") as login:
             with self.assertRaises(SystemExit) as ctx:
-                oauth.main(["logout", "--export-scope"])
-        self.assertIn("BEXIO_EXPORT_REFRESH_TOKEN", str(ctx.exception))
-        sub.run.assert_not_called()
+                oauth.main(["login", "--export-scope"])
+        self.assertEqual(str(ctx.exception), oauth.USAGE)
+        login.assert_not_called()
 
-    def test_logout_without_export_scope_is_refused(self):
+    def test_logout_is_refused(self):
+        # The read-only login is never removed, and there is no export login to remove.
         with mock.patch.object(oauth, "subprocess") as sub:
             with self.assertRaises(SystemExit) as ctx:
                 oauth.main(["logout"])
         self.assertEqual(str(ctx.exception), oauth.USAGE)
         sub.run.assert_not_called()
 
-    def test_login_flag_selects_the_export_login(self):
-        with mock.patch.object(oauth, "login") as login:
-            oauth.main(["login", "--export-scope"])
-        login.assert_called_once_with(True)
+    def test_no_export_scope_parameter_is_left_on_the_login_helpers(self):
+        import inspect
+
+        for function in (oauth.login, oauth.refresh_access_token, oauth.authorize_url,
+                         oauth.wait_for_code, oauth._login_hint):
+            self.assertNotIn("export_scope", inspect.signature(function).parameters, function.__name__)
+
+    def test_the_login_saves_to_the_read_value(self):
+        body = {"access_token": "access-not-real", "refresh_token": "refresh-not-real"}
+        with mock.patch.dict(os.environ, FAKE_ENV), \
+                mock.patch.object(oauth, "authorize_url", return_value="https://example.invalid/"), \
+                mock.patch.object(oauth.webbrowser, "open"), \
+                mock.patch.object(oauth, "wait_for_code", return_value="code-not-real"), \
+                mock.patch.object(oauth, "exchange_code", return_value=body), \
+                mock.patch.object(oauth, "save_refresh_token") as save, \
+                contextlib.redirect_stderr(io.StringIO()):
+            oauth.login()
+        save.assert_called_once_with("refresh-not-real", oauth.REFRESH_KEY)
 
 
 class PkceTest(unittest.TestCase):
@@ -132,6 +122,9 @@ class AuthorizeUrlTest(unittest.TestCase):
         self.assertEqual(query["code_challenge"], "challenge-value")
         self.assertIn("client_id", query)
         self.assertNotIn("client_secret", url)
+        # authorize_url takes no scope argument: the read-only SCOPE is the only one it asks for
+        self.assertEqual(urllib.parse.unquote_plus(query["scope"]), oauth.SCOPE)
+        self.assertNotIn("accounting", query["scope"])
         self.assertNotIn("secret-not-real", url)
 
 
@@ -158,8 +151,8 @@ class ReadTokenTest(unittest.TestCase):
     def test_unset_or_empty_refresh_token_is_none(self):
         with mock.patch.dict(os.environ, {}, clear=True):
             self.assertIsNone(oauth.read_refresh_token())
-        with mock.patch.dict(os.environ, {oauth.EXPORT_REFRESH_KEY: ""}, clear=True):
-            self.assertIsNone(oauth.read_refresh_token(oauth.EXPORT_REFRESH_KEY))
+        with mock.patch.dict(os.environ, {oauth.REFRESH_KEY: ""}, clear=True):
+            self.assertIsNone(oauth.read_refresh_token(oauth.REFRESH_KEY))
 
 
 class RefreshTest(unittest.TestCase):
@@ -227,15 +220,10 @@ class RefreshTest(unittest.TestCase):
         self.assertIn("login_helper.py", str(ctx.exception))
         self.assertNotIn("refresh-rotated", str(ctx.exception))
 
-    def test_export_refresh_uses_its_own_vault_value(self):
-        answer = {"access_token": "access-export", "refresh_token": "refresh-export-rotated"}
-        with mock.patch.dict(os.environ, dict(FAKE_ENV, **{oauth.EXPORT_REFRESH_KEY: "refresh-export-old"})), \
-                mock.patch.object(oauth, "read_refresh_token", return_value="refresh-export-old") as read, \
-                mock.patch.object(oauth, "_token_request", return_value=answer), \
-                mock.patch.object(oauth, "save_refresh_token") as save:
-            self.assertEqual(oauth.refresh_access_token(export_scope=True), "access-export")
-        read.assert_called_once_with(oauth.EXPORT_REFRESH_KEY)
-        save.assert_called_once_with("refresh-export-rotated", oauth.EXPORT_REFRESH_KEY)
+    def test_refresh_takes_no_export_scope_any_more(self):
+        import inspect
+
+        self.assertNotIn("export_scope", inspect.signature(oauth.refresh_access_token).parameters)
 
     def test_refused_refresh_token_asks_for_a_new_login(self):
         with mock.patch.dict(os.environ, FAKE_ENV), \
@@ -346,7 +334,7 @@ class LauncherTest(unittest.TestCase):
         "oauth.py": "+BEXIO_CLIENT_ID +BEXIO_CLIENT_SECRET",
         "login_helper.py": "+BEXIO_CLIENT_ID +BEXIO_CLIENT_SECRET",
         "inventory.py": "+BEXIO_READ_TOKEN",
-        "export.py": "+BEXIO_CLIENT_ID +BEXIO_CLIENT_SECRET +BEXIO_REFRESH_TOKEN +BEXIO_EXPORT_REFRESH_TOKEN +BEXIO_READ_TOKEN",
+        "export.py": "+BEXIO_READ_TOKEN",
     }
     # The retired read path's two names, put together from parts: the depot gate greps
     # the repo for them and must find none, so this file cannot spell them either. The

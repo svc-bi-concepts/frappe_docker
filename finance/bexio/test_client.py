@@ -267,27 +267,24 @@ class TokenSourceTest(unittest.TestCase):
 
 
 class ExportTokenTest(unittest.TestCase):
-    # The export login reads its own refresh token (its own vault value), the accounting
-    # and file scopes it was granted; the PAT never stands in for it.
+    # The export takes the same token as every read: BEXIO_READ_TOKEN when it is set
+    # (the live check of 2026-10-14 found it reaches the accounting and file entities
+    # too), the OAuth login only without one. The export login of before is gone.
 
-    def test_export_login_refreshes_its_own_token(self):
+    def test_the_export_takes_the_read_token_and_no_vault_value(self):
         import oauth
 
-        with mock.patch.object(oauth, "read_refresh_token", return_value="refresh-export") as read, \
-                mock.patch.object(oauth, "refresh_access_token", return_value="access-export") as refresh:
-            self.assertEqual(client.resolve_token(export_scope=True), ("access-export", "oauth-export"))
-        read.assert_called_once_with(oauth.EXPORT_REFRESH_KEY)
-        refresh.assert_called_once_with(export_scope=True)
+        with mock.patch.dict(os.environ, {"BEXIO_READ_TOKEN": "pat-value-not-real"}, clear=True), \
+                mock.patch.object(oauth, "read_refresh_token") as read:
+            self.assertEqual(client.resolve_token(), ("pat-value-not-real", "pat"))
+        read.assert_not_called()
 
-    def test_export_login_never_falls_back_to_the_pat(self):
-        import oauth
+    def test_no_export_scope_is_left_on_the_token_choice(self):
+        import inspect
 
-        with mock.patch.object(oauth, "read_refresh_token", return_value=None), \
-                mock.patch.dict(os.environ, {"BEXIO_READ_TOKEN": "pat-value-not-real"}, clear=True):
-            with self.assertRaises(SystemExit) as ctx:
-                client.resolve_token(export_scope=True)
-        self.assertIn("--export-scope", str(ctx.exception))
-        self.assertNotIn("pat-value-not-real", str(ctx.exception))
+        self.assertNotIn("export_scope", inspect.signature(client.resolve_token).parameters)
+        self.assertNotIn("export_scope", inspect.signature(client.Client.__init__).parameters)
+        self.assertNotIn("oauth-export", client.TOKEN_NAMES)
 
 
 class RetiredEnvTest(unittest.TestCase):

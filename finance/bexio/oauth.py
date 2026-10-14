@@ -6,26 +6,22 @@
 exec /usr/bin/python3 -I - "$@" <<'__BEXIO_OAUTH_PY__'
 """OAuth login for the bexio API: one login by hand, then refresh tokens from the Automic Vault.
 
-There are two logins, each with its own vault value and its own scopes:
-
-- the read-only login (SCOPE below), which every script uses. bexio enforces
-  the scopes, so this token cannot change the account, whatever the code does.
-- the export login (EXPORT_SCOPE below), which only export.py uses, for the
-  journal, manual entries, bank transactions and files. bexio grants those
-  scopes only with write access, so this login is kept apart and removed again
-  after the run (`logout --export-scope` says how).
+The login asks for the read-only scopes (SCOPE below) only. bexio enforces
+the scopes, so this token cannot change the account, whatever the code does.
+(The export login of before, with the accounting and file scopes, is gone:
+the read-scoped personal access token BEXIO_READ_TOKEN reaches those entities
+too — the live check of 2026-10-14 — so no second login is kept in the vault.)
 
 Benchi logs in once, on the Mac mini:
 
     finance/bexio/oauth.py login
-    finance/bexio/oauth.py login --export-scope
 
 This file is an av launcher (its first line): av injects the client id and
 secret from the Automic Vault into the process, and nothing else.
 
-The refresh tokens are the vault values BEXIO_REFRESH_TOKEN and
-BEXIO_EXPORT_REFRESH_TOKEN. The launchers inject them as environment variables.
-bexio rotates each token on every use, so each refresh saves the new one back
+The refresh token is the vault value BEXIO_REFRESH_TOKEN. The launchers inject
+it as an environment variable. bexio rotates the token on every use, so each
+refresh saves the new one back
 with `av save --stdin`: the token goes on stdin only, never argv. Benchi approves
 each save in the vault app. Access tokens stay in memory. Nothing here prints or
 writes a token or the client secret.
@@ -68,16 +64,10 @@ SCOPE = (
     "payroll_paystub_show"
 )
 
-# The export login: the read-only scopes plus the two bexio grants only with
-# write access. Used for one export run, then removed with `logout --export-scope`.
-EXPORT_SCOPE = SCOPE + " accounting file"
-
 VAULT_CLI = "/usr/local/bin/av"
 VAULT_PROJECT = "/Users/bsaladin/ws_yardr_finance"
 REFRESH_KEY = "BEXIO_REFRESH_TOKEN"
-EXPORT_REFRESH_KEY = "BEXIO_EXPORT_REFRESH_TOKEN"
 LOGIN_COMMAND = "finance/bexio/oauth.py login"
-EXPORT_LOGIN_COMMAND = LOGIN_COMMAND + " --export-scope"
 
 
 class OAuthError(Exception):
@@ -88,8 +78,8 @@ class VaultError(Exception):
     """av could not save a refresh token. The message never holds a token."""
 
 
-def _login_hint(export_scope=False):
-    return "run `{}` again".format(EXPORT_LOGIN_COMMAND if export_scope else LOGIN_COMMAND)
+def _login_hint():
+    return "run `{}` again".format(LOGIN_COMMAND)
 
 
 def _client_credentials():
@@ -106,12 +96,12 @@ def _challenge(verifier):
     return base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
 
 
-def authorize_url(state, challenge, scope=SCOPE, redirect_uri=REDIRECT_URI):
+def authorize_url(state, challenge, redirect_uri=REDIRECT_URI):
     query = {
         "client_id": _client_credentials()["client_id"],
         "redirect_uri": redirect_uri,
         "response_type": "code",
-        "scope": scope,
+        "scope": SCOPE,
         "state": state,
         "code_challenge": challenge,
         "code_challenge_method": "S256",
@@ -187,7 +177,7 @@ class _CallbackHandler(http.server.BaseHTTPRequestHandler):
         pass
 
 
-def wait_for_code(expected_state, export_scope=False):
+def wait_for_code(expected_state):
     """Serve the callback once and return the authorization code.
 
     Other requests (a favicon, a stray reload) get their own answer and do not
@@ -201,13 +191,13 @@ def wait_for_code(expected_state, export_scope=False):
         while server.outcome is None:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                raise OAuthError("no answer from bexio within {} seconds; {}".format(LOGIN_TIMEOUT, _login_hint(export_scope)))
+                raise OAuthError("no answer from bexio within {} seconds; {}".format(LOGIN_TIMEOUT, _login_hint()))
             server.timeout = remaining
             server.handle_request()
     finally:
         server.server_close()
     if "error" in server.outcome:
-        raise OAuthError("bexio did not grant the login ({}); {}".format(server.outcome["error"], _login_hint(export_scope)))
+        raise OAuthError("bexio did not grant the login ({}); {}".format(server.outcome["error"], _login_hint()))
     return server.outcome["code"]
 
 
@@ -236,36 +226,33 @@ def save_refresh_token(token, key=REFRESH_KEY):
     os.environ[key] = token
 
 
-def login(export_scope=False):
+def login():
     """Run the one-time login: browser, callback, code exchange, vault."""
     verifier = secrets.token_urlsafe(64)  # PKCE: 43 to 128 characters
     state = secrets.token_urlsafe(32)
-    scope = EXPORT_SCOPE if export_scope else SCOPE
-    key = EXPORT_REFRESH_KEY if export_scope else REFRESH_KEY
-    url = authorize_url(state, _challenge(verifier), scope)
-    print("Open this URL to log in to bexio with {} scopes:".format("export" if export_scope else "read-only"), file=sys.stderr)
+    url = authorize_url(state, _challenge(verifier))
+    print("Open this URL to log in to bexio with read-only scopes:", file=sys.stderr)
     print(url, file=sys.stderr)
     webbrowser.open(url)
-    code = wait_for_code(state, export_scope)
+    code = wait_for_code(state)
     body = exchange_code(code, verifier)
     refresh = body.get("refresh_token")
     if not refresh:
         raise OAuthError("bexio sent no refresh token; the login needs offline_access in its scopes")
-    save_refresh_token(refresh, key)
-    print("Saved the bexio {}refresh token in the Automic Vault as {}.".format(
-        "export " if export_scope else "", key), file=sys.stderr)
+    save_refresh_token(refresh, REFRESH_KEY)
+    print("Saved the bexio refresh token in the Automic Vault as {}.".format(REFRESH_KEY), file=sys.stderr)
 
 
-def refresh_access_token(export_scope=False):
-    """An access token for the API, from the stored refresh token of that login.
+def refresh_access_token():
+    """An access token for the API, from the stored refresh token.
 
     bexio rotates the refresh token on every use: the new one is saved in the vault
     before this returns. The access token is only returned, never stored.
     Raises OAuthError when there is no refresh token or bexio refuses it.
     """
-    key = EXPORT_REFRESH_KEY if export_scope else REFRESH_KEY
-    label = "export refresh token" if export_scope else "refresh token"
-    hint = _login_hint(export_scope)
+    key = REFRESH_KEY
+    label = "refresh token"
+    hint = _login_hint()
     current = read_refresh_token(key)
     if current is None:
         raise OAuthError("no bexio {} ({} is not set); {}".format(label, key, hint))
@@ -289,25 +276,16 @@ def refresh_access_token(export_scope=False):
     return body["access_token"]
 
 
-USAGE = "usage: finance/bexio/oauth.py login [--export-scope] | logout --export-scope"
+USAGE = "usage: finance/bexio/oauth.py login"
 
 
 def main(argv):
-    export_scope = "--export-scope" in argv
-    argv = [arg for arg in argv if arg != "--export-scope"]
     if argv == ["login"]:
         try:
-            login(export_scope)
+            login()
         except (OAuthError, VaultError) as err:
             raise SystemExit("login failed: {}".format(err))
         return
-    # Only the export login can be removed, and av has no delete: the value stays until someone removes it in the app.
-    # The read-only login stays.
-    if argv == ["logout"] and export_scope:
-        raise SystemExit(
-            "av cannot remove a vault value. Delete {} in the Automic Vault app, then revoke the app's access "
-            "in bexio (finance/bexio/README.md).".format(EXPORT_REFRESH_KEY)
-        )
     raise SystemExit(USAGE)
 
 

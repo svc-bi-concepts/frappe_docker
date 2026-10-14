@@ -13,10 +13,11 @@ over https, never Funnel (see finance/bexio/README.md):
 
     tailscale serve --bg --https=<port> http://127.0.0.1:8814
 
-- /login starts one PKCE login: the read-only scopes, or /login?scope=export for
-  the export login. The browser is redirected to bexio.
+- /login starts one PKCE login with the read-only scopes. The browser is
+  redirected to bexio. (The export login of before, /login?scope=export, is gone:
+  the read-scoped personal access token reads everything, so there is one login.)
 - /callback takes bexio's code, exchanges it, and saves the new refresh token in
-  the same vault value oauth.py uses (av save, Benchi approves it there). The page
+  the vault value oauth.py uses (av save, Benchi approves it there). The page
   says "logged in" and the granted scopes. It never shows a token, and nothing is logged.
 
 Each login has its own one-time state, valid for oauth.LOGIN_TIMEOUT seconds. A
@@ -68,17 +69,16 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             self.send_error(404)
 
     def _login(self, params):
-        scope_name = params.get("scope", [""])[0]
-        if scope_name not in ("", "export"):
-            self._page(400, "unknown login; open /login or /login?scope=export")
+        if params.get("scope", [""])[0]:
+            # The export login of before is gone (the read token reads everything):
+            # a scope parameter names no login any more.
+            self._page(400, "unknown login; open /login (the read-only login)")
             return
-        export_scope = scope_name == "export"
         verifier = secrets.token_urlsafe(64)  # PKCE: 43 to 128 characters
         state = secrets.token_urlsafe(32)
         self.server.pending.clear()  # one login at a time: a new one replaces the waiting one
-        self.server.pending[state] = {"verifier": verifier, "export_scope": export_scope, "started": time.monotonic()}
-        scope = oauth.EXPORT_SCOPE if export_scope else oauth.SCOPE
-        url = oauth.authorize_url(state, oauth._challenge(verifier), scope, self.server.redirect_uri)
+        self.server.pending[state] = {"verifier": verifier, "started": time.monotonic()}
+        url = oauth.authorize_url(state, oauth._challenge(verifier), self.server.redirect_uri)
         self.send_response(302)
         self.send_header("Location", url)
         self.send_header("Cache-Control", "no-store")
@@ -98,20 +98,17 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         if not code:
             self._page(400, "bexio sent no code. Open /login again to retry.")
             return
-        export_scope = login["export_scope"]
-        scope = oauth.EXPORT_SCOPE if export_scope else oauth.SCOPE
-        key = oauth.EXPORT_REFRESH_KEY if export_scope else oauth.REFRESH_KEY
         try:
             body = oauth.exchange_code(code, login["verifier"], self.server.redirect_uri)
             refresh = body.get("refresh_token")
             if not refresh:
                 raise oauth.OAuthError("bexio sent no refresh token; the login needs offline_access in its scopes")
-            oauth.save_refresh_token(refresh, key)
+            oauth.save_refresh_token(refresh, oauth.REFRESH_KEY)
         except (oauth.OAuthError, oauth.VaultError, ValueError) as err:
             # The messages carry bexio's error code or av's exit status, never a token.
             self._page(502, "login failed: {}".format(err))
             return
-        self._page(200, "logged in, scopes: {}".format(body.get("scope") or scope))
+        self._page(200, "logged in, scopes: {}".format(body.get("scope") or oauth.SCOPE))
 
     def _page(self, status, message):
         body = "<!doctype html><meta charset=utf-8><title>bexio login</title><p>{}</p>".format(html.escape(message)).encode("utf-8")

@@ -76,11 +76,13 @@ class LoginHelperTest(unittest.TestCase):
         self.assertEqual(query["code_challenge_method"], ["S256"])
         self.assertEqual(query["client_id"], ["fake-client-id"])
 
-    def test_export_login_uses_export_scope_and_its_own_vault_value(self):
-        location = self._start_login("/login?scope=export")
-        self.assertEqual(urllib.parse.parse_qs(urllib.parse.urlsplit(location).query)["scope"], [oauth.EXPORT_SCOPE])
-        self._get("/callback?state={}&code=fake-code".format(self._state_of(location)))
-        self.write.assert_called_once_with(FAKE_TOKEN, oauth.EXPORT_REFRESH_KEY)
+    def test_the_export_login_is_gone_and_only_the_read_login_is_served(self):
+        # The read token reads everything (live check of 2026-10-14), so ?scope=export
+        # names no login any more; the only login the page starts saves to the read value.
+        status, _, body = self._get("/login?scope=export")
+        self.assertEqual(status, 400)
+        self.assertIn("read-only", body)
+        self.write.assert_not_called()
 
     def test_unknown_login_scope_is_refused(self):
         status, _, _ = self._get("/login?scope=everything")
