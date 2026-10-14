@@ -1,4 +1,4 @@
-#!/usr/local/bin/av inject +BEXIO_CLIENT_ID +BEXIO_CLIENT_SECRET +BEXIO_REFRESH_TOKEN +BEXIO_TOKEN /bin/bash
+#!/usr/local/bin/av inject +BEXIO_CLIENT_ID +BEXIO_CLIENT_SECRET +BEXIO_REFRESH_TOKEN +BEXIO_READ_TOKEN /bin/bash
 # The Python below reaches python3 on stdin, inside this one blessed file.
 # av runs a Blessed Script as /dev/fd/N, and the mini's Python 3.9 reads a
 # /dev/fd script from where its zip check left the shared offset: a script

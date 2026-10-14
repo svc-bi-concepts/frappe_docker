@@ -106,8 +106,13 @@ an existing proxy or CA environment unless `--replace-existing-env` is given. `c
 would have to read `HTTPS_PROXY` and one of the CA variables instead of the hardcoded
 `BROKER_PROXY` (127.0.0.1:18899) and `BROKER_CA` (/private/var/vlbroker/ca/combined-ca.pem),
 and every session start needs an Approval in the Vault app; "Allow for Session" remembers
-origin and names only until the command exits. No code change was made for this: the broker
-stays the read-only path, and IT decides on any switch.
+origin and names only until the command exits. The read-only path therefore does not come
+from a proxy at all: it comes from the credential. The Automic Vault holds `BEXIO_READ_TOKEN`,
+a read-scoped personal access token (IT proposal, Benchi approved): `inventory.py` and
+`export.py` inject it with their av line, and `client.py` takes it for its GETs wherever no
+refresh token exists. The write-capable `BEXIO_TOKEN` stays with `upload_bill.py` and
+`create_contact_and_bill.py`, which POST. The broker keeps serving the export's accounting
+and file entities until IT retires it.
 
 ## One run for everything (`--complete`)
 
@@ -158,6 +163,10 @@ the new one is saved back to the same vault value with `av save --stdin` (Benchi
 each save in the vault app), before the new access token is used. If that save fails the
 script stops: the rotated token is then spent, so a new login is needed (`login_helper.py`
 or `oauth.py login`). The access token is kept in memory only.
+
+Where no refresh token exists, the read scripts stand in with `BEXIO_READ_TOKEN`, the
+read-scoped personal access token their av line injects from the Automic Vault; it can only
+read. `client.py` never reads `BEXIO_TOKEN`, the write-capable token of the upload scripts.
 
 ## Log in again
 

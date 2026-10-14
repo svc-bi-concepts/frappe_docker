@@ -4,11 +4,14 @@ GET only: this module has no way to write to bexio, so the scripts cannot
 change the account. The access token comes from the OAuth refresh token in the
 environment, where the av launcher injected it from the Automic Vault
 (oauth.refresh_access_token()); only where no refresh token exists does the
-BEXIO_TOKEN environment variable (a personal access token, injected the same
-way) stand in. The export login (export_scope=True, for the few entities of
-export.py that need the accounting and file scopes) reads its own refresh token
-and never falls back to BEXIO_TOKEN. Which of these was used is printed to
-stderr; the token itself is never stored, printed or put in an error message.
+BEXIO_READ_TOKEN environment variable stand in, the read-scoped personal access
+token the read launchers inject from the Automic Vault. The write-capable
+BEXIO_TOKEN of the upload scripts is never read here: the read-only path takes
+its credential, not the write one. The export login (export_scope=True, for the
+few entities of export.py that need the accounting and file scopes) reads its
+own refresh token and never falls back to a personal access token. Which of
+these was used is printed to stderr; the token itself is never stored, printed
+or put in an error message.
 
 BEXIO_BROKER=1 replaces all of that: the requests go through the Varlock broker
 (a local HTTPS proxy on 127.0.0.1), which puts the real token on GET requests to
@@ -65,7 +68,7 @@ TOKEN_NAMES = {
     "broker": "Varlock broker (the token is added on the way out)",
     "oauth": "OAuth refresh token",
     "oauth-export": "OAuth export refresh token (accounting and file scopes)",
-    "pat": "personal access token (BEXIO_TOKEN)",
+    "pat": "read-scoped personal access token (BEXIO_READ_TOKEN)",
 }
 
 
@@ -74,12 +77,12 @@ def broker_mode():
 
 
 def resolve_token(export_scope=False):
-    """(token, kind) for the API: the broker when BEXIO_BROKER=1, else the OAuth login first, the PAT only without one.
+    """(token, kind) for the API: the broker when BEXIO_BROKER=1, else the OAuth login first, the read token only without one.
 
     kind is "broker", "oauth", "oauth-export" or "pat". A refresh token that exists but is
-    refused is an error, not a reason to fall back: a stale PAT would hide a login
+    refused is an error, not a reason to fall back: a stale read token would hide a login
     that needs renewing. The export login (export_scope) has no fallback at all:
-    the PAT cannot stand in for the accounting and file scopes.
+    a personal access token cannot stand in for the accounting and file scopes.
     """
     if broker_mode():
         return BROKER_TOKEN, "broker"
@@ -98,11 +101,11 @@ def resolve_token(export_scope=False):
             "no bexio export refresh token ({} is not set); log in with `{}` (see finance/bexio/README.md)".format(
                 key, oauth.EXPORT_LOGIN_COMMAND)
         )
-    pat = os.environ.get("BEXIO_TOKEN")
-    if pat:
-        return pat, "pat"
+    read_token = os.environ.get("BEXIO_READ_TOKEN")
+    if read_token:
+        return read_token, "pat"
     raise SystemExit(
-        "no bexio refresh token ({} is not set) and BEXIO_TOKEN is not set; "
+        "no bexio refresh token ({} is not set) and BEXIO_READ_TOKEN is not set; "
         "log in with `{}` (see finance/bexio/README.md)".format(oauth.REFRESH_KEY, oauth.LOGIN_COMMAND)
     )
 

@@ -185,7 +185,7 @@ class TokenSourceTest(unittest.TestCase):
     def _resolve(self, refresh_token=None, refresh_result="access-from-oauth", pat=None):
         import oauth
 
-        env = {"BEXIO_TOKEN": pat} if pat else {}
+        env = {"BEXIO_READ_TOKEN": pat} if pat else {}
         read = mock.patch.object(oauth, "read_refresh_token", return_value=refresh_token)
         refresh = mock.patch.object(oauth, "refresh_access_token", return_value=refresh_result)
         with read, refresh as refreshed, mock.patch.dict(os.environ, env, clear=True):
@@ -204,10 +204,22 @@ class TokenSourceTest(unittest.TestCase):
         self.assertEqual((token, kind), ("pat-value", "pat"))
         refreshed.assert_not_called()
 
+    def test_the_write_token_never_stands_in_for_the_read_token(self):
+        # BEXIO_TOKEN stays with the upload scripts; the read path takes BEXIO_READ_TOKEN only.
+        import oauth
+
+        read = mock.patch.object(oauth, "read_refresh_token", return_value=None)
+        refresh = mock.patch.object(oauth, "refresh_access_token")
+        with mock.patch.dict(os.environ, {"BEXIO_TOKEN": "write-token-not-real"}, clear=True), read, refresh:
+            with self.assertRaises(SystemExit) as caught:
+                client.resolve_token()
+        self.assertIn("BEXIO_READ_TOKEN", str(caught.exception))
+        self.assertNotIn("write-token-not-real", str(caught.exception))
+
     def test_empty_refresh_token_variable_counts_as_no_login(self):
         import oauth
 
-        with mock.patch.dict(os.environ, {"BEXIO_TOKEN": "pat-value", oauth.REFRESH_KEY: ""}, clear=True), \
+        with mock.patch.dict(os.environ, {"BEXIO_READ_TOKEN": "pat-value", oauth.REFRESH_KEY: ""}, clear=True), \
                 mock.patch.object(oauth, "refresh_access_token") as refreshed:
             self.assertEqual(client.resolve_token(), ("pat-value", "pat"))
         refreshed.assert_not_called()
@@ -217,7 +229,7 @@ class TokenSourceTest(unittest.TestCase):
 
         with mock.patch.object(oauth, "read_refresh_token", return_value="r"), \
                 mock.patch.object(oauth, "refresh_access_token", side_effect=oauth.OAuthError("invalid_grant")), \
-                mock.patch.dict(os.environ, {"BEXIO_TOKEN": "pat-value"}, clear=True):
+                mock.patch.dict(os.environ, {"BEXIO_READ_TOKEN": "pat-value"}, clear=True):
             with self.assertRaises(SystemExit) as caught:
                 client.resolve_token()
         self.assertIn("invalid_grant", str(caught.exception))
@@ -257,7 +269,7 @@ class ExportTokenTest(unittest.TestCase):
         import oauth
 
         with mock.patch.object(oauth, "read_refresh_token", return_value=None), \
-                mock.patch.dict(os.environ, {"BEXIO_TOKEN": "pat-value-not-real"}, clear=True):
+                mock.patch.dict(os.environ, {"BEXIO_READ_TOKEN": "pat-value-not-real"}, clear=True):
             with self.assertRaises(SystemExit) as ctx:
                 client.resolve_token(export_scope=True)
         self.assertIn("--export-scope", str(ctx.exception))
@@ -284,7 +296,7 @@ class BrokerModeTest(unittest.TestCase):
     def test_broker_wins_over_the_oauth_login_and_the_pat(self):
         import oauth
 
-        with self._broker_env({"BEXIO_TOKEN": "pat-value-not-real"}), \
+        with self._broker_env({"BEXIO_READ_TOKEN": "pat-value-not-real"}), \
                 mock.patch.object(oauth, "read_refresh_token", return_value="refresh") as read:
             self.assertEqual(client.resolve_token()[1], "broker")
         read.assert_not_called()
@@ -292,7 +304,7 @@ class BrokerModeTest(unittest.TestCase):
     def test_only_the_value_1_selects_the_broker(self):
         import oauth
 
-        with mock.patch.dict(os.environ, {"BEXIO_BROKER": "0", "BEXIO_TOKEN": "pat-value-not-real"}, clear=True), \
+        with mock.patch.dict(os.environ, {"BEXIO_BROKER": "0", "BEXIO_READ_TOKEN": "pat-value-not-real"}, clear=True), \
                 mock.patch.object(oauth, "read_refresh_token", return_value=None):
             self.assertEqual(client.resolve_token(), ("pat-value-not-real", "pat"))
 

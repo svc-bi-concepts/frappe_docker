@@ -345,8 +345,8 @@ class LauncherTest(unittest.TestCase):
     LAUNCHERS = {
         "oauth.py": "+BEXIO_CLIENT_ID +BEXIO_CLIENT_SECRET",
         "login_helper.py": "+BEXIO_CLIENT_ID +BEXIO_CLIENT_SECRET",
-        "inventory.py": "+BEXIO_CLIENT_ID +BEXIO_CLIENT_SECRET +BEXIO_REFRESH_TOKEN +BEXIO_TOKEN",
-        "export.py": "+BEXIO_CLIENT_ID +BEXIO_CLIENT_SECRET +BEXIO_REFRESH_TOKEN +BEXIO_EXPORT_REFRESH_TOKEN +BEXIO_TOKEN",
+        "inventory.py": "+BEXIO_CLIENT_ID +BEXIO_CLIENT_SECRET +BEXIO_REFRESH_TOKEN +BEXIO_READ_TOKEN",
+        "export.py": "+BEXIO_CLIENT_ID +BEXIO_CLIENT_SECRET +BEXIO_REFRESH_TOKEN +BEXIO_EXPORT_REFRESH_TOKEN +BEXIO_READ_TOKEN",
     }
     # Lines that name varlock or the keychain are only the broker's, which is not a keychain.
     TEXTS = list(LAUNCHERS) + ["client.py", "ch.bi-concepts.bexio-login.plist"]
