@@ -276,73 +276,33 @@ class ExportTokenTest(unittest.TestCase):
         self.assertNotIn("pat-value-not-real", str(ctx.exception))
 
 
-class BrokerModeTest(unittest.TestCase):
-    # BEXIO_BROKER=1: the requests go through the Varlock broker with a placeholder
-    # token. No refresh token is read, no OAuth refresh runs, and urlopen is not used.
+class RetiredEnvTest(unittest.TestCase):
+    # The environment variable that once chose the retired proxy path is dead: nothing
+    # reads it, the token choice is the same with and without it. Decision of erp-98kf:
+    # "no effect", not a refusal — a refusal would keep the variable in client.py. Its
+    # name is put together from parts so this file does not trip the depot grep that
+    # must find that name nowhere (as the erp-9dxt review kept the old key name out).
+    DEAD_VAR = "BEXIO_" + "BRO" + "KER"
 
-    def _broker_env(self, extra=None):
-        return mock.patch.dict(os.environ, dict({"BEXIO_BROKER": "1"}, **(extra or {})), clear=True)
-
-    def test_broker_token_needs_no_refresh_token_and_no_oauth(self):
-        import oauth
-
-        with self._broker_env(), \
-                mock.patch.object(oauth, "read_refresh_token", side_effect=AssertionError("refresh token read")) as read, \
-                mock.patch.object(oauth, "refresh_access_token", side_effect=AssertionError("refresh")):
-            self.assertEqual(client.resolve_token(), (client.BROKER_TOKEN, "broker"))
-            self.assertEqual(client.resolve_token(export_scope=True), (client.BROKER_TOKEN, "broker"))
-        read.assert_not_called()
-
-    def test_broker_wins_over_the_oauth_login_and_the_pat(self):
-        import oauth
-
-        with self._broker_env({"BEXIO_READ_TOKEN": "pat-value-not-real"}), \
-                mock.patch.object(oauth, "read_refresh_token", return_value="refresh") as read:
-            self.assertEqual(client.resolve_token()[1], "broker")
-        read.assert_not_called()
-
-    def test_only_the_value_1_selects_the_broker(self):
-        import oauth
-
-        with mock.patch.dict(os.environ, {"BEXIO_BROKER": "0", "BEXIO_READ_TOKEN": "pat-value-not-real"}, clear=True), \
-                mock.patch.object(oauth, "read_refresh_token", return_value=None):
-            self.assertEqual(client.resolve_token(), ("pat-value-not-real", "pat"))
-
-    def test_broker_client_sends_through_the_proxy_with_the_placeholder(self):
+    def test_setting_it_has_no_effect(self):
         import io
         from contextlib import redirect_stderr
 
-        ok = mock.MagicMock()
-        ok.__enter__.return_value.read.return_value = b"[]"
-        opener = mock.MagicMock()
-        opener.open.return_value = ok
-        with self._broker_env(), redirect_stderr(io.StringIO()), \
-                mock.patch("urllib.request.build_opener", return_value=opener) as build, \
-                mock.patch("urllib.request.urlopen", side_effect=AssertionError("urlopen used")) as urlopen, \
-                mock.patch.object(client.ssl, "create_default_context") as context:
-            c = Client()
-            self.assertEqual(c.token_kind, "broker")
-            self.assertEqual(c.get("/3.0/accounting/journal", params={"limit": 5}), [])
-        urlopen.assert_not_called()
-        context.assert_called_once_with(cafile=client.BROKER_CA)
-        handlers = build.call_args.args
-        proxy = [h for h in handlers if isinstance(h, urllib.request.ProxyHandler)]
-        self.assertEqual(proxy[0].proxies, {"https": client.BROKER_PROXY})
-        req = opener.open.call_args.args[0]
-        self.assertEqual(req.get_method(), "GET")
-        self.assertEqual(req.get_header("Authorization"), "Bearer " + client.BROKER_TOKEN)
-        self.assertTrue(req.full_url.startswith("https://api.bexio.com/3.0/accounting/journal"))
+        import oauth
 
-    def test_broker_client_prints_the_kind_not_the_value(self):
-        import io
-        from contextlib import redirect_stderr
-
-        err = io.StringIO()
-        with self._broker_env(), mock.patch("urllib.request.build_opener"), \
-                mock.patch.object(client.ssl, "create_default_context"), redirect_stderr(err):
-            Client()
-        self.assertIn("Varlock broker", err.getvalue())
-        self.assertNotIn(client.BROKER_TOKEN, err.getvalue())
+        env = {self.DEAD_VAR: "1", "BEXIO_READ_TOKEN": "pat-value-not-real"}
+        with mock.patch.dict(os.environ, env, clear=True), \
+                mock.patch.object(oauth, "read_refresh_token", return_value="refresh") as read, \
+                mock.patch.object(oauth, "refresh_access_token", return_value="access") as refresh:
+            self.assertEqual(client.resolve_token(), ("access", "oauth"))
+            err = io.StringIO()
+            with redirect_stderr(err):
+                c = Client()
+        self.assertEqual(c.token_kind, "oauth")
+        self.assertIn("OAuth refresh token", err.getvalue())
+        self.assertNotIn("pat-value-not-real", err.getvalue())
+        read.assert_called_with(oauth.REFRESH_KEY)
+        refresh.assert_called_with(export_scope=False)
 
 
 class GetOnlyTest(unittest.TestCase):

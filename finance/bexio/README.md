@@ -62,57 +62,36 @@ bills, expenses, bank accounts and bank payments. There is no
 `accounting` scope and no `*_edit` scope. The list is the `SCOPE` constant in
 `oauth.py`.
 
-## Broker (first choice for the export)
+## Which login reads what
 
-bexio grants the accounting journal, manual entries, bank transactions and files
-only with the `accounting` and `file` scopes, and both are write scopes. The
-Varlock broker (launchd `ch.bi-concepts.varlock-broker`, 127.0.0.1:18899) holds
-the token and answers GET requests to api.bexio.com with it; every other method is
-refused, and the caller only ever sees the placeholder `vlk_placeholder_bexio`.
-With `BEXIO_BROKER=1` the client sends its requests through the broker as an HTTPS
-proxy, trusting the broker's CA (`/private/var/vlbroker/ca/combined-ca.pem`). It reads
-no keychain and runs no OAuth refresh, for any entity. No varlock and no person at
-the screen are needed:
+The read-only login covers the export's master data and sales documents: the launchers' av
+line injects its refresh token (`BEXIO_REFRESH_TOKEN`) from the Automic Vault, and
+`client.py` takes it (or `BEXIO_READ_TOKEN`, the read-scoped personal access token) for
+every GET. bexio enforces the scopes, so the token cannot change the account.
+
+The accounting journal, manual entries, bank transactions and files are the exception: bexio
+grants their `accounting` and `file` scopes only with write access, so they are read with the
+export login (`oauth.py login --export-scope`, its own vault value `BEXIO_EXPORT_REFRESH_TOKEN`;
+the section below has the run). Without that login in the vault, the export stops before
+anything is written:
 
 ```sh
-BEXIO_BROKER=1 finance/bexio/export.py --out /Users/bsaladin/ws_yardr_finance/private/bexio-export/<date>-full --only manual_entries --only journal --only bank_transactions --only files
+finance/bexio/export.py --out /Users/bsaladin/ws_yardr_finance/private/bexio-export/<date>-full --only manual_entries --only journal --only bank_transactions --only files
 ```
-
-The export login below is only the fallback, for a machine without the broker. The
-temporary write scope it needs is not used when the broker is.
 
 ## av proxy and the read-only path
 
-IT asked whether `av proxy +BEXIO_TOKEN` (Automic Vault) could take the broker's place as
-the read-only path. It cannot. What `av proxy` authorizes is a Proxy Session, one canonical
-origin and exact Secret Names; the HTTP method plays no part in it. The command has no method
-flag (`av proxy --help`, installed build av 4.19.0), the CLI reference scopes destination
-rules "per session and origin" (automicvault.com/docs/cli/index.md), the Secret Proxy page
-binds session approval to "the exact canonical origin and exact Secret Names", and the
-helper's fail-closed list (private destinations, ambiguous DNS, invalid TLS, protocol
-upgrades, bodies over 10 MiB, transactions over 30 seconds) does not mention methods. Once
-api.bexio.com is allowed for a session, POST, PUT, PATCH and DELETE pass exactly like GET.
-Automic Vault's own ADR 0017 says the same in so many words: exact-origin rules "cannot
-prevent misuse of an approved service" (source repo automic-vault/automic-vault,
-docs/secret-proxy.md and docs/adr/0017, checked against the 4.18.0 docs of October 2026).
-Behind it would sit the export login with the write scopes `accounting` and `file`, so a
-write to bexio would be one approved request away.
-
-If it were ever used anyway, `BEXIO_BROKER=1` could not keep its fixed addresses. `av proxy`
-wraps one command (the session lives and dies with that process; there is no launchd
-service) and hands out a per-session proxy address and CA only as environment variables
-(`HTTPS_PROXY`, `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, among others), refusing to start over
-an existing proxy or CA environment unless `--replace-existing-env` is given. `client.py`
-would have to read `HTTPS_PROXY` and one of the CA variables instead of the hardcoded
-`BROKER_PROXY` (127.0.0.1:18899) and `BROKER_CA` (/private/var/vlbroker/ca/combined-ca.pem),
-and every session start needs an Approval in the Vault app; "Allow for Session" remembers
-origin and names only until the command exits. The read-only path therefore does not come
-from a proxy at all: it comes from the credential. The Automic Vault holds `BEXIO_READ_TOKEN`,
-a read-scoped personal access token (IT proposal, Benchi approved): `inventory.py` and
-`export.py` inject it with their av line, and `client.py` takes it for its GETs wherever no
+IT asked whether `av proxy +BEXIO_TOKEN` (Automic Vault) could be the read-only path. It cannot:
+what `av proxy` authorizes is a Proxy Session, one canonical origin and exact Secret Names, and
+the HTTP method plays no part in it (no method flag in `av proxy --help`, session approval bound
+to "the exact canonical origin and exact Secret Names", and Automic Vault's own ADR 0017:
+exact-origin rules "cannot prevent misuse of an approved service"). Once api.bexio.com is allowed
+for a session, POST, PUT, PATCH and DELETE pass exactly like GET. The read-only path therefore
+does not come from a proxy at all: it comes from the credential. The Automic Vault holds
+`BEXIO_READ_TOKEN`, a read-scoped personal access token (IT proposal, Benchi approved):
+`inventory.py` and `export.py` inject it with their av line, and `client.py` takes it wherever no
 refresh token exists. The write-capable `BEXIO_TOKEN` stays with `upload_bill.py` and
-`create_contact_and_bill.py`, which POST. The broker keeps serving the export's accounting
-and file entities until IT retires it.
+`create_contact_and_bill.py`, which POST.
 
 ## One run for everything (`--complete`)
 
@@ -123,17 +102,17 @@ its own manifest. The top manifest has a count per entity, the refused records u
 `failed`, and the document kinds that were skipped (their entity file was not written).
 
 ```sh
-BEXIO_BROKER=1 finance/bexio/export.py --complete
+finance/bexio/export.py --complete
 ```
 
-Without the broker it needs both logins (the read-only one and the export one, as below).
+It needs both logins (the read-only one and the export one, as below).
 A document PDF is asked raw first and, on HTTP 415, in the JSON form (base64 content). Entities
 whose paths are not yet checked against the live API (credit vouchers, file usage, expense
 attachments) say so in their refusals; read those in the manifest first.
 
-## Export login (fallback, one run, then removed)
+## Export login (one run, then removed)
 
-Without the broker, the export has a second login with `EXPORT_SCOPE` (the
+The export has a second login with `EXPORT_SCOPE` (the
 read-only scopes plus `accounting` and `file`). It is kept apart from the
 read-only one: its own vault value (`BEXIO_EXPORT_REFRESH_TOKEN`),
 and only `export.py` uses it, for `manual_entries`, `journal`, `bank_transactions`
@@ -674,7 +653,7 @@ nothing. It ends with the trial balance check against bexio's journal (read only
 
 `upload_bill.py` puts a bill PDF into bexio's file inbox (Dateneingang), from which bexio turns it
 into a bill. This is the only write to bexio: Benchi's exception of 2026-10-12. Nothing else is
-written, and the client, the broker and `SCOPE` stay read-only.
+written, and the client and `SCOPE` stay read-only.
 
 ```sh
 finance/bexio/upload_bill.py <file>.pdf        # dry run
@@ -690,7 +669,6 @@ finance/bexio/upload_bill.py --yes <file>.pdf
   bexio file id and uuid of each upload are printed. A POST is never retried: after an error, look in the
   inbox before sending the file again.
 - Only `.pdf` files under `private/` are sent, each checked before the first upload.
-- `BEXIO_BROKER=1` is refused: the broker answers GET only and stays that way.
 
 ## Tests never touch private/
 

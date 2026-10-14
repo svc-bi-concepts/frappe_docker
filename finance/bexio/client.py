@@ -13,12 +13,6 @@ own refresh token and never falls back to a personal access token. Which of
 these was used is printed to stderr; the token itself is never stored, printed
 or put in an error message.
 
-BEXIO_BROKER=1 replaces all of that: the requests go through the Varlock broker
-(a local HTTPS proxy on 127.0.0.1), which puts the real token on GET requests to
-api.bexio.com and refuses every other method. This process only ever sees a
-placeholder, and reads no token. It is the way to run the export without a
-person at the screen.
-
 The scripts that use it are launchers (their first line is the av shebang), so
 they run as:
     finance/bexio/inventory.py
@@ -28,7 +22,6 @@ Standard library only, so it runs on the system Python.
 
 import json
 import os
-import ssl
 import sys
 import time
 import urllib.error
@@ -36,12 +29,6 @@ import urllib.parse
 import urllib.request
 
 BASE_URL = "https://api.bexio.com"
-
-# The Varlock broker: an HTTPS proxy whose CA the broker's certificates are signed by.
-# The placeholder stands in for the token; the broker swaps it on the way out.
-BROKER_PROXY = "http://127.0.0.1:18899"
-BROKER_CA = "/private/var/vlbroker/ca/combined-ca.pem"
-BROKER_TOKEN = "vlk_placeholder_bexio"
 
 # bexio caps a page at 2000 records; a smaller page costs more requests.
 PAGE_SIZE = 500
@@ -65,27 +52,20 @@ class BexioError(Exception):
 
 
 TOKEN_NAMES = {
-    "broker": "Varlock broker (the token is added on the way out)",
     "oauth": "OAuth refresh token",
     "oauth-export": "OAuth export refresh token (accounting and file scopes)",
     "pat": "read-scoped personal access token (BEXIO_READ_TOKEN)",
 }
 
 
-def broker_mode():
-    return os.environ.get("BEXIO_BROKER") == "1"
-
-
 def resolve_token(export_scope=False):
-    """(token, kind) for the API: the broker when BEXIO_BROKER=1, else the OAuth login first, the read token only without one.
+    """(token, kind) for the API: the OAuth login first, the read token only without one.
 
-    kind is "broker", "oauth", "oauth-export" or "pat". A refresh token that exists but is
+    kind is "oauth", "oauth-export" or "pat". A refresh token that exists but is
     refused is an error, not a reason to fall back: a stale read token would hide a login
     that needs renewing. The export login (export_scope) has no fallback at all:
     a personal access token cannot stand in for the accounting and file scopes.
     """
-    if broker_mode():
-        return BROKER_TOKEN, "broker"
     import launcher  # lazy: only the OAuth path needs it
     oauth = launcher.load("oauth.py")  # oauth.py is a bash launcher; its python body is what runs here
 
@@ -119,12 +99,9 @@ class Client:
             self.token_kind = "given"
         self._token = token
         self._base_url = base_url.rstrip("/")
-        self._opener = _broker_opener() if self.token_kind == "broker" else None
         self.requests = 0
 
     def _open(self, req):
-        if self._opener is not None:
-            return self._opener.open(req, timeout=60)
         return urllib.request.urlopen(req, timeout=60)
 
     def get(self, path, params=None, raw=False, accept=None):
@@ -208,15 +185,6 @@ class Client:
                 return
             yield from fresh
             page += 1
-
-
-def _broker_opener():
-    """An opener that sends every request through the Varlock broker, trusting its CA."""
-    context = ssl.create_default_context(cafile=BROKER_CA)
-    return urllib.request.build_opener(
-        urllib.request.ProxyHandler({"https": BROKER_PROXY}),
-        urllib.request.HTTPSHandler(context=context),
-    )
 
 
 def _unseen(rows, seen):

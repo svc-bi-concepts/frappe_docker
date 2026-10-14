@@ -25,9 +25,7 @@ the run; the exit status is 2 when a required entity is missing.
 the others; without it every entity is exported.
 
 Four entities need the accounting and file scopes, which bexio grants only with
-write access. With BEXIO_BROKER=1 they are read through the Varlock broker, which
-holds the token and allows GET only; no login is needed then.
-Without the broker they are read with the export login (oauth.py login --export-scope,
+write access. They are read with the export login (oauth.py login --export-scope,
 its own vault value BEXIO_EXPORT_REFRESH_TOKEN), and everything else with the read-only
 login. Once the run is done, `oauth.py logout --export-scope` says how to remove the
 export login again (av cannot delete a vault value, so that step is by hand).
@@ -78,7 +76,7 @@ DOCUMENTS = "documents"
 FILE_CONTENT_PATHS = ("/3.0/files/{id}/download", "/3.0/files/{id}/content")
 
 # A bill attachment is named by its file uuid, and its content is on the same
-# download path (probed through the broker: 200 for the uuid, 415 for /3.0/files/{uuid}).
+# download path (probed live: 200 for the uuid, 415 for /3.0/files/{uuid}).
 # Expense attachments are uuids too, on the same path (not yet checked live).
 ATTACHMENT_CONTENT_PATHS = ("/3.0/files/{id}/download",)
 
@@ -328,7 +326,7 @@ def download_files(client, rows, out, templates=FILE_CONTENT_PATHS):
 def document_pdf(client, path):
     """The PDF bytes of one document or payslip. bexio answers 415 to the raw request (Accept */*); asked with
     Accept: application/json (as its docs say), the answer is either the PDF itself, or JSON with the PDF in
-    base64 under "content" (both seen live through the broker and the export login, 10-10). Raises BexioError:
+    base64 under "content" (both seen live through the export login, 10-10). Raises BexioError:
     the status of the refusal, or 415 when the answer holds no PDF."""
     try:
         return client.get(path, raw=True)

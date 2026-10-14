@@ -102,10 +102,10 @@ Abschlussbuchungen, when bexio's business year is closed:**
 1. Benchi exports, after bexio's month close, on the Mac mini (the whole account: entities, document PDFs,
    payroll; into `private/bexio-export/<date>-complete/`, which is the `<export-dir>` below):
 
-       BEXIO_BROKER=1 finance/bexio/export.py --complete --year 2026
+       finance/bexio/export.py --complete --year 2026
 
-   (`--year 2026` keeps the payroll export on 2026 when the closing export is run in 2027; the broker-less
-   fallback with the export login is in `finance/bexio/README.md`).
+   (`--year 2026` keeps the payroll export on 2026 when the closing export is run in 2027; the run needs both
+   logins, the read-only one and the export one — see `finance/bexio/README.md`).
 2. Take a backup with the files, the way `finance/docs/archiving.md` says:
    `docker compose -p frappe-finance exec -T backend bench --site frontend backup --with-files`. The
    timestamp prefix of the new set in `sites/frontend/private/backups` is the `BACKUP_ID`.
