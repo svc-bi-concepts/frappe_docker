@@ -659,21 +659,25 @@ runs on the hour:
     sh finance/bexio/sync_hourly.sh             the hourly run (writes drafts)
     sh finance/bexio/sync_hourly.sh --dry-run   the same run, nothing written to ERPNext
 
-One run exports from bexio through the blessed read launcher `export.py --only invoices credit_vouchers orders
-offers deliveries currencies accounts journal bills expenses` (exactly what the two loaders read; no files, no
-PDFs, no payroll) into the day's `private/bexio-export/<date>/`, then runs `import_sales.py` and
+One run exports from bexio through the blessed launcher `export.py --only invoices --only credit_vouchers --only orders --only offers --only deliveries --only currencies --only accounts --only journal --only bills --only expenses` (exactly what the two loaders read, one entity per repeated flag; no files, no PDFs, no payroll) into the day's `private/bexio-export/<date>/`, then runs `import_sales.py` and
 `import_purchase.py` in `--apply` mode (drafts only), then reads `delta_counts.py` before and after as the gate:
 in write mode each counted doctype must move exactly by what the loaders report as created, in dry mode nothing
 may move. A loader that exits 1 for its accepted differences (the sales differences lines, the purchase
 problems list) is not a failure - the same stance as the delta's rerun; exit 2, a traceback or a failing export
 is.
 
+The launcher's av line injects only `BEXIO_READ_TOKEN`, the read-scoped personal access token - the
+`inventory.py` pattern (erp-z60y), nothing write-capable rides along. Since erp-19xn, `export.py` reads
+every entity with that one token, and the live check of 2026-10-14 (`private/bexio-inventory/last-report.md`)
+confirmed the journal among them - so the hourly export has the journal, and the loaders check a
+foreign-currency document against bexio's journal every hour, like every other document.
+
 - SAFETY: the plans are never submitted - no GL writes, no `bexio-drafts.sh submit`, no delta.sh apply pass;
   that stays the monthly cutover, manual, with `BACKUP_ID`. The loaders are idempotent by `bexio_id`, so a
   rerun inserts nothing.
-- The bexio read goes only through the export launcher's av line; `upload_bill.py` and
+- The bexio read goes only through `export.py`'s av line (`BEXIO_READ_TOKEN`); `upload_bill.py` and
   `create_contact_and_bill.py` are not part of the sync. For the unattended run, `/usr/local/bin/av` must be
-  the Verified Launcher of the blessed read script in the vault app (a blessing alone always asks; IT,
+  the Verified Launcher of the blessed read scripts in the vault app (a blessing alone always asks; IT,
   2026-10-14) - the yardmaster arranges that after the merge.
 - ERPNext access is `api-agent@finance.local` (`.erpnext-api`), unchanged.
 - A lock under `private/` refuses a second sync while one runs, and the sync yields to a live monthly delta

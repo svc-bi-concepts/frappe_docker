@@ -8,10 +8,11 @@
 #
 # One run:
 #
-#   1. exports from bexio through the blessed read launcher finance/bexio/export.py,
-#      only the entities the sales and purchase loaders read, into the day's
-#      private/bexio-export/<date>/ (the av line injects the vault tokens; no write-capable
-#      bexio credential rides along, and the export never writes to bexio),
+#   1. exports from bexio through the blessed launcher finance/bexio/export.py, only the
+#      entities the sales and purchase loaders read (the journal among them, for the
+#      foreign-currency check), into the day's private/bexio-export/<date>/ (the av line
+#      injects only BEXIO_READ_TOKEN; no write-capable bexio credential rides along, and
+#      the export never writes to bexio),
 #   2. runs import_sales.py and import_purchase.py in --apply mode (drafts only; the plans
 #      are never submitted -- the submit stays the monthly delta's, with BACKUP_ID),
 #   3. reads delta_counts.py before and after: the gate. Only bexio_id-keyed documents
@@ -49,6 +50,7 @@ export BEXIO_PRIVATE="$PRIVATE"
 YARD=$(dirname "$PRIVATE")
 BEXIO_DIR="$BEXIO"
 export BEXIO_DIR
+# (BEXIO_DIR is what the bexio scripts put on sys.path to import their siblings.)
 # launchd's PATH is minimal; docker (bexio-drafts.sh), yardr (the mail) and av (the
 # export launcher) live in the homebrew and local prefixes. They go BEHIND the PATH the
 # run already has, so a caller's own tools (the tests' stubs among them) stay first.
@@ -61,9 +63,16 @@ DELTA_LOCK="$PRIVATE/.bexio-delta.lock"
 KEEP=${BEXIO_SYNC_KEEP:-48}
 EXPORTER=${BEXIO_SYNC_EXPORTER:-"$BEXIO/export.py"}
 # What the sales and purchase loaders read (import_sales.DOCUMENTS and APPLY_FILES,
-# import_purchase's bills and expenses, the currencies and the journal both read,
-# the accounts for the booked check). Nothing else: no files, no PDFs, no payroll.
+# import_purchase's bills and expenses, the currencies and the accounts for their
+# lookups and the booked check, and the journal both loaders check a foreign-currency
+# document against). Nothing else: no files, no PDFs, no payroll.
 ONLY_ENTITIES="invoices credit_vouchers orders offers deliveries currencies accounts journal bills expenses"
+# export.py takes ONE entity per --only flag (argparse append), so the list becomes
+# --only invoices --only credit_vouchers ... -- a repeat per entity.
+ONLY_ARGS=""
+for entity in $ONLY_ENTITIES; do
+  ONLY_ARGS="$ONLY_ARGS --only $entity"
+done
 
 case "$KEEP" in
 "" | *[!0-9]* | 0)
@@ -223,8 +232,8 @@ echo "run dir: $RUNDIR"
 FAIL=""
 SURPRISE=""
 
-# shellcheck disable=SC2086 # the entity list is one word per entity, by design
-run_step export - "$EXPORTER" --out "$EXPORT_DIR" --only $ONLY_ENTITIES || {
+# shellcheck disable=SC2086 # one --only flag per entity, each flag and entity one word, by design
+run_step export - "$EXPORTER" --out "$EXPORT_DIR" $ONLY_ARGS || {
   FAIL="the bexio export failed (exit $RC), see export.log"
 }
 

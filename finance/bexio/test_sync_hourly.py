@@ -20,6 +20,8 @@ SCRIPT = os.path.join(ROOT, "finance", "bexio", "sync_hourly.sh")
 PLIST = os.path.join(ROOT, "finance", "bexio", "ch.bi-concepts.bexio-sync.plist")
 
 ONLY = "invoices credit_vouchers orders offers deliveries currencies accounts journal bills expenses"
+# export.py takes ONE entity per --only flag (argparse append); the wrapper repeats the flag.
+ONLY_ARGS = " ".join("--only " + entity for entity in ONLY.split())
 
 # The loader's row, as bexio-drafts.py prints it: doctype, status, count.
 CREATED_SALES_2 = "Sales Invoice          created         2\n"
@@ -159,7 +161,7 @@ class SyncHourlyTest(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         calls = self.calls()
         self.assertEqual(len([c for c in calls if c.startswith("exporter ")]), 1)
-        self.assertIn("--only " + ONLY, calls[0])
+        self.assertIn(ONLY_ARGS, calls[0])
         self.assertIn("--dry-run", " ".join(c for c in calls if "import_sales.py" in c))
         self.assertIn("--dry-run", " ".join(c for c in calls if "import_purchase.py" in c))
         self.assertEqual(self.mails(), [])
@@ -365,6 +367,21 @@ class SyncHourlyTest(unittest.TestCase):
         proc = self.run_script("--write")
         self.assertEqual(proc.returncode, 2)
         self.assertIn("unknown argument", proc.stderr)
+
+    def test_default_exporter_is_the_blessed_export(self):
+        """The export runs through finance/bexio/export.py, whose av line injects only the read
+        token (erp-19xn made it read-token-only and reads every entity, journal included);
+        the interim export_readonly.py launcher is gone."""
+        with open(SCRIPT) as f:
+            body = f.read()
+        self.assertIn('EXPORTER=${BEXIO_SYNC_EXPORTER:-"$BEXIO/export.py"}', body)
+        self.assertNotIn("export_readonly", body)
+        launcher = os.path.join(ROOT, "finance", "bexio", "export.py")
+        self.assertTrue(os.path.exists(launcher))
+        with open(launcher) as f:
+            first = f.readline().strip()
+        self.assertEqual(first, "#!/usr/local/bin/av inject +BEXIO_READ_TOKEN /bin/bash")
+        self.assertFalse(os.path.exists(os.path.join(ROOT, "finance", "bexio", "export_readonly.py")))
 
 
 class PlistTest(unittest.TestCase):
