@@ -483,6 +483,22 @@ class ErrorPathTest(Keys):
         self.assertIn("FINANCE_SP_CERT_KEY", err.getvalue())
         opener.open.assert_not_called()
 
+    def test_main_reads_the_key_from_finance_sp_cert_key_only(self):
+        cfg = {"tenant_id": "t", "client_id": "c", "thumbprint": "ab" * 20,
+               "drive_id": "d", "folders": {"Insurance": "i"}}
+        for env, expect_code in (({"FINANCE_SP_CERT_KEY": "invented-key"}, 0),
+                                 ({"SP_CERT_KEY": "invented-key"}, 1)):
+            with self.subTest(env=list(env)):
+                seen = []
+                with mock.patch.object(sp_read, "load_config", lambda: cfg), \
+                        mock.patch.dict(os.environ, env, clear=True), \
+                        mock.patch.object(sp_read, "Graph", lambda *a: seen.append(a[-1])), \
+                        mock.patch.object(sp_read, "list_folder"), \
+                        mock.patch("sys.stderr", io.StringIO()):
+                    code = sp_read.main(["sp_read.py", "list", "Insurance"])
+                self.assertEqual(code, expect_code)
+                self.assertEqual(seen, ["invented-key"] if expect_code == 0 else [])
+
 
 class HardeningTest(unittest.TestCase):
     """The file is blessed by hash, so what it runs with is pinned here: the shebang and the openssl path."""
