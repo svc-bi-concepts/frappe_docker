@@ -68,6 +68,8 @@ exit ${EXPORTER_RC:-0}
 YARDR_STUB = """#!/bin/sh
 # the text lands on one line, so the test can read recipient<TAB>text per line
 printf '%s\\t%s\\n' "$2" "$(printf '%s' "$3" | tr '\\n' ' ')" >>"$YARDR_MAIL_LOG"
+# the env the wrapper handed the binary: the yard's YARDR_HOME must ride along (erp-xgpk)
+printf '%s\\n' "${YARDR_HOME-UNSET}" >>"$YARDR_ENV_LOG"
 exit ${YARDR_RC:-0}
 """
 
@@ -93,6 +95,7 @@ class SyncHourlyTest(unittest.TestCase):
         os.chmod(self.exporter, 0o755)
         self.log = os.path.join(self.temp, "calls.log")
         self.maillog = os.path.join(self.temp, "mail.log")
+        self.envlog = os.path.join(self.temp, "yardr-env.log")
         self.seqdir = os.path.join(self.temp, "counts-seq")
         os.makedirs(self.seqdir)
         # Each test gets its own private folder (the guard's shared one would carry run
@@ -111,8 +114,12 @@ class SyncHourlyTest(unittest.TestCase):
         env["COUNTS_SEQ_DIR"] = self.seqdir
         env["BEXIO_PRIVATE"] = self.private
         env["BEXIO_SYNC_EXPORTER"] = self.exporter
+        env["BEXIO_SYNC_YARDR"] = os.path.join(self.stubdir, "yardr")
         env["YARDR_MAIL_LOG"] = self.maillog
+        env["YARDR_ENV_LOG"] = self.envlog
         env.pop("BEXIO_SYNC_KEEP", None)
+        # launchd's bare env has no YARDR_HOME; the tests run like that unless one sets it.
+        env.pop("YARDR_HOME", None)
         env.update(extra)
         return env
 
@@ -151,6 +158,13 @@ class SyncHourlyTest(unittest.TestCase):
             return []
         with open(self.maillog) as f:
             return [line.split("\t", 1) for line in f.read().splitlines()]
+
+    def yardr_envs(self):
+        """The YARDR_HOME each mail call saw, in order (the stub logs one line per call)."""
+        if not os.path.exists(self.envlog):
+            return []
+        with open(self.envlog) as f:
+            return f.read().splitlines()
 
     # ---- the clean runs ------------------------------------------------------------
 
@@ -287,6 +301,35 @@ class SyncHourlyTest(unittest.TestCase):
         self.assertIn("delta_counts.py failed after the loaders", self.mails()[0][1])
         with open(os.path.join(self.run_dir(), "counts-after.rc")) as f:
             self.assertEqual(f.read().strip(), "3")
+
+    # ---- the mail's yard (erp-xgpk) --------------------------------------------------
+
+    def test_mail_carries_the_yard_home_in_a_bare_env(self):
+        """Launchd's bare env (no YARDR_HOME): each mail call still carries the yard's
+        YARDR_HOME - a plain `yardr` from PATH would resolve the DEFAULT home and the
+        failure mail would be lost."""
+        self.counts_seq(COUNTS_BEFORE, COUNTS_BEFORE)
+        proc = self.run_script(EXPORTER_RC="3")
+        self.assertEqual(proc.returncode, 3, proc.stdout + proc.stderr)
+        self.assertEqual([m[0] for m in self.mails()], ["yardmaster", "Benchi"])
+        self.assertEqual(self.yardr_envs(), ["/Users/bsaladin/ws_yardr_finance/.yardr"] * 2)
+
+    def test_mail_honors_a_yardr_home_the_caller_set(self):
+        """A YARDR_HOME in the environment wins over the wrapper's default (overridable)."""
+        home = os.path.join(self.temp, "other-yard")
+        os.makedirs(home)
+        self.counts_seq(COUNTS_BEFORE, COUNTS_BEFORE)
+        proc = self.run_script(EXPORTER_RC="3", YARDR_HOME=home)
+        self.assertEqual(proc.returncode, 3, proc.stdout + proc.stderr)
+        self.assertEqual(self.yardr_envs(), [home] * 2)
+
+    def test_mail_defaults_are_pinned_in_the_wrapper(self):
+        """The defaults live in the wrapper (not only the plist): the yard's binary and
+        the yard's home, so a manual run behaves like the launchd run."""
+        with open(SCRIPT) as f:
+            body = f.read()
+        self.assertIn("YARDR_BIN=${BEXIO_SYNC_YARDR:-/Users/bsaladin/ws_yardr/yardr}", body)
+        self.assertIn("YARDR_HOME=${YARDR_HOME:-/Users/bsaladin/ws_yardr_finance/.yardr}", body)
 
     # ---- the locks -----------------------------------------------------------------
 

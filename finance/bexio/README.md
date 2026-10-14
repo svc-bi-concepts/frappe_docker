@@ -683,7 +683,11 @@ foreign-currency document against bexio's journal every hour, like every other d
 - A lock under `private/` refuses a second sync while one runs, and the sync yields to a live monthly delta
   (which runs by night, outside the window).
 - On failure or surprise the run mails yardmaster AND Benchi through `yardr mail` (from the yard root, where
-  the plist's WorkingDirectory puts it), and exits 3 or 4; 2 is a refusal, 0 ok.
+  the plist's WorkingDirectory puts it), and exits 3 or 4; 2 is a refusal, 0 ok. The mail goes through the
+  yard's own binary and pins the yard's `YARDR_HOME`: launchd's bare env has neither, and a plain `yardr`
+  from PATH would resolve the default home and the mail would be lost (erp-xgpk). Both are overridable
+  (`BEXIO_SYNC_YARDR`; a `YARDR_HOME` the caller set wins), and the wrapper sets them itself, so a manual
+  run behaves the same.
 - Every run keeps `private/bexio-sync/<stamp>/` (mode 700): the step logs, the two snapshots, `gate.txt` and
   `summary.txt`. The last 48 run folders stay (`BEXIO_SYNC_KEEP`); launchd's own output lands in
   `private/bexio-sync/launchd.log`.
@@ -697,6 +701,10 @@ Install on the mini (after the bead has landed):
 The plist runs the wrapper of the main checkout, so the sync always runs the code that has landed; it fires
 only on the calendar (no RunAtLoad, no KeepAlive). `launchctl kickstart gui/$(id -u)/ch.bi-concepts.bexio-sync`
 runs one interval by hand.
+
+The failure mail is pinned in the wrapper, not in the plist: `sync_hourly.sh` calls the yard's binary
+(`/Users/bsaladin/ws_yardr/yardr`) with the yard's `YARDR_HOME` (`/Users/bsaladin/ws_yardr_finance/.yardr`),
+so the mail reaches this yard under launchd's bare env as well as by hand (erp-xgpk).
 
 ## Uploading a bill (the only write to bexio)
 

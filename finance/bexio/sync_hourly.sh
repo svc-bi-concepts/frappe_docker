@@ -17,7 +17,8 @@
 #      are never submitted -- the submit stays the monthly delta's, with BACKUP_ID),
 #   3. reads delta_counts.py before and after: the gate. Only bexio_id-keyed documents
 #      move, and only by what the loaders report as created; a dry run moves nothing.
-#   4. on failure or surprise, mails yardmaster AND Benchi (yardr mail), and
+#   4. on failure or surprise, mails yardmaster AND Benchi (yardr mail, through the
+#      yard's own binary and home, so it reaches this yard under launchd too), and
 #   5. keeps every step's log in private/bexio-sync/<stamp>/ (mode 700), the last
 #      BEXIO_SYNC_KEEP run folders (48, about two working days).
 #
@@ -51,9 +52,10 @@ YARD=$(dirname "$PRIVATE")
 BEXIO_DIR="$BEXIO"
 export BEXIO_DIR
 # (BEXIO_DIR is what the bexio scripts put on sys.path to import their siblings.)
-# launchd's PATH is minimal; docker (bexio-drafts.sh), yardr (the mail) and av (the
-# export launcher) live in the homebrew and local prefixes. They go BEHIND the PATH the
-# run already has, so a caller's own tools (the tests' stubs among them) stay first.
+# launchd's PATH is minimal; docker (bexio-drafts.sh) and av (the export launcher) live
+# in the homebrew and local prefixes. They go BEHIND the PATH the run already has, so a
+# caller's own tools (the tests' stubs among them) stay first. The mail needs no PATH:
+# it calls the yard's binary directly, with the yard's home pinned (YARDR_BIN below).
 PATH="$PATH:$HOME/.local/bin:/usr/local/bin:/opt/homebrew/bin"
 export PATH
 
@@ -62,6 +64,13 @@ LOCK="$PRIVATE/.bexio-sync.lock"
 DELTA_LOCK="$PRIVATE/.bexio-delta.lock"
 KEEP=${BEXIO_SYNC_KEEP:-48}
 EXPORTER=${BEXIO_SYNC_EXPORTER:-"$BEXIO/export.py"}
+# The failure mail must reach THIS yard even under launchd's bare env (no YARDR_HOME):
+# a plain `yardr` from PATH would resolve the DEFAULT home (~/.yardr) and the mail
+# would be lost (erp-xgpk). The mail call goes through the yard's own binary and pins
+# the yard's home, here in the wrapper - not only in the plist - so a manual run is
+# the same. Each is overridable: BEXIO_SYNC_YARDR; a YARDR_HOME the caller set wins.
+YARDR_BIN=${BEXIO_SYNC_YARDR:-/Users/bsaladin/ws_yardr/yardr}
+YARDR_HOME=${YARDR_HOME:-/Users/bsaladin/ws_yardr_finance/.yardr}
 # What the sales and purchase loaders read (import_sales.DOCUMENTS and APPLY_FILES,
 # import_purchase's bills and expenses, the currencies and the accounts for their
 # lookups and the booked check, and the journal both loaders check a foreign-currency
@@ -319,7 +328,7 @@ The step logs and the counts table are in the run dir."
   MAIL_LOG="$RUNDIR/mail.log"
   : >"$MAIL_LOG"
   for who in yardmaster Benchi; do
-    if (cd "$YARD" && yardr mail "$who" "$TEXT") >>"$MAIL_LOG" 2>&1; then
+    if (cd "$YARD" && YARDR_HOME="$YARDR_HOME" "$YARDR_BIN" mail "$who" "$TEXT") >>"$MAIL_LOG" 2>&1; then
       echo "mailed $who" | tee -a "$MAIL_LOG"
     else
       echo "mail to $who FAILED" | tee -a "$MAIL_LOG"
