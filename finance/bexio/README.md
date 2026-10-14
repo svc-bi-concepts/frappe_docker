@@ -648,6 +648,52 @@ nothing. It ends with the trial balance check against bexio's journal (read only
 - Not part of the delta: the employees and the paystub PDFs (HR reference data, not the books; the 2026 payroll
   runs in bexio).
 
+## The hourly sync (drafts only, erp-q1tm)
+
+While the monthly delta moves a closed month once, the hourly sync keeps ERPNext current with the NEW bexio
+documents during the working day. Benchi's decision of 2026-10-14: v1 scope is sales and purchase drafts
+(payments later), the window is Mon-Fri 08:00-18:00, and on failure or surprising counts it mails yardmaster
+AND Benchi. `sync_hourly.sh` is the one command a launchd job (`ch.bi-concepts.bexio-sync`, beside this script)
+runs on the hour:
+
+    sh finance/bexio/sync_hourly.sh             the hourly run (writes drafts)
+    sh finance/bexio/sync_hourly.sh --dry-run   the same run, nothing written to ERPNext
+
+One run exports from bexio through the blessed read launcher `export.py --only invoices credit_vouchers orders
+offers deliveries currencies accounts journal bills expenses` (exactly what the two loaders read; no files, no
+PDFs, no payroll) into the day's `private/bexio-export/<date>/`, then runs `import_sales.py` and
+`import_purchase.py` in `--apply` mode (drafts only), then reads `delta_counts.py` before and after as the gate:
+in write mode each counted doctype must move exactly by what the loaders report as created, in dry mode nothing
+may move. A loader that exits 1 for its accepted differences (the sales differences lines, the purchase
+problems list) is not a failure - the same stance as the delta's rerun; exit 2, a traceback or a failing export
+is.
+
+- SAFETY: the plans are never submitted - no GL writes, no `bexio-drafts.sh submit`, no delta.sh apply pass;
+  that stays the monthly cutover, manual, with `BACKUP_ID`. The loaders are idempotent by `bexio_id`, so a
+  rerun inserts nothing.
+- The bexio read goes only through the export launcher's av line; `upload_bill.py` and
+  `create_contact_and_bill.py` are not part of the sync. For the unattended run, `/usr/local/bin/av` must be
+  the Verified Launcher of the blessed read script in the vault app (a blessing alone always asks; IT,
+  2026-10-14) - the yardmaster arranges that after the merge.
+- ERPNext access is `api-agent@finance.local` (`.erpnext-api`), unchanged.
+- A lock under `private/` refuses a second sync while one runs, and the sync yields to a live monthly delta
+  (which runs by night, outside the window).
+- On failure or surprise the run mails yardmaster AND Benchi through `yardr mail` (from the yard root, where
+  the plist's WorkingDirectory puts it), and exits 3 or 4; 2 is a refusal, 0 ok.
+- Every run keeps `private/bexio-sync/<stamp>/` (mode 700): the step logs, the two snapshots, `gate.txt` and
+  `summary.txt`. The last 48 run folders stay (`BEXIO_SYNC_KEEP`); launchd's own output lands in
+  `private/bexio-sync/launchd.log`.
+
+Install on the mini (after the bead has landed):
+
+    mkdir -p /Users/bsaladin/ws_yardr_finance/private/bexio-sync
+    cp finance/bexio/ch.bi-concepts.bexio-sync.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ch.bi-concepts.bexio-sync.plist
+
+The plist runs the wrapper of the main checkout, so the sync always runs the code that has landed; it fires
+only on the calendar (no RunAtLoad, no KeepAlive). `launchctl kickstart gui/$(id -u)/ch.bi-concepts.bexio-sync`
+runs one interval by hand.
+
 ## Uploading a bill (the only write to bexio)
 
 `upload_bill.py` puts a bill PDF into bexio's file inbox (Dateneingang), from which bexio turns it
