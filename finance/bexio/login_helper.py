@@ -1,4 +1,9 @@
-#!/usr/local/bin/av inject +BEXIO_CLIENT_ID +BEXIO_CLIENT_SECRET -- /usr/bin/python3 -I
+#!/usr/local/bin/av inject +BEXIO_CLIENT_ID +BEXIO_CLIENT_SECRET /bin/bash
+# The Python below reaches python3 on stdin, inside this one blessed file.
+# av runs a Blessed Script as /dev/fd/N, and the mini's Python 3.9 reads a
+# /dev/fd script from where its zip check left the shared offset: a script
+# of more than a few bytes then runs empty and exits 0 (IT, 2026-10-14).
+exec /usr/bin/python3 -I - "$@" <<'__BEXIO_LOGIN_HELPER_PY__'
 """Tailnet login page for the bexio login: log in from the MacBook, no launcher command on the mini.
 
 The helper runs on the Mac mini as a LaunchAgent in Benchi's user session. Its first
@@ -24,7 +29,7 @@ so the page is bound to one person even inside the tailnet.
 
 The redirect URI must be registered on the bexio OAuth app and passed with
 --redirect-uri, exactly as registered. The localhost one stays the fallback
-(`python3 finance/bexio/oauth.py login`).
+(`finance/bexio/oauth.py login`).
 
 Standard library only, so it runs on the system Python.
 """
@@ -38,9 +43,11 @@ import sys
 import time
 import urllib.parse
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+BEXIO_DIR = os.environ.get("BEXIO_DIR") or "/Users/bsaladin/ws_yardr_finance/frappe_docker/finance/bexio"
+sys.path.insert(0, BEXIO_DIR)
 
-import oauth  # noqa: E402
+import launcher  # noqa: E402
+oauth = launcher.load("oauth.py")  # oauth.py is a bash launcher too; its python body is what runs here
 
 DEFAULT_PORT = 8814  # loopback only; tailscale serve forwards the tailnet https port to it
 
@@ -163,3 +170,4 @@ def main(argv):
 
 if __name__ == "__main__":
     main(sys.argv[1:])
+__BEXIO_LOGIN_HELPER_PY__

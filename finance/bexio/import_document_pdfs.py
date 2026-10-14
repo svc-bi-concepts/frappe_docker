@@ -29,7 +29,8 @@ import json
 import os
 import sys
 
-import export as ex
+import launcher
+ex = launcher.load("export.py")  # export.py is a bash launcher; its python body is what runs here
 import import_files as imf
 import import_master as im
 import import_purchase as ip

@@ -1,4 +1,9 @@
-#!/usr/local/bin/av inject +BEXIO_CLIENT_ID +BEXIO_CLIENT_SECRET -- /usr/bin/python3 -I
+#!/usr/local/bin/av inject +BEXIO_CLIENT_ID +BEXIO_CLIENT_SECRET /bin/bash
+# The Python below reaches python3 on stdin, inside this one blessed file.
+# av runs a Blessed Script as /dev/fd/N, and the mini's Python 3.9 reads a
+# /dev/fd script from where its zip check left the shared offset: a script
+# of more than a few bytes then runs empty and exits 0 (IT, 2026-10-14).
+exec /usr/bin/python3 -I - "$@" <<'__BEXIO_OAUTH_PY__'
 """OAuth login for the bexio API: one login by hand, then refresh tokens from the Automic Vault.
 
 There are two logins, each with its own vault value and its own scopes:
@@ -284,7 +289,7 @@ def refresh_access_token(export_scope=False):
     return body["access_token"]
 
 
-USAGE = "usage: python3 finance/bexio/oauth.py login [--export-scope] | logout --export-scope"
+USAGE = "usage: finance/bexio/oauth.py login [--export-scope] | logout --export-scope"
 
 
 def main(argv):
@@ -308,3 +313,4 @@ def main(argv):
 
 if __name__ == "__main__":
     main(sys.argv[1:])
+__BEXIO_OAUTH_PY__

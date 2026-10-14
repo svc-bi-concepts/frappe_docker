@@ -75,7 +75,7 @@ no keychain and runs no OAuth refresh, for any entity. No varlock and no person 
 the screen are needed:
 
 ```sh
-BEXIO_BROKER=1 python3 finance/bexio/export.py --out /Users/bsaladin/ws_yardr_finance/private/bexio-export/<date>-full --only manual_entries --only journal --only bank_transactions --only files
+BEXIO_BROKER=1 finance/bexio/export.py --out /Users/bsaladin/ws_yardr_finance/private/bexio-export/<date>-full --only manual_entries --only journal --only bank_transactions --only files
 ```
 
 The export login below is only the fallback, for a machine without the broker. The
@@ -118,7 +118,7 @@ its own manifest. The top manifest has a count per entity, the refused records u
 `failed`, and the document kinds that were skipped (their entity file was not written).
 
 ```sh
-BEXIO_BROKER=1 python3 finance/bexio/export.py --complete
+BEXIO_BROKER=1 finance/bexio/export.py --complete
 ```
 
 Without the broker it needs both logins (the read-only one and the export one, as below).
@@ -668,12 +668,13 @@ into a bill. This is the only write to bexio: Benchi's exception of 2026-10-12. 
 written, and the client, the broker and `SCOPE` stay read-only.
 
 ```sh
-varlock run -p /Users/bsaladin/ws_yardr_finance/secrets -- python3 finance/bexio/upload_bill.py <file>.pdf        # dry run
-varlock run -p /Users/bsaladin/ws_yardr_finance/secrets -- python3 finance/bexio/upload_bill.py --yes <file>.pdf
+finance/bexio/upload_bill.py <file>.pdf        # dry run
+finance/bexio/upload_bill.py --yes <file>.pdf
 ```
 
 - The default is a dry run: it prints what it would upload and sends nothing. `--yes` uploads.
-- It authenticates with the personal access token `BEXIO_TOKEN` (injected by varlock) and refuses to run
+- It authenticates with the personal access token `BEXIO_TOKEN` (its first line is an av launcher,
+  injected from the Automic Vault) and refuses to run
   without it. No OAuth login, no keychain; the token is never printed.
 - The one request is `POST /3.0/files` (multipart, the PDF in the field `file`; if bexio answers 422,
   `UPLOAD_FIELD` is the one word to try as `upFile`). Any other method or path is refused in code. The

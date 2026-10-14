@@ -10,7 +10,10 @@ import stat
 import unittest
 from unittest import mock
 
-import inventory
+import launcher
+
+os.environ["BEXIO_DIR"] = os.path.dirname(os.path.abspath(__file__))  # run this checkout's files, never the main checkout's
+inventory = launcher.load("inventory.py")  # the launcher is a bash file; the tests run its python body
 from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
 
 

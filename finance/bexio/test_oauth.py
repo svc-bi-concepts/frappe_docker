@@ -11,9 +11,13 @@ import unittest
 import urllib.error
 from unittest import mock
 
-import oauth
+import launcher
+
+os.environ["BEXIO_DIR"] = os.path.dirname(os.path.abspath(__file__))  # run this checkout's files, never the main checkout's
+oauth = launcher.load("oauth.py")  # the launcher is a bash file; the tests run its python body
 import private_guard
-from oauth import OAuthError, VaultError
+OAuthError = oauth.OAuthError
+VaultError = oauth.VaultError
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 FAKE_ENV = {"BEXIO_CLIENT_ID": "client-id-not-real", "BEXIO_CLIENT_SECRET": "secret-not-real"}
@@ -337,7 +341,7 @@ class CallbackHandlerTest(unittest.TestCase):
 class LauncherTest(unittest.TestCase):
     """The launchers are blessed by hash, so what they run with is pinned here: the shebang, the mode, no varlock or keychain."""
 
-    PYTHON = "/usr/bin/python3 -I"
+    SHELL = "/bin/bash"
     LAUNCHERS = {
         "oauth.py": "+BEXIO_CLIENT_ID +BEXIO_CLIENT_SECRET",
         "login_helper.py": "+BEXIO_CLIENT_ID +BEXIO_CLIENT_SECRET",
@@ -347,11 +351,11 @@ class LauncherTest(unittest.TestCase):
     # Lines that name varlock or the keychain are only the broker's, which is not a keychain.
     TEXTS = list(LAUNCHERS) + ["client.py", "ch.bi-concepts.bexio-login.plist"]
 
-    def test_the_first_line_is_the_av_inject_shebang_with_isolated_python(self):
+    def test_the_first_line_is_the_av_inject_shebang_for_bash(self):
         for name, keys in self.LAUNCHERS.items():
             with open(os.path.join(HERE, name)) as f:
                 first = f.readline().rstrip("\n")
-            self.assertEqual(first, "#!/usr/local/bin/av inject {} -- {}".format(keys, self.PYTHON), name)
+            self.assertEqual(first, "#!/usr/local/bin/av inject {} {}".format(keys, self.SHELL), name)
 
     def test_the_launchers_are_executable(self):
         for name in self.LAUNCHERS:

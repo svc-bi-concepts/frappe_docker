@@ -16,8 +16,11 @@ import unittest
 import urllib.parse
 from unittest import mock
 
-import login_helper
-import oauth
+import launcher
+
+os.environ["BEXIO_DIR"] = os.path.dirname(os.path.abspath(__file__))  # run this checkout's files, never the main checkout's
+oauth = launcher.load("oauth.py")  # the launchers are bash files; the tests run their python bodies
+login_helper = launcher.load("login_helper.py")
 from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
 
 REDIRECT = "https://login.example.test:8461/callback"

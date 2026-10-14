@@ -9,6 +9,8 @@ import tempfile
 import unittest
 from unittest import mock
 
+os.environ["BEXIO_DIR"] = os.path.dirname(os.path.abspath(__file__))  # run this checkout's files, never the main checkout's
+
 import import_files as imf
 import import_master as im
 import import_paystubs as ips

@@ -11,6 +11,9 @@ import urllib.request
 from unittest import mock
 
 import client
+import launcher
+
+oauth = launcher.load("oauth.py")  # client.py loads oauth lazily from the launcher's body; cache it here so the imports below find it
 from client import BexioError, Client
 from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
 

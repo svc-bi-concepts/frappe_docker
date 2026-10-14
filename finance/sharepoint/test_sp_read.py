@@ -12,14 +12,37 @@ import os
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
+import types
 import unittest
 import urllib.error
 import urllib.parse
 import urllib.request
 from unittest import mock
 
-import sp_read
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def _load(filename):
+    """Run the launcher's python body as a module. The file is bash (av runs a
+    Blessed Script as /dev/fd/N, and the mini's Python 3.9 runs such a script
+    empty, IT 2026-10-14); the python travels on stdin between the heredoc
+    markers, so the tests take it from between the markers."""
+    name = filename[: -len(".py")] if filename.endswith(".py") else filename
+    path = os.path.join(HERE, filename)
+    with open(path) as f:
+        lines = f.read().split("\n")
+    start = next(i for i, line in enumerate(lines) if line.startswith("exec ") and "<<" in line)
+    tag = lines[start].split("<<", 1)[1].strip().strip("'")
+    end = lines.index(tag, start + 1)
+    module = sys.modules[name] = types.ModuleType(name)
+    module.__file__ = path
+    exec(compile("\n".join(lines[start + 1:end]) + "\n", path, "exec"), module.__dict__)
+    return module
+
+
+sp_read = _load("sp_read.py")
 from sp_read import GRAPH, LOGIN, Graph, SharePointError
 
 TENANT = "tenant-x"
@@ -504,11 +527,11 @@ class ErrorPathTest(Keys):
 class HardeningTest(unittest.TestCase):
     """The file is blessed by hash, so what it runs with is pinned here: the shebang and the openssl path."""
 
-    def test_the_first_line_is_the_av_inject_shebang_with_isolated_python(self):
+    def test_the_first_line_is_the_av_inject_shebang_for_bash(self):
         path = os.path.join(os.path.dirname(os.path.abspath(sp_read.__file__)), "sp_read.py")
         with open(path) as f:
             first = f.readline().rstrip("\n")
-        self.assertEqual(first, "#!/usr/local/bin/av inject +FINANCE_SP_CERT_KEY /usr/bin/python3 -I")
+        self.assertEqual(first, "#!/usr/local/bin/av inject +FINANCE_SP_CERT_KEY /bin/bash")
 
     def test_the_signing_call_runs_openssl_by_absolute_path(self):
         done = mock.Mock(returncode=0, stdout=b"sig")

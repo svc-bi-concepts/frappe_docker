@@ -12,7 +12,10 @@ import unittest
 import urllib.error
 from unittest import mock
 
-import upload_bill as ub
+import launcher
+
+os.environ["BEXIO_DIR"] = os.path.dirname(os.path.abspath(__file__))  # run this checkout's files, never the main checkout's
+ub = launcher.load("upload_bill.py")  # the launcher is a bash file; the tests run its python body
 from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
 
 PDF = b"%PDF-1.4\n% invented test bill\n"
@@ -174,9 +177,9 @@ class LauncherTest(unittest.TestCase):
     """The file is blessed by hash, so what it runs with is pinned here: the shebang, the mode, no varlock."""
 
     PATH = os.path.join(os.path.dirname(os.path.abspath(ub.__file__)), "upload_bill.py")
-    SHEBANG = "#!/usr/local/bin/av inject +BEXIO_TOKEN -- /usr/bin/python3 -I"
+    SHEBANG = "#!/usr/local/bin/av inject +BEXIO_TOKEN /bin/bash"
 
-    def test_the_first_line_is_the_av_inject_shebang_with_isolated_python(self):
+    def test_the_first_line_is_the_av_inject_shebang_for_bash(self):
         with open(self.PATH) as f:
             first = f.readline().rstrip("\n")
         self.assertEqual(first, self.SHEBANG)

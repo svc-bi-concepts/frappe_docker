@@ -83,7 +83,8 @@ def resolve_token(export_scope=False):
     """
     if broker_mode():
         return BROKER_TOKEN, "broker"
-    import oauth  # lazy: only the OAuth path needs it
+    import launcher  # lazy: only the OAuth path needs it
+    oauth = launcher.load("oauth.py")  # oauth.py is a bash launcher; its python body is what runs here
 
     key = oauth.EXPORT_REFRESH_KEY if export_scope else oauth.REFRESH_KEY
     kind = "oauth-export" if export_scope else "oauth"

@@ -12,7 +12,10 @@ import tempfile
 import unittest
 from unittest import mock
 
-import export
+import launcher
+
+os.environ["BEXIO_DIR"] = os.path.dirname(os.path.abspath(__file__))  # run this checkout's files, never the main checkout's
+export = launcher.load("export.py")  # the launcher is a bash file; the tests run its python body
 from client import BexioError, Client
 from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
 

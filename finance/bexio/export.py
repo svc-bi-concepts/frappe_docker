@@ -1,4 +1,9 @@
-#!/usr/local/bin/av inject +BEXIO_CLIENT_ID +BEXIO_CLIENT_SECRET +BEXIO_REFRESH_TOKEN +BEXIO_EXPORT_REFRESH_TOKEN +BEXIO_TOKEN -- /usr/bin/python3 -I
+#!/usr/local/bin/av inject +BEXIO_CLIENT_ID +BEXIO_CLIENT_SECRET +BEXIO_REFRESH_TOKEN +BEXIO_EXPORT_REFRESH_TOKEN +BEXIO_TOKEN /bin/bash
+# The Python below reaches python3 on stdin, inside this one blessed file.
+# av runs a Blessed Script as /dev/fd/N, and the mini's Python 3.9 reads a
+# /dev/fd script from where its zip check left the shared offset: a script
+# of more than a few bytes then runs empty and exits 0 (IT, 2026-10-14).
+exec /usr/bin/python3 -I - "$@" <<'__BEXIO_EXPORT_PY__'
 """Export the bexio data to private JSON files: master data, accounting history, documents.
 
 Step one of the pipelines: import_master.py reads the master-data files and puts
@@ -55,7 +60,8 @@ import os
 import re
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+BEXIO_DIR = os.environ.get("BEXIO_DIR") or "/Users/bsaladin/ws_yardr_finance/frappe_docker/finance/bexio"
+sys.path.insert(0, BEXIO_DIR)
 
 from client import BexioError, Client  # noqa: E402
 
@@ -677,3 +683,4 @@ def main(argv):
 
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))
+__BEXIO_EXPORT_PY__

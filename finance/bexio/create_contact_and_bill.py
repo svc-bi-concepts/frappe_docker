@@ -1,4 +1,9 @@
-#!/usr/local/bin/av inject +BEXIO_TOKEN -- /usr/bin/python3 -I
+#!/usr/local/bin/av inject +BEXIO_TOKEN /bin/bash
+# The Python below reaches python3 on stdin, inside this one blessed file.
+# av runs a Blessed Script as /dev/fd/N, and the mini's Python 3.9 reads a
+# /dev/fd script from where its zip check left the shared offset: a script
+# of more than a few bytes then runs empty and exits 0 (IT, 2026-10-14).
+exec /usr/bin/python3 -I - "$@" <<'__BEXIO_CONTACT_BILL_PY__'
 """Create a vendor contact in bexio and prepare a bill from the file already in its inbox.
 
 The two writes after upload_bill.py: the contact (only when no contact of that name exists)
@@ -34,7 +39,8 @@ import urllib.parse
 import urllib.request
 from decimal import Decimal, InvalidOperation
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+BEXIO_DIR = os.environ.get("BEXIO_DIR") or "/Users/bsaladin/ws_yardr_finance/frappe_docker/finance/bexio"
+sys.path.insert(0, BEXIO_DIR)
 
 import client  # noqa: E402
 
@@ -252,3 +258,4 @@ def main(argv):
 
 if __name__ == "__main__":
     main(sys.argv[1:])
+__BEXIO_CONTACT_BILL_PY__

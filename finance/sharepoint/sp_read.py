@@ -1,4 +1,9 @@
-#!/usr/local/bin/av inject +FINANCE_SP_CERT_KEY /usr/bin/python3 -I
+#!/usr/local/bin/av inject +FINANCE_SP_CERT_KEY /bin/bash
+# The Python below reaches python3 on stdin, inside this one blessed file.
+# av runs a Blessed Script as /dev/fd/N, and the mini's Python 3.9 reads a
+# /dev/fd script from where its zip check left the shared offset: a script
+# of more than a few bytes then runs empty and exits 0 (IT, 2026-10-14).
+exec /usr/bin/python3 -I - "$@" <<'__SP_READ_PY__'
 """Read-only SharePoint reader for the documents payroll needs.
 
 Talks to Microsoft Graph using a client-credentials token
@@ -352,3 +357,4 @@ def main(argv, out=sys.stdout):
 
 if __name__ == "__main__":
     sys.exit(main(sys.argv))
+__SP_READ_PY__
