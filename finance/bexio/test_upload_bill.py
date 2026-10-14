@@ -170,17 +170,60 @@ class TokenTest(unittest.TestCase):
         urlopen.assert_not_called()
 
 
-class BrokerTest(unittest.TestCase):
+class LauncherTest(unittest.TestCase):
+    """The file is blessed by hash, so what it runs with is pinned here: the shebang, the mode, no varlock."""
+
+    PATH = os.path.join(os.path.dirname(os.path.abspath(ub.__file__)), "upload_bill.py")
+    SHEBANG = "#!/usr/local/bin/av inject +BEXIO_TOKEN -- /usr/bin/python3 -I"
+
+    def test_the_first_line_is_the_av_inject_shebang_with_isolated_python(self):
+        with open(self.PATH) as f:
+            first = f.readline().rstrip("\n")
+        self.assertEqual(first, self.SHEBANG)
+
+    def test_the_file_is_executable(self):
+        self.assertTrue(os.access(self.PATH, os.X_OK), "chmod +x upload_bill.py")
+
+    def test_no_varlock_is_left_in_the_file(self):
+        with open(self.PATH) as f:
+            self.assertNotIn("varlock", f.read().lower())
+
+
+class ResultFileTest(unittest.TestCase):
+    """av inject drops the child's stdout, so a real upload also lands in private/bexio-upload/last-result.txt."""
+
     def setUp(self):
         setUp_token(self)
+        shutil.rmtree(os.path.join(ub.PRIVATE, "bexio-upload"), ignore_errors=True)
 
-    def test_refuses_to_run_through_the_broker(self):
+    def result(self):
+        with open(os.path.join(ub.PRIVATE, "bexio-upload", "last-result.txt")) as f:
+            return f.read()
+
+    def test_a_real_upload_appends_the_result_line_with_ids_and_no_token(self):
         path = _pdf()
-        with mock.patch.dict(os.environ, {"BEXIO_BROKER": "1"}), \
-                mock.patch.object(ub.urllib.request, "urlopen") as urlopen:
-            with self.assertRaises(SystemExit):
-                _run(["--yes", path])
-        urlopen.assert_not_called()
+        with mock.patch.object(ub.urllib.request, "urlopen", return_value=_answer(b'[{"id": 4711, "uuid": "uuid-invented-1"}]')):
+            _run(["--yes", path])
+        content = self.result()
+        self.assertIn("bill-a.pdf", content)
+        self.assertIn("bexio file id 4711", content)
+        self.assertIn("uuid-invented-1", content)
+        self.assertNotIn(TOKEN, content)
+
+    def test_two_uploads_append_two_lines(self):
+        path = _pdf()
+        with mock.patch.object(ub.urllib.request, "urlopen", return_value=_answer(b'[{"id": 4711, "uuid": "uuid-invented-1"}]')):
+            _run(["--yes", path])
+        with mock.patch.object(ub.urllib.request, "urlopen", return_value=_answer(b'[{"id": 4712, "uuid": "uuid-invented-2"}]')):
+            _run(["--yes", path])
+        lines = self.result().splitlines()
+        self.assertEqual(len(lines), 2)
+        self.assertIn("4712", lines[1])
+
+    def test_a_dry_run_writes_no_result_file(self):
+        path = _pdf()
+        _run([path])
+        self.assertFalse(os.path.exists(os.path.join(ub.PRIVATE, "bexio-upload", "last-result.txt")))
 
 
 if __name__ == "__main__":

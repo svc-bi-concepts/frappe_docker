@@ -1,3 +1,4 @@
+#!/usr/local/bin/av inject +BEXIO_TOKEN -- /usr/bin/python3 -I
 """Create a vendor contact in bexio and prepare a bill from the file already in its inbox.
 
 The two writes after upload_bill.py: the contact (only when no contact of that name exists)
@@ -10,13 +11,15 @@ user, the bills to check the invoice number is new), POST /2.0/contact, POST /4.
 Reads never write. A POST is never retried: an answer that failed may still have stored the
 record, so a second send could make a duplicate.
 
-It authenticates with the personal access token only: BEXIO_TOKEN, from the write PAT
-injected by av (not varlock, not the OAuth login, not the Varlock broker). A dry run is the
-default: it reads what it needs, prints the contact and bill JSON it would create, and writes
-nothing; a real run needs --yes.
+It authenticates with the personal access token only: BEXIO_TOKEN, injected by av (the
+shebang above; not the OAuth login). A dry run is the default: it reads what it needs,
+prints the contact and bill JSON it would create, and writes nothing; a real run needs
+--yes. av inject drops the child's stdout (automic-vault#390), so every real run also
+appends its result lines -- the contact id and the bill id, never the token -- to
+private/bexio-upload/last-result.txt.
 
-    av inject +BEXIO_TOKEN -- python3 finance/bexio/create_contact_and_bill.py --file-uuid <uuid> --nr <nr> --date <YYYY-MM-DD> --total <amount>
-    av inject +BEXIO_TOKEN -- python3 finance/bexio/create_contact_and_bill.py --yes ...
+    ./create_contact_and_bill.py --file-uuid <uuid> --nr <nr> --date <YYYY-MM-DD> --total <amount>
+    ./create_contact_and_bill.py --yes ...
 
 Standard library only, like client.py.
 """
@@ -66,6 +69,21 @@ REQUESTS = {
 PAGE_SIZE = 500
 BILL_STATUS = "DRAFT"  # a draft: prepared, not booked
 DEFAULT_TEXT = "Vebego AG, Reinigung nach Anlass September 2026"
+
+PRIVATE = os.environ.get("BEXIO_PRIVATE") or "/Users/bsaladin/ws_yardr_finance/private"
+
+# av inject drops the child's stdout (automic-vault#390): a result that matters also goes
+# here, one line per created record, appended, so the last line is the most recent run.
+RESULT_FOLDER = "bexio-upload"
+RESULT_FILE = "last-result.txt"
+
+
+def record_result(line):
+    """Append one result line to private/bexio-upload/last-result.txt. Never the token."""
+    folder = os.path.join(PRIVATE, RESULT_FOLDER)
+    os.makedirs(folder, exist_ok=True)
+    with open(os.path.join(folder, RESULT_FILE), "a") as f:
+        f.write(line.rstrip("\n") + "\n")
 
 
 class RefusedRequest(Exception):
@@ -174,7 +192,7 @@ def checked_date(text):
 
 def main(argv):
     parser = argparse.ArgumentParser(description="Create the vendor contact and a draft bill from the uploaded file.")
-    parser.add_argument("--file-uuid", required=True, help="the uuid of the file in the bexio inbox (upload_bill.py prints it)")
+    parser.add_argument("--file-uuid", required=True, help="the uuid of the file in the bexio inbox (upload_bill.py appends it to private/bexio-upload/last-result.txt)")
     parser.add_argument("--nr", required=True, help="the vendor's invoice number")
     parser.add_argument("--date", required=True, help="the invoice date, YYYY-MM-DD")
     parser.add_argument("--total", required=True, help="the invoice total in CHF, including VAT")
@@ -182,8 +200,6 @@ def main(argv):
     parser.add_argument("--yes", action="store_true", help="create for real (default: dry run, nothing is written)")
     args = parser.parse_args(argv)
 
-    if os.environ.get("BEXIO_BROKER") == "1":
-        raise SystemExit("this script does not go through the Varlock broker (it answers GET only); unset BEXIO_BROKER")
     token = os.environ.get("BEXIO_TOKEN")
     if not token:
         raise SystemExit("BEXIO_TOKEN is not set; run through av inject (see finance/bexio/README.md)")
@@ -223,12 +239,15 @@ def main(argv):
         if not isinstance(created, dict) or created.get("id") is None:
             raise SystemExit("bexio answered the contact without an id; check the contacts before running again")
         supplier_id = created["id"]
-        print("contact: created bexio contact id {}".format(supplier_id))
+        line = "contact: created bexio contact id {}".format(supplier_id)
+        print(line)
+        record_result(line)
     bill_plan["supplier_id"] = supplier_id
     bill = _send("POST", "/4.0/purchase/bills", token, body=bill_plan)
     if not isinstance(bill, dict) or bill.get("id") is None:
         raise SystemExit("bexio answered the bill without an id; check the bills before running again")
     print("bill: created bexio bill id {} as {}, no line items".format(bill["id"], BILL_STATUS))
+    record_result("bill: created bexio bill id {} as {}, no line items".format(bill["id"], BILL_STATUS))
 
 
 if __name__ == "__main__":

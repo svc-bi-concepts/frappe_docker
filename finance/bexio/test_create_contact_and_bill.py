@@ -7,12 +7,14 @@ import contextlib
 import io
 import json
 import os
+import shutil
 import unittest
 import urllib.error
 import urllib.parse
 from unittest import mock
 
 import create_contact_and_bill as cb
+from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
 
 TOKEN = "tok-invented-not-real"
 ARGS = ["--file-uuid", "uuid-invented-1", "--nr", "INV-TEST-1", "--date", "2026-01-15", "--total", "733.30"]
@@ -82,12 +84,63 @@ class TokenTest(unittest.TestCase):
         self.assertIn("BEXIO_TOKEN", str(cm.exception))
         urlopen.assert_not_called()
 
-    def test_refuses_to_run_through_the_broker(self):
-        with mock.patch.dict(os.environ, {"BEXIO_TOKEN": TOKEN, "BEXIO_BROKER": "1"}), \
-                mock.patch.object(cb.urllib.request, "urlopen") as urlopen:
-            with self.assertRaises(SystemExit):
-                _run(ARGS)
-        urlopen.assert_not_called()
+
+class LauncherTest(unittest.TestCase):
+    """The file is blessed by hash, so what it runs with is pinned here: the shebang, the mode, no varlock."""
+
+    PATH = os.path.join(os.path.dirname(os.path.abspath(cb.__file__)), "create_contact_and_bill.py")
+    SHEBANG = "#!/usr/local/bin/av inject +BEXIO_TOKEN -- /usr/bin/python3 -I"
+
+    def test_the_first_line_is_the_av_inject_shebang_with_isolated_python(self):
+        with open(self.PATH) as f:
+            first = f.readline().rstrip("\n")
+        self.assertEqual(first, self.SHEBANG)
+
+    def test_the_file_is_executable(self):
+        self.assertTrue(os.access(self.PATH, os.X_OK), "chmod +x create_contact_and_bill.py")
+
+    def test_no_varlock_is_left_in_the_file(self):
+        with open(self.PATH) as f:
+            self.assertNotIn("varlock", f.read().lower())
+
+
+class ResultFileTest(unittest.TestCase):
+    """av inject drops the child's stdout, so a real run also lands in private/bexio-upload/last-result.txt."""
+
+    def setUp(self):
+        patcher = mock.patch.dict(os.environ, {"BEXIO_TOKEN": TOKEN}, clear=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        shutil.rmtree(os.path.join(cb.PRIVATE, "bexio-upload"), ignore_errors=True)
+
+    def result(self):
+        with open(os.path.join(cb.PRIVATE, "bexio-upload", "last-result.txt")) as f:
+            return f.read()
+
+    def test_yes_appends_the_contact_and_bill_ids_and_no_token(self):
+        urlopen, calls = fake_bexio(standard_answers())
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            _run(["--yes"] + ARGS)
+        content = self.result()
+        self.assertIn("contact id 77", content)
+        self.assertIn("bill id 88", content)
+        self.assertNotIn(TOKEN, content)
+
+    def test_an_existing_contact_records_only_the_bill_id(self):
+        answers = standard_answers(contacts=[{"id": 12, "name_1": "VEBEGO AG"}])
+        del answers[("GET", "/2.0/country")], answers[("GET", "/3.0/users/me")]
+        urlopen, calls = fake_bexio(answers)
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            _run(["--yes"] + ARGS)
+        content = self.result()
+        self.assertNotIn("contact id 77", content)
+        self.assertIn("bill id 88", content)
+
+    def test_a_dry_run_writes_no_result_file(self):
+        urlopen, calls = fake_bexio(standard_answers())
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            _run(ARGS)
+        self.assertFalse(os.path.exists(os.path.join(cb.PRIVATE, "bexio-upload", "last-result.txt")))
 
 
 class PlanTest(unittest.TestCase):
