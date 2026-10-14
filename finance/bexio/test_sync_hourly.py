@@ -331,6 +331,19 @@ class SyncHourlyTest(unittest.TestCase):
         self.assertIn("YARDR_BIN=${BEXIO_SYNC_YARDR:-/Users/bsaladin/ws_yardr/yardr}", body)
         self.assertIn("YARDR_HOME=${YARDR_HOME:-/Users/bsaladin/ws_yardr_finance/.yardr}", body)
 
+    def test_mail_failure_is_logged_per_recipient(self):
+        """A yardr that fails must not mask the verdict: each recipient's failure lands
+        in mail.log and the run still exits its own code (review, erp-xgpk)."""
+        self.counts_seq(COUNTS_BEFORE, COUNTS_BEFORE)
+        proc = self.run_script(EXPORTER_RC="3", YARDR_RC="1")
+        self.assertEqual(proc.returncode, 3, proc.stdout + proc.stderr)
+        with open(os.path.join(self.run_dir(), "mail.log")) as f:
+            self.assertEqual(
+                f.read().splitlines(),
+                ["mail to yardmaster FAILED", "mail to Benchi FAILED"],
+            )
+        self.assertEqual(self.yardr_envs(), ["/Users/bsaladin/ws_yardr_finance/.yardr"] * 2)
+
     # ---- the locks -----------------------------------------------------------------
 
     def test_lock_refuses_a_second_run(self):
