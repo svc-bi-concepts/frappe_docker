@@ -1,4 +1,4 @@
-#!/usr/local/bin/av inject +BEXIO_CLIENT_ID +BEXIO_CLIENT_SECRET +BEXIO_REFRESH_TOKEN +BEXIO_READ_TOKEN /bin/bash
+#!/usr/local/bin/av inject +BEXIO_READ_TOKEN /bin/bash
 # The Python below reaches python3 on stdin, inside this one blessed file.
 # av runs a Blessed Script as /dev/fd/N, and the mini's Python 3.9 reads a
 # /dev/fd script from where its zip check left the shared offset: a script
@@ -11,8 +11,11 @@ one grouping field (type or status) and one sample record with personal
 data masked. Chart of accounts, account groups and VAT rates are written in
 full, because the Swiss setup needs them and they hold no personal data.
 
-Uses client.py, which only issues GET requests. An entity the token has no
-scope for (403) or the API does not know (404) is reported and skipped, so
+Uses client.py, which only issues GET requests. The av line injects only
+BEXIO_READ_TOKEN, the read-scoped personal access token: no OAuth credentials
+ride along, so the run holds nothing write-capable and never rotates the
+stored refresh token. An entity the token has no scope for (403) or the API
+does not know (404) is reported and skipped ("no access (token scope)"), so
 one gap does not stop the run.
 
 Run it as:

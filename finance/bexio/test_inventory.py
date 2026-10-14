@@ -38,5 +38,42 @@ class ReportFileTest(unittest.TestCase):
             self.assertEqual(f.read(), "# second invented\n")
 
 
+class ReadTokenRunTest(unittest.TestCase):
+    # inventory.py runs with only BEXIO_READ_TOKEN in the environment: entities
+    # the read token cannot reach (403) are reported as "no access (token
+    # scope)", the rest of the report is written, nothing crashes. HTTP mocked.
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            self.requests = 1
+            self.token_kind = "pat"
+
+        def paginate(self, path, params=None):
+            if path == "/2.0/contact":
+                return iter([{"id": 1, "name": "invented contact"}])
+            if path == "/2.0/accounts":
+                return iter([{"account_no": "1000", "name": "invented account",
+                              "account_type": "invented", "tax_id": None, "is_active": True}])
+            if path == "/3.0/taxes":
+                return iter([{"id": 1, "code": "UT", "name": "invented tax", "value": 8.1,
+                              "net_tax_value": None, "type": "sales_tax", "start_year": 2024,
+                              "start_month": 1, "end_year": None, "end_month": None,
+                              "is_active": True, "account_id": 7}])
+            raise inventory.BexioError(403, path)
+
+        def paginate_pages(self, path, size_param, rows_key=None, params=None, page_size=None):
+            raise inventory.BexioError(403, path)
+
+    def test_runs_with_only_the_read_token_and_reports_scoped_out_entities(self):
+        with mock.patch.dict(os.environ, {"BEXIO_READ_TOKEN": "read-token-not-real"}, clear=True), \
+                mock.patch.object(inventory, "Client", self.FakeClient), \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            inventory.print_report()
+        report = out.getvalue()
+        self.assertIn("no access (token scope)", report)
+        self.assertIn("| Contacts | contacts | ok |", report)
+        self.assertIn("### contacts", report)  # the one reachable entity still has its masked sample
+
+
 if __name__ == "__main__":
     unittest.main()

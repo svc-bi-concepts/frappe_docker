@@ -64,10 +64,14 @@ bills, expenses, bank accounts and bank payments. There is no
 
 ## Which login reads what
 
-The read-only login covers the export's master data and sales documents: the launchers' av
-line injects its refresh token (`BEXIO_REFRESH_TOKEN`) from the Automic Vault, and
-`client.py` takes it (or `BEXIO_READ_TOKEN`, the read-scoped personal access token) for
-every GET. bexio enforces the scopes, so the token cannot change the account.
+Reads take `BEXIO_READ_TOKEN`, the read-scoped personal access token, first: `client.py`
+takes it for every GET where it is set, and a personal access token does not rotate
+anything, so a read never spends or re-saves the stored OAuth refresh token. Only where no
+read token is set does `client.py` run the read-only OAuth login, whose refresh token
+(`BEXIO_REFRESH_TOKEN`) the launchers inject from the Automic Vault. bexio enforces the
+scopes, so neither token can change the account. Which calls still need the OAuth login is
+to be confirmed: the live check of `inventory.py` with only the read token (compared
+against the OAuth report of 2026-10-14) decides what the read token cannot reach.
 
 The accounting journal, manual entries, bank transactions and files are the exception: bexio
 grants their `accounting` and `file` scopes only with write access, so they are read with the
@@ -89,9 +93,12 @@ exact-origin rules "cannot prevent misuse of an approved service"). Once api.bex
 for a session, POST, PUT, PATCH and DELETE pass exactly like GET. The read-only path therefore
 does not come from a proxy at all: it comes from the credential. The Automic Vault holds
 `BEXIO_READ_TOKEN`, a read-scoped personal access token (IT proposal, Benchi approved):
-`inventory.py` and `export.py` inject it with their av line, and `client.py` takes it wherever no
-refresh token exists. The write-capable `BEXIO_TOKEN` stays with `upload_bill.py` and
-`create_contact_and_bill.py`, which POST.
+`inventory.py` injects only that name with its av line — no client id, no client secret, no
+refresh token ride along, so the blessed read script holds nothing write-capable — and
+`client.py` takes the read token for every GET where it is set. `export.py` still injects
+the OAuth logins alongside the read token, for the entities that may need them (which
+those are: to be confirmed, see above). The write-capable `BEXIO_TOKEN` stays with
+`upload_bill.py` and `create_contact_and_bill.py`, which POST.
 
 ## One run for everything (`--complete`)
 
@@ -143,9 +150,11 @@ each save in the vault app), before the new access token is used. If that save f
 script stops: the rotated token is then spent, so a new login is needed (`login_helper.py`
 or `oauth.py login`). The access token is kept in memory only.
 
-Where no refresh token exists, the read scripts stand in with `BEXIO_READ_TOKEN`, the
-read-scoped personal access token their av line injects from the Automic Vault; it can only
-read. `client.py` never reads `BEXIO_TOKEN`, the write-capable token of the upload scripts.
+Reads prefer `BEXIO_READ_TOKEN`, the read-scoped personal access token the launchers
+inject from the Automic Vault; it can only read, and using it never touches the vault.
+Where no read token is set, the read-only OAuth login runs as before — only then is a
+refresh, and with it the rotation of the stored token, possible. `client.py` never reads
+`BEXIO_TOKEN`, the write-capable token of the upload scripts.
 
 ## Log in again
 

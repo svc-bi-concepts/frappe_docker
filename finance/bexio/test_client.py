@@ -179,8 +179,10 @@ class ErrorTest(unittest.TestCase):
 
 
 class TokenSourceTest(unittest.TestCase):
-    # The access token comes from the OAuth login; the PAT only stands in
-    # where no refresh token exists. The kind is printed, the value never.
+    # Reads take BEXIO_READ_TOKEN when it is set: a personal access token does not
+    # rotate the stored OAuth refresh token, so the OAuth login is not touched at
+    # all. Only without one does the OAuth login run. The kind is printed, the
+    # value never.
 
     def _resolve(self, refresh_token=None, refresh_result="access-from-oauth", pat=None):
         import oauth
@@ -194,15 +196,25 @@ class TokenSourceTest(unittest.TestCase):
             except SystemExit as exit_:
                 return exit_, refreshed
 
-    def test_oauth_login_wins_over_the_pat(self):
+    def test_the_read_token_wins_over_the_oauth_login(self):
         (token, kind), refreshed = self._resolve(refresh_token="r", pat="pat-value")
-        self.assertEqual((token, kind), ("access-from-oauth", "oauth"))
-        refreshed.assert_called_once()
-
-    def test_pat_is_the_fallback_without_a_refresh_token(self):
-        (token, kind), refreshed = self._resolve(refresh_token=None, pat="pat-value")
         self.assertEqual((token, kind), ("pat-value", "pat"))
         refreshed.assert_not_called()
+
+    def test_the_read_token_touches_no_vault_value_at_all(self):
+        # Not even read_refresh_token runs: a read neither spends nor rotates the
+        # stored OAuth refresh token.
+        import oauth
+
+        with mock.patch.dict(os.environ, {"BEXIO_READ_TOKEN": "pat-value"}, clear=True), \
+                mock.patch.object(oauth, "read_refresh_token") as read:
+            self.assertEqual(client.resolve_token(), ("pat-value", "pat"))
+        read.assert_not_called()
+
+    def test_the_oauth_login_is_the_fallback_without_a_read_token(self):
+        (token, kind), refreshed = self._resolve(refresh_token="r", pat=None)
+        self.assertEqual((token, kind), ("access-from-oauth", "oauth"))
+        refreshed.assert_called_once()
 
     def test_the_write_token_never_stands_in_for_the_read_token(self):
         # BEXIO_TOKEN stays with the upload scripts; the read path takes BEXIO_READ_TOKEN only.
@@ -216,24 +228,26 @@ class TokenSourceTest(unittest.TestCase):
         self.assertIn("BEXIO_READ_TOKEN", str(caught.exception))
         self.assertNotIn("write-token-not-real", str(caught.exception))
 
-    def test_empty_refresh_token_variable_counts_as_no_login(self):
+    def test_empty_read_token_variable_falls_back_to_the_oauth_login(self):
         import oauth
 
-        with mock.patch.dict(os.environ, {"BEXIO_READ_TOKEN": "pat-value", oauth.REFRESH_KEY: ""}, clear=True), \
-                mock.patch.object(oauth, "refresh_access_token") as refreshed:
-            self.assertEqual(client.resolve_token(), ("pat-value", "pat"))
-        refreshed.assert_not_called()
+        with mock.patch.dict(os.environ, {"BEXIO_READ_TOKEN": "", oauth.REFRESH_KEY: "r"}, clear=True), \
+                mock.patch.object(oauth, "read_refresh_token", return_value="r"), \
+                mock.patch.object(oauth, "refresh_access_token", return_value="access") as refreshed:
+            self.assertEqual(client.resolve_token(), ("access", "oauth"))
+        refreshed.assert_called_once()
 
-    def test_refused_refresh_token_does_not_fall_back_to_the_pat(self):
+    def test_a_refused_oauth_login_is_an_error_not_a_silent_fallthrough(self):
+        # The OAuth login runs only without a read token; a refusal there stops the
+        # script instead of passing an unusable token on.
         import oauth
 
         with mock.patch.object(oauth, "read_refresh_token", return_value="r"), \
                 mock.patch.object(oauth, "refresh_access_token", side_effect=oauth.OAuthError("invalid_grant")), \
-                mock.patch.dict(os.environ, {"BEXIO_READ_TOKEN": "pat-value"}, clear=True):
+                mock.patch.dict(os.environ, {}, clear=True):
             with self.assertRaises(SystemExit) as caught:
                 client.resolve_token()
         self.assertIn("invalid_grant", str(caught.exception))
-        self.assertNotIn("pat-value", str(caught.exception))
 
     def test_neither_token_names_the_login_command(self):
         result, _ = self._resolve()
@@ -292,17 +306,18 @@ class RetiredEnvTest(unittest.TestCase):
 
         env = {self.DEAD_VAR: "1", "BEXIO_READ_TOKEN": "pat-value-not-real"}
         with mock.patch.dict(os.environ, env, clear=True), \
-                mock.patch.object(oauth, "read_refresh_token", return_value="refresh") as read, \
-                mock.patch.object(oauth, "refresh_access_token", return_value="access") as refresh:
-            self.assertEqual(client.resolve_token(), ("access", "oauth"))
+                mock.patch.object(oauth, "read_refresh_token", return_value="stored-refresh-token-not-real") as read, \
+                mock.patch.object(oauth, "refresh_access_token", return_value="fresh-access-token-not-real") as refresh:
+            self.assertEqual(client.resolve_token(), ("pat-value-not-real", "pat"))
             err = io.StringIO()
             with redirect_stderr(err):
                 c = Client()
-        self.assertEqual(c.token_kind, "oauth")
-        self.assertIn("OAuth refresh token", err.getvalue())
-        self.assertNotIn("pat-value-not-real", err.getvalue())
-        read.assert_called_with(oauth.REFRESH_KEY)
-        refresh.assert_called_with(export_scope=False)
+        self.assertEqual(c.token_kind, "pat")
+        self.assertIn("personal access token", err.getvalue())
+        self.assertNotIn("stored-refresh-token-not-real", err.getvalue())
+        self.assertNotIn("fresh-access-token-not-real", err.getvalue())
+        read.assert_not_called()
+        refresh.assert_not_called()
 
 
 class GetOnlyTest(unittest.TestCase):

@@ -1,17 +1,20 @@
 """Read-only client for the bexio REST API.
 
 GET only: this module has no way to write to bexio, so the scripts cannot
-change the account. The access token comes from the OAuth refresh token in the
-environment, where the av launcher injected it from the Automic Vault
-(oauth.refresh_access_token()); only where no refresh token exists does the
-BEXIO_READ_TOKEN environment variable stand in, the read-scoped personal access
-token the read launchers inject from the Automic Vault. The write-capable
-BEXIO_TOKEN of the upload scripts is never read here: the read-only path takes
-its credential, not the write one. The export login (export_scope=True, for the
+change the account. Reads take the BEXIO_READ_TOKEN environment variable
+first, the read-scoped personal access token the read launchers inject from
+the Automic Vault: a personal access token does not rotate anything, so a
+read never spends or re-saves the stored OAuth refresh token. Only where no
+read token is set does the OAuth refresh token in the environment run
+(oauth.refresh_access_token()). The export login (export_scope=True, for the
 few entities of export.py that need the accounting and file scopes) reads its
-own refresh token and never falls back to a personal access token. Which of
-these was used is printed to stderr; the token itself is never stored, printed
-or put in an error message.
+own refresh token and never falls back to a personal access token. Which
+calls still need the OAuth login is to be confirmed: the live check of
+inventory.py with only the read token (compared against the OAuth report of
+2026-10-14) decides what the read token cannot reach. The write-capable
+BEXIO_TOKEN of the upload scripts is never read here: the read-only path takes
+its credential, not the write one. Which of these was used is printed to
+stderr; the token itself is never stored, printed or put in an error message.
 
 The scripts that use it are launchers (their first line is the av shebang), so
 they run as:
@@ -59,13 +62,20 @@ TOKEN_NAMES = {
 
 
 def resolve_token(export_scope=False):
-    """(token, kind) for the API: the OAuth login first, the read token only without one.
+    """(token, kind) for the API: the read token first, the OAuth login only without one.
 
-    kind is "oauth", "oauth-export" or "pat". A refresh token that exists but is
-    refused is an error, not a reason to fall back: a stale read token would hide a login
-    that needs renewing. The export login (export_scope) has no fallback at all:
-    a personal access token cannot stand in for the accounting and file scopes.
+    kind is "oauth", "oauth-export" or "pat". Reads take BEXIO_READ_TOKEN when
+    it is set: the OAuth login is not touched at all, so a read neither spends
+    nor rotates the stored refresh token. Without a read token the OAuth login
+    runs, and a refresh token that exists but is refused is an error, not a
+    reason to fall back. The export login (export_scope) is as it was: its own
+    refresh token, no personal access token standing in (it cannot have the
+    accounting and file scopes).
     """
+    if not export_scope:
+        read_token = os.environ.get("BEXIO_READ_TOKEN")
+        if read_token:
+            return read_token, "pat"
     import launcher  # lazy: only the OAuth path needs it
     oauth = launcher.load("oauth.py")  # oauth.py is a bash launcher; its python body is what runs here
 
@@ -81,11 +91,8 @@ def resolve_token(export_scope=False):
             "no bexio export refresh token ({} is not set); log in with `{}` (see finance/bexio/README.md)".format(
                 key, oauth.EXPORT_LOGIN_COMMAND)
         )
-    read_token = os.environ.get("BEXIO_READ_TOKEN")
-    if read_token:
-        return read_token, "pat"
     raise SystemExit(
-        "no bexio refresh token ({} is not set) and BEXIO_READ_TOKEN is not set; "
+        "no bexio read token (BEXIO_READ_TOKEN is not set) and no refresh token ({} is not set); "
         "log in with `{}` (see finance/bexio/README.md)".format(oauth.REFRESH_KEY, oauth.LOGIN_COMMAND)
     )
 

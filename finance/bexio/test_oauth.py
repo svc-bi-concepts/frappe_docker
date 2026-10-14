@@ -345,7 +345,7 @@ class LauncherTest(unittest.TestCase):
     LAUNCHERS = {
         "oauth.py": "+BEXIO_CLIENT_ID +BEXIO_CLIENT_SECRET",
         "login_helper.py": "+BEXIO_CLIENT_ID +BEXIO_CLIENT_SECRET",
-        "inventory.py": "+BEXIO_CLIENT_ID +BEXIO_CLIENT_SECRET +BEXIO_REFRESH_TOKEN +BEXIO_READ_TOKEN",
+        "inventory.py": "+BEXIO_READ_TOKEN",
         "export.py": "+BEXIO_CLIENT_ID +BEXIO_CLIENT_SECRET +BEXIO_REFRESH_TOKEN +BEXIO_EXPORT_REFRESH_TOKEN +BEXIO_READ_TOKEN",
     }
     # The retired read path's two names, put together from parts: the depot gate greps
