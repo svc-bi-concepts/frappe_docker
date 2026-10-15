@@ -13,10 +13,9 @@ Entries), which the Ziffern view's row click opens.
 from decimal import Decimal
 
 import frappe
-from frappe.utils import flt, getdate, nowdate
-
 from bi_finance import mwst_payment, mwst_quarterly
 from bi_finance.vat_declaration import _payment_totals
+from frappe.utils import flt, getdate, nowdate
 
 
 def execute(filters=None):
@@ -34,18 +33,26 @@ def execute(filters=None):
     figures, bexio = {}, {}
     for quarter in quarters:
         start, end = mwst_payment.period_bounds(quarter)
-        figures[quarter] = mwst_quarterly.figures_of(_payment_totals(company, start, end))
+        figures[quarter] = mwst_quarterly.figures_of(
+            _payment_totals(company, start, end)
+        )
     # the module computes in Decimal, so the doctype's floats come in as Decimals; the report converts back at the edge
-    for row in frappe.get_all("MWST bexio Ziffer", filters=[["quarter", "in", quarters]],
-                              fields=["quarter", "ziffer", "base", "tax"]):
-        bexio.setdefault(row.quarter, {})[row.ziffer] = [Decimal(str(row.base or 0)), Decimal(str(row.tax or 0))]
+    for row in frappe.get_all(
+        "MWST bexio Ziffer",
+        filters=[["quarter", "in", quarters]],
+        fields=["quarter", "ziffer", "base", "tax"],
+    ):
+        bexio.setdefault(row.quarter, {})[row.ziffer] = [
+            Decimal(str(row.base or 0)),
+            Decimal(str(row.tax or 0)),
+        ]
 
     rows = mwst_quarterly.ziffern_rows(quarters, figures, bexio)
     for row in rows:
         row["ziffer"] = str(row["ziffer"])
         for quarter in quarters:
             for what in ("erpnext", "bexio", "differenz"):
-                key = "{} {}".format(quarter, what)
+                key = f"{quarter} {what}"
                 if row[key] is not None:
                     row[key] = flt(row[key])
     message = mwst_quarterly.message(quarters, bool(bexio))
@@ -58,42 +65,76 @@ def _belege(company, quarters, filters):
     quarter = quarters[0] if filters.get("quarter") and quarters else None
     ziffer = filters.get("ziffer")
     if not (quarter and ziffer):
-        return _columns([]), [], "Belege: ein Quartal und eine Ziffer waehlen (auf eine Zeile der Ziffern-Ansicht klicken).", None
+        return (
+            _columns([]),
+            [],
+            "Belege: ein Quartal und eine Ziffer waehlen (auf eine Zeile der Ziffern-Ansicht klicken).",
+            None,
+        )
     start, end = mwst_payment.period_bounds(quarter)
     totals = _payment_totals(company, start, end)
     rows = []
     for beleg in mwst_quarterly.belege_rows(totals, str(ziffer).strip()):
-        rows.append({
-            "ziffer": str(ziffer).strip(),
-            "doctype": beleg["doctype"],
-            "name": beleg["name"],
-            "posting_date": beleg["posting_date"],
-            "base": flt(beleg["base"]),
-            "tax": flt(beleg["tax"]),
-        })
+        rows.append(
+            {
+                "ziffer": str(ziffer).strip(),
+                "doctype": beleg["doctype"],
+                "name": beleg["name"],
+                "posting_date": beleg["posting_date"],
+                "base": flt(beleg["base"]),
+                "tax": flt(beleg["tax"]),
+            }
+        )
     if not rows:
-        return (_belege_columns(), rows,
-                "Ziffer {0} hat in {1} keine Belege: eine Summenzeile (399, 479, 500) oder ohne Buchung.".format(
-                    str(ziffer).strip(), quarter), None)
-    return (_belege_columns(), rows,
-            "Belege von Ziffer {0} in {1} auf der Zahlungsbasis; ihre Anteile summieren sich in die Ziffer.".format(
-                str(ziffer).strip(), quarter), None)
+        return (
+            _belege_columns(),
+            rows,
+            "Ziffer {} hat in {} keine Belege: eine Summenzeile (399, 479, 500) oder ohne Buchung.".format(
+                str(ziffer).strip(), quarter
+            ),
+            None,
+        )
+    return (
+        _belege_columns(),
+        rows,
+        "Belege von Ziffer {} in {} auf der Zahlungsbasis; ihre Anteile summieren sich in die Ziffer.".format(
+            str(ziffer).strip(), quarter
+        ),
+        None,
+    )
 
 
 def _columns(quarters):
     """The Ziffern view's columns: the Ziffer, its label, and per quarter ERPNext, bexio, difference."""
     out = [
         {"label": "Ziffer", "fieldname": "ziffer", "fieldtype": "Data", "width": 80},
-        {"label": "Bezeichnung", "fieldname": "label", "fieldtype": "Data", "width": 340},
+        {
+            "label": "Bezeichnung",
+            "fieldname": "label",
+            "fieldtype": "Data",
+            "width": 340,
+        },
     ]
     for quarter in quarters:
         out += [
-            {"label": "{} ERPNext".format(quarter), "fieldname": "{} erpnext".format(quarter),
-             "fieldtype": "Currency", "width": 130},
-            {"label": "{} bexio".format(quarter), "fieldname": "{} bexio".format(quarter),
-             "fieldtype": "Currency", "width": 130},
-            {"label": "{} Differenz".format(quarter), "fieldname": "{} differenz".format(quarter),
-             "fieldtype": "Currency", "width": 130},
+            {
+                "label": f"{quarter} ERPNext",
+                "fieldname": f"{quarter} erpnext",
+                "fieldtype": "Currency",
+                "width": 130,
+            },
+            {
+                "label": f"{quarter} bexio",
+                "fieldname": f"{quarter} bexio",
+                "fieldtype": "Currency",
+                "width": 130,
+            },
+            {
+                "label": f"{quarter} Differenz",
+                "fieldname": f"{quarter} differenz",
+                "fieldtype": "Currency",
+                "width": 130,
+            },
         ]
     return out
 
@@ -101,9 +142,24 @@ def _columns(quarters):
 def _belege_columns():
     return [
         {"label": "Ziffer", "fieldname": "ziffer", "fieldtype": "Data", "width": 80},
-        {"label": "Belegtyp", "fieldname": "doctype", "fieldtype": "Data", "width": 130},
+        {
+            "label": "Belegtyp",
+            "fieldname": "doctype",
+            "fieldtype": "Data",
+            "width": 130,
+        },
         {"label": "Beleg", "fieldname": "name", "fieldtype": "Data", "width": 220},
-        {"label": "Datum", "fieldname": "posting_date", "fieldtype": "Date", "width": 110},
-        {"label": "Entgelt", "fieldname": "base", "fieldtype": "Currency", "width": 130},
+        {
+            "label": "Datum",
+            "fieldname": "posting_date",
+            "fieldtype": "Date",
+            "width": 110,
+        },
+        {
+            "label": "Entgelt",
+            "fieldname": "base",
+            "fieldtype": "Currency",
+            "width": 130,
+        },
         {"label": "Steuer", "fieldname": "tax", "fieldtype": "Currency", "width": 130},
     ]

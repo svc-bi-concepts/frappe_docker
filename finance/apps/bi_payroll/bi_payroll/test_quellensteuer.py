@@ -10,7 +10,12 @@ import unittest
 from datetime import date
 from decimal import Decimal
 
-from bi_payroll.quellensteuer import find_tariff, parse_tariff_file, qst_amount, withholding
+from bi_payroll.quellensteuer import (
+    find_tariff,
+    parse_tariff_file,
+    qst_amount,
+    withholding,
+)
 
 
 def cents(value):
@@ -27,11 +32,33 @@ def end(canton, count):
     return ("99" + " " * 15 + canton + str(count).zfill(8)).ljust(62)
 
 
-def tariff(canton, code, valid, income, step, rate, minimum=0, kind="06", children=0, transaction="01"):
+def tariff(
+    canton,
+    code,
+    valid,
+    income,
+    step,
+    rate,
+    minimum=0,
+    kind="06",
+    children=0,
+    transaction="01",
+):
     # one tariff record: kind 1-2, transaction 3-4, canton 5-6, code 7-16, valid from 17-24, income from 25-33,
     # step 34-42, gender 43 (blank), children 44-45, minimum tax 46-54, rate 55-59
-    return (kind + transaction + canton + code.ljust(10) + valid + cents(income) + cents(step) + " "
-            + str(children).zfill(2) + cents(minimum) + str(round(rate * 100)).zfill(5)).ljust(62)
+    return (
+        kind
+        + transaction
+        + canton
+        + code.ljust(10)
+        + valid
+        + cents(income)
+        + cents(step)
+        + " "
+        + str(children).zfill(2)
+        + cents(minimum)
+        + str(round(rate * 100)).zfill(5)
+    ).ljust(62)
 
 
 def file_of(canton, *records):
@@ -50,25 +77,44 @@ NEW = [tariff("XX", "A0N", "20260101", 1000, 50, 6.0)]
 
 class ParseFile(unittest.TestCase):
     def test_the_fields_are_read_at_the_spec_positions(self):
-        row = parse_tariff_file(file_of("XX", tariff("XX", "B2N", "20250101", 3101, 50, 7.15, minimum=20, children=2)))[0]
-        self.assertEqual(row, {
-            "canton": "XX", "tariff_code": "B2N", "valid_from": date(2025, 1, 1),
-            "income_from": Decimal("3101"), "step": Decimal("50"), "minimum_tax": Decimal("20"),
-            "rate": Decimal("7.15"),
-        })
+        row = parse_tariff_file(
+            file_of(
+                "XX",
+                tariff("XX", "B2N", "20250101", 3101, 50, 7.15, minimum=20, children=2),
+            )
+        )[0]
+        self.assertEqual(
+            row,
+            {
+                "canton": "XX",
+                "tariff_code": "B2N",
+                "valid_from": date(2025, 1, 1),
+                "income_from": Decimal("3101"),
+                "step": Decimal("50"),
+                "minimum_tax": Decimal("20"),
+                "rate": Decimal("7.15"),
+            },
+        )
 
     def test_a_predefined_category_is_read_too(self):
-        row = parse_tariff_file(file_of("XX", tariff("XX", "HEN", "20250101", 1, 999999, 23, kind="11")))[0]
+        row = parse_tariff_file(
+            file_of("XX", tariff("XX", "HEN", "20250101", 1, 999999, 23, kind="11"))
+        )[0]
         self.assertEqual((row["tariff_code"], row["rate"]), ("HEN", Decimal("23")))
 
     def test_the_fee_and_median_records_are_no_rate_and_skipped(self):
-        text = file_of("XX", tariff("XX", "PEL", "20250101", 0, 0, 0, kind="12"),
-                       tariff("XX", "MED", "20250101", 0, 0, 0, kind="13"))
+        text = file_of(
+            "XX",
+            tariff("XX", "PEL", "20250101", 0, 0, 0, kind="12"),
+            tariff("XX", "MED", "20250101", 0, 0, 0, kind="13"),
+        )
         self.assertEqual(parse_tariff_file(text), [])
 
     def test_a_record_of_another_canton_is_refused(self):
         with self.assertRaises(ValueError):
-            parse_tariff_file(file_of("XX", tariff("YY", "A0N", "20250101", 1000, 50, 5.0)))
+            parse_tariff_file(
+                file_of("XX", tariff("YY", "A0N", "20250101", 1000, 50, 5.0))
+            )
 
     def test_the_record_count_of_the_end_record_must_match(self):
         text = "\n".join([header("XX"), *OLD, end("XX", len(OLD) + 9)]) + "\n"
@@ -77,19 +123,46 @@ class ParseFile(unittest.TestCase):
 
     def test_only_new_records_are_loaded(self):
         with self.assertRaises(ValueError):
-            parse_tariff_file(file_of("XX", tariff("XX", "A0N", "20250101", 1000, 50, 5.0, transaction="03")))
+            parse_tariff_file(
+                file_of(
+                    "XX",
+                    tariff("XX", "A0N", "20250101", 1000, 50, 5.0, transaction="03"),
+                )
+            )
 
 
 class FindTariff(unittest.TestCase):
-    ROWS = parse_tariff_file(file_of("XX", *OLD)) + parse_tariff_file(file_of("XX", *NEW))
+    ROWS = parse_tariff_file(file_of("XX", *OLD)) + parse_tariff_file(
+        file_of("XX", *NEW)
+    )
 
     def test_the_bracket_starts_at_its_income_and_ends_before_the_next(self):
-        self.assertEqual(find_tariff(self.ROWS, "XX", "A0N", Decimal("1000"), date(2026, 3, 1))["rate"], Decimal("6"))
-        self.assertEqual(find_tariff(self.ROWS, "XX", "A0N", Decimal("1049.99"), date(2025, 3, 1))["rate"], Decimal("5"))
-        self.assertEqual(find_tariff(self.ROWS, "XX", "A0N", Decimal("1050"), date(2025, 3, 1))["rate"], Decimal("5.5"))
+        self.assertEqual(
+            find_tariff(self.ROWS, "XX", "A0N", Decimal("1000"), date(2026, 3, 1))[
+                "rate"
+            ],
+            Decimal("6"),
+        )
+        self.assertEqual(
+            find_tariff(self.ROWS, "XX", "A0N", Decimal("1049.99"), date(2025, 3, 1))[
+                "rate"
+            ],
+            Decimal("5"),
+        )
+        self.assertEqual(
+            find_tariff(self.ROWS, "XX", "A0N", Decimal("1050"), date(2025, 3, 1))[
+                "rate"
+            ],
+            Decimal("5.5"),
+        )
 
     def test_the_latest_version_valid_on_the_date_wins(self):
-        self.assertEqual(find_tariff(self.ROWS, "XX", "A0N", Decimal("1000"), date(2025, 12, 31))["rate"], Decimal("5"))
+        self.assertEqual(
+            find_tariff(self.ROWS, "XX", "A0N", Decimal("1000"), date(2025, 12, 31))[
+                "rate"
+            ],
+            Decimal("5"),
+        )
 
     def test_another_code_or_canton_is_no_match(self):
         with self.assertRaises(LookupError):
@@ -127,21 +200,39 @@ class Withholding(unittest.TestCase):
 
 class QstAmount(unittest.TestCase):
     # an invented employee in canton XX with code A0N, on the slip's end date
-    ROWS = parse_tariff_file(file_of("XX", *OLD)) + parse_tariff_file(file_of("XX", *NEW))
+    ROWS = parse_tariff_file(file_of("XX", *OLD)) + parse_tariff_file(
+        file_of("XX", *NEW)
+    )
 
     def test_the_deduction_of_the_monthly_gross_under_the_loaded_tariff(self):
-        self.assertEqual(qst_amount(self.ROWS, "XX", "A0N", 1000, date(2025, 3, 31)), Decimal("50.00"))
-        self.assertEqual(qst_amount(self.ROWS, "XX", "A0N", Decimal("1000.00"), date(2026, 3, 31)), Decimal("60.00"))
+        self.assertEqual(
+            qst_amount(self.ROWS, "XX", "A0N", 1000, date(2025, 3, 31)),
+            Decimal("50.00"),
+        )
+        self.assertEqual(
+            qst_amount(self.ROWS, "XX", "A0N", Decimal("1000.00"), date(2026, 3, 31)),
+            Decimal("60.00"),
+        )
 
     def test_the_minimum_tax_of_the_bracket_applies(self):
-        self.assertEqual(qst_amount(self.ROWS, "XX", "A0N", 1050, date(2025, 3, 31)), Decimal("57.75"))
+        self.assertEqual(
+            qst_amount(self.ROWS, "XX", "A0N", 1050, date(2025, 3, 31)),
+            Decimal("57.75"),
+        )
 
     def test_the_other_code_of_the_canton_gives_its_own_rate(self):
-        self.assertEqual(qst_amount(self.ROWS, "XX", "B2N", 1000, date(2025, 3, 31)), Decimal("20.00"))
+        self.assertEqual(
+            qst_amount(self.ROWS, "XX", "B2N", 1000, date(2025, 3, 31)),
+            Decimal("20.00"),
+        )
 
     def test_no_code_or_no_gross_is_no_deduction(self):
-        self.assertEqual(qst_amount(self.ROWS, "XX", "", 1000, date(2025, 3, 31)), Decimal("0.00"))
-        self.assertEqual(qst_amount(self.ROWS, "XX", "A0N", 0, date(2025, 3, 31)), Decimal("0.00"))
+        self.assertEqual(
+            qst_amount(self.ROWS, "XX", "", 1000, date(2025, 3, 31)), Decimal("0.00")
+        )
+        self.assertEqual(
+            qst_amount(self.ROWS, "XX", "A0N", 0, date(2025, 3, 31)), Decimal("0.00")
+        )
 
     def test_a_gross_below_the_first_bracket_is_an_error_not_a_zero(self):
         with self.assertRaises(LookupError):

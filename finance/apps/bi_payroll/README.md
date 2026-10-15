@@ -42,8 +42,8 @@ migrate on any site. Its Desk is the Swiss Payroll shell: a Sidebar (`bi_payroll
     coordinated part (the assignment's yearly salary, a twelfth per insured month, age 25 to 64, from the threshold on),
     FAK and KTG (gross). Then the contributions per insurance, employee and employer. For the trustee: the AHV
     Lohnbescheinigung, the UVG and KTG Lohnsummen, the BVG Lohnmeldung and the FAK declaration.
-  Export as Excel or CSV, like the other views. The Quellensteuer amount is not in the Jahresdeklarationen: it has its own
-  view.
+    Export as Excel or CSV, like the other views. The Quellensteuer amount is not in the Jahresdeklarationen: it has its own
+    view.
 - `bi_payroll/bi_payroll/structure_site_test.py`: needs a site (not a `test_*.py`, so the offline gate skips it):
   `bench --site <site> run-tests --module bi_payroll.bi_payroll.structure_site_test`. The structure rows must carry
   their components' formulas, or every slip pays 0.
@@ -52,20 +52,20 @@ migrate on any site. Its Desk is the Swiss Payroll shell: a Sidebar (`bi_payroll
 - Payroll accounts (erp-nqyb): the fixture gives each Salary Component of the Company its accounts, from
   `swiss_rates.COMPONENT_ACCOUNTS` and `EMPLOYER_CONTRIBUTION_ACCOUNTS` (numbers and names only):
 
-  | Component | Account | bexio's books |
-  | --- | --- | --- |
-  | Basic Salary | 5000 Löhne | debit, against 1091 |
-  | Commission | 5003 Provisionen | debit, against 1091 |
-  | AHV/IV/EO Employee, ALV Employee | 2271 KK AHV, IV, EO, ALV | credit |
-  | BVG Employee | 2270 KK Vorsorgeeinrichtung | credit |
-  | NBU Employee | 2273 KK Unfallversicherung | credit |
-  | KTG Employee | 2274 KK Krankentaggeld | credit |
-  | Quellensteuer Employee | 2279 KK Quellensteuer | credit |
-  | AHV/IV/EO Employer, ALV Employer (Employer Contribution) | expense 5700 AHV, IV, EO, ALV; liability 2271 | debit; credit |
-  | BVG Employer | expense 5720 BVG-Beitrag; liability 2270 | debit; credit |
-  | UVG Employer | expense 5730 UVG-Beitrag; liability 2273 | debit; credit |
-  | KTG Employer | expense 5740 KTG-Beitrag; liability 2274 | debit; credit |
-  | FAK Employer | expense 5710 FAK-Beitrag; liability 2271 | debit; credit |
+  | Component                                                | Account                                       | bexio's books       |
+  | -------------------------------------------------------- | --------------------------------------------- | ------------------- |
+  | Basic Salary                                             | 5000 Löhne                                    | debit, against 1091 |
+  | Commission                                               | 5003 Provisionen                              | debit, against 1091 |
+  | AHV/IV/EO Employee, ALV Employee                         | 2271 KK AHV, IV, EO, ALV                      | credit              |
+  | BVG Employee                                             | 2270 KK Vorsorgeeinrichtung                   | credit              |
+  | NBU Employee                                             | 2273 KK Unfallversicherung                    | credit              |
+  | KTG Employee                                             | 2274 KK Krankentaggeld                        | credit              |
+  | Quellensteuer Employee                                   | 2279 KK Quellensteuer                         | credit              |
+  | AHV/IV/EO Employer, ALV Employer (Employer Contribution) | expense 5700 AHV, IV, EO, ALV; liability 2271 | debit; credit       |
+  | BVG Employer                                             | expense 5720 BVG-Beitrag; liability 2270      | debit; credit       |
+  | UVG Employer                                             | expense 5730 UVG-Beitrag; liability 2273      | debit; credit       |
+  | KTG Employer                                             | expense 5740 KTG-Beitrag; liability 2274      | debit; credit       |
+  | FAK Employer                                             | expense 5710 FAK-Beitrag; liability 2271      | debit; credit       |
 
   The Company's default payroll payable is 1091 Lohndurchlaufkonto (`swiss-setup.sh payroll_accounts`, idempotent;
   bexio credits the net wages there and pays them from 1020). BVG Age (statistical) has none. The employer shares are
@@ -76,6 +76,7 @@ migrate on any site. Its Desk is the Swiss Payroll shell: a Sidebar (`bi_payroll
   order: coa, accounts, migrate); on the live chart they all exist, so the step skips and says so. Its table is one
   source with `test_payroll_accounts`'s `BEXIO_ADDED` (a test compares the two), which checks every number against the
   template and those additions when `BI_COA_CSV` names its `accounts_template.csv`.
+
 - `bi_payroll/quellensteuer.py`: the ESTV withholding tariffs (Quellensteuer, Löhne, 2025 record format; source and
   version in the `QST Tariff` doctype's description). It parses a canton's text file (records 06 and 11), finds the
   bracket for a monthly gross and gives the tax (rate on the whole income, at least the minimum tax). Pure Python.
@@ -150,26 +151,27 @@ migrate on any site. Its Desk is the Swiss Payroll shell: a Sidebar (`bi_payroll
   structure is made again by hand (the Salary Structure bullet above) before the first live run.
 - Wage types (bexio paystubs, public numbers and names only) and the component each one feeds:
 
-  | Wage type | Name on the paystub | Component (fixture) |
-  | --- | --- | --- |
-  | 1000 | Monthly salary | Basic Salary |
-  | 1001 | Monthly salary 2 | Basic Salary (a second monthly salary line; the same component) |
-  | 1005 | Hourly wage | none (no hourly employment in the data since 2024) |
-  | 1160 | Vacation compensation | none (not in payroll yet) |
-  | 1218 | Commission | Commission |
-  | 5000 | Gross wages | the gross (`gross_pay`), not a component |
-  | 5010 | AHV/IV/EO contribution | AHV/IV/EO Employee |
-  | 5020 | ALV contribution | ALV Employee |
-  | 5040 | NBU contribution | NBU Employee |
-  | 5050 | BVG contribution | BVG Employee |
-  | 5060 | Withholding tax | Quellensteuer Employee |
-  | 5900 | Total deductions | the sum of the deductions |
-  | 6500 | Net salary | the net (`net_pay`) |
-  | 6510 | Advance payment | none (a payment, not payroll) |
-  | 6600 | Amount paid out | none (a payment, not payroll) |
-  | 6030, 6070, 6300.1 | Other effective expenses, other lump sum expenses, Rent | none (expenses; HR 11 covers the route) |
+  | Wage type          | Name on the paystub                                     | Component (fixture)                                             |
+  | ------------------ | ------------------------------------------------------- | --------------------------------------------------------------- |
+  | 1000               | Monthly salary                                          | Basic Salary                                                    |
+  | 1001               | Monthly salary 2                                        | Basic Salary (a second monthly salary line; the same component) |
+  | 1005               | Hourly wage                                             | none (no hourly employment in the data since 2024)              |
+  | 1160               | Vacation compensation                                   | none (not in payroll yet)                                       |
+  | 1218               | Commission                                              | Commission                                                      |
+  | 5000               | Gross wages                                             | the gross (`gross_pay`), not a component                        |
+  | 5010               | AHV/IV/EO contribution                                  | AHV/IV/EO Employee                                              |
+  | 5020               | ALV contribution                                        | ALV Employee                                                    |
+  | 5040               | NBU contribution                                        | NBU Employee                                                    |
+  | 5050               | BVG contribution                                        | BVG Employee                                                    |
+  | 5060               | Withholding tax                                         | Quellensteuer Employee                                          |
+  | 5900               | Total deductions                                        | the sum of the deductions                                       |
+  | 6500               | Net salary                                              | the net (`net_pay`)                                             |
+  | 6510               | Advance payment                                         | none (a payment, not payroll)                                   |
+  | 6600               | Amount paid out                                         | none (a payment, not payroll)                                   |
+  | 6030, 6070, 6300.1 | Other effective expenses, other lump sum expenses, Rent | none (expenses; HR 11 covers the route)                         |
 
   The employer shares are not on the paystub; the fixture's employer components carry them.
+
 - 13th salary (HR 3, from the figures, counts only): no 13th salary, bonus or double December in the data. Of 777 lines
   for 9 employees over 35 months, no wage type is a 13th salary or a bonus; 1005 is the hourly wage (3 lines, one
   employee, 2023 and 2024). In no December is the salary more than 1.5 times the employee's median monthly salary, and no

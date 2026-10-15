@@ -14,8 +14,12 @@ import os
 import re
 
 import frappe
-from erpnextswiss.erpnextswiss.doctype.payment_proposal.payment_proposal import PaymentProposal as SwissPaymentProposal
-from erpnextswiss.erpnextswiss.doctype.payment_proposal.payment_proposal import _create_payment_proposal_record
+from erpnextswiss.erpnextswiss.doctype.payment_proposal.payment_proposal import (
+    PaymentProposal as SwissPaymentProposal,
+)
+from erpnextswiss.erpnextswiss.doctype.payment_proposal.payment_proposal import (
+    _create_payment_proposal_record,
+)
 from erpnextswiss.erpnextswiss.xml import validate_xml_against_xsd
 from frappe import _
 from frappe.utils import flt, get_url_to_form, getdate
@@ -68,88 +72,128 @@ class PaymentProposal(SwissPaymentProposal):
         if not self.pay_from_account:
             frappe.throw(_("Pay from account is required for a payment run."))
         # A foreign-currency payment needs an exchange rate on the Payment Entry; not built yet.
-        account_currency = frappe.get_cached_value("Account", self.pay_from_account, "account_currency")
+        account_currency = frappe.get_cached_value(
+            "Account", self.pay_from_account, "account_currency"
+        )
         for row in self.purchase_invoices:
             if row.currency != account_currency:
-                frappe.throw(_("Purchase Invoice {0} is in {1}, but {2} pays in {3}; a payment run does not cover this yet.").format(
-                    row.purchase_invoice, row.currency, self.pay_from_account, account_currency))
+                frappe.throw(
+                    _(
+                        "Purchase Invoice {0} is in {1}, but {2} pays in {3}; a payment run does not cover this yet."
+                    ).format(
+                        row.purchase_invoice,
+                        row.currency,
+                        self.pay_from_account,
+                        account_currency,
+                    )
+                )
         for row in self.expenses:
-            currency = frappe.db.get_value("Expense Claim", row.expense_claim, "currency")
+            currency = frappe.db.get_value(
+                "Expense Claim", row.expense_claim, "currency"
+            )
             if currency != account_currency:
-                frappe.throw(_("Expense Claim {0} is in {1}, but {2} pays in {3}; a payment run does not cover this yet.").format(
-                    row.expense_claim, currency, self.pay_from_account, account_currency))
+                frappe.throw(
+                    _(
+                        "Expense Claim {0} is in {1}, but {2} pays in {3}; a payment run does not cover this yet."
+                    ).format(
+                        row.expense_claim,
+                        currency,
+                        self.pay_from_account,
+                        account_currency,
+                    )
+                )
 
     def make_payment_entries(self):
         for row in self.purchase_invoices:
             pinv = frappe.get_doc("Purchase Invoice", row.purchase_invoice)
             amount = paid_amount(row)
-            frappe.get_doc({
-                "doctype": "Payment Entry",
-                "payment_type": "Pay",
-                "company": self.company,
-                "party_type": "Supplier",
-                "party": row.supplier,
-                "posting_date": getdate(self.date),
-                "paid_from": self.pay_from_account,
-                "paid_to": pinv.credit_to,
-                "paid_amount": amount,
-                "received_amount": amount,
-                "reference_no": row.external_reference or pinv.name,
-                "reference_date": getdate(self.date),
-                "remarks": PAYMENT_REMARKS.format(self.name),
-                # custom_remarks keeps the remarks as set: ERPNext replaces them otherwise,
-                # and the entries of a run are found by their remarks (download, cancel).
-                "custom_remarks": 1,
-                "references": [{
-                    "reference_doctype": "Purchase Invoice",
-                    "reference_name": pinv.name,
-                    "due_date": pinv.due_date,
-                    "total_amount": pinv.grand_total,
-                    "outstanding_amount": pinv.outstanding_amount,
-                    "allocated_amount": amount,
-                }],
-            }).insert()
+            frappe.get_doc(
+                {
+                    "doctype": "Payment Entry",
+                    "payment_type": "Pay",
+                    "company": self.company,
+                    "party_type": "Supplier",
+                    "party": row.supplier,
+                    "posting_date": getdate(self.date),
+                    "paid_from": self.pay_from_account,
+                    "paid_to": pinv.credit_to,
+                    "paid_amount": amount,
+                    "received_amount": amount,
+                    "reference_no": row.external_reference or pinv.name,
+                    "reference_date": getdate(self.date),
+                    "remarks": PAYMENT_REMARKS.format(self.name),
+                    # custom_remarks keeps the remarks as set: ERPNext replaces them otherwise,
+                    # and the entries of a run are found by their remarks (download, cancel).
+                    "custom_remarks": 1,
+                    "references": [
+                        {
+                            "reference_doctype": "Purchase Invoice",
+                            "reference_name": pinv.name,
+                            "due_date": pinv.due_date,
+                            "total_amount": pinv.grand_total,
+                            "outstanding_amount": pinv.outstanding_amount,
+                            "allocated_amount": amount,
+                        }
+                    ],
+                }
+            ).insert()
         # The claim rows: one Payment Entry per claim, paid from the same account as the bills,
         # to the claim's own payable account. The claim's amount is what the proposal row holds
         # (grand_total, the 0005 patch), so the entry clears the claim in full and HRMS marks
         # it Paid when the entry is submitted.
         for row in self.expenses:
-            claim = frappe.db.get_value("Expense Claim", row.expense_claim,
-                                        ["payable_account", "employee"], as_dict=True)
+            claim = frappe.db.get_value(
+                "Expense Claim",
+                row.expense_claim,
+                ["payable_account", "employee"],
+                as_dict=True,
+            )
             amount = flt(row.amount)
-            frappe.get_doc({
-                "doctype": "Payment Entry",
-                "payment_type": "Pay",
-                "company": self.company,
-                "party_type": "Employee",
-                "party": claim.employee,
-                "posting_date": getdate(self.date),
-                "paid_from": self.pay_from_account,
-                "paid_to": claim.payable_account,
-                "paid_amount": amount,
-                "received_amount": amount,
-                "reference_no": row.expense_claim,
-                "reference_date": getdate(self.date),
-                "remarks": PAYMENT_REMARKS.format(self.name),
-                "custom_remarks": 1,
-                "references": [{
-                    "reference_doctype": "Expense Claim",
-                    "reference_name": row.expense_claim,
-                    "total_amount": amount,
-                    "outstanding_amount": amount,
-                    "allocated_amount": amount,
-                }],
-            }).insert()
+            frappe.get_doc(
+                {
+                    "doctype": "Payment Entry",
+                    "payment_type": "Pay",
+                    "company": self.company,
+                    "party_type": "Employee",
+                    "party": claim.employee,
+                    "posting_date": getdate(self.date),
+                    "paid_from": self.pay_from_account,
+                    "paid_to": claim.payable_account,
+                    "paid_amount": amount,
+                    "received_amount": amount,
+                    "reference_no": row.expense_claim,
+                    "reference_date": getdate(self.date),
+                    "remarks": PAYMENT_REMARKS.format(self.name),
+                    "custom_remarks": 1,
+                    "references": [
+                        {
+                            "reference_doctype": "Expense Claim",
+                            "reference_name": row.expense_claim,
+                            "total_amount": amount,
+                            "outstanding_amount": amount,
+                            "allocated_amount": amount,
+                        }
+                    ],
+                }
+            ).insert()
 
     def check_ibans(self):
         # Checked before erpnextswiss renders the file: a wrong IBAN is refused here with its
         # row named, not left for the bank to refuse the file.
         debtor = frappe.get_doc("Account", self.pay_from_account).iban
         if debtor and not iban_is_valid(debtor):
-            frappe.throw(_("The IBAN of {0} is not valid; no payment file is made.").format(self.pay_from_account))
+            frappe.throw(
+                _("The IBAN of {0} is not valid; no payment file is made.").format(
+                    self.pay_from_account
+                )
+            )
         for row in self.payments:
             if row.iban and not iban_is_valid(row.iban):
-                frappe.throw(_("The IBAN of {0} is not valid; no payment file is made.").format(row.receiver))
+                frappe.throw(
+                    _("The IBAN of {0} is not valid; no payment file is made.").format(
+                        row.receiver
+                    )
+                )
 
     @frappe.whitelist(methods=["POST"])
     def create_bank_file(self):
@@ -157,11 +201,18 @@ class PaymentProposal(SwissPaymentProposal):
         # validate_xml stays off in erpnextswiss's settings: its check runs before the
         # country code is fixed below, so it would refuse every file.
         result = super().create_bank_file()
-        content = LOWER_COUNTRY_CODE.sub(lambda m: "<Ctry>{0}</Ctry>".format(m.group(1).upper()), result["content"])
+        content = LOWER_COUNTRY_CODE.sub(
+            lambda m: f"<Ctry>{m.group(1).upper()}</Ctry>", result["content"]
+        )
         validated, errors = validate_xml_against_xsd(
-            content, os.path.join(frappe.utils.get_bench_path(), SIX_PAIN_001_XSD))
+            content, os.path.join(frappe.utils.get_bench_path(), SIX_PAIN_001_XSD)
+        )
         if not validated:
-            frappe.throw(_("The payment file does not match the Swiss schema: {0}").format(errors))
+            frappe.throw(
+                _("The payment file does not match the Swiss schema: {0}").format(
+                    errors
+                )
+            )
         result["content"] = content
         # The file is what goes to the bank: its Payment Entries are submitted now.
         self.submit_payment_entries()
@@ -176,12 +227,16 @@ class PaymentProposal(SwissPaymentProposal):
             entry.submit()
 
     def payment_entry_names(self, docstatus):
-        return frappe.get_all("Payment Entry", pluck="name", filters={
-            "payment_type": "Pay",
-            "paid_from": self.pay_from_account,
-            "remarks": PAYMENT_REMARKS.format(self.name),
-            "docstatus": docstatus,
-        })
+        return frappe.get_all(
+            "Payment Entry",
+            pluck="name",
+            filters={
+                "payment_type": "Pay",
+                "paid_from": self.pay_from_account,
+                "remarks": PAYMENT_REMARKS.format(self.name),
+                "docstatus": docstatus,
+            },
+        )
 
     def on_cancel(self):
         for name in self.payment_entry_names(docstatus=1):

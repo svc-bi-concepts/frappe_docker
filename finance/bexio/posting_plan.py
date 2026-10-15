@@ -74,7 +74,9 @@ def classify(data):
     for entry, row in manual_rows.values():
         by_date_text[(str(entry["date"])[:10], row["description"])].append(entry)
 
-    invoice_payment_ids = {row["id"] for part in data["invoice_payments"] for row in part["rows"]}
+    invoice_payment_ids = {
+        row["id"] for part in data["invoice_payments"] for row in part["rows"]
+    }
 
     buckets = {}
     for line in data["journal"]:
@@ -86,7 +88,11 @@ def classify(data):
         elif ref_class == "KbCreditVoucher":
             bucket = "credit_voucher"
         elif ref_class == "KbClientAccountEntry":
-            bucket = "sales_payment" if line["ref_id"] in invoice_payment_ids else "purchase_payment"
+            bucket = (
+                "sales_payment"
+                if line["ref_id"] in invoice_payment_ids
+                else "purchase_payment"
+            )
         elif line["id"] in manual_rows:
             bucket = _manual_bucket(manual_rows[line["id"]][0])
         elif _is_carry_forward(line):
@@ -107,7 +113,9 @@ def _manual_bucket(entry):
 
 
 def _is_carry_forward(line):
-    return line["date"][5:10] == "01-01" and any(word in line["description"] for word in CARRY_FORWARD_WORDS)
+    return line["date"][5:10] == "01-01" and any(
+        word in line["description"] for word in CARRY_FORWARD_WORDS
+    )
 
 
 def coverage(data, buckets):
@@ -121,19 +129,19 @@ def coverage(data, buckets):
         problems.append("journal ids are not unique")
     missing = [i for i in ids if i not in buckets]
     if missing:
-        problems.append("{} journal lines have no bucket".format(len(missing)))
+        problems.append(f"{len(missing)} journal lines have no bucket")
     unknown = [i for i, b in buckets.items() if b not in BUCKETS]
     if unknown:
-        problems.append("{} lines have an unknown bucket".format(len(unknown)))
+        problems.append(f"{len(unknown)} lines have an unknown bucket")
     extra = set(buckets) - set(ids)
     if extra:
-        problems.append("{} buckets name no journal line".format(len(extra)))
+        problems.append(f"{len(extra)} buckets name no journal line")
 
     raw = _totals(data["journal"], lambda line: line["date"][:4])
     planned = _totals(data["journal"], lambda line: line["date"][:4], buckets=buckets)
     for key in set(raw) | set(planned):
         if abs(raw.get(key, 0.0) - planned.get(key, 0.0)) > 0.005:
-            problems.append("sum differs for account {} in {}".format(key[1], key[0]))
+            problems.append(f"sum differs for account {key[1]} in {key[0]}")
     return problems
 
 
@@ -161,19 +169,27 @@ def summary(data, buckets):
 
 
 def main(argv):
-    parser = argparse.ArgumentParser(description="Assign every bexio journal line to the ERPNext doctype that carries it.")
+    parser = argparse.ArgumentParser(
+        description="Assign every bexio journal line to the ERPNext doctype that carries it."
+    )
     parser.add_argument("export_dir", help="the export directory (export.py --out)")
     args = parser.parse_args(argv)
     data = load(args.export_dir)
     buckets = classify(data)
-    for (bucket, year), (count, total) in sorted(summary(data, buckets).items(), key=lambda item: (item[0][1], item[0][0])):
-        print("{:<16} {}  {:>6} lines  {:>16,.2f} CHF  {}".format(bucket, year, count, total, BUCKETS[bucket]))
+    for (bucket, year), (count, total) in sorted(
+        summary(data, buckets).items(), key=lambda item: (item[0][1], item[0][0])
+    ):
+        print(
+            f"{bucket:<16} {year}  {count:>6} lines  {total:>16,.2f} CHF  {BUCKETS[bucket]}"
+        )
     problems = coverage(data, buckets)
     if problems:
         for problem in problems:
             print("COVERAGE FAILED: " + problem)
         return 1
-    print("coverage: every journal line in exactly one bucket; per year and account the buckets add up to the journal")
+    print(
+        "coverage: every journal line in exactly one bucket; per year and account the buckets add up to the journal"
+    )
     return 0
 
 

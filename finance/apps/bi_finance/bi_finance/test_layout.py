@@ -24,7 +24,16 @@ from datetime import datetime
 PACKAGE = os.path.dirname(os.path.abspath(__file__))
 APP = os.path.dirname(PACKAGE)
 MANIFEST = os.path.join(PACKAGE, "synced_manifest.json")
-SYNCED = {"doctype", "report", "workspace", "workspace_sidebar", "number_card", "dashboard_chart", "page", "sidebar"}
+SYNCED = {
+    "doctype",
+    "report",
+    "workspace",
+    "workspace_sidebar",
+    "number_card",
+    "dashboard_chart",
+    "page",
+    "sidebar",
+}
 # App-rooted folders at the package root (Frappe syncs them from the app path, not from a module folder):
 # the Dock, <package>/dock/<app>/<app>.json. Not in SYNCED: that set marks module folders only.
 APP_ROOTED = ("dock",)
@@ -50,10 +59,18 @@ def synced_jsons():
             inside = set(os.path.relpath(root, home).split(os.sep))
             if not SYNCED & inside:
                 continue
-            found += [os.path.relpath(os.path.join(root, f), PACKAGE) for f in files if f.endswith(".json")]
+            found += [
+                os.path.relpath(os.path.join(root, f), PACKAGE)
+                for f in files
+                if f.endswith(".json")
+            ]
     for name in APP_ROOTED:
         for root, _dirs, files in os.walk(os.path.join(PACKAGE, name)):
-            found += [os.path.relpath(os.path.join(root, f), PACKAGE) for f in files if f.endswith(".json")]
+            found += [
+                os.path.relpath(os.path.join(root, f), PACKAGE)
+                for f in files
+                if f.endswith(".json")
+            ]
     return sorted(path.replace(os.sep, "/") for path in found)
 
 
@@ -72,7 +89,9 @@ def stale(recorded, current):
     for path, (sha, modified) in current.items():
         if path not in recorded or sha == recorded[path]["sha"]:
             continue
-        if datetime.strptime(modified, STAMP) <= datetime.strptime(recorded[path]["modified"], STAMP):
+        if datetime.strptime(modified, STAMP) <= datetime.strptime(
+            recorded[path]["modified"], STAMP
+        ):
             out.append(path)
     return sorted(out)
 
@@ -100,16 +119,24 @@ class Controllers(unittest.TestCase):
         # and the migrate's orphan removal then deletes the DocType record and its table (frappe/model/sync.py).
         missing = []
         for module in modules():
-            for folder in sorted(glob.glob(os.path.join(PACKAGE, scrub(module), "doctype", "*"))):
+            for folder in sorted(
+                glob.glob(os.path.join(PACKAGE, scrub(module), "doctype", "*"))
+            ):
                 if not os.path.isdir(folder):
                     continue
                 name = os.path.basename(folder)
                 with open(os.path.join(folder, name + ".json"), encoding="utf-8") as f:
                     expected = json.load(f)["name"].replace(" ", "").replace("-", "")
                 with open(os.path.join(folder, name + ".py"), encoding="utf-8") as f:
-                    classes = {node.name for node in ast.parse(f.read()).body if isinstance(node, ast.ClassDef)}
+                    classes = {
+                        node.name
+                        for node in ast.parse(f.read()).body
+                        if isinstance(node, ast.ClassDef)
+                    }
                 if expected not in classes:
-                    missing.append(f"{name}.py defines {sorted(classes)}, frappe imports {expected}")
+                    missing.append(
+                        f"{name}.py defines {sorted(classes)}, frappe imports {expected}"
+                    )
         self.assertEqual(missing, [])
 
 
@@ -120,14 +147,26 @@ class Stamps(unittest.TestCase):
 
     def test_every_synced_json_is_in_the_manifest(self):
         current = synced_jsons()
-        self.assertEqual(sorted(set(current) - set(self.recorded)), [], "add to synced_manifest.json")
-        self.assertEqual(sorted(set(self.recorded) - set(current)), [], "gone from the module folders")
+        self.assertEqual(
+            sorted(set(current) - set(self.recorded)), [], "add to synced_manifest.json"
+        )
+        self.assertEqual(
+            sorted(set(self.recorded) - set(current)),
+            [],
+            "gone from the module folders",
+        )
 
     def test_a_changed_synced_json_has_a_newer_stamp(self):
         current = {path: fingerprint(path) for path in synced_jsons()}
         changed = stale(self.recorded, current)
         # the sha and stamp are printed so the manifest can be updated with them
-        self.assertEqual(changed, [], "; ".join(f"{p} modified {current[p][1]} sha {current[p][0]}" for p in changed))
+        self.assertEqual(
+            changed,
+            [],
+            "; ".join(
+                f"{p} modified {current[p][1]} sha {current[p][0]}" for p in changed
+            ),
+        )
 
 
 class MwstBexioZifferRoles(unittest.TestCase):
@@ -136,35 +175,53 @@ class MwstBexioZifferRoles(unittest.TestCase):
 
     def test_the_rows_are_accounts_manager_accounts_user_and_system_manager(self):
         with open(os.path.join(PACKAGE, self.PATH), encoding="utf-8") as f:
-            rows = [(p["role"], p["read"], p["write"], p["create"]) for p in json.load(f)["permissions"]]
-        self.assertEqual(rows, [
-            ("Accounts Manager", 1, 1, 1),
-            ("Accounts User", 1, 0, 0),
-            ("System Manager", 1, 1, 1),
-        ])
+            rows = [
+                (p["role"], p["read"], p["write"], p["create"])
+                for p in json.load(f)["permissions"]
+            ]
+        self.assertEqual(
+            rows,
+            [
+                ("Accounts Manager", 1, 1, 1),
+                ("Accounts User", 1, 0, 0),
+                ("System Manager", 1, 1, 1),
+            ],
+        )
 
 
 class StaleRule(unittest.TestCase):
     RECORDED = {"a.json": {"sha": "x", "modified": "2026-10-10 09:00:00.000000"}}
 
     def test_changed_content_with_the_same_stamp_is_stale(self):
-        self.assertEqual(stale(self.RECORDED, {"a.json": ("y", "2026-10-10 09:00:00.000000")}), ["a.json"])
+        self.assertEqual(
+            stale(self.RECORDED, {"a.json": ("y", "2026-10-10 09:00:00.000000")}),
+            ["a.json"],
+        )
 
     def test_changed_content_with_an_older_stamp_is_stale(self):
-        self.assertEqual(stale(self.RECORDED, {"a.json": ("y", "2026-10-10 08:00:00.000000")}), ["a.json"])
+        self.assertEqual(
+            stale(self.RECORDED, {"a.json": ("y", "2026-10-10 08:00:00.000000")}),
+            ["a.json"],
+        )
 
     def test_changed_content_with_a_newer_stamp_passes(self):
-        self.assertEqual(stale(self.RECORDED, {"a.json": ("y", "2026-10-10 10:00:00.000000")}), [])
+        self.assertEqual(
+            stale(self.RECORDED, {"a.json": ("y", "2026-10-10 10:00:00.000000")}), []
+        )
 
     def test_unchanged_content_passes_whatever_the_stamp(self):
-        self.assertEqual(stale(self.RECORDED, {"a.json": ("x", "2026-10-10 08:00:00.000000")}), [])
+        self.assertEqual(
+            stale(self.RECORDED, {"a.json": ("x", "2026-10-10 08:00:00.000000")}), []
+        )
 
 
 class Navigation(unittest.TestCase):
     # The Desktop Icon opens a Workspace Sidebar, and that sidebar's Start opens its workspace: each
     # link must name a fixture that ships, or the icon leads nowhere on a migrated site.
     def module_folder(self, folder, name):
-        return os.path.join(PACKAGE, scrub(modules()[0]), folder, scrub(name), scrub(name) + ".json")
+        return os.path.join(
+            PACKAGE, scrub(modules()[0]), folder, scrub(name), scrub(name) + ".json"
+        )
 
     def test_the_desktop_icon_opens_a_workspace_sidebar_that_ships(self):
         app_icons = os.path.join(PACKAGE, "desktop_icon")
@@ -173,15 +230,29 @@ class Navigation(unittest.TestCase):
                 icon = json.load(f)
             if icon["link_type"] != "Workspace Sidebar":
                 continue
-            self.assertTrue(os.path.isfile(self.module_folder("workspace_sidebar", icon["link_to"])), icon["link_to"])
+            self.assertTrue(
+                os.path.isfile(
+                    self.module_folder("workspace_sidebar", icon["link_to"])
+                ),
+                icon["link_to"],
+            )
 
     def test_the_sidebar_start_opens_a_workspace_that_ships(self):
-        for path in glob.glob(os.path.join(PACKAGE, scrub(modules()[0]), "workspace_sidebar", "*", "*.json")):
+        for path in glob.glob(
+            os.path.join(
+                PACKAGE, scrub(modules()[0]), "workspace_sidebar", "*", "*.json"
+            )
+        ):
             with open(path, encoding="utf-8") as f:
                 items = json.load(f)["items"]
             for item in items:
                 if item.get("link_type") == "Workspace":
-                    self.assertTrue(os.path.isfile(self.module_folder("workspace", item["link_to"])), item["link_to"])
+                    self.assertTrue(
+                        os.path.isfile(
+                            self.module_folder("workspace", item["link_to"])
+                        ),
+                        item["link_to"],
+                    )
 
 
 if __name__ == "__main__":

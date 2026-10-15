@@ -13,10 +13,18 @@ import unittest
 from unittest import mock
 
 import parse_paystubs as pp
-from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
+from private_guard import (  # every test below runs against a temp private folder, never the real one
+    setUpModule,
+)
 
-DE = open(os.path.join(os.path.dirname(__file__), "fixtures", "paystub-invented.txt"), encoding="utf-8").read()
-EN = open(os.path.join(os.path.dirname(__file__), "fixtures", "paystub-invented-en.txt"), encoding="utf-8").read()
+DE = open(
+    os.path.join(os.path.dirname(__file__), "fixtures", "paystub-invented.txt"),
+    encoding="utf-8",
+).read()
+EN = open(
+    os.path.join(os.path.dirname(__file__), "fixtures", "paystub-invented-en.txt"),
+    encoding="utf-8",
+).read()
 
 DE_5050 = "5050            BVG contribution                                                                         -440.00\n"
 DE_5010 = "5010            AHV/IV/EO contribution                 5'500.00       5.300%                             -291.50\n"
@@ -28,7 +36,11 @@ def without(text, line):
 
 def drop_type(text, wage_type):
     """The text without the one line of that wage type."""
-    return "".join(line + "\n" for line in text.splitlines() if not line.startswith(wage_type + " "))
+    return "".join(
+        line + "\n"
+        for line in text.splitlines()
+        if not line.startswith(wage_type + " ")
+    )
 
 
 class NumberTest(unittest.TestCase):
@@ -46,23 +58,37 @@ class NumberTest(unittest.TestCase):
 
 class ParseLineTest(unittest.TestCase):
     def test_amount_only(self):
-        self.assertEqual(pp.parse_line("1001            Monthly salary 2                                                                           500.00"),
-                         ("1001", "Monthly salary 2", None, None, 500.0))
+        self.assertEqual(
+            pp.parse_line(
+                "1001            Monthly salary 2                                                                           500.00"
+            ),
+            ("1001", "Monthly salary 2", None, None, 500.0),
+        )
 
     def test_base_rate_amount(self):
         parsed = pp.parse_line(DE_5010.strip())
-        self.assertEqual(parsed, ("5010", "AHV/IV/EO contribution", 5500.0, 5.3, -291.5))
+        self.assertEqual(
+            parsed, ("5010", "AHV/IV/EO contribution", 5500.0, 5.3, -291.5)
+        )
 
     def test_correction_with_base_and_amount_but_no_rate(self):
-        parsed = pp.parse_line("5060            Correction Withholding tax                           5'500.00                             -315.70")
-        self.assertEqual(parsed, ("5060", "Correction Withholding tax", 5500.0, None, -315.7))
+        parsed = pp.parse_line(
+            "5060            Correction Withholding tax                           5'500.00                             -315.70"
+        )
+        self.assertEqual(
+            parsed, ("5060", "Correction Withholding tax", 5500.0, None, -315.7)
+        )
 
     def test_rate_and_amount_without_base(self):
-        parsed = pp.parse_line("1000            Monthly salary                         100.000%                                            5'000.00")
+        parsed = pp.parse_line(
+            "1000            Monthly salary                         100.000%                                            5'000.00"
+        )
         self.assertEqual(parsed, ("1000", "Monthly salary", None, 100.0, 5000.0))
 
     def test_four_figures_take_the_first_as_base_and_the_last_as_amount(self):
-        parsed = pp.parse_line("1005            Hourly wage   41.50   45.00   25.00   1'037.50")
+        parsed = pp.parse_line(
+            "1005            Hourly wage   41.50   45.00   25.00   1'037.50"
+        )
         self.assertEqual(parsed, ("1005", "Hourly wage", 41.5, None, 1037.5))
 
     def test_no_wage_line(self):
@@ -74,9 +100,24 @@ class ParseLineTest(unittest.TestCase):
 class ParseTextTest(unittest.TestCase):
     def test_every_wage_type_is_parsed(self):
         rows = pp.parse_text(DE)
-        self.assertEqual([row[0] for row in rows],
-                         ["1000", "1001", "5000", "5010", "5020", "5040", "5050", "5060", "5070", "5900",
-                          "6500", "6300.1", "6600"])
+        self.assertEqual(
+            [row[0] for row in rows],
+            [
+                "1000",
+                "1001",
+                "5000",
+                "5010",
+                "5020",
+                "5040",
+                "5050",
+                "5060",
+                "5070",
+                "5900",
+                "6500",
+                "6300.1",
+                "6600",
+            ],
+        )
         self.assertEqual(rows[6], ("5050", "BVG contribution", None, None, -440.0))
         self.assertEqual(rows[7], ("5060", "Withholding tax", 5500.0, 5.74, -315.7))
 
@@ -98,7 +139,12 @@ class ParseTextTest(unittest.TestCase):
         self.assertEqual(rows[6], ("5060", "Withholding tax", 5500.0, 5.74, -315.7))
 
     def test_headers_alone_yield_nothing(self):
-        self.assertEqual(pp.parse_text("Lohn und Zulagen\nAbzüge\nLohnart         Bezeichnung            Betrag CHF\n"), [])
+        self.assertEqual(
+            pp.parse_text(
+                "Lohn und Zulagen\nAbzüge\nLohnart         Bezeichnung            Betrag CHF\n"
+            ),
+            [],
+        )
 
 
 class CheckTest(unittest.TestCase):
@@ -112,25 +158,52 @@ class CheckTest(unittest.TestCase):
         self.assertEqual(pp.check_file(rows), "fail")
 
     def test_without_gross_or_net_it_is_not_checkable(self):
-        self.assertEqual(pp.check_file([row for row in self.ROWS if row[0] != "6500"]), "not_checkable")
+        self.assertEqual(
+            pp.check_file([row for row in self.ROWS if row[0] != "6500"]),
+            "not_checkable",
+        )
 
     def test_five_rappen_are_rounding_not_a_difference(self):
-        ok = [("5000", "", None, None, 100.0), ("5010", "", None, None, -50.05), ("6500", "", None, None, 50.00)]
+        ok = [
+            ("5000", "", None, None, 100.0),
+            ("5010", "", None, None, -50.05),
+            ("6500", "", None, None, 50.00),
+        ]
         self.assertEqual(pp.check_file(ok), "ok")
-        bad = [("5000", "", None, None, 100.0), ("5010", "", None, None, -50.06), ("6500", "", None, None, 50.00)]
+        bad = [
+            ("5000", "", None, None, 100.0),
+            ("5010", "", None, None, -50.06),
+            ("6500", "", None, None, 50.00),
+        ]
         self.assertEqual(pp.check_file(bad), "fail")
 
 
 class ParseRecordsTest(unittest.TestCase):
     RECORDS = [
-        {"employee_id": "aaaa", "year": 2026, "month": 9, "file": "aaaa-2026-09.pdf", "bytes": 1},
-        {"employee_id": "bbbb", "year": 2026, "month": 10, "file": "bbbb-2026-10.pdf", "bytes": 1},
+        {
+            "employee_id": "aaaa",
+            "year": 2026,
+            "month": 9,
+            "file": "aaaa-2026-09.pdf",
+            "bytes": 1,
+        },
+        {
+            "employee_id": "bbbb",
+            "year": 2026,
+            "month": 10,
+            "file": "bbbb-2026-10.pdf",
+            "bytes": 1,
+        },
     ]
     TEXTS = {"aaaa-2026-09.pdf": DE, "bbbb-2026-10.pdf": EN}
 
     def run_parse(self, texts=None, records=None):
         texts = texts or self.TEXTS
-        with mock.patch.object(pp, "pdftotext_text", side_effect=lambda _, path: texts[os.path.basename(path)]):
+        with mock.patch.object(
+            pp,
+            "pdftotext_text",
+            side_effect=lambda _, path: texts[os.path.basename(path)],
+        ):
             return pp.parse_records(records or self.RECORDS, "/tmp/paystubs")
 
     def test_rows_carry_the_employee_and_the_print_order(self):
@@ -162,7 +235,9 @@ class ParseRecordsTest(unittest.TestCase):
         self.assertIn("scanned", per_file["bbbb-2026-10.pdf"]["problems"][0])
 
     def test_a_failed_check_counts(self):
-        texts = dict(self.TEXTS, **{"aaaa-2026-09.pdf": DE.replace("4'350.00", "4'350.10")})
+        texts = dict(
+            self.TEXTS, **{"aaaa-2026-09.pdf": DE.replace("4'350.00", "4'350.10")}
+        )
         _, _, counts, _ = self.run_parse(texts)
         self.assertEqual(counts["check_failed"], 1)
 
@@ -172,8 +247,11 @@ class PdftotextTest(unittest.TestCase):
         done = mock.Mock(returncode=0, stdout="text", stderr="")
         with mock.patch.object(pp.subprocess, "run", return_value=done) as run:
             self.assertEqual(pp.pdftotext_text("/bin/pdftotext", "/p/a.pdf"), "text")
-        run.assert_called_once_with(["/bin/pdftotext", "-layout", "/p/a.pdf", "-"],
-                                    capture_output=True, text=True)
+        run.assert_called_once_with(
+            ["/bin/pdftotext", "-layout", "/p/a.pdf", "-"],
+            capture_output=True,
+            text=True,
+        )
 
     def test_a_failure_raises_with_the_file_name_only(self):
         done = mock.Mock(returncode=1, stdout="", stderr="pdftotext: noise")
@@ -186,8 +264,15 @@ class WriteCsvTest(unittest.TestCase):
     def test_columns_figures_and_modes(self):
         tmp = tempfile.mkdtemp()
         out = os.path.join(tmp, "payroll", "figures.csv")
-        rows = [dict(zip(pp.CSV_COLUMNS, ["aaaa", 2026, 9, wage_type, label, base, rate, amount]))
-                for wage_type, label, base, rate, amount in pp.parse_text(DE)]
+        rows = [
+            dict(
+                zip(
+                    pp.CSV_COLUMNS,
+                    ["aaaa", 2026, 9, wage_type, label, base, rate, amount],
+                )
+            )
+            for wage_type, label, base, rate, amount in pp.parse_text(DE)
+        ]
         pp.write_csv(out, rows)
         self.assertEqual(os.stat(out).st_mode & 0o777, 0o600)
         self.assertEqual(os.stat(os.path.dirname(out)).st_mode & 0o777, 0o700)
@@ -198,7 +283,9 @@ class WriteCsvTest(unittest.TestCase):
         self.assertEqual(read[0]["base"], "")
         self.assertEqual([r["wage_type"] for r in read].count("5050"), 1)
         qst = [r for r in read if r["wage_type"] == "5060"][0]
-        self.assertEqual((qst["base"], qst["rate"], qst["amount"]), ("5500.00", "5.74", "-315.70"))
+        self.assertEqual(
+            (qst["base"], qst["rate"], qst["amount"]), ("5500.00", "5.74", "-315.70")
+        )
         nbu = [r for r in read if r["wage_type"] == "5040"][0]
         self.assertEqual(nbu["rate"], "0.544")
 
@@ -207,9 +294,21 @@ class WriteReportTest(unittest.TestCase):
     def test_problems_per_file_only_and_the_modes(self):
         tmp = tempfile.mkdtemp()
         path = os.path.join(tmp, "payroll", "report.txt")
-        per_file = {"aaaa-2026-09.pdf": {"types": ["1000"], "problems": ["no 5010 line"], "check": "ok"},
-                    "bbbb-2026-10.pdf": {"types": ["1000"], "problems": [], "check": "ok"}}
-        counts = {"files": 2, "parsed": 2, "empty_text": 0, "rows": 2, "check_failed": 0}
+        per_file = {
+            "aaaa-2026-09.pdf": {
+                "types": ["1000"],
+                "problems": ["no 5010 line"],
+                "check": "ok",
+            },
+            "bbbb-2026-10.pdf": {"types": ["1000"], "problems": [], "check": "ok"},
+        }
+        counts = {
+            "files": 2,
+            "parsed": 2,
+            "empty_text": 0,
+            "rows": 2,
+            "check_failed": 0,
+        }
         pp.write_report(path, per_file, counts, {"1000": 2})
         self.assertEqual(os.stat(path).st_mode & 0o777, 0o600)
         with open(path, encoding="utf-8") as f:
@@ -226,10 +325,34 @@ class MainTest(unittest.TestCase):
         tmp = tempfile.mkdtemp()
         json_path = os.path.join(tmp, "paystubs.json")
         with open(json_path, "w", encoding="utf-8") as f:
-            json.dump([{"employee_id": "aaaa", "year": 2026, "month": 9, "file": "a.pdf", "bytes": 1}], f)
+            json.dump(
+                [
+                    {
+                        "employee_id": "aaaa",
+                        "year": 2026,
+                        "month": 9,
+                        "file": "a.pdf",
+                        "bytes": 1,
+                    }
+                ],
+                f,
+            )
         out, report = os.path.join(tmp, "o.csv"), os.path.join(tmp, "r.txt")
-        argv = ["--paystubs-json", json_path, "--paystubs-dir", tmp, "--out", out, "--report", report] + extra
-        with mock.patch.object(pp, "pdftotext_text", side_effect=lambda _, path: texts[os.path.basename(path)]):
+        argv = [
+            "--paystubs-json",
+            json_path,
+            "--paystubs-dir",
+            tmp,
+            "--out",
+            out,
+            "--report",
+            report,
+        ] + extra
+        with mock.patch.object(
+            pp,
+            "pdftotext_text",
+            side_effect=lambda _, path: texts[os.path.basename(path)],
+        ):
             buffer = io.StringIO()
             with contextlib.redirect_stdout(buffer):
                 code = pp.main(argv)

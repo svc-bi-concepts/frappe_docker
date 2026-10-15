@@ -43,19 +43,24 @@ def money(text):
 
 def name_of(quarter, ziffer):
     """The row's name, as the doctype's autoname builds it (format:MWST-BEXIO-{quarter}-{ziffer})."""
-    return "MWST-BEXIO-{}-{}".format(quarter, ziffer)
+    return f"MWST-BEXIO-{quarter}-{ziffer}"
 
 
 def read_rows(path):
     """[(quarter, ziffer, base, tax)] of the CSV, the totals per row (not its journal part). A row that is
-    not a quarter with a Ziffer number stops the run: a broken CSV must not be loaded piece by piece."""
+    not a quarter with a Ziffer number stops the run: a broken CSV must not be loaded piece by piece.
+    """
     rows = []
     with open(path, encoding="utf-8", newline="") as f:
         for line in csv.DictReader(f):
             quarter, ziffer = line["quarter"].strip(), line["ziffer"].strip()
             if not (QUARTER.match(quarter) and ZIFFER.match(ziffer)):
-                raise ValueError("row {!r}/{!r}: expected 2026Q3 and a Ziffer number".format(quarter, ziffer))
-            rows.append((quarter, ziffer, money(line["entgelt_chf"]), money(line["steuer_chf"])))
+                raise ValueError(
+                    f"row {quarter!r}/{ziffer!r}: expected 2026Q3 and a Ziffer number"
+                )
+            rows.append(
+                (quarter, ziffer, money(line["entgelt_chf"]), money(line["steuer_chf"]))
+            )
     return rows
 
 
@@ -66,7 +71,13 @@ def load(erp, rows, source, dry_run=True):
     known = {row["name"] for row in erp.list(DOCTYPE)}
     for quarter, ziffer, base, tax in rows:
         name = name_of(quarter, ziffer)
-        want = {"quarter": quarter, "ziffer": ziffer, "base": float(base), "tax": float(tax), "source": source}
+        want = {
+            "quarter": quarter,
+            "ziffer": ziffer,
+            "base": float(base),
+            "tax": float(tax),
+            "source": source,
+        }
         try:
             if name in known:
                 have = erp.get(DOCTYPE, name)
@@ -81,27 +92,40 @@ def load(erp, rows, source, dry_run=True):
                     erp.insert(DOCTYPE, dict(want, doctype=DOCTYPE))
                 counts["created"] += 1
         except im.ErpError as err:
-            print("failed: {} (HTTP {})".format(name, err.status))
+            print(f"failed: {name} (HTTP {err.status})")
             counts["failed"] += 1
     return counts
 
 
 def main(argv):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--report", default=os.path.join(im.PRIVATE, "bexio-mwst-ziffern.csv"),
-                        help="the private CSV of mwst_bexio.py (default <private>/bexio-mwst-ziffern.csv)")
-    parser.add_argument("--write", action="store_true", help="write to ERPNext (default: dry run, counts only)")
-    parser.add_argument("--source", default="bexio export 2026-10-10",
-                        help="the Quelle stamped on the rows when they change or are created")
+    parser.add_argument(
+        "--report",
+        default=os.path.join(im.PRIVATE, "bexio-mwst-ziffern.csv"),
+        help="the private CSV of mwst_bexio.py (default <private>/bexio-mwst-ziffern.csv)",
+    )
+    parser.add_argument(
+        "--write",
+        action="store_true",
+        help="write to ERPNext (default: dry run, counts only)",
+    )
+    parser.add_argument(
+        "--source",
+        default="bexio export 2026-10-10",
+        help="the Quelle stamped on the rows when they change or are created",
+    )
     args = parser.parse_args(argv)
 
     rows = read_rows(args.report)
     quarters = sorted({quarter for quarter, _z, _b, _t in rows})
     counts = load(im.Erp.from_file(), rows, args.source, dry_run=not args.write)
-    print("quarters: {}, rows: {}".format(len(quarters), len(rows)))
+    print(f"quarters: {len(quarters)}, rows: {len(rows)}")
     print("dry run, nothing written" if not args.write else "written")
-    print("created: {}, updated: {}, unchanged: {}, failed: {}".format(
-        counts["created"], counts["updated"], counts["unchanged"], counts["failed"]))
+    print(
+        "created: {}, updated: {}, unchanged: {}, failed: {}".format(
+            counts["created"], counts["updated"], counts["unchanged"], counts["failed"]
+        )
+    )
     return 1 if counts["failed"] else 0
 
 

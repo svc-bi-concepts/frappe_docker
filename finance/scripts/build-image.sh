@@ -35,10 +35,16 @@ usage() {
 }
 
 case "${1:-}" in
-  -h|--help) usage; exit 0 ;;
-  live) APPS=finance/apps.json ;;
-  copy) APPS=finance/apps-copy.json ;;
-  *) usage >&2; exit 2 ;;
+-h | --help)
+  usage
+  exit 0
+  ;;
+live) APPS=finance/apps.json ;;
+copy) APPS=finance/apps-copy.json ;;
+*)
+  usage >&2
+  exit 2
+  ;;
 esac
 if [ $# -ne 2 ]; then
   usage >&2
@@ -51,7 +57,10 @@ FRAPPE_TAG=v16.51.0
 # The asset build's V8 heap cap in MB (see the header). A number only: it goes into a flag.
 NODE_HEAP_MB="${NODE_HEAP_MB:-900}"
 case "$NODE_HEAP_MB" in
-  ''|*[!0-9]*) echo "refused: NODE_HEAP_MB must be a number of MB, not '$NODE_HEAP_MB'" >&2; exit 2 ;;
+'' | *[!0-9]*)
+  echo "refused: NODE_HEAP_MB must be a number of MB, not '$NODE_HEAP_MB'" >&2
+  exit 2
+  ;;
 esac
 
 # Compose files live at the repo root, two levels up from this script.
@@ -76,9 +85,9 @@ if mode == "copy" and "hrms" not in names:
 PY
 
 # Refuse to overwrite a tag that exists: a live tag stays what it was built as.
-if docker image inspect "frappe-finance-custom:$TAG" >/dev/null 2>&1 \
-  || docker image inspect "frappe-finance-custom:$TAG-base" >/dev/null 2>&1 \
-  || docker image inspect "frappe-finance-custom:$TAG-finance" >/dev/null 2>&1; then
+if docker image inspect "frappe-finance-custom:$TAG" >/dev/null 2>&1 ||
+  docker image inspect "frappe-finance-custom:$TAG-base" >/dev/null 2>&1 ||
+  docker image inspect "frappe-finance-custom:$TAG-finance" >/dev/null 2>&1; then
   echo "refused: frappe-finance-custom:$TAG (or its -base or -finance) already exists; pick a new tag" >&2
   exit 1
 fi

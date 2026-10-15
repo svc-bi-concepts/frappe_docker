@@ -10,9 +10,12 @@ set -eu
 
 ROTATE=0
 case "${1:-}" in
-  --rotate) ROTATE=1 ;;
-  "") ;;
-  *) echo "usage: $0 [--rotate]" >&2; exit 2 ;;
+--rotate) ROTATE=1 ;;
+"") ;;
+*)
+  echo "usage: $0 [--rotate]" >&2
+  exit 2
+  ;;
 esac
 
 # Compose files live at the repo root, two levels up from this script.
@@ -30,7 +33,8 @@ fi
 # Runs inside the backend container with bench's own Python, so frappe loads
 # the site without an interactive console. Prints one marked JSON line; the
 # keys appear in it only when they were generated.
-CONTAINER_PY=$(cat <<'PY'
+CONTAINER_PY=$(
+  cat <<'PY'
 import json, sys
 import frappe
 from frappe.core.doctype.user.user import generate_keys
@@ -90,7 +94,8 @@ RESULT=$(printf '%s\n' "$CONTAINER_PY" | docker compose -p "$PROJECT" -f pwd.yml
 
 # Host side: write the keys file with mode 600 from a temp file and rename it
 # into place, so a failed run never leaves a half-written file behind.
-HOST_PY=$(cat <<'PY'
+HOST_PY=$(
+  cat <<'PY'
 import json, os, sys
 out, api_url = sys.argv[1], sys.argv[2]
 line = next((l for l in sys.stdin if l.startswith("FINANCE_API_USER ")), None)

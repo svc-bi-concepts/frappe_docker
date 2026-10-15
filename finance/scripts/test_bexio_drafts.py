@@ -17,14 +17,14 @@ class FakeStore:
     """Documents by (doctype, name), each with its bexio_id and docstatus; the calls the loader makes, recorded."""
 
     def __init__(self, docs=None, fail=None):
-        self.docs = {}              # (doctype, name) -> {"bexio_id", "docstatus", ...fields}
+        self.docs = {}  # (doctype, name) -> {"bexio_id", "docstatus", ...fields}
         self.rates = []
-        self.fail = fail or set()   # bexio ids whose insert raises
-        self.submit_fail = set()    # bexio ids whose submit raises
+        self.fail = fail or set()  # bexio ids whose insert raises
+        self.submit_fail = set()  # bexio ids whose submit raises
         self.calls = []
         self.commits = 0
         self.rollbacks = 0
-        self.has_field = True       # whether the doctype has the bexio_id field
+        self.has_field = True  # whether the doctype has the bexio_id field
         for doctype, name, fields in docs or []:
             self.docs[(doctype, name)] = dict(fields)
 
@@ -45,7 +45,7 @@ class FakeStore:
         if values.get("bexio_id") in self.fail:
             raise RuntimeError("the database said no")
         if name is None:  # no name: ERPNext's series names it
-            name = "ACC-PAY-{:04d}".format(sum(1 for dt, _ in self.docs if dt == doctype) + 1)
+            name = f"ACC-PAY-{sum(1 for dt, _ in self.docs if dt == doctype) + 1:04d}"
         self.docs[(doctype, name)] = dict(values, docstatus=0)
         return name
 
@@ -75,9 +75,18 @@ class FakeStore:
         return self.has_field
 
     def journal_entries(self, posting_date, user_remark):
-        return [{"name": name, "docstatus": f["docstatus"], "bexio_id": f.get("bexio_id") or "", "amount": f["amount"]}
-                for (dt, name), f in self.docs.items()
-                if dt == "Journal Entry" and f.get("posting_date") == posting_date and f.get("user_remark") == user_remark]
+        return [
+            {
+                "name": name,
+                "docstatus": f["docstatus"],
+                "bexio_id": f.get("bexio_id") or "",
+                "amount": f["amount"],
+            }
+            for (dt, name), f in self.docs.items()
+            if dt == "Journal Entry"
+            and f.get("posting_date") == posting_date
+            and f.get("user_remark") == user_remark
+        ]
 
     def set_bexio_id(self, doctype, name, bexio_id):
         self.calls.append(("set_bexio_id", doctype, name))
@@ -85,12 +94,32 @@ class FakeStore:
 
 
 def invoice(bexio_id="500", name="RE-1001", **changes):
-    values = {"customer": "Beispiel AG", "posting_date": "2024-03-01", "currency": "CHF", "conversion_rate": 1.0,
-              "bexio_id": bexio_id, "remarks": "bexio Nr. RE-1001", "set_posting_time": 1,
-              "items": [{"item_code": "BEISPIEL-DIENST", "qty": 2.0, "rate": 50.0, "amount": 100.0}],
-              "taxes": [{"account_head": "2200 - USt - bic", "tax_amount": 8.1, "description": "USt 8.1%"}]}
+    values = {
+        "customer": "Beispiel AG",
+        "posting_date": "2024-03-01",
+        "currency": "CHF",
+        "conversion_rate": 1.0,
+        "bexio_id": bexio_id,
+        "remarks": "bexio Nr. RE-1001",
+        "set_posting_time": 1,
+        "items": [
+            {"item_code": "BEISPIEL-DIENST", "qty": 2.0, "rate": 50.0, "amount": 100.0}
+        ],
+        "taxes": [
+            {
+                "account_head": "2200 - USt - bic",
+                "tax_amount": 8.1,
+                "description": "USt 8.1%",
+            }
+        ],
+    }
     values.update(changes)
-    return {"doctype": "Sales Invoice", "name": name, "bexio_id": bexio_id, "values": values}
+    return {
+        "doctype": "Sales Invoice",
+        "name": name,
+        "bexio_id": bexio_id,
+        "values": values,
+    }
 
 
 def plan(*documents, rates=()):
@@ -106,18 +135,44 @@ class Naming(unittest.TestCase):
         self.assertEqual(failures, [])
 
     def test_a_name_another_document_holds_is_a_conflict_and_left_alone(self):
-        store = FakeStore([("Sales Invoice", "RE-1001", {"bexio_id": "999", "docstatus": 0, "customer": "Anderer"})])
+        store = FakeStore(
+            [
+                (
+                    "Sales Invoice",
+                    "RE-1001",
+                    {"bexio_id": "999", "docstatus": 0, "customer": "Anderer"},
+                )
+            ]
+        )
         counts, _ = loader.apply_plan(plan(invoice()), store)
         self.assertEqual(counts[("Sales Invoice", "conflict")], 1)
-        self.assertEqual(store.docs[("Sales Invoice", "RE-1001")]["customer"], "Anderer")
+        self.assertEqual(
+            store.docs[("Sales Invoice", "RE-1001")]["customer"], "Anderer"
+        )
         self.assertEqual(store.calls, [])
 
     def test_bexio_attachment_ids_are_dropped_before_the_insert(self):
         store = FakeStore()
-        loader.apply_plan({"documents": [{"doctype": "Purchase Invoice", "name": "R-1", "bexio_id": "b-1",
-                                          "values": {"supplier": "Lieferant", "bexio_attachment_ids": "a-1"}}],
-                           "exchange_rates": []}, store)
-        self.assertNotIn("bexio_attachment_ids", store.docs[("Purchase Invoice", "R-1")])
+        loader.apply_plan(
+            {
+                "documents": [
+                    {
+                        "doctype": "Purchase Invoice",
+                        "name": "R-1",
+                        "bexio_id": "b-1",
+                        "values": {
+                            "supplier": "Lieferant",
+                            "bexio_attachment_ids": "a-1",
+                        },
+                    }
+                ],
+                "exchange_rates": [],
+            },
+            store,
+        )
+        self.assertNotIn(
+            "bexio_attachment_ids", store.docs[("Purchase Invoice", "R-1")]
+        )
 
 
 class Upsert(unittest.TestCase):
@@ -131,18 +186,46 @@ class Upsert(unittest.TestCase):
     def test_a_changed_draft_is_updated_in_place_and_never_duplicated(self):
         store = FakeStore()
         loader.apply_plan(plan(invoice()), store)
-        counts, _ = loader.apply_plan(plan(invoice(items=[{"item_code": "BEISPIEL-DIENST", "qty": 3.0, "rate": 50.0,
-                                                           "amount": 150.0}])), store)
+        counts, _ = loader.apply_plan(
+            plan(
+                invoice(
+                    items=[
+                        {
+                            "item_code": "BEISPIEL-DIENST",
+                            "qty": 3.0,
+                            "rate": 50.0,
+                            "amount": 150.0,
+                        }
+                    ]
+                )
+            ),
+            store,
+        )
         self.assertEqual(counts[("Sales Invoice", "updated")], 1)
         self.assertEqual(store.calls[-1], ("update", "Sales Invoice", "RE-1001"))
-        self.assertEqual([d for (dt, _), d in store.docs.items() if dt == "Sales Invoice"][0]["items"][0]["qty"], 3.0)
+        self.assertEqual(
+            [d for (dt, _), d in store.docs.items() if dt == "Sales Invoice"][0][
+                "items"
+            ][0]["qty"],
+            3.0,
+        )
         self.assertEqual(len(store.docs), 1)
 
     def test_a_submitted_document_is_skipped_and_counted(self):
-        store = FakeStore([("Sales Invoice", "RE-1001", {"bexio_id": "500", "docstatus": 1, "customer": "Beispiel AG"})])
+        store = FakeStore(
+            [
+                (
+                    "Sales Invoice",
+                    "RE-1001",
+                    {"bexio_id": "500", "docstatus": 1, "customer": "Beispiel AG"},
+                )
+            ]
+        )
         counts, _ = loader.apply_plan(plan(invoice(customer="Neu")), store)
         self.assertEqual(counts[("Sales Invoice", "skipped")], 1)
-        self.assertEqual(store.docs[("Sales Invoice", "RE-1001")]["customer"], "Beispiel AG")
+        self.assertEqual(
+            store.docs[("Sales Invoice", "RE-1001")]["customer"], "Beispiel AG"
+        )
         self.assertEqual(store.calls, [])
 
     def test_a_number_difference_within_float_noise_is_no_change(self):
@@ -155,20 +238,36 @@ class Upsert(unittest.TestCase):
 class Failures(unittest.TestCase):
     def test_one_failing_document_is_rolled_back_and_the_rest_still_load(self):
         store = FakeStore(fail={"501"})
-        counts, failures = loader.apply_plan(plan(invoice("500", "RE-1001"), invoice("501", "RE-1002"),
-                                                  invoice("502", "RE-1003")), store)
+        counts, failures = loader.apply_plan(
+            plan(
+                invoice("500", "RE-1001"),
+                invoice("501", "RE-1002"),
+                invoice("502", "RE-1003"),
+            ),
+            store,
+        )
         self.assertEqual(counts[("Sales Invoice", "created")], 2)
         self.assertEqual(counts[("Sales Invoice", "failed")], 1)
         self.assertEqual(store.rollbacks, 1)
-        self.assertEqual([(dt, bid) for dt, bid, _ in failures], [("Sales Invoice", "501")])
+        self.assertEqual(
+            [(dt, bid) for dt, bid, _ in failures], [("Sales Invoice", "501")]
+        )
         self.assertEqual(store.commits, 2)
 
 
 class Submit(unittest.TestCase):
     def test_each_new_draft_is_submitted_after_it_is_loaded(self):
         store = FakeStore()
-        counts, failures = loader.apply_plan(plan(invoice("500", "RE-1001")), store, submit=True)
-        self.assertEqual(store.calls, [("insert", "Sales Invoice", "RE-1001"), ("submit", "Sales Invoice", "RE-1001")])
+        counts, failures = loader.apply_plan(
+            plan(invoice("500", "RE-1001")), store, submit=True
+        )
+        self.assertEqual(
+            store.calls,
+            [
+                ("insert", "Sales Invoice", "RE-1001"),
+                ("submit", "Sales Invoice", "RE-1001"),
+            ],
+        )
         self.assertEqual(store.docs[("Sales Invoice", "RE-1001")]["docstatus"], 1)
         self.assertEqual(counts[("Sales Invoice", "created")], 1)
         self.assertEqual(counts[("Sales Invoice", "submitted")], 1)
@@ -202,8 +301,14 @@ class Submit(unittest.TestCase):
 
     def test_a_document_the_plan_keeps_stays_a_draft_and_is_counted(self):
         store = FakeStore()
-        counts, _ = loader.apply_plan(dict(plan(invoice("500", "RE-1001"), invoice("501", "RE-1002")),
-                                           keep_draft=["501"]), store, submit=True)
+        counts, _ = loader.apply_plan(
+            dict(
+                plan(invoice("500", "RE-1001"), invoice("501", "RE-1002")),
+                keep_draft=["501"],
+            ),
+            store,
+            submit=True,
+        )
         self.assertEqual(store.docs[("Sales Invoice", "RE-1002")]["docstatus"], 0)
         self.assertEqual(store.docs[("Sales Invoice", "RE-1001")]["docstatus"], 1)
         self.assertEqual(counts[("Sales Invoice", "kept draft")], 1)
@@ -213,7 +318,9 @@ class Submit(unittest.TestCase):
         store = FakeStore()
         order = dict(invoice("500", "AB-1001"), doctype="Sales Order")
         offer = dict(invoice("500", "AN-1001"), doctype="Quotation")
-        counts, _ = loader.apply_plan(plan(invoice("500", "RE-1001"), order, offer), store, submit=True)
+        counts, _ = loader.apply_plan(
+            plan(invoice("500", "RE-1001"), order, offer), store, submit=True
+        )
         self.assertEqual(store.docs[("Sales Invoice", "RE-1001")]["docstatus"], 1)
         self.assertEqual(store.docs[("Sales Order", "AB-1001")]["docstatus"], 0)
         self.assertEqual(store.docs[("Quotation", "AN-1001")]["docstatus"], 0)
@@ -223,22 +330,33 @@ class Submit(unittest.TestCase):
     def test_a_delivery_note_stays_a_draft_in_submit_mode(self):
         store = FakeStore()
         delivery = dict(invoice("500", "LI-1001"), doctype="Delivery Note")
-        counts, _ = loader.apply_plan(plan(invoice("500", "RE-1001"), delivery), store, submit=True)
+        counts, _ = loader.apply_plan(
+            plan(invoice("500", "RE-1001"), delivery), store, submit=True
+        )
         self.assertEqual(store.docs[("Sales Invoice", "RE-1001")]["docstatus"], 1)
         self.assertEqual(store.docs[("Delivery Note", "LI-1001")]["docstatus"], 0)
         self.assertEqual(counts[("Delivery Note", "kept draft")], 1)
-        self.assertNotIn(("submit", "LI-1001"), [(call, name) for call, _, name in store.calls])
+        self.assertNotIn(
+            ("submit", "LI-1001"), [(call, name) for call, _, name in store.calls]
+        )
 
     def test_a_draft_that_fails_on_submit_is_rolled_back_and_listed(self):
         store = FakeStore()
         store.submit_fail = {"500"}
-        counts, failures = loader.apply_plan(plan(invoice("500", "RE-1001"), invoice("501", "RE-1002")),
-                                             store, submit=True)
+        counts, failures = loader.apply_plan(
+            plan(invoice("500", "RE-1001"), invoice("501", "RE-1002")),
+            store,
+            submit=True,
+        )
         self.assertEqual(counts[("Sales Invoice", "failed")], 1)
         self.assertEqual(counts[("Sales Invoice", "submitted")], 1)
-        self.assertEqual(counts[("Sales Invoice", "created")], 1)  # the rolled-back one is not also "created"
+        self.assertEqual(
+            counts[("Sales Invoice", "created")], 1
+        )  # the rolled-back one is not also "created"
         self.assertEqual(store.rollbacks, 1)
-        self.assertEqual([(dt, bid) for dt, bid, _ in failures], [("Sales Invoice", "500")])
+        self.assertEqual(
+            [(dt, bid) for dt, bid, _ in failures], [("Sales Invoice", "500")]
+        )
         self.assertEqual(store.docs[("Sales Invoice", "RE-1002")]["docstatus"], 1)
 
     def test_without_submit_nothing_is_submitted(self):
@@ -251,8 +369,16 @@ class SeriesNames(unittest.TestCase):
     """A Payment Entry has no name of bexio's: ERPNext's series names it, and the upsert is by bexio_id alone."""
 
     def payment(self, bexio_id="811"):
-        return {"doctype": "Payment Entry", "name": None, "bexio_id": bexio_id,
-                "values": {"payment_type": "Receive", "bexio_id": bexio_id, "posting_date": "2026-01-20"}}
+        return {
+            "doctype": "Payment Entry",
+            "name": None,
+            "bexio_id": bexio_id,
+            "values": {
+                "payment_type": "Receive",
+                "bexio_id": bexio_id,
+                "posting_date": "2026-01-20",
+            },
+        }
 
     def test_a_payment_is_inserted_under_the_series_and_a_rerun_changes_nothing(self):
         store = FakeStore()
@@ -267,7 +393,13 @@ class SeriesNames(unittest.TestCase):
     def test_a_payment_is_submitted_under_the_name_the_series_gave_it(self):
         store = FakeStore()
         counts, _ = loader.apply_plan(plan(self.payment()), store, submit=True)
-        self.assertEqual(store.calls, [("insert", "Payment Entry", None), ("submit", "Payment Entry", "ACC-PAY-0001")])
+        self.assertEqual(
+            store.calls,
+            [
+                ("insert", "Payment Entry", None),
+                ("submit", "Payment Entry", "ACC-PAY-0001"),
+            ],
+        )
         self.assertEqual(counts[("Payment Entry", "submitted")], 1)
         counts, _ = loader.apply_plan(plan(self.payment()), store, submit=True)
         self.assertEqual(counts[("Payment Entry", "skipped")], 1)
@@ -280,13 +412,29 @@ class Relink(unittest.TestCase):
     REMARK = "VAT on payment: bexio receipt 18 on RE-1001"
 
     def journal(self, item_id="5", amount=19.5):
-        values = {"posting_date": "2024-03-01", "user_remark": self.REMARK, "bexio_id": item_id,
-                  "accounts": [{"account": "2202", "debit_in_account_currency": amount},
-                               {"account": "2200", "credit_in_account_currency": amount}]}
-        return {"doctype": "Journal Entry", "name": None, "bexio_id": item_id, "values": values}
+        values = {
+            "posting_date": "2024-03-01",
+            "user_remark": self.REMARK,
+            "bexio_id": item_id,
+            "accounts": [
+                {"account": "2202", "debit_in_account_currency": amount},
+                {"account": "2200", "credit_in_account_currency": amount},
+            ],
+        }
+        return {
+            "doctype": "Journal Entry",
+            "name": None,
+            "bexio_id": item_id,
+            "values": values,
+        }
 
     def entry(self, name="ACC-JV-1", amount=19.5, docstatus=1, bexio_id=None):
-        fields = {"posting_date": "2024-03-01", "user_remark": self.REMARK, "amount": amount, "docstatus": docstatus}
+        fields = {
+            "posting_date": "2024-03-01",
+            "user_remark": self.REMARK,
+            "amount": amount,
+            "docstatus": docstatus,
+        }
         if bexio_id is not None:
             fields["bexio_id"] = bexio_id
         return ("Journal Entry", name, fields)
@@ -304,20 +452,28 @@ class Relink(unittest.TestCase):
         loader.relink(plan(self.journal()), store)
         store.calls = []
         counts, problems = loader.relink(plan(self.journal()), store)
-        self.assertEqual((counts["already linked"], counts.get("linked", 0), problems), (1, 0, []))
+        self.assertEqual(
+            (counts["already linked"], counts.get("linked", 0), problems), (1, 0, [])
+        )
         self.assertEqual(store.calls, [])
 
-    def test_a_single_item_without_exactly_one_match_stops_the_run_with_nothing_written(self):
+    def test_a_single_item_without_exactly_one_match_stops_the_run_with_nothing_written(
+        self,
+    ):
         store = FakeStore([self.entry("ACC-JV-1"), self.entry("ACC-JV-2", amount=7.0)])
         matched, other = self.journal("5"), self.journal("6", amount=99.0)
         counts, problems = loader.relink(plan(matched, other), store)
-        self.assertEqual(problems, [("Journal Entry", "6", "0 matches, need exactly one")])
+        self.assertEqual(
+            problems, [("Journal Entry", "6", "0 matches, need exactly one")]
+        )
         self.assertEqual(store.calls, [])
 
     def test_two_matching_entries_are_ambiguous_and_nothing_is_linked(self):
         store = FakeStore([self.entry("ACC-JV-1"), self.entry("ACC-JV-2")])
         counts, problems = loader.relink(plan(self.journal()), store)
-        self.assertEqual(problems, [("Journal Entry", "5", "2 matches, need exactly one")])
+        self.assertEqual(
+            problems, [("Journal Entry", "5", "2 matches, need exactly one")]
+        )
         self.assertEqual(store.calls, [])
 
     def test_a_draft_entry_is_not_a_match(self):
@@ -343,7 +499,9 @@ class Relink(unittest.TestCase):
         self.assertEqual((counts["to link"], problems), (1, []))
         self.assertEqual(store.calls, [])
 
-    def test_a_doctype_without_the_bexio_id_field_is_a_problem_and_nothing_is_written(self):
+    def test_a_doctype_without_the_bexio_id_field_is_a_problem_and_nothing_is_written(
+        self,
+    ):
         store = FakeStore([self.entry()])
         store.has_field = False
         counts, problems = loader.relink(plan(self.journal()), store)
@@ -364,14 +522,22 @@ class Rates(unittest.TestCase):
 
 class Differs(unittest.TestCase):
     def test_numbers_text_and_empty_compare_as_the_database_writes_them(self):
-        self.assertFalse(loader.differs({"a": 1, "b": "x", "c": None}, {"a": 1.0, "b": "x", "c": ""}))
+        self.assertFalse(
+            loader.differs({"a": 1, "b": "x", "c": None}, {"a": 1.0, "b": "x", "c": ""})
+        )
         self.assertTrue(loader.differs({"a": 1}, {"a": 2}))
 
     def test_erpnext_line_breaks_and_line_endings_are_the_same_text(self):
-        self.assertFalse(loader.differs({"terms": "Hallo<br />Welt\r\nDank"}, {"terms": "Hallo<br>Welt\nDank"}))
+        self.assertFalse(
+            loader.differs(
+                {"terms": "Hallo<br />Welt\r\nDank"}, {"terms": "Hallo<br>Welt\nDank"}
+            )
+        )
 
     def test_an_entity_for_a_letter_is_the_same_letter(self):
-        self.assertFalse(loader.differs({"terms": "Grüsse &uuml;"}, {"terms": "Gr&uuml;sse ü"}))
+        self.assertFalse(
+            loader.differs({"terms": "Grüsse &uuml;"}, {"terms": "Gr&uuml;sse ü"})
+        )
 
     def test_a_table_compares_row_by_row_in_order(self):
         have = {"items": [{"qty": 1.0, "name": "row-1"}]}
@@ -384,7 +550,7 @@ class ReconcileStore(FakeStore):
 
     def __init__(self, docs=None, status="Reconciled"):
         super().__init__(docs)
-        self.allocations = {}   # name -> {(doctype, name)}
+        self.allocations = {}  # name -> {(doctype, name)}
         self.status = status
 
     def allocated(self, name):
@@ -392,7 +558,9 @@ class ReconcileStore(FakeStore):
 
     def reconcile(self, name, vouchers):
         self.calls.append(("reconcile", "Bank Transaction", name))
-        self.allocations.setdefault(name, set()).update((v["doctype"], v["name"]) for v in vouchers)
+        self.allocations.setdefault(name, set()).update(
+            (v["doctype"], v["name"]) for v in vouchers
+        )
         return self.status
 
 
@@ -405,17 +573,27 @@ def reconcile_plan(*items):
 
 
 def item(bexio_id="9001", *vouchers):
-    return {"bexio_id": bexio_id, "vouchers": [{"doctype": dt, "name": n} for dt, n in vouchers]}
+    return {
+        "bexio_id": bexio_id,
+        "vouchers": [{"doctype": dt, "name": n} for dt, n in vouchers],
+    }
 
 
 class Reconcile(unittest.TestCase):
     def test_a_submitted_transaction_is_allocated_to_its_vouchers_and_reconciled(self):
         store = ReconcileStore(docs=[bank_transaction()])
         counts, failures = loader.apply_reconcile(
-            reconcile_plan(item("9001", ("Payment Entry", "PE-1"), ("Payment Entry", "PE-2"))), store)
+            reconcile_plan(
+                item("9001", ("Payment Entry", "PE-1"), ("Payment Entry", "PE-2"))
+            ),
+            store,
+        )
         self.assertEqual(counts["reconciled"], 1)
         self.assertEqual(failures, [])
-        self.assertEqual(store.allocations["BTN-1"], {("Payment Entry", "PE-1"), ("Payment Entry", "PE-2")})
+        self.assertEqual(
+            store.allocations["BTN-1"],
+            {("Payment Entry", "PE-1"), ("Payment Entry", "PE-2")},
+        )
 
     def test_a_second_run_reconciles_nothing(self):
         store = ReconcileStore(docs=[bank_transaction()])
@@ -428,21 +606,40 @@ class Reconcile(unittest.TestCase):
         self.assertEqual(store.calls, [])
         self.assertEqual(failures, [])
 
-    def test_a_transaction_that_is_not_submitted_is_listed_and_nothing_is_allocated(self):
+    def test_a_transaction_that_is_not_submitted_is_listed_and_nothing_is_allocated(
+        self,
+    ):
         store = ReconcileStore(docs=[bank_transaction(docstatus=0)])
-        counts, failures = loader.apply_reconcile(reconcile_plan(item("9001", ("Journal Entry", "JE-7"))), store)
+        counts, failures = loader.apply_reconcile(
+            reconcile_plan(item("9001", ("Journal Entry", "JE-7"))), store
+        )
         self.assertEqual(counts["failed"], 1)
-        self.assertEqual(failures, [("Bank Transaction", "9001", "ValueError: the Bank Transaction is not submitted")])
+        self.assertEqual(
+            failures,
+            [
+                (
+                    "Bank Transaction",
+                    "9001",
+                    "ValueError: the Bank Transaction is not submitted",
+                )
+            ],
+        )
         self.assertEqual(store.allocations, {})
 
     def test_a_missing_transaction_is_listed(self):
-        counts, failures = loader.apply_reconcile(reconcile_plan(item("9999", ("Journal Entry", "JE-7"))), ReconcileStore())
+        counts, failures = loader.apply_reconcile(
+            reconcile_plan(item("9999", ("Journal Entry", "JE-7"))), ReconcileStore()
+        )
         self.assertEqual(counts["failed"], 1)
         self.assertEqual(failures[0][:2], ("Bank Transaction", "9999"))
 
-    def test_an_allocation_that_does_not_reach_reconciled_is_rolled_back_and_listed(self):
+    def test_an_allocation_that_does_not_reach_reconciled_is_rolled_back_and_listed(
+        self,
+    ):
         store = ReconcileStore(docs=[bank_transaction()], status="Unreconciled")
-        counts, failures = loader.apply_reconcile(reconcile_plan(item("9001", ("Payment Entry", "PE-1"))), store)
+        counts, failures = loader.apply_reconcile(
+            reconcile_plan(item("9001", ("Payment Entry", "PE-1"))), store
+        )
         self.assertEqual(counts["failed"], 1)
         self.assertIn("status is Unreconciled after the allocation", failures[0][2])
         self.assertEqual(store.rollbacks, 1)
@@ -450,7 +647,9 @@ class Reconcile(unittest.TestCase):
     def test_a_transaction_allocated_to_other_vouchers_is_listed_not_changed(self):
         store = ReconcileStore(docs=[bank_transaction()])
         store.allocations["BTN-1"] = {("Payment Entry", "PE-9")}
-        counts, failures = loader.apply_reconcile(reconcile_plan(item("9001", ("Payment Entry", "PE-1"))), store)
+        counts, failures = loader.apply_reconcile(
+            reconcile_plan(item("9001", ("Payment Entry", "PE-1"))), store
+        )
         self.assertEqual(counts["failed"], 1)
         self.assertEqual(store.allocations["BTN-1"], {("Payment Entry", "PE-9")})
         self.assertEqual(store.calls, [])

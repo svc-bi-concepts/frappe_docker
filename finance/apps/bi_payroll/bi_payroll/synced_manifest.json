@@ -1,26 +1,26 @@
 {
- "bi_payroll/doctype/payroll_swiss_settings/payroll_swiss_settings.json": {
-  "modified": "2026-10-12 12:00:00.000000",
-  "sha": "e8072904f108d3497c8bb1165f5d7e695c027a2043e38ce087c114be752eccc8"
- },
- "bi_payroll/doctype/qst_tariff/qst_tariff.json": {
-  "modified": "2026-10-12 12:30:00.000000",
-  "sha": "c0ee1b717d1d511b15e17dd5a4a463815affcf4dc1074eb0f0d6d7d5261f7135"
- },
- "bi_payroll/doctype/qst_tariff_code/qst_tariff_code.json": {
-  "modified": "2026-10-12 12:00:00.000000",
-  "sha": "d385e349a376da754300a62811a903a515821ee731da356e84f37a25e5e989ba"
- },
- "bi_payroll/report/payroll_hand_over/payroll_hand_over.json": {
-  "modified": "2026-10-11 13:00:00.000000",
-  "sha": "11e71297d432a375cea5fe8a04b7e86dbe4e3e8aad80559faabf75f443170ec9"
- },
- "bi_payroll/sidebar/swiss_payroll/swiss_payroll.json": {
-  "modified": "2026-10-12 03:00:00.000000",
-  "sha": "a9d1d3015b1536b39711335aaec38f4eb0ea488abbc9b34d18ff5ed76b6a6d8a"
- },
- "dock/bi_payroll/bi_payroll.json": {
-  "modified": "2026-10-12 02:00:00.000000",
-  "sha": "2ec6742f1ca60bc8fb02c53508c9fab51d8adcab4c9b91d7432a9e03d70916f6"
- }
+  "bi_payroll/doctype/payroll_swiss_settings/payroll_swiss_settings.json": {
+    "modified": "2026-10-12 12:00:00.000000",
+    "sha": "e8072904f108d3497c8bb1165f5d7e695c027a2043e38ce087c114be752eccc8"
+  },
+  "bi_payroll/doctype/qst_tariff/qst_tariff.json": {
+    "modified": "2026-10-12 12:30:00.000000",
+    "sha": "c0ee1b717d1d511b15e17dd5a4a463815affcf4dc1074eb0f0d6d7d5261f7135"
+  },
+  "bi_payroll/doctype/qst_tariff_code/qst_tariff_code.json": {
+    "modified": "2026-10-12 12:00:00.000000",
+    "sha": "d385e349a376da754300a62811a903a515821ee731da356e84f37a25e5e989ba"
+  },
+  "bi_payroll/report/payroll_hand_over/payroll_hand_over.json": {
+    "modified": "2026-10-11 13:00:00.000000",
+    "sha": "11e71297d432a375cea5fe8a04b7e86dbe4e3e8aad80559faabf75f443170ec9"
+  },
+  "bi_payroll/sidebar/swiss_payroll/swiss_payroll.json": {
+    "modified": "2026-10-12 03:00:00.000000",
+    "sha": "a9d1d3015b1536b39711335aaec38f4eb0ea488abbc9b34d18ff5ed76b6a6d8a"
+  },
+  "dock/bi_payroll/bi_payroll.json": {
+    "modified": "2026-10-12 02:00:00.000000",
+    "sha": "2ec6742f1ca60bc8fb02c53508c9fab51d8adcab4c9b91d7432a9e03d70916f6"
+  }
 }

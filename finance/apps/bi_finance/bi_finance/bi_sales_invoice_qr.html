@@ -8,121 +8,210 @@
 -->
 <style>
   /* wkhtmltopdf takes its margins from the .print-format rule, not from the format's margin fields */
-  .print-format { margin-top: 15mm; margin-bottom: 1mm; margin-left: 0mm; margin-right: 0mm; }
+  .print-format {
+    margin-top: 15mm;
+    margin-bottom: 1mm;
+    margin-left: 0mm;
+    margin-right: 0mm;
+  }
   /* The printview page also applies .print-format as CSS, on its wrapper: the 1 mm after the slip then
      overflows the page on some body heights and adds a blank last page. Frappe reads only the rule above
      as a page option, so this one changes the wrapper alone. The page's 1 mm stays (BOTTOM_MM in qrbill.py). */
-  .print-format-gutter .print-format { margin-bottom: 0; }
+  .print-format-gutter .print-format {
+    margin-bottom: 0;
+  }
 </style>
-{% set cname = frappe.get_doc("Company", doc.company).company_name %}
-{% set caddr = frappe.get_doc("Address", doc.company_address) if doc.company_address else none %}
-{% set daddr = frappe.get_doc("Address", doc.customer_address) if doc.customer_address else none %}
-{% set iban = sales_invoice_iban(doc) %}
-{% set reference = sales_invoice_reference(doc) %}
-{# the slip's labels in the invoice's language (SIX: one language per slip), German when it is none of the four #}
-{% set L = slip_labels(doc) %}
-{# SIX: currency and amount in two parts, thousands separated by a space, no currency symbol #}
-{% set amount = "{:,.2f}".format(doc.rounded_total or doc.grand_total).replace(",", " ") %}
+{% set cname = frappe.get_doc("Company", doc.company).company_name %} {% set
+caddr = frappe.get_doc("Address", doc.company_address) if doc.company_address
+else none %} {% set daddr = frappe.get_doc("Address", doc.customer_address) if
+doc.customer_address else none %} {% set iban = sales_invoice_iban(doc) %} {%
+set reference = sales_invoice_reference(doc) %} {# the slip's labels in the
+invoice's language (SIX: one language per slip), German when it is none of the
+four #} {% set L = slip_labels(doc) %} {# SIX: currency and amount in two parts,
+thousands separated by a space, no currency symbol #} {% set amount =
+"{:,.2f}".format(doc.rounded_total or doc.grand_total).replace(",", " ") %}
 
 <style>
-  .bi-inv { font-size: 10pt; }
-  .bi-inv table { width: 100%; border-collapse: collapse; }
-  .bi-inv th, .bi-inv td { padding: 3px 4px; vertical-align: top; }
-  .bi-inv thead th { border-bottom: 1px solid #000; text-align: left; }
-  .bi-inv .num { text-align: right; white-space: nowrap; }
-  .bi-inv .total td { border-top: 1px solid #000; font-weight: bold; }
+  .bi-inv {
+    font-size: 10pt;
+  }
+  .bi-inv table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .bi-inv th,
+  .bi-inv td {
+    padding: 3px 4px;
+    vertical-align: top;
+  }
+  .bi-inv thead th {
+    border-bottom: 1px solid #000;
+    text-align: left;
+  }
+  .bi-inv .num {
+    text-align: right;
+    white-space: nowrap;
+  }
+  .bi-inv .total td {
+    border-top: 1px solid #000;
+    font-weight: bold;
+  }
 
   /* Page content is 281 mm (A4 minus the 15 mm top margin and the 1 mm bottom margin set by
      swiss-setup.py qrbill). The gap before the slip, which puts the slip at the foot of the last
      page, is measured by a first render (qrbill.py sales_invoice_slip_spacer). */
-  .bi-body { padding: 0 15mm; }
-  .bi-marker { font-size: 1pt; line-height: 1pt; }
+  .bi-body {
+    padding: 0 15mm;
+  }
+  .bi-marker {
+    font-size: 1pt;
+    line-height: 1pt;
+  }
   /* the slip spans the full width: the page has no side margins (wkhtmltopdf clips at them), the body is padded 15 mm */
-  #bi-qr { position: relative; height: 105mm; width: 210mm; font-size: 8pt; page-break-inside: avoid; }
-  #bi-qr .perf { position: absolute; top: 0; left: 0; width: 210mm; border-top: 1px dashed #000; }
-  #bi-qr .receipt { position: absolute; top: 5mm; left: 5mm; width: 52mm; height: 95mm; }
-  #bi-qr .payment { position: absolute; top: 5mm; left: 67mm; width: 138mm; height: 95mm; }
-  #bi-qr .vline { position: absolute; top: 0; left: 62mm; height: 100mm; border-left: 1px dashed #000; }
-  #bi-qr h2 { font-size: 11pt; margin: 0 0 4mm 0; }
-  #bi-qr .bi-label { font-size: 6pt; font-weight: bold; margin-top: 3mm; }
-  #bi-qr .qr { position: absolute; top: 12mm; left: 0; width: 46mm; height: 46mm; }
-  #bi-qr .qr img { width: 46mm; height: 46mm; }
-  #bi-qr .amount { font-size: 10pt; }
+  #bi-qr {
+    position: relative;
+    height: 105mm;
+    width: 210mm;
+    font-size: 8pt;
+    page-break-inside: avoid;
+  }
+  #bi-qr .perf {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 210mm;
+    border-top: 1px dashed #000;
+  }
+  #bi-qr .receipt {
+    position: absolute;
+    top: 5mm;
+    left: 5mm;
+    width: 52mm;
+    height: 95mm;
+  }
+  #bi-qr .payment {
+    position: absolute;
+    top: 5mm;
+    left: 67mm;
+    width: 138mm;
+    height: 95mm;
+  }
+  #bi-qr .vline {
+    position: absolute;
+    top: 0;
+    left: 62mm;
+    height: 100mm;
+    border-left: 1px dashed #000;
+  }
+  #bi-qr h2 {
+    font-size: 11pt;
+    margin: 0 0 4mm 0;
+  }
+  #bi-qr .bi-label {
+    font-size: 6pt;
+    font-weight: bold;
+    margin-top: 3mm;
+  }
+  #bi-qr .qr {
+    position: absolute;
+    top: 12mm;
+    left: 0;
+    width: 46mm;
+    height: 46mm;
+  }
+  #bi-qr .qr img {
+    width: 46mm;
+    height: 46mm;
+  }
+  #bi-qr .amount {
+    font-size: 10pt;
+  }
 </style>
 
 <div class="bi-body">
-<div class="bi-inv">
-  <table>
-    <tr>
-      <td style="width: 60%;">
-        <strong>{{ doc.company }}</strong><br>
-        {{ doc.company_address_display or "" }}
-      </td>
-      <td style="width: 40%;">
-        <strong>Rechnung {{ doc.name }}</strong><br>
-        Datum: {{ doc.get_formatted("posting_date") }}<br>
-        Fällig: {{ doc.get_formatted("due_date") }}<br>
-        Kunden-Nr.: {{ doc.customer }}
-      </td>
-    </tr>
-    <tr>
-      <td colspan="2" style="padding-top: 8mm; padding-bottom: 6mm;">
-        {{ doc.address_display or doc.customer_name or "" }}
-      </td>
-    </tr>
-  </table>
+  <div class="bi-inv">
+    <table>
+      <tr>
+        <td style="width: 60%">
+          <strong>{{ doc.company }}</strong><br />
+          {{ doc.company_address_display or "" }}
+        </td>
+        <td style="width: 40%">
+          <strong>Rechnung {{ doc.name }}</strong><br />
+          Datum: {{ doc.get_formatted("posting_date") }}<br />
+          Fällig: {{ doc.get_formatted("due_date") }}<br />
+          Kunden-Nr.: {{ doc.customer }}
+        </td>
+      </tr>
+      <tr>
+        <td colspan="2" style="padding-top: 8mm; padding-bottom: 6mm">
+          {{ doc.address_display or doc.customer_name or "" }}
+        </td>
+      </tr>
+    </table>
 
-  <table>
-    <thead>
-      <tr>
-        <th>Pos.</th>
-        <th>Bezeichnung</th>
-        <th class="num">Menge</th>
-        <th class="num">Preis</th>
-        <th class="num">Betrag</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for item in doc.items %}
-      <tr>
-        <td>{{ item.idx }}</td>
-        <td>{{ item.item_name or item.item_code }}{% if item.description and item.description != item.item_name %}<br><span style="color:#555;">{{ item.description }}</span>{% endif %}</td>
-        <td class="num">{{ item.get_formatted("qty") }} {{ item.uom or "" }}</td>
-        <td class="num">{{ item.get_formatted("rate") }}</td>
-        <td class="num">{{ item.get_formatted("amount") }}</td>
-      </tr>
-      {% endfor %}
-      <tr>
-        <td colspan="4" class="num">Netto</td>
-        <td class="num">{{ doc.get_formatted("net_total") }}</td>
-      </tr>
-      {% for tax in doc.taxes %}
-      <tr>
-        <td colspan="4" class="num">{{ tax.description }} {{ tax.rate }} %</td>
-        <td class="num">{{ tax.get_formatted("tax_amount") }}</td>
-      </tr>
-      {% endfor %}
-      {% if doc.rounding_adjustment %}
-      <tr>
-        <td colspan="4" class="num">Rundung</td>
-        <td class="num">{{ doc.get_formatted("rounding_adjustment") }}</td>
-      </tr>
-      {% endif %}
-      <tr class="total">
-        <td colspan="4" class="num">Total {{ doc.currency }}</td>
-        <td class="num">{{ doc.get_formatted("rounded_total") if doc.rounded_total else doc.get_formatted("grand_total") }}</td>
-      </tr>
-    </tbody>
-  </table>
+    <table>
+      <thead>
+        <tr>
+          <th>Pos.</th>
+          <th>Bezeichnung</th>
+          <th class="num">Menge</th>
+          <th class="num">Preis</th>
+          <th class="num">Betrag</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in doc.items %}
+        <tr>
+          <td>{{ item.idx }}</td>
+          <td>
+            {{ item.item_name or item.item_code }}{% if item.description and
+            item.description != item.item_name %}<br /><span style="color: #555"
+              >{{ item.description }}</span
+            >{% endif %}
+          </td>
+          <td class="num">
+            {{ item.get_formatted("qty") }} {{ item.uom or "" }}
+          </td>
+          <td class="num">{{ item.get_formatted("rate") }}</td>
+          <td class="num">{{ item.get_formatted("amount") }}</td>
+        </tr>
+        {% endfor %}
+        <tr>
+          <td colspan="4" class="num">Netto</td>
+          <td class="num">{{ doc.get_formatted("net_total") }}</td>
+        </tr>
+        {% for tax in doc.taxes %}
+        <tr>
+          <td colspan="4" class="num">
+            {{ tax.description }} {{ tax.rate }} %
+          </td>
+          <td class="num">{{ tax.get_formatted("tax_amount") }}</td>
+        </tr>
+        {% endfor %} {% if doc.rounding_adjustment %}
+        <tr>
+          <td colspan="4" class="num">Rundung</td>
+          <td class="num">{{ doc.get_formatted("rounding_adjustment") }}</td>
+        </tr>
+        {% endif %}
+        <tr class="total">
+          <td colspan="4" class="num">Total {{ doc.currency }}</td>
+          <td class="num">
+            {{ doc.get_formatted("rounded_total") if doc.rounded_total else
+            doc.get_formatted("grand_total") }}
+          </td>
+        </tr>
+      </tbody>
+    </table>
 
-  {% if doc.terms %}
-  <div style="margin-top: 6mm;">{{ doc.terms }}</div>
-  {% endif %}
+    {% if doc.terms %}
+    <div style="margin-top: 6mm">{{ doc.terms }}</div>
+    {% endif %}
+  </div>
 </div>
-</div>
 
-{% if doc.flags.bi_qr_measure %}
-{# the first of two renders: the marker's place in the PDF is where the body ends #}
+{% if doc.flags.bi_qr_measure %} {# the first of two renders: the marker's place
+in the PDF is where the body ends #}
 <div class="bi-marker">BI-QR-END</div>
 {% else %}
 <div style="height: {{ sales_invoice_slip_spacer(doc) }}mm"></div>
@@ -134,30 +223,48 @@
   <div class="receipt">
     <h2>{{ L.receipt }}</h2>
     <div class="bi-label">{{ L.account }}</div>
-    <div>{{ iban }}<br>{{ cname }}<br>{{ caddr and caddr.address_line1 or "" }}<br>{{ caddr and ((caddr.pincode or "") ~ " " ~ (caddr.city or "")) or "" }}</div>
+    <div>
+      {{ iban }}<br />{{ cname }}<br />{{ caddr and caddr.address_line1 or ""
+      }}<br />{{ caddr and ((caddr.pincode or "") ~ " " ~ (caddr.city or "")) or
+      "" }}
+    </div>
     <div class="bi-label">{{ L.reference }}</div>
     <div>{{ reference }}</div>
     <div class="bi-label">{{ L.payable_by }}</div>
-    <div>{{ doc.customer_name or "" }}<br>{{ daddr and daddr.address_line1 or "" }}<br>{{ daddr and ((daddr.pincode or "") ~ " " ~ (daddr.city or "")) or "" }}</div>
+    <div>
+      {{ doc.customer_name or "" }}<br />{{ daddr and daddr.address_line1 or ""
+      }}<br />{{ daddr and ((daddr.pincode or "") ~ " " ~ (daddr.city or "")) or
+      "" }}
+    </div>
     <div class="bi-label">{{ L.currency }} / {{ L.amount }}</div>
     <div class="amount">{{ doc.currency }} {{ amount }}</div>
-    <div class="bi-label" style="position: absolute; top: 84mm;">{{ L.acceptance }}</div>
+    <div class="bi-label" style="position: absolute; top: 84mm">
+      {{ L.acceptance }}
+    </div>
   </div>
 
   <div class="payment">
     <h2>{{ L.payment_part }}</h2>
-    <div class="qr"><img src="{{ sales_invoice_qr_uri(doc) }}" alt="QR"></div>
-    <div style="position: absolute; top: 0; left: 52mm; width: 86mm;">
+    <div class="qr"><img src="{{ sales_invoice_qr_uri(doc) }}" alt="QR" /></div>
+    <div style="position: absolute; top: 0; left: 52mm; width: 86mm">
       <div class="bi-label">{{ L.account }}</div>
-      <div>{{ iban }}<br>{{ cname }}<br>{{ caddr and caddr.address_line1 or "" }}<br>{{ caddr and ((caddr.pincode or "") ~ " " ~ (caddr.city or "")) or "" }}</div>
+      <div>
+        {{ iban }}<br />{{ cname }}<br />{{ caddr and caddr.address_line1 or ""
+        }}<br />{{ caddr and ((caddr.pincode or "") ~ " " ~ (caddr.city or ""))
+        or "" }}
+      </div>
       <div class="bi-label">{{ L.reference }}</div>
       <div>{{ reference }}</div>
       <div class="bi-label">{{ L.payable_by }}</div>
-      <div>{{ doc.customer_name or "" }}<br>{{ daddr and daddr.address_line1 or "" }}<br>{{ daddr and ((daddr.pincode or "") ~ " " ~ (daddr.city or "")) or "" }}</div>
+      <div>
+        {{ doc.customer_name or "" }}<br />{{ daddr and daddr.address_line1 or
+        "" }}<br />{{ daddr and ((daddr.pincode or "") ~ " " ~ (daddr.city or
+        "")) or "" }}
+      </div>
       <div class="bi-label">{{ L.additional }}</div>
       <div>{{ L.invoice }} {{ doc.name }}</div>
     </div>
-    <div style="position: absolute; top: 72mm; left: 52mm; width: 86mm;">
+    <div style="position: absolute; top: 72mm; left: 52mm; width: 86mm">
       <div class="bi-label">{{ L.currency }} / {{ L.amount }}</div>
       <div class="amount">{{ doc.currency }} {{ amount }}</div>
     </div>

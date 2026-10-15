@@ -12,7 +12,7 @@
 # yard, so it stays in the yard's test command and the push step, not in the
 # pipeline's.
 commands:
-  test: 'sh .yardr/check'
+  test: "sh .yardr/check"
 
 # Pin the PR base branch to main. This is the only part of the PR target this
 # file can pin: no-mistakes has no setting for the PR repository. The target

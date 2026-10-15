@@ -89,7 +89,7 @@ def survey(export_dir):
 def map_account(number, by_number):
     """The ERPNext account with the bexio account number: the same number, as in import_master."""
     if number not in by_number:
-        raise Unmapped("account {} is not in ERPNext".format(number))
+        raise Unmapped(f"account {number} is not in ERPNext")
     return by_number[number]
 
 
@@ -108,7 +108,11 @@ def opening_lines(journal, accounts, year):
         sides = []
         for key in ("debit_account_id", "credit_account_id"):
             if line[key] not in numbers:
-                raise Unmapped("journal line {} names account id {}, which the export does not have".format(line["id"], line[key]))
+                raise Unmapped(
+                    "journal line {} names account id {}, which the export does not have".format(
+                        line["id"], line[key]
+                    )
+                )
             sides.append(numbers[line[key]])
         debit, credit = sides
         if debit not in OPENING_ACCOUNTS and credit not in OPENING_ACCOUNTS:
@@ -130,73 +134,122 @@ def opening_entry(lines, year, by_number, company=COMPANY):
         name = map_account(number, by_number)
         totals[name] = totals.get(name, ZERO) + _dec(debit) - _dec(credit)
     if sum(totals.values(), ZERO) != ZERO:
-        raise Unmapped("the opening lines do not balance: difference {}".format(sum(totals.values(), ZERO)))
+        raise Unmapped(
+            f"the opening lines do not balance: difference {sum(totals.values(), ZERO)}"
+        )
     rows = [
-        {"account": name, "debit_in_account_currency": float(net) if net > 0 else 0,
-         "credit_in_account_currency": float(-net) if net < 0 else 0}
-        for name, net in sorted(totals.items()) if net
+        {
+            "account": name,
+            "debit_in_account_currency": float(net) if net > 0 else 0,
+            "credit_in_account_currency": float(-net) if net < 0 else 0,
+        }
+        for name, net in sorted(totals.items())
+        if net
     ]
     if not rows:
         return None
     return {
-        "doctype": "Journal Entry", "company": company, "voucher_type": OPENING_ENTRY, "is_opening": "Yes",
-        "posting_date": year["start"], "bexio_id": "opening-{}".format(year["id"]),
+        "doctype": "Journal Entry",
+        "company": company,
+        "voucher_type": OPENING_ENTRY,
+        "is_opening": "Yes",
+        "posting_date": year["start"],
+        "bexio_id": "opening-{}".format(year["id"]),
         "user_remark": "bexio opening balances, business year {}".format(year["id"]),
         "accounts": rows,
     }
 
 
 def main(argv):
-    parser = argparse.ArgumentParser(description="The Opening Journal Entry of the first bexio business year (dry run only for now).")
-    parser.add_argument("--export", default=None, help="export directory (default: the newest under <private>/bexio-export/)")
-    parser.add_argument("--dry-run", action="store_true", help="read ERPNext, write nothing, print what the export gives")
+    parser = argparse.ArgumentParser(
+        description="The Opening Journal Entry of the first bexio business year (dry run only for now)."
+    )
+    parser.add_argument(
+        "--export",
+        default=None,
+        help="export directory (default: the newest under <private>/bexio-export/)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="read ERPNext, write nothing, print what the export gives",
+    )
     parser.add_argument("--token-file", default=im.TOKEN_FILE)
     args = parser.parse_args(argv)
     if not args.dry_run:
-        parser.error("dry run only for now: the live run is erp-a2ma's, after the posting plan (finance-3qsp)")
+        parser.error(
+            "dry run only for now: the live run is erp-a2ma's, after the posting plan (finance-3qsp)"
+        )
 
     export_dir = args.export or im.newest_export()
     s = survey(export_dir)
     first = s["first"]
-    print("opening of the first business year, from {}".format(export_dir))
+    print(f"opening of the first business year, from {export_dir}")
     print("business years: {}, closed: {}".format(s["years"], s["closed"]))
-    print("first business year: id {}, starts {}, status {}".format(first["id"], first["start"], first["status"]))
+    print(
+        "first business year: id {}, starts {}, status {}".format(
+            first["id"], first["start"], first["status"]
+        )
+    )
 
     erp = im.Erp.from_file(args.token_file)
     try:
-        accounts = erp.list("Account", [["company", "=", COMPANY]], ["name", "account_number"])
-        entries = erp.list("Journal Entry", [["bexio_id", "like", "opening-%"]], ["name"])
+        accounts = erp.list(
+            "Account", [["company", "=", COMPANY]], ["name", "account_number"]
+        )
+        entries = erp.list(
+            "Journal Entry", [["bexio_id", "like", "opening-%"]], ["name"]
+        )
     except im.ErpError as err:
-        print("aborted: {}".format(err), file=sys.stderr)
+        print(f"aborted: {err}", file=sys.stderr)
         return 2
     numbers = {r["account_number"] for r in accounts}
     missing = [n for n in OPENING_ACCOUNTS if n not in numbers]
-    print("ERPNext: opening accounts {}; Opening Entries with bexio_id: {}".format(
-        "missing: " + ", ".join(missing) if missing else "all found", len(entries)))
+    print(
+        "ERPNext: opening accounts {}; Opening Entries with bexio_id: {}".format(
+            "missing: " + ", ".join(missing) if missing else "all found", len(entries)
+        )
+    )
 
     if s["journal"] != "exported":
-        print("opening entry: not built, the export has no journal ({}); the opening bookings are unknown".format(s["journal"]))
+        print(
+            "opening entry: not built, the export has no journal ({}); the opening bookings are unknown".format(
+                s["journal"]
+            )
+        )
         return 1
     with open(os.path.join(export_dir, "journal.json"), encoding="utf-8") as f:
         journal = json.load(f)
     with open(os.path.join(export_dir, "accounts.json"), encoding="utf-8") as f:
         bexio_accounts = json.load(f)
-    in_year = sum(1 for line in journal if first["start"] <= line["date"][:10] <= first["end"])
+    in_year = sum(
+        1 for line in journal if first["start"] <= line["date"][:10] <= first["end"]
+    )
     rows = opening_lines(journal, bexio_accounts, first)
-    print("journal: {} lines in the first business year, {} of them touch 9100 or 9900".format(in_year, len(rows) // 2))
+    print(
+        f"journal: {in_year} lines in the first business year, {len(rows) // 2} of them touch 9100 or 9900"
+    )
     if not rows:
-        print("opening entry: none needed, the first business year has no opening lines (the company started in bexio)")
+        print(
+            "opening entry: none needed, the first business year has no opening lines (the company started in bexio)"
+        )
         return 0
     try:
-        doc = opening_entry(rows, first, {r["account_number"]: r["name"] for r in accounts})
+        doc = opening_entry(
+            rows, first, {r["account_number"]: r["name"] for r in accounts}
+        )
     except Unmapped as err:
-        print("aborted: {}".format(err), file=sys.stderr)
+        print(f"aborted: {err}", file=sys.stderr)
         return 2
     if doc is None:
         print("opening entry: none needed, the opening lines net to nothing")
         return 0
     debit_total = sum(r["debit_in_account_currency"] for r in doc["accounts"])
-    print("opening entry: one Journal Entry, {} accounts, debit total {:.2f} CHF (not written)".format(len(doc["accounts"]), debit_total))
+    print(
+        "opening entry: one Journal Entry, {} accounts, debit total {:.2f} CHF (not written)".format(
+            len(doc["accounts"]), debit_total
+        )
+    )
     return 0
 
 

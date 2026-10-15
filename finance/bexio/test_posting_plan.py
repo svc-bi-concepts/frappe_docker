@@ -11,7 +11,9 @@ import tempfile
 import unittest
 
 import posting_plan as pp
-from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
+from private_guard import (  # every test below runs against a temp private folder, never the real one
+    setUpModule,
+)
 
 
 def line(i, date, description, debit, credit, amount, ref_class=None, ref_id=None):
@@ -38,7 +40,13 @@ def entry(entry_id, kind, date, rows):
 
 
 def row(row_id, description, debit, credit, amount):
-    return {"id": row_id, "description": description, "debit_account_id": debit, "credit_account_id": credit, "amount": amount}
+    return {
+        "id": row_id,
+        "description": description,
+        "debit_account_id": debit,
+        "credit_account_id": credit,
+        "amount": amount,
+    }
 
 
 def sample():
@@ -59,10 +67,24 @@ def sample():
     ]
     # A manual row's id is its journal line's id; the tax line (id 7, 9) has none in the file.
     manual = [
-        entry(50, "banking_transaction", "2024-06-01", [row(6, "Bank booking C", 256, 77, 20)]),
-        entry(52, "manual_single_entry", "2024-06-05", [row(8, "Office supplies", 241, 77, 50)]),
+        entry(
+            50,
+            "banking_transaction",
+            "2024-06-01",
+            [row(6, "Bank booking C", 256, 77, 20)],
+        ),
+        entry(
+            52,
+            "manual_single_entry",
+            "2024-06-05",
+            [row(8, "Office supplies", 241, 77, 50)],
+        ),
     ]
-    return {"journal": journal, "manual_entries": manual, "invoice_payments": [{"parent_id": 7, "rows": [{"id": 11}]}]}
+    return {
+        "journal": journal,
+        "manual_entries": manual,
+        "invoice_payments": [{"parent_id": 7, "rows": [{"id": 11}]}],
+    }
 
 
 class ClassifyTest(unittest.TestCase):
@@ -100,7 +122,14 @@ class ClassifyTest(unittest.TestCase):
     def test_tax_line_with_two_possible_parents_of_different_kinds_is_unsourced(self):
         # Same date and description as a banking entry and a manual entry: the plan does not guess.
         data = sample()
-        data["manual_entries"].append(entry(60, "manual_single_entry", "2024-06-01", [row(61, "Bank booking C", 241, 77, 20)]))
+        data["manual_entries"].append(
+            entry(
+                60,
+                "manual_single_entry",
+                "2024-06-01",
+                [row(61, "Bank booking C", 241, 77, 20)],
+            )
+        )
         # Journal line 13: a tax line with the same date and description as the banking entry and this manual one.
         data["journal"].append(line(13, "2024-06-01", "Bank booking C", 96, 77, 0))
         self.assertEqual(pp.classify(data)[13], "unsourced")
@@ -128,12 +157,16 @@ class CoverageTest(unittest.TestCase):
         data = sample()
         buckets = pp.classify(data)
         buckets[999] = "manual"
-        self.assertTrue(any("name no journal line" in p for p in pp.coverage(data, buckets)))
+        self.assertTrue(
+            any("name no journal line" in p for p in pp.coverage(data, buckets))
+        )
 
     def test_duplicate_journal_ids_fail(self):
         data = sample()
         data["journal"].append(dict(data["journal"][0]))
-        self.assertTrue(any("not unique" in p for p in pp.coverage(data, pp.classify(data))))
+        self.assertTrue(
+            any("not unique" in p for p in pp.coverage(data, pp.classify(data)))
+        )
 
 
 class SummaryTest(unittest.TestCase):
@@ -150,13 +183,17 @@ class MainTest(unittest.TestCase):
         data = sample()
         with tempfile.TemporaryDirectory() as folder:
             for name in ("journal", "manual_entries", "invoice_payments"):
-                with open(os.path.join(folder, name + ".json"), "w", encoding="utf-8") as f:
+                with open(
+                    os.path.join(folder, name + ".json"), "w", encoding="utf-8"
+                ) as f:
                     json.dump(data[name], f)
             out = io.StringIO()
             with contextlib.redirect_stdout(out):
                 status = pp.main([folder])
         self.assertEqual(status, 0)
-        self.assertIn("coverage: every journal line in exactly one bucket", out.getvalue())
+        self.assertIn(
+            "coverage: every journal line in exactly one bucket", out.getvalue()
+        )
 
 
 if __name__ == "__main__":

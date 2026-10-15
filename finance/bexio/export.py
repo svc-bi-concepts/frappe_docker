@@ -3,7 +3,7 @@
 # av runs a Blessed Script as /dev/fd/N, and the mini's Python 3.9 reads a
 # /dev/fd script from where its zip check left the shared offset: a script
 # of more than a few bytes then runs empty and exits 0 (IT, 2026-10-14).
-exec /usr/bin/python3 -I - "$@" <<'__BEXIO_EXPORT_PY__'
+exec / usr / bin / python3 - I - "$@" << "__BEXIO_EXPORT_PY__"
 """Export the bexio data to private JSON files: master data, accounting history, documents.
 
 Step one of the pipelines: import_master.py reads the master-data files and puts
@@ -59,7 +59,10 @@ import os
 import re
 import sys
 
-BEXIO_DIR = os.environ.get("BEXIO_DIR") or "/Users/bsaladin/ws_yardr_finance/frappe_docker/finance/bexio"
+BEXIO_DIR = (
+    os.environ.get("BEXIO_DIR")
+    or "/Users/bsaladin/ws_yardr_finance/frappe_docker/finance/bexio"
+)
 sys.path.insert(0, BEXIO_DIR)
 
 from client import BexioError, Client  # noqa: E402
@@ -82,8 +85,11 @@ FILE_CONTENT_PATHS = ("/3.0/files/{id}/download", "/3.0/files/{id}/content")
 ATTACHMENT_CONTENT_PATHS = ("/3.0/files/{id}/download",)
 
 # The entities whose content is downloaded into files/, with the paths to try.
-CONTENT_PATHS = {FILES: FILE_CONTENT_PATHS, BILL_ATTACHMENTS: ATTACHMENT_CONTENT_PATHS,
-                 EXPENSE_ATTACHMENTS: ATTACHMENT_CONTENT_PATHS}
+CONTENT_PATHS = {
+    FILES: FILE_CONTENT_PATHS,
+    BILL_ATTACHMENTS: ATTACHMENT_CONTENT_PATHS,
+    EXPENSE_ATTACHMENTS: ATTACHMENT_CONTENT_PATHS,
+}
 
 # Where each file of a file's links is read from (the 'file' scope, as the files themselves). Not yet
 # checked against the live API ("Show file usage" in the bexio docs); a refusal is kept per file.
@@ -157,21 +163,50 @@ ENTITIES = {
     "manual_entries": (offset("/3.0/accounting/manual_entries"), True),
     "journal": (offset("/3.0/accounting/journal"), True),
     "invoices": (detailed(offset("/2.0/kb_invoice"), "/2.0/kb_invoice/{id}"), True),
-    "invoice_payments": (attached(offset("/2.0/kb_invoice"), "/2.0/kb_invoice/{id}/payment"), True),
-    "credit_vouchers": (vouchers(attached(offset("/2.0/kb_invoice"), "/2.0/kb_invoice/{id}/payment"),
-                                 "/2.0/kb_credit_voucher/{id}"), False),
+    "invoice_payments": (
+        attached(offset("/2.0/kb_invoice"), "/2.0/kb_invoice/{id}/payment"),
+        True,
+    ),
+    "credit_vouchers": (
+        vouchers(
+            attached(offset("/2.0/kb_invoice"), "/2.0/kb_invoice/{id}/payment"),
+            "/2.0/kb_credit_voucher/{id}",
+        ),
+        False,
+    ),
     "orders": (detailed(offset("/2.0/kb_order"), "/2.0/kb_order/{id}"), False),
     "offers": (detailed(offset("/2.0/kb_offer"), "/2.0/kb_offer/{id}"), False),
-    "deliveries": (detailed(offset("/2.0/kb_delivery"), "/2.0/kb_delivery/{id}"), False),
+    "deliveries": (
+        detailed(offset("/2.0/kb_delivery"), "/2.0/kb_delivery/{id}"),
+        False,
+    ),
     "notes": (offset("/2.0/note"), False),
-    "bills": (detailed(pages("/4.0/purchase/bills", "page_size", "data"), "/4.0/purchase/bills/{id}"), True),
-    "expenses": (detailed(pages("/4.0/expenses", "page_size", "data"), "/4.0/expenses/{id}"), False),
+    "bills": (
+        detailed(
+            pages("/4.0/purchase/bills", "page_size", "data"),
+            "/4.0/purchase/bills/{id}",
+        ),
+        True,
+    ),
+    "expenses": (
+        detailed(pages("/4.0/expenses", "page_size", "data"), "/4.0/expenses/{id}"),
+        False,
+    ),
     "payments": (pages("/4.0/banking/payments", "per-page", "results"), False),
     "bank_transactions": (offset("/3.0/banking/transactions"), True),
     FILES: (offset("/3.0/files"), False),
     FILE_LINKS: (usage(offset("/3.0/files"), FILE_USAGE_PATH), False),
-    BILL_ATTACHMENTS: (attachments(pages("/4.0/purchase/bills", "page_size", "data"), "/4.0/purchase/bills/{id}"), False),
-    EXPENSE_ATTACHMENTS: (attachments(pages("/4.0/expenses", "page_size", "data"), "/4.0/expenses/{id}"), False),
+    BILL_ATTACHMENTS: (
+        attachments(
+            pages("/4.0/purchase/bills", "page_size", "data"),
+            "/4.0/purchase/bills/{id}",
+        ),
+        False,
+    ),
+    EXPENSE_ATTACHMENTS: (
+        attachments(pages("/4.0/expenses", "page_size", "data"), "/4.0/expenses/{id}"),
+        False,
+    ),
     "countries": (offset("/2.0/country"), False),
     "units": (offset("/2.0/unit"), False),
     "salutations": (offset("/2.0/salutation"), False),
@@ -189,7 +224,11 @@ def default_out(today=None):
 def get_record(client, template, record_id):
     """GET one record by its id. Some answers come wrapped in {"data": {...}}; unwrapped here."""
     body = client.get(template.format(id=record_id))
-    if isinstance(body, dict) and set(body) == {"data"} and isinstance(body["data"], dict):
+    if (
+        isinstance(body, dict)
+        and set(body) == {"data"}
+        and isinstance(body["data"], dict)
+    ):
         return body["data"]
     return body
 
@@ -209,8 +248,10 @@ def read_entity(client, spec):
             rows.append(merged)
         return rows
     if kind == "attached":
-        return [{"parent_id": row["id"], "rows": get_record(client, spec[2], row["id"])}
-                for row in read_entity(client, spec[1])]
+        return [
+            {"parent_id": row["id"], "rows": get_record(client, spec[2], row["id"])}
+            for row in read_entity(client, spec[1])
+        ]
     if kind == "attachments":
         rows = []
         for bill in read_entity(client, spec[1]):
@@ -227,19 +268,30 @@ def read_entity(client, spec):
         rows = []
         for voucher_id in ids:
             try:
-                rows.append(dict(get_record(client, spec[2], voucher_id), id=voucher_id))
+                rows.append(
+                    dict(get_record(client, spec[2], voucher_id), id=voucher_id)
+                )
             except BexioError as err:
-                rows.append({"id": voucher_id, "error": "HTTP {} on {}".format(err.status, err.path)})
+                rows.append(
+                    {"id": voucher_id, "error": f"HTTP {err.status} on {err.path}"}
+                )
         return rows
     if kind == "usage":
         rows = []
         for row in read_entity(client, spec[1]):
             try:
-                rows.append({"file_id": row["id"], "usage": get_record(client, spec[2], row["id"])})
+                rows.append(
+                    {
+                        "file_id": row["id"],
+                        "usage": get_record(client, spec[2], row["id"]),
+                    }
+                )
             except BexioError as err:
-                rows.append({"file_id": row["id"], "error": "HTTP {} on {}".format(err.status, err.path)})
+                rows.append(
+                    {"file_id": row["id"], "error": f"HTTP {err.status} on {err.path}"}
+                )
         return rows
-    raise ValueError("unknown entity kind {!r}".format(kind))
+    raise ValueError(f"unknown entity kind {kind!r}")
 
 
 def attachment_rows(bill):
@@ -247,9 +299,16 @@ def attachment_rows(bill):
 
     The bill carries no file name or extension: download_files takes both from the content.
     """
-    return [{"id": uuid, "uuid": uuid, "bill_id": bill["id"], "document_no": bill.get("document_no"),
-             "bill_date": bill.get("bill_date")}
-            for uuid in bill.get("attachment_ids") or []]
+    return [
+        {
+            "id": uuid,
+            "uuid": uuid,
+            "bill_id": bill["id"],
+            "document_no": bill.get("document_no"),
+            "bill_date": bill.get("bill_date"),
+        }
+        for uuid in bill.get("attachment_ids") or []
+    ]
 
 
 # The first bytes of the content types bexio attachments come in; anything else is "bin".
@@ -349,11 +408,11 @@ def answer_shape(answer):
     Kept as a manifest detail to see why bexio's answer was not a PDF; no other value of the answer is shown.
     """
     if not isinstance(answer, dict):
-        return "answer is {}".format(type(answer).__name__)
+        return f"answer is {type(answer).__name__}"
     shape = {key: type(value).__name__ for key, value in answer.items()}
     if isinstance(answer.get("content"), str):
         shape["content"] = "str starting {!r}".format(answer["content"][:24])
-    return "answer has {}".format(shape)
+    return f"answer has {shape}"
 
 
 def download_document_pdfs(client, out):
@@ -381,13 +440,25 @@ def download_document_pdfs(client, out):
             except BexioError as err:
                 failed.append("{}:{}".format(kind, document["id"]))
                 # the status says why (a missing scope, a path bexio does not serve): counted, not per id
-                reasons["HTTP {}".format(err.status)] = reasons.get("HTTP {}".format(err.status), 0) + 1
+                reasons[f"HTTP {err.status}"] = reasons.get(f"HTTP {err.status}", 0) + 1
                 continue
             name = "{}-{}.pdf".format(kind, document["id"])
             write_private_bytes(os.path.join(folder, name), content)
-            rows.append({"kind": kind, "id": document["id"], "file": name, "bytes": len(content)})
-    summary = {"downloaded": len(rows), "bytes": sum(row["bytes"] for row in rows), "failed": failed,
-               "reasons": reasons, "skipped": skipped}
+            rows.append(
+                {
+                    "kind": kind,
+                    "id": document["id"],
+                    "file": name,
+                    "bytes": len(content),
+                }
+            )
+    summary = {
+        "downloaded": len(rows),
+        "bytes": sum(row["bytes"] for row in rows),
+        "failed": failed,
+        "reasons": reasons,
+        "skipped": skipped,
+    }
     return rows, summary
 
 
@@ -406,7 +477,7 @@ def export(client, out, entities=None, only=None):
     os.chmod(out, 0o700)
     manifest = read_manifest(out) if only else {"entities": {}}
     manifest["exported_on"] = datetime.date.today().isoformat()
-    for name in (only or entities):
+    for name in only or entities:
         spec, required = entities[name]
         entry = {"file": name + ".json", "required": required}
         try:
@@ -419,14 +490,18 @@ def export(client, out, entities=None, only=None):
             stale = os.path.join(out, entry["file"])
             if os.path.exists(stale):
                 os.remove(stale)
-            entry.update(status="error", error="HTTP {} on {}".format(err.status, err.path), count=0)
+            entry.update(
+                status="error", error=f"HTTP {err.status} on {err.path}", count=0
+            )
         else:
             # the content first: a download adds the size of each row, which the JSON must carry
             if name in CONTENT_PATHS:
                 entry.update(download_files(client, rows, out, CONTENT_PATHS[name]))
             entry.update(summary)
             # a row that carries an error is a refused record: the manifest names it
-            refused = [row.get("id", row.get("file_id")) for row in rows if "error" in row]
+            refused = [
+                row.get("id", row.get("file_id")) for row in rows if "error" in row
+            ]
             if refused:
                 entry["failed"] = refused
             write_private(os.path.join(out, entry["file"]), rows)
@@ -504,14 +579,23 @@ def payroll_paystubs(client, out, employees, years, today):
                 try:
                     content = document_pdf(client, path)
                 except BexioError as err:
-                    no_payslip = err.detail and (NO_PAYSTUBS in err.detail or COMPANY_NOT_FOUND in err.detail)
+                    no_payslip = err.detail and (
+                        NO_PAYSTUBS in err.detail or COMPANY_NOT_FOUND in err.detail
+                    )
                     if err.status == 404 or no_payslip:
                         continue
                     raise
                 name = "{}-{}-{:02d}.pdf".format(employee["id"], year, month)
                 write_private_bytes(os.path.join(out, PAYSTUBS, name), content)
-                index.append({"employee_id": employee["id"], "year": year, "month": month,
-                              "file": name, "bytes": len(content)})
+                index.append(
+                    {
+                        "employee_id": employee["id"],
+                        "year": year,
+                        "month": month,
+                        "file": name,
+                        "bytes": len(content),
+                    }
+                )
     return index
 
 
@@ -522,7 +606,7 @@ def payroll_company(client):
         try:
             rows.append({"path": path, "body": client.get(path)})
         except BexioError as err:
-            rows.append({"path": path, "error": "HTTP {}".format(err.status)})
+            rows.append({"path": path, "error": f"HTTP {err.status}"})
     return rows
 
 
@@ -546,7 +630,7 @@ def _payroll_entity(out, manifest, name, required, produce):
         stale = os.path.join(out, entry["file"])
         if os.path.exists(stale):
             os.remove(stale)
-        entry.update(status="error", error="HTTP {} on {}".format(err.status, err.path), count=0)
+        entry.update(status="error", error=f"HTTP {err.status} on {err.path}", count=0)
         # bexio's reason for the refusal, kept in the private manifest only (what it asks for, not the data)
         if err.detail:
             entry["detail"] = err.detail
@@ -565,14 +649,36 @@ def export_payroll(client, out, years, today=None):
     os.makedirs(os.path.join(out, PAYSTUBS), mode=0o700, exist_ok=True)
     os.chmod(out, 0o700)
     os.chmod(os.path.join(out, PAYSTUBS), 0o700)
-    manifest = {"exported_on": today.isoformat(), "years": sorted(years), "entities": {}}
-    employees = _payroll_entity(out, manifest, "employees", True,
-                                lambda: payroll_rows(client.get(PAYROLL_EMPLOYEES), PAYROLL_EMPLOYEES))
+    manifest = {
+        "exported_on": today.isoformat(),
+        "years": sorted(years),
+        "entities": {},
+    }
+    employees = _payroll_entity(
+        out,
+        manifest,
+        "employees",
+        True,
+        lambda: payroll_rows(client.get(PAYROLL_EMPLOYEES), PAYROLL_EMPLOYEES),
+    )
     if manifest["entities"]["employees"]["status"] == "ok":
-        _payroll_entity(out, manifest, "company", False, lambda: payroll_company(client))
-        _payroll_entity(out, manifest, "absences", False, lambda: payroll_absences(client, employees, years))
-        paystubs = _payroll_entity(out, manifest, "paystubs", False,
-                                   lambda: payroll_paystubs(client, out, employees, years, today))
+        _payroll_entity(
+            out, manifest, "company", False, lambda: payroll_company(client)
+        )
+        _payroll_entity(
+            out,
+            manifest,
+            "absences",
+            False,
+            lambda: payroll_absences(client, employees, years),
+        )
+        paystubs = _payroll_entity(
+            out,
+            manifest,
+            "paystubs",
+            False,
+            lambda: payroll_paystubs(client, out, employees, years, today),
+        )
         if manifest["entities"]["paystubs"]["status"] == "ok":
             manifest["entities"]["paystubs"]["by_month"] = by_month(paystubs)
     write_private(os.path.join(out, "manifest.json"), manifest)
@@ -580,7 +686,11 @@ def export_payroll(client, out, years, today=None):
 
 
 def failed_required(manifest):
-    return [n for n, e in manifest["entities"].items() if e["required"] and e["status"] != "ok"]
+    return [
+        n
+        for n, e in manifest["entities"].items()
+        if e["required"] and e["status"] != "ok"
+    ]
 
 
 def default_complete_out(today=None):
@@ -596,12 +706,19 @@ def print_manifest(manifest):
         line = "  {:<18} {}".format(name, entry["count"])
         if name in CONTENT_PATHS:
             line += " (downloaded {}, {} bytes, failed {})".format(
-                entry["downloaded"], entry["bytes"], len(entry["failed"]))
+                entry["downloaded"], entry["bytes"], len(entry["failed"])
+            )
         elif name == DOCUMENT_PDFS_ENTITY:
             line += " (downloaded {}, {} bytes, failed {}, skipped {})".format(
-                entry["downloaded"], entry["bytes"], len(entry["failed"]), ", ".join(entry["skipped"]) or "none")
+                entry["downloaded"],
+                entry["bytes"],
+                len(entry["failed"]),
+                ", ".join(entry["skipped"]) or "none",
+            )
             if entry["reasons"]:
-                line += " refused: " + ", ".join("{} x{}".format(k, v) for k, v in sorted(entry["reasons"].items()))
+                line += " refused: " + ", ".join(
+                    f"{k} x{v}" for k, v in sorted(entry["reasons"].items())
+                )
         elif entry.get("failed"):
             line += " (failed {})".format(len(entry["failed"]))
         print(line)
@@ -611,55 +728,90 @@ def run_complete(out, years):
     """Every entity into out, the payroll into out/payroll: one run, one manifest for each part. Returns the status."""
     client = Client()
     manifest = export(client, out)
-    print("exported to {}".format(out))
+    print(f"exported to {out}")
     print_manifest(manifest)
     payroll = export_payroll(client, os.path.join(out, PAYROLL_SUBDIR), years)
-    print("exported payroll to {}".format(os.path.join(out, PAYROLL_SUBDIR)))
+    print(f"exported payroll to {os.path.join(out, PAYROLL_SUBDIR)}")
     print_manifest(payroll)
-    missing = failed_required(manifest) + ["payroll " + name for name in failed_required(payroll)]
+    missing = failed_required(manifest) + [
+        "payroll " + name for name in failed_required(payroll)
+    ]
     if missing:
-        print("missing required entities: {}".format(", ".join(missing)), file=sys.stderr)
+        print(
+            "missing required entities: {}".format(", ".join(missing)), file=sys.stderr
+        )
         return 2
     return 0
 
 
 def main(argv):
-    parser = argparse.ArgumentParser(description="Export bexio data to private JSON files (read-only).")
-    parser.add_argument("--out", default=None, help="target directory (default: <private>/bexio-export/<today>/)")
-    parser.add_argument("--only", action="append", choices=sorted(ENTITIES), metavar="ENTITY",
-                        help="export only this entity (repeatable); the manifest keeps the others")
-    parser.add_argument("--complete", action="store_true",
-                        help="the whole account in one run: every entity, the document PDFs and the payroll, "
-                             "to <private>/bexio-export/<today>-complete/")
-    parser.add_argument("--payroll", action="store_true",
-                        help="export the payroll instead, to <private>/bexio-payroll/ (employees, absences, payslips)")
-    parser.add_argument("--year", action="append", type=int, metavar="YEAR",
-                        help="payroll year for absences and payslips (repeatable; default: this year)")
+    parser = argparse.ArgumentParser(
+        description="Export bexio data to private JSON files (read-only)."
+    )
+    parser.add_argument(
+        "--out",
+        default=None,
+        help="target directory (default: <private>/bexio-export/<today>/)",
+    )
+    parser.add_argument(
+        "--only",
+        action="append",
+        choices=sorted(ENTITIES),
+        metavar="ENTITY",
+        help="export only this entity (repeatable); the manifest keeps the others",
+    )
+    parser.add_argument(
+        "--complete",
+        action="store_true",
+        help="the whole account in one run: every entity, the document PDFs and the payroll, "
+        "to <private>/bexio-export/<today>-complete/",
+    )
+    parser.add_argument(
+        "--payroll",
+        action="store_true",
+        help="export the payroll instead, to <private>/bexio-payroll/ (employees, absences, payslips)",
+    )
+    parser.add_argument(
+        "--year",
+        action="append",
+        type=int,
+        metavar="YEAR",
+        help="payroll year for absences and payslips (repeatable; default: this year)",
+    )
     args = parser.parse_args(argv)
     if args.complete:
         if args.only or args.out or args.payroll:
             parser.error("--complete takes neither --only, --out nor --payroll")
-        return run_complete(default_complete_out(), args.year or [datetime.date.today().year])
+        return run_complete(
+            default_complete_out(), args.year or [datetime.date.today().year]
+        )
     if args.payroll:
         if args.only or args.out:
             parser.error("--payroll takes neither --only nor --out")
-        manifest = export_payroll(Client(), PAYROLL, args.year or [datetime.date.today().year])
-        print("exported payroll to {}".format(PAYROLL))
+        manifest = export_payroll(
+            Client(), PAYROLL, args.year or [datetime.date.today().year]
+        )
+        print(f"exported payroll to {PAYROLL}")
         print_manifest(manifest)
         missing = failed_required(manifest)
         if missing:
-            print("missing required entities: {}".format(", ".join(missing)), file=sys.stderr)
+            print(
+                "missing required entities: {}".format(", ".join(missing)),
+                file=sys.stderr,
+            )
             return 2
         return 0
     if args.year:
         parser.error("--year goes with --payroll or --complete")
     out = args.out or default_out()
     manifest = export(Client(), out, only=args.only)
-    print("exported to {}".format(out))
+    print(f"exported to {out}")
     print_manifest(manifest)
     missing = failed_required(manifest)
     if missing:
-        print("missing required entities: {}".format(", ".join(missing)), file=sys.stderr)
+        print(
+            "missing required entities: {}".format(", ".join(missing)), file=sys.stderr
+        )
         return 2
     return 0
 

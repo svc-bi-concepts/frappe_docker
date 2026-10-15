@@ -125,7 +125,9 @@ def new_rows(rows, fed_ids, lines, window_days=MATCH_WINDOW_DAYS):
     summary["already_imported"] = len(matched)
     summary["matched_exact"] = sum(1 for _, _, _, tolerance in matched if not tolerance)
     summary["matched_fx"] = sum(1 for _, _, _, tolerance in matched if tolerance)
-    summary["matched_by_gap"] = dict(sorted(collections.Counter(str(gap) for _, _, gap, _ in matched).items()))
+    summary["matched_by_gap"] = dict(
+        sorted(collections.Counter(str(gap) for _, _, gap, _ in matched).items())
+    )
     summary["create"] = len(create)
     return create, summary
 
@@ -137,8 +139,13 @@ def plan(bank_account, rows):
     """
     if not frappe.db.exists("Bank Account", bank_account):
         return rows, {
-            "rows": len(rows), "already_fed": 0, "already_imported": 0,
-            "matched_exact": 0, "matched_fx": 0, "matched_by_gap": {}, "create": len(rows),
+            "rows": len(rows),
+            "already_fed": 0,
+            "already_imported": 0,
+            "matched_exact": 0,
+            "matched_fx": 0,
+            "matched_by_gap": {},
+            "create": len(rows),
         }
     existing = frappe.get_all(
         "Bank Transaction",
@@ -152,7 +159,7 @@ def plan(bank_account, rows):
 
 def bank_account_name(prefix, currency, bank):
     """The name ERPNext gives a bank's Bank Account of a currency: "<prefix> <currency> - <bank>"."""
-    return "{} {} - {}".format(prefix, currency, bank)
+    return f"{prefix} {currency} - {bank}"
 
 
 def open_bank_account(prefix, bank, currency, parent, company, numbers):
@@ -166,7 +173,7 @@ def open_bank_account(prefix, bank, currency, parent, company, numbers):
         return name
     if not frappe.db.exists("Bank", bank):
         frappe.get_doc({"doctype": "Bank", "bank_name": bank}).insert()
-    gl_name = "{} Kontokorrent".format(prefix) + ("" if currency == "CHF" else " " + currency)
+    gl_name = f"{prefix} Kontokorrent" + ("" if currency == "CHF" else " " + currency)
     account = frappe.get_doc(
         {
             "doctype": "Account",
@@ -182,7 +189,7 @@ def open_bank_account(prefix, bank, currency, parent, company, numbers):
     frappe.get_doc(
         {
             "doctype": "Bank Account",
-            "account_name": "{} {}".format(prefix, currency),
+            "account_name": f"{prefix} {currency}",
             "bank": bank,
             "account": account.name,
             "company": company,
@@ -193,11 +200,21 @@ def open_bank_account(prefix, bank, currency, parent, company, numbers):
 
 
 def _free_number(company, numbers):
-    used = {str(n) for n in frappe.get_all("Account", filters={"company": company}, pluck="account_number") if n}
+    used = {
+        str(n)
+        for n in frappe.get_all(
+            "Account", filters={"company": company}, pluck="account_number"
+        )
+        if n
+    }
     for number in numbers:
         if str(number) not in used:
             return str(number)
-    frappe.throw(_("No free account number in {0} to {1} for a new bank account.").format(numbers[0], numbers[-1]))
+    frappe.throw(
+        _("No free account number in {0} to {1} for a new bank account.").format(
+            numbers[0], numbers[-1]
+        )
+    )
 
 
 def write(bank_account, rows):
@@ -206,7 +223,9 @@ def write(bank_account, rows):
     written = 0
     for row in rows:
         # checked again per row: the hourly job and a Sync now can run at once
-        if frappe.db.exists("Bank Transaction", {"transaction_id": row["transaction_id"]}):
+        if frappe.db.exists(
+            "Bank Transaction", {"transaction_id": row["transaction_id"]}
+        ):
             continue
         doc = frappe.get_doc(
             {
@@ -244,7 +263,11 @@ def _day(date):
 def merchant_words(text):
     """The words of a description that can name a merchant: alphabetic words of three letters or more, without the
     generic card, fee and transfer words and the currency codes."""
-    return {word for word in re.findall(r"[a-z]+", (text or "").lower()) if len(word) >= 3 and word not in GENERIC_WORDS}
+    return {
+        word
+        for word in re.findall(r"[a-z]+", (text or "").lower())
+        if len(word) >= 3 and word not in GENERIC_WORDS
+    }
 
 
 def same_merchant(row_text, line_text):
@@ -262,7 +285,11 @@ def load_rates(currency, start, end, dry_run, opener=urllib.request.urlopen):
     stores nothing and converts with the fetched rates. A weekend or a holiday takes the latest earlier rate.
     """
     _check_source()
-    stored = frappe.get_all("Currency Exchange", filters={"from_currency": currency, "to_currency": "CHF"}, pluck="date")
+    stored = frappe.get_all(
+        "Currency Exchange",
+        filters={"from_currency": currency, "to_currency": "CHF"},
+        pluck="date",
+    )
     first = fetch_start(start, max(stored, default=None))
     if first > end:
         return {}
@@ -272,7 +299,9 @@ def load_rates(currency, start, end, dry_run, opener=urllib.request.urlopen):
         for day, rate in days.items():
             if day not in known:
                 _store_rate(currency, day, rate)
-    return {(currency, day): rate for day, rate in carry_forward(days, first, end).items()}
+    return {
+        (currency, day): rate for day, rate in carry_forward(days, first, end).items()
+    }
 
 
 def fetch_start(start, latest):
@@ -287,14 +316,18 @@ def fetch_rates(currency, start, end, opener=urllib.request.urlopen):
     params = {"from": str(start), "to": str(end), "base": currency, "quotes": "CHF"}
     # the source answers 403 to urllib's default agent, so the request names itself
     headers = {"Accept": "application/json", "User-Agent": RATE_USER_AGENT}
-    request = urllib.request.Request(RATE_URL + "?" + urllib.parse.urlencode(params), headers=headers, method="GET")
+    request = urllib.request.Request(
+        RATE_URL + "?" + urllib.parse.urlencode(params), headers=headers, method="GET"
+    )
     try:
         with opener(request, timeout=RATE_TIMEOUT_SECONDS) as response:
             payload = json.load(response)
     except urllib.error.HTTPError as err:
-        raise RateError("HTTP {} from the rate source".format(err.code)) from None
+        raise RateError(f"HTTP {err.code} from the rate source") from None
     except (urllib.error.URLError, TimeoutError, ValueError) as err:
-        raise RateError("no usable answer from the rate source ({})".format(type(err).__name__)) from None
+        raise RateError(
+            f"no usable answer from the rate source ({type(err).__name__})"
+        ) from None
     return rate_days(payload, currency)
 
 
@@ -306,7 +339,11 @@ def rate_days(payload, currency):
     for item in payload:
         if not isinstance(item, dict):
             raise RateError("unexpected answer from the rate source")
-        if item.get("base") == currency and item.get("quote") == "CHF" and item.get("rate"):
+        if (
+            item.get("base") == currency
+            and item.get("quote") == "CHF"
+            and item.get("rate")
+        ):
             days[item["date"]] = float(item["rate"])
     return days
 
@@ -330,7 +367,11 @@ def carry_forward(days, start, end):
 def _check_source():
     settings = frappe.get_single("Currency Exchange Settings")
     if settings.disabled or settings.service_provider != "frankfurter.dev - v2":
-        frappe.throw(_("Enable Currency Exchange Settings with frankfurter.dev - v2 first: the Wise rates come from it."))
+        frappe.throw(
+            _(
+                "Enable Currency Exchange Settings with frankfurter.dev - v2 first: the Wise rates come from it."
+            )
+        )
 
 
 def _store_rate(currency, day, rate):

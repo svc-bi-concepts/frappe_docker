@@ -18,15 +18,24 @@ from unittest import mock
 
 import launcher
 
-os.environ["BEXIO_DIR"] = os.path.dirname(os.path.abspath(__file__))  # run this checkout's files, never the main checkout's
-oauth = launcher.load("oauth.py")  # the launchers are bash files; the tests run their python bodies
+os.environ["BEXIO_DIR"] = os.path.dirname(
+    os.path.abspath(__file__)
+)  # run this checkout's files, never the main checkout's
+oauth = launcher.load(
+    "oauth.py"
+)  # the launchers are bash files; the tests run their python bodies
 login_helper = launcher.load("login_helper.py")
-from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
+from private_guard import (  # every test below runs against a temp private folder, never the real one
+    setUpModule,
+)
 
 REDIRECT = "https://login.example.test:8461/callback"
 TAILNET_USER = "owner@tailnet.example.test"  # invented; tailscale serve sends the real one in the header
 FAKE_TOKEN = "fake-refresh-token-123"
-FAKE_ENV = {"BEXIO_CLIENT_ID": "fake-client-id", "BEXIO_CLIENT_SECRET": "fake-client-secret"}
+FAKE_ENV = {
+    "BEXIO_CLIENT_ID": "fake-client-id",
+    "BEXIO_CLIENT_SECRET": "fake-client-secret",
+}
 
 
 class LoginHelperTest(unittest.TestCase):
@@ -37,7 +46,15 @@ class LoginHelperTest(unittest.TestCase):
         self.port = self.server.server_address[1]
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
-        self.exchange = mock.patch.object(oauth, "exchange_code", return_value={"refresh_token": FAKE_TOKEN, "access_token": "fake-access", "scope": "openid offline_access contact_show"}).start()
+        self.exchange = mock.patch.object(
+            oauth,
+            "exchange_code",
+            return_value={
+                "refresh_token": FAKE_TOKEN,
+                "access_token": "fake-access",
+                "scope": "openid offline_access contact_show",
+            },
+        ).start()
         self.write = mock.patch.object(oauth, "save_refresh_token").start()
         self.addCleanup(mock.patch.stopall)
         self.addCleanup(self._stop)
@@ -91,26 +108,33 @@ class LoginHelperTest(unittest.TestCase):
     def test_callback_saves_the_token_and_shows_only_the_scopes(self):
         location = self._start_login()
         state = self._state_of(location)
-        challenge = urllib.parse.parse_qs(urllib.parse.urlsplit(location).query)["code_challenge"][0]
+        challenge = urllib.parse.parse_qs(urllib.parse.urlsplit(location).query)[
+            "code_challenge"
+        ][0]
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-            status, _, body = self._get("/callback?state={}&code=fake-code".format(state))
+            status, _, body = self._get(f"/callback?state={state}&code=fake-code")
         self.assertEqual(status, 200)
         self.assertIn("logged in, scopes: openid offline_access contact_show", body)
         self.assertNotIn(FAKE_TOKEN, body)
         self.assertEqual(out.getvalue(), "")
         self.assertEqual(err.getvalue(), "")
         self.exchange.assert_called_once()
-        code, verifier = self.exchange.call_args.args[0], self.exchange.call_args.args[1]
+        code, verifier = (
+            self.exchange.call_args.args[0],
+            self.exchange.call_args.args[1],
+        )
         self.assertEqual(code, "fake-code")
         self.assertEqual(self.exchange.call_args.args[2], REDIRECT)
-        self.assertEqual(oauth._challenge(verifier), challenge)  # PKCE: the verifier matches the login that started
+        self.assertEqual(
+            oauth._challenge(verifier), challenge
+        )  # PKCE: the verifier matches the login that started
         self.write.assert_called_once_with(FAKE_TOKEN, oauth.REFRESH_KEY)
 
     def test_a_state_is_used_once(self):
         state = self._state_of(self._start_login())
-        self._get("/callback?state={}&code=fake-code".format(state))
-        status, _, body = self._get("/callback?state={}&code=fake-code".format(state))
+        self._get(f"/callback?state={state}&code=fake-code")
+        status, _, body = self._get(f"/callback?state={state}&code=fake-code")
         self.assertEqual(status, 400)
         self.assertIn("already used", body)
         self.exchange.assert_called_once()
@@ -122,20 +146,24 @@ class LoginHelperTest(unittest.TestCase):
         self.assertEqual(status, 400)
         self.exchange.assert_not_called()
         self.write.assert_not_called()
-        status, _, body = self._get("/callback?state={}&code=fake-code".format(state))
+        status, _, body = self._get(f"/callback?state={state}&code=fake-code")
         self.assertEqual(status, 200)
         self.assertIn("logged in", body)
 
     def test_an_expired_state_is_refused(self):
         state = self._state_of(self._start_login())
-        with mock.patch.object(login_helper.time, "monotonic", return_value=login_helper.time.monotonic() + oauth.LOGIN_TIMEOUT + 1):
-            status, _, _ = self._get("/callback?state={}&code=fake-code".format(state))
+        with mock.patch.object(
+            login_helper.time,
+            "monotonic",
+            return_value=login_helper.time.monotonic() + oauth.LOGIN_TIMEOUT + 1,
+        ):
+            status, _, _ = self._get(f"/callback?state={state}&code=fake-code")
         self.assertEqual(status, 400)
         self.exchange.assert_not_called()
 
     def test_bexio_refusal_saves_nothing(self):
         state = self._state_of(self._start_login())
-        status, _, body = self._get("/callback?state={}&error=access_denied".format(state))
+        status, _, body = self._get(f"/callback?state={state}&error=access_denied")
         self.assertEqual(status, 400)
         self.assertIn("did not grant", body)
         self.exchange.assert_not_called()
@@ -143,8 +171,10 @@ class LoginHelperTest(unittest.TestCase):
 
     def test_a_refused_token_request_shows_the_error_code_not_a_token(self):
         state = self._state_of(self._start_login())
-        self.exchange.side_effect = oauth.OAuthError("bexio answered HTTP 400 (invalid_grant)")
-        status, _, body = self._get("/callback?state={}&code=fake-code".format(state))
+        self.exchange.side_effect = oauth.OAuthError(
+            "bexio answered HTTP 400 (invalid_grant)"
+        )
+        status, _, body = self._get(f"/callback?state={state}&code=fake-code")
         self.assertEqual(status, 502)
         self.assertIn("invalid_grant", body)
         self.assertNotIn("fake-code", body)
@@ -153,15 +183,17 @@ class LoginHelperTest(unittest.TestCase):
     def test_a_login_without_a_refresh_token_saves_nothing(self):
         state = self._state_of(self._start_login())
         self.exchange.return_value = {"access_token": "fake-access"}
-        status, _, body = self._get("/callback?state={}&code=fake-code".format(state))
+        status, _, body = self._get(f"/callback?state={state}&code=fake-code")
         self.assertEqual(status, 502)
         self.assertIn("no refresh token", body)
         self.write.assert_not_called()
 
     def test_a_failed_av_save_is_shown_without_the_token(self):
         state = self._state_of(self._start_login())
-        self.write.side_effect = oauth.VaultError("av did not save BEXIO_REFRESH_TOKEN (exit status 1)")
-        status, _, body = self._get("/callback?state={}&code=fake-code".format(state))
+        self.write.side_effect = oauth.VaultError(
+            "av did not save BEXIO_REFRESH_TOKEN (exit status 1)"
+        )
+        status, _, body = self._get(f"/callback?state={state}&code=fake-code")
         self.assertEqual(status, 502)
         self.assertIn("exit status 1", body)
         self.assertNotIn(FAKE_TOKEN, body)
@@ -170,7 +202,7 @@ class LoginHelperTest(unittest.TestCase):
         state = self._state_of(self._start_login())
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-            _, headers, _ = self._get("/callback?state={}&code=fake-code".format(state))
+            _, headers, _ = self._get(f"/callback?state={state}&code=fake-code")
         self.assertEqual(headers.get("Cache-Control"), "no-store")
         self.assertEqual(out.getvalue() + err.getvalue(), "")
 
@@ -187,11 +219,14 @@ class LoginHelperTest(unittest.TestCase):
 
     def test_another_tailnet_user_cannot_finish_the_login(self):
         state = self._state_of(self._start_login())
-        status, _, _ = self._get("/callback?state={}&code=fake-code".format(state), user="someone-else@tailnet.example.test")
+        status, _, _ = self._get(
+            f"/callback?state={state}&code=fake-code",
+            user="someone-else@tailnet.example.test",
+        )
         self.assertEqual(status, 403)
         self.exchange.assert_not_called()
         self.write.assert_not_called()
-        status, _, body = self._get("/callback?state={}&code=fake-code".format(state))
+        status, _, body = self._get(f"/callback?state={state}&code=fake-code")
         self.assertEqual(status, 200)
         self.assertIn("logged in", body)
 
@@ -203,10 +238,10 @@ class LoginHelperTest(unittest.TestCase):
     def test_a_new_login_replaces_the_waiting_one(self):
         first = self._state_of(self._start_login())
         second = self._state_of(self._start_login())
-        status, _, _ = self._get("/callback?state={}&code=fake-code".format(first))
+        status, _, _ = self._get(f"/callback?state={first}&code=fake-code")
         self.assertEqual(status, 400)
         self.exchange.assert_not_called()
-        status, _, _ = self._get("/callback?state={}&code=fake-code".format(second))
+        status, _, _ = self._get(f"/callback?state={second}&code=fake-code")
         self.assertEqual(status, 200)
 
     def test_the_server_binds_loopback_only(self):
@@ -226,11 +261,22 @@ class LoginHelperTest(unittest.TestCase):
         taken = holder.getsockname()[1]
         out = io.StringIO()
         with contextlib.redirect_stdout(out), self.assertRaises(SystemExit) as exit_:
-            login_helper.main(["--redirect-uri", REDIRECT, "--tailnet-user", TAILNET_USER, "--port", str(taken)])
+            login_helper.main(
+                [
+                    "--redirect-uri",
+                    REDIRECT,
+                    "--tailnet-user",
+                    TAILNET_USER,
+                    "--port",
+                    str(taken),
+                ]
+            )
         self.assertNotEqual(exit_.exception.code, 0)
-        self.assertIn("cannot bind 127.0.0.1:{}".format(taken), exit_.exception.code)
+        self.assertIn(f"cannot bind 127.0.0.1:{taken}", exit_.exception.code)
         self.assertIn("another process holds it", exit_.exception.code)
-        self.assertEqual(out.getvalue(), "")  # never prints the "bexio login page on" line
+        self.assertEqual(
+            out.getvalue(), ""
+        )  # never prints the "bexio login page on" line
 
 
 if __name__ == "__main__":

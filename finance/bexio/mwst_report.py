@@ -67,10 +67,25 @@ import import_master as im
 
 # The payment basis (rows, plan, journal part) is bi_finance's, shared with the VAT Declaration's fill (stdlib only).
 # The names below are the module's; mwst_bexio and the tests read them through this module, so they stay importable here.
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "apps", "bi_finance"))
+sys.path.insert(
+    0,
+    os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "..", "apps", "bi_finance"
+    ),
+)
 from bi_finance.mwst_payment import (  # noqa: E402
-    INVOICE_DOCTYPES, TEMPLATES, Totals, declaration_fields, derived_base, form_totals, journal_totals, owed_row,
-    payment_documents, period_bounds, plan, share_of,
+    INVOICE_DOCTYPES,
+    TEMPLATES,
+    Totals,
+    declaration_fields,
+    derived_base,
+    form_totals,
+    journal_totals,
+    owed_row,
+    payment_documents,
+    period_bounds,
+    plan,
+    share_of,
 )
 
 COMPANY = im.COMPANY
@@ -109,30 +124,68 @@ def csv_rows(totals):
     for row in sorted(set(rows) | set(LABELS)):
         if row == "200" or row in rows:
             base, tax = rows.get(row, [ZERO, ZERO])
-            yield [row, LABELS.get(row, row), "{:.2f}".format(base), "{:.2f}".format(tax)]
+            yield [row, LABELS.get(row, row), f"{base:.2f}", f"{tax:.2f}"]
             if row in totals.journal:
                 jbase, jtax = totals.journal[row]
-                yield [row, "journal entries (by account)", "{:.2f}".format(jbase), "{:.2f}".format(jtax)]
+                yield [
+                    row,
+                    "journal entries (by account)",
+                    f"{jbase:.2f}",
+                    f"{jtax:.2f}",
+                ]
 
 
 def summary_lines(totals):
     """The stdout of a run: totals per form row and what is not in a checked row. No names, no bexio ids."""
     rows, saldo = form_totals(totals)
     lines = ["{:<6}{:<50}{:>16}{:>14}".format("Ziffer", "", "Entgelt", "Steuer")]
-    for row in ("200", "220", "221", "225", "230", "235", "302", "303", "312", "313", "342", "343", "382", "383",
-                "399", "400", "405", "410", "415", "420", "479"):
+    for row in (
+        "200",
+        "220",
+        "221",
+        "225",
+        "230",
+        "235",
+        "302",
+        "303",
+        "312",
+        "313",
+        "342",
+        "343",
+        "382",
+        "383",
+        "399",
+        "400",
+        "405",
+        "410",
+        "415",
+        "420",
+        "479",
+    ):
         base, tax = rows.get(row, [ZERO, ZERO])
         if row == "200" or base or tax:
-            lines.append("{:<6}{:<50}{:>16,.2f}{:>14,.2f}".format(row, LABELS[row], base, tax))
+            lines.append(f"{row:<6}{LABELS[row]:<50}{base:>16,.2f}{tax:>14,.2f}")
     lines.append("")
-    lines.append("Saldo before Ziffer 479 and Abzüge 280: {:,.2f} (positive: to pay)".format(saldo))
-    lines.append("tax not in a checked Ziffer (imports and the sales codes with no deduction row): {:,.2f}".format(totals.unchecked_tax))
-    lines.append("journal entry sales tax with no base row or no known rate, counted apart: {:,.2f}".format(totals.rate_unknown))
-    nowhere = sum(totals.undeducted_net.values(), ZERO) + sum(totals.unsplit_net.values(), ZERO)
+    lines.append(
+        f"Saldo before Ziffer 479 and Abzüge 280: {saldo:,.2f} (positive: to pay)"
+    )
+    lines.append(
+        f"tax not in a checked Ziffer (imports and the sales codes with no deduction row): {totals.unchecked_tax:,.2f}"
+    )
+    lines.append(
+        f"journal entry sales tax with no base row or no known rate, counted apart: {totals.rate_unknown:,.2f}"
+    )
+    nowhere = sum(totals.undeducted_net.values(), ZERO) + sum(
+        totals.unsplit_net.values(), ZERO
+    )
     if nowhere:
-        lines.append("sales net with no deduction row: {:,.2f} (codes in the private CSV, the fill refuses over it)".format(nowhere))
+        lines.append(
+            f"sales net with no deduction row: {nowhere:,.2f} (codes in the private CSV, the fill refuses over it)"
+        )
     if totals.unmapped:
-        lines.append("unmapped tax rows: {} (names in the private CSV's log, not here)".format(len(totals.unmapped)))
+        lines.append(
+            f"unmapped tax rows: {len(totals.unmapped)} (names in the private CSV's log, not here)"
+        )
     return lines
 
 
@@ -146,7 +199,7 @@ def write_csv(path, totals):
         writer.writerow([])
         writer.writerow(["code", "steuer_chf"])
         for code in sorted(totals.by_code):
-            writer.writerow([code, "{:.2f}".format(totals.by_code[code][1])])
+            writer.writerow([code, f"{totals.by_code[code][1]:.2f}"])
         writer.writerow([])
         writer.writerow(["unmapped_template", "rows"])
         for name, count in sorted(_count(totals.unmapped).items()):
@@ -156,7 +209,9 @@ def write_csv(path, totals):
         writer.writerow(["invoice/credit/bill vatfix-*", len(totals.skipped_mirrors)])
         writer.writerow([])
         writer.writerow(["skipped bezug moves", "vouchers"])
-        writer.writerow(["2202 -> 2203 keyed by journal line", len(totals.skipped_moves)])
+        writer.writerow(
+            ["2202 -> 2203 keyed by journal line", len(totals.skipped_moves)]
+        )
         writer.writerow([])
         writer.writerow(["other journal keys (pair rule)", "vouchers"])
         for key, count in sorted(_count(totals.other_keys).items()):
@@ -165,9 +220,9 @@ def write_csv(path, totals):
             writer.writerow([])
             writer.writerow(["code", "net with no deduction row"])
             for code, net in sorted(totals.undeducted_net.items()):
-                writer.writerow([code, "{:.2f}".format(net)])
+                writer.writerow([code, f"{net:.2f}"])
             for codes, net in sorted(totals.unsplit_net.items()):
-                writer.writerow(["/".join(codes), "{:.2f}".format(net)])
+                writer.writerow(["/".join(codes), f"{net:.2f}"])
 
 
 def _count(items):
@@ -179,27 +234,43 @@ def _count(items):
 
 def fetch(erp, start, end):
     """The submitted invoices of the period and their tax rows, read through the API user."""
-    filters = [["company", "=", COMPANY], ["docstatus", "=", 1], ["posting_date", "between", [str(start), str(end)]]]
-    sales = erp.list("Sales Invoice", filters, ["name", "posting_date", "base_net_total"])
-    purchases = erp.list("Purchase Invoice", filters, ["name", "posting_date", "base_net_total"])
+    filters = [
+        ["company", "=", COMPANY],
+        ["docstatus", "=", 1],
+        ["posting_date", "between", [str(start), str(end)]],
+    ]
+    sales = erp.list(
+        "Sales Invoice", filters, ["name", "posting_date", "base_net_total"]
+    )
+    purchases = erp.list(
+        "Purchase Invoice", filters, ["name", "posting_date", "base_net_total"]
+    )
     out = {}
     for kind, docs in (("sales", sales), ("purchases", purchases)):
         out[kind] = []
         for d in docs:
             doctype = "Sales Invoice" if kind == "sales" else "Purchase Invoice"
             full = erp.get(doctype, d["name"])
-            out[kind].append({
-                "posting_date": datetime.date.fromisoformat(str(full["posting_date"])),
-                "base_net_total": full["base_net_total"],
-                "taxes": full.get("taxes") or [],
-            })
+            out[kind].append(
+                {
+                    "posting_date": datetime.date.fromisoformat(
+                        str(full["posting_date"])
+                    ),
+                    "base_net_total": full["base_net_total"],
+                    "taxes": full.get("taxes") or [],
+                }
+            )
     return out
 
 
 def fetch_payments(erp, start, end):
     """The submitted Payment Entries of the period with their references, and the invoices they pay (read only).
     Returns the payments, and (doctype, name) -> the invoice as ERPNext has it."""
-    filters = [["company", "=", COMPANY], ["docstatus", "=", 1], ["posting_date", "between", [str(start), str(end)]]]
+    filters = [
+        ["company", "=", COMPANY],
+        ["docstatus", "=", 1],
+        ["posting_date", "between", [str(start), str(end)]],
+    ]
     payments, invoices = [], {}
     for p in erp.list("Payment Entry", filters, ["name", "posting_date"]):
         full = erp.get("Payment Entry", p["name"])
@@ -208,10 +279,12 @@ def fetch_payments(erp, start, end):
             key = (ref["reference_doctype"], ref["reference_name"])
             if ref["reference_doctype"] in INVOICE_DOCTYPES and key not in invoices:
                 invoices[key] = erp.get(*key)
-        payments.append({
-            "posting_date": datetime.date.fromisoformat(str(full["posting_date"])),
-            "references": references,
-        })
+        payments.append(
+            {
+                "posting_date": datetime.date.fromisoformat(str(full["posting_date"])),
+                "references": references,
+            }
+        )
     return payments, invoices
 
 
@@ -220,29 +293,55 @@ def fetch_journal_lines(erp, start, end):
     number, and debit minus credit, each line with its voucher's bexio_id key ('key', None when it has none;
     journal_totals() selects by it). The rows of every account are read, the base of a sales tax is one of them.
     A row whose account is not in the company's chart comes back with account None."""
-    numbers = {a["name"]: a["account_number"] for a in erp.list("Account", [["company", "=", COMPANY]], ["name", "account_number"])}
-    keys = {e["name"]: (e.get("bexio_id") or None)
-            for e in erp.list("Journal Entry", [["company", "=", COMPANY], ["docstatus", "=", 1],
-                                                ["posting_date", "between", [str(start), str(end)]]],
-                              ["name", "bexio_id"])}
-    filters = [["company", "=", COMPANY], ["voucher_type", "=", "Journal Entry"], ["is_cancelled", "=", 0],
-               ["posting_date", "between", [str(start), str(end)]]]
+    numbers = {
+        a["name"]: a["account_number"]
+        for a in erp.list(
+            "Account", [["company", "=", COMPANY]], ["name", "account_number"]
+        )
+    }
+    keys = {
+        e["name"]: (e.get("bexio_id") or None)
+        for e in erp.list(
+            "Journal Entry",
+            [
+                ["company", "=", COMPANY],
+                ["docstatus", "=", 1],
+                ["posting_date", "between", [str(start), str(end)]],
+            ],
+            ["name", "bexio_id"],
+        )
+    }
+    filters = [
+        ["company", "=", COMPANY],
+        ["voucher_type", "=", "Journal Entry"],
+        ["is_cancelled", "=", 0],
+        ["posting_date", "between", [str(start), str(end)]],
+    ]
     lines = []
-    for e in erp.list("GL Entry", filters, ["voucher_no", "posting_date", "account", "debit", "credit"]):
-        lines.append({
-            "voucher": e["voucher_no"],
-            "posting_date": datetime.date.fromisoformat(str(e["posting_date"])),
-            "account": numbers.get(e["account"]),
-            "amount": Decimal(str(e["debit"])) - Decimal(str(e["credit"])),
-            "key": keys.get(e["voucher_no"]),
-        })
+    for e in erp.list(
+        "GL Entry",
+        filters,
+        ["voucher_no", "posting_date", "account", "debit", "credit"],
+    ):
+        lines.append(
+            {
+                "voucher": e["voucher_no"],
+                "posting_date": datetime.date.fromisoformat(str(e["posting_date"])),
+                "account": numbers.get(e["account"]),
+                "amount": Decimal(str(e["debit"])) - Decimal(str(e["credit"])),
+                "key": keys.get(e["voucher_no"]),
+            }
+        )
     return lines
 
 
 def templates_by_name(erp):
     """Tax template name -> bexio id, for the templates that have one (the sales and purchase ones)."""
     names = {}
-    for doctype in ("Sales Taxes and Charges Template", "Purchase Taxes and Charges Template"):
+    for doctype in (
+        "Sales Taxes and Charges Template",
+        "Purchase Taxes and Charges Template",
+    ):
         for t in erp.list(doctype, [["bexio_id", "is", "set"]], ["name", "bexio_id"]):
             names[t["name"]] = str(t["bexio_id"])
     return names
@@ -255,29 +354,46 @@ def write_fields(path, fields):
         writer = csv.writer(f)
         writer.writerow(["field", "amount"])
         for name in sorted(fields):
-            writer.writerow([name, "{:.2f}".format(fields[name])])
+            writer.writerow([name, f"{fields[name]:.2f}"])
 
 
 def default_report(period, basis):
     """The private CSV of a run. The payment basis has its own file, so a run of one basis never overwrites the other."""
-    name = "mwst-{}.csv".format(period) if basis == "posting" else "mwst-{}-{}.csv".format(period, basis)
+    name = f"mwst-{period}.csv" if basis == "posting" else f"mwst-{period}-{basis}.csv"
     return os.path.join(im.PRIVATE, name)
 
 
 def main(argv):
-    parser = argparse.ArgumentParser(description="MWST figures of one period by bexio VAT code, from ERPNext (read only).")
-    parser.add_argument("--period", required=True, help="2026Q3 or 2026H1 (effective method)")
-    parser.add_argument("--basis", choices=("posting", "payment"), default="posting",
-                        help="posting: invoices by posting date (default); payment: Payment Entries by payment date, "
-                             "each over the invoices it pays")
-    parser.add_argument("--report", default=None, help="private CSV (default <private>/mwst-<period>.csv)")
-    parser.add_argument("--fields", default=None,
-                        help="payment basis only: also write the VAT Declaration's fields of the period to this private CSV, "
-                             "as the fill would set them (nothing is written to ERPNext)")
+    parser = argparse.ArgumentParser(
+        description="MWST figures of one period by bexio VAT code, from ERPNext (read only)."
+    )
+    parser.add_argument(
+        "--period", required=True, help="2026Q3 or 2026H1 (effective method)"
+    )
+    parser.add_argument(
+        "--basis",
+        choices=("posting", "payment"),
+        default="posting",
+        help="posting: invoices by posting date (default); payment: Payment Entries by payment date, "
+        "each over the invoices it pays",
+    )
+    parser.add_argument(
+        "--report",
+        default=None,
+        help="private CSV (default <private>/mwst-<period>.csv)",
+    )
+    parser.add_argument(
+        "--fields",
+        default=None,
+        help="payment basis only: also write the VAT Declaration's fields of the period to this private CSV, "
+        "as the fill would set them (nothing is written to ERPNext)",
+    )
     parser.add_argument("--token-file", default=im.TOKEN_FILE)
     args = parser.parse_args(argv)
     if args.fields and args.basis != "payment":
-        parser.error("--fields is for the payment basis, the one the VAT Declaration fill uses")
+        parser.error(
+            "--fields is for the payment basis, the one the VAT Declaration fill uses"
+        )
     start, end = period_bounds(args.period)
     report = args.report or default_report(args.period, args.basis)
 
@@ -291,18 +407,24 @@ def main(argv):
         gl = gl_entries(erp, start, end)
         journal = fetch_journal_lines(erp, start, end)
     except im.ErpError as err:
-        print("aborted: {}".format(err), file=sys.stderr)
+        print(f"aborted: {err}", file=sys.stderr)
         return 2
 
     if args.basis == "payment":
         sales, purchases, unallocated = payment_documents(payments, invoices)
         totals = plan(sales, purchases, templates)
-        print("MWST {} ({} to {}, payment basis): {} payments, {} of them pay no invoice".format(
-            args.period, start, end, len(payments), unallocated))
+        print(
+            "MWST {} ({} to {}, payment basis): {} payments, {} of them pay no invoice".format(
+                args.period, start, end, len(payments), unallocated
+            )
+        )
     else:
         totals = plan(docs["sales"], docs["purchases"], templates)
-        print("MWST {} ({} to {}): {} sales and {} purchase invoices".format(
-            args.period, start, end, len(docs["sales"]), len(docs["purchases"])))
+        print(
+            "MWST {} ({} to {}): {} sales and {} purchase invoices".format(
+                args.period, start, end, len(docs["sales"]), len(docs["purchases"])
+            )
+        )
     journal_totals(journal, totals)
     for line in summary_lines(totals):
         print(line)
@@ -310,15 +432,15 @@ def main(argv):
     for line in reconcile_lines(totals, gl):
         print(line)
     write_csv(report, totals)
-    print("written: {}".format(report))
+    print(f"written: {report}")
     if args.fields:
         try:
             fields = declaration_fields(totals)
         except ValueError as err:
-            print("fields not written: {}".format(err))
+            print(f"fields not written: {err}")
             return 1
         write_fields(args.fields, fields)
-        print("written: {}".format(args.fields))
+        print(f"written: {args.fields}")
     return 1 if totals.unmapped else 0
 
 
@@ -328,38 +450,75 @@ GL_ACCOUNTS = ("2200", "1170", "1171", "2201")
 def gl_entries(erp, start, end):
     """The GL entries of the period on the VAT accounts 2200, 1170, 1171 and the settlement account 2201, one dict
     each with the account number, the voucher it posts from, debit and credit (read only). The checks below go by
-    voucher, because bexio's settlement is a voucher of its own and the invoice rows are not."""
-    accounts = erp.list("Account", [["company", "=", COMPANY], ["account_number", "in", list(GL_ACCOUNTS)]],
-                        ["name", "account_number"])
+    voucher, because bexio's settlement is a voucher of its own and the invoice rows are not.
+    """
+    accounts = erp.list(
+        "Account",
+        [["company", "=", COMPANY], ["account_number", "in", list(GL_ACCOUNTS)]],
+        ["name", "account_number"],
+    )
     names = {a["name"]: str(a["account_number"]) for a in accounts}
     if not names:
         return []
-    entries = erp.list("GL Entry", [["account", "in", list(names)], ["is_cancelled", "=", 0],
-                                    ["posting_date", "between", [str(start), str(end)]]],
-                       ["account", "voucher_type", "voucher_no", "debit", "credit"])
-    return [{"number": names[e["account"]], "voucher_type": e["voucher_type"], "voucher_no": e["voucher_no"],
-             "debit": Decimal(str(e["debit"])), "credit": Decimal(str(e["credit"]))} for e in entries]
+    entries = erp.list(
+        "GL Entry",
+        [
+            ["account", "in", list(names)],
+            ["is_cancelled", "=", 0],
+            ["posting_date", "between", [str(start), str(end)]],
+        ],
+        ["account", "voucher_type", "voucher_no", "debit", "credit"],
+    )
+    return [
+        {
+            "number": names[e["account"]],
+            "voucher_type": e["voucher_type"],
+            "voucher_no": e["voucher_no"],
+            "debit": Decimal(str(e["debit"])),
+            "credit": Decimal(str(e["credit"])),
+        }
+        for e in entries
+    ]
 
 
 def gl_owed(gl):
     """Sales tax moved to 2200 in the period: the credits on 2200 from vouchers other than Sales Invoice. The
     Sales Invoice credits are left out, because the import's mirror entries reverse them to 2202 at the invoice date,
-    so the credit of a sale and its reversal net out, and what remains is the receipt's move and manual sales tax."""
-    return sum((e["credit"] for e in gl if e["number"] == "2200" and e["voucher_type"] != "Sales Invoice"), ZERO)
+    so the credit of a sale and its reversal net out, and what remains is the receipt's move and manual sales tax.
+    """
+    return sum(
+        (
+            e["credit"]
+            for e in gl
+            if e["number"] == "2200" and e["voucher_type"] != "Sales Invoice"
+        ),
+        ZERO,
+    )
 
 
 def gl_deductible(gl):
     """Input tax moved to 1170 and 1171 in the period: the debits from vouchers other than Purchase Invoice, the
-    same way as gl_owed. Purchase Invoice debits are left out for the same reason, bexio books them at the bill date."""
-    return sum((e["debit"] for e in gl if e["number"] in ("1170", "1171") and e["voucher_type"] != "Purchase Invoice"),
-               ZERO)
+    same way as gl_owed. Purchase Invoice debits are left out for the same reason, bexio books them at the bill date.
+    """
+    return sum(
+        (
+            e["debit"]
+            for e in gl
+            if e["number"] in ("1170", "1171")
+            and e["voucher_type"] != "Purchase Invoice"
+        ),
+        ZERO,
+    )
 
 
 def settlement(gl):
     """The settlement of the period: the vouchers that post against 2201, read for their 2200 debit (the sales tax
     declared) and their 1170 and 1171 credits (the input tax declared). bexio books it once per quarter; a voucher
-    that only moves 2201 against the bank is not a settlement. Returns (settled, declared owed, declared input)."""
-    vouchers = {(e["voucher_type"], e["voucher_no"]) for e in gl if e["number"] == "2201"}
+    that only moves 2201 against the bank is not a settlement. Returns (settled, declared owed, declared input).
+    """
+    vouchers = {
+        (e["voucher_type"], e["voucher_no"]) for e in gl if e["number"] == "2201"
+    }
     owed = ZERO
     deductible = ZERO
     for e in gl:
@@ -383,15 +542,25 @@ def reconcile_lines(totals, gl):
     gl_input = gl_deductible(gl)
     settled, declared_owed, declared_input = settlement(gl)
     lines = [
-        "check against GL: owed on 2200 {:,.2f} vs Ziffer 399 {:,.2f}: difference {:,.2f}".format(gl_sales, owed, gl_sales - owed),
-        "check against GL: input tax on 1170+1171 {:,.2f} vs Ziffer 479 {:,.2f}: difference {:,.2f}".format(gl_input, vorsteuer, gl_input - vorsteuer),
+        f"check against GL: owed on 2200 {gl_sales:,.2f} vs Ziffer 399 {owed:,.2f}: difference {gl_sales - owed:,.2f}",
+        f"check against GL: input tax on 1170+1171 {gl_input:,.2f} vs Ziffer 479 {vorsteuer:,.2f}: difference {gl_input - vorsteuer:,.2f}",
     ]
     if settled:
-        lines.append("settlement: settled: yes; 2200 debit {:,.2f} vs owed {:,.2f}: difference {:,.2f}; 1170+1171 credit {:,.2f} vs input tax {:,.2f}: difference {:,.2f}".format(
-            declared_owed, gl_sales, declared_owed - gl_sales, declared_input, gl_input, declared_input - gl_input))
+        lines.append(
+            "settlement: settled: yes; 2200 debit {:,.2f} vs owed {:,.2f}: difference {:,.2f}; 1170+1171 credit {:,.2f} vs input tax {:,.2f}: difference {:,.2f}".format(
+                declared_owed,
+                gl_sales,
+                declared_owed - gl_sales,
+                declared_input,
+                gl_input,
+                declared_input - gl_input,
+            )
+        )
     else:
         lines.append("settlement: settled: no")
-    lines.append("differences come from manual journal entries with tax and from the bases not in a checked Ziffer")
+    lines.append(
+        "differences come from manual journal entries with tax and from the bases not in a checked Ziffer"
+    )
     return lines
 
 

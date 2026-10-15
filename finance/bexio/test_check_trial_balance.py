@@ -10,7 +10,9 @@ import unittest
 from decimal import Decimal
 
 import check_trial_balance as ctb
-from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
+from private_guard import (  # every test below runs against a temp private folder, never the real one
+    setUpModule,
+)
 
 YEARS = [
     {"id": 1, "start": "2020-01-01", "end": "2020-12-31"},
@@ -27,19 +29,29 @@ ACCOUNT_NO = {str(a["id"]): a["account_no"] for a in ACCOUNTS}
 
 def line(i, date, debit, credit, amount, description="line", ref_class=None):
     return {
-        "id": i, "date": date + "T00:00:00+02:00", "description": description,
-        "debit_account_id": debit, "credit_account_id": credit,
-        "amount": amount, "base_currency_amount": amount, "ref_class": ref_class, "ref_id": None,
+        "id": i,
+        "date": date + "T00:00:00+02:00",
+        "description": description,
+        "debit_account_id": debit,
+        "credit_account_id": credit,
+        "amount": amount,
+        "base_currency_amount": amount,
+        "ref_class": ref_class,
+        "ref_id": None,
     }
 
 
 def journal():
     return [
-        line(1, "2020-03-01", 10, 11, Decimal("100")),             # bank in, income 100
-        line(2, "2020-06-01", 4000, 10, Decimal("30")),             # expense paid from bank 30
-        line(3, "2020-12-31", 11, 13, Decimal("70")),               # year-end closing (account 13 is 9100): left out
-        line(4, "2021-01-01", 13, 11, Decimal("70"), "Saldovortrag 2020"),   # carry-forward: left out
-        line(5, "2021-02-01", 10, 11, Decimal("50")),               # bank in, income 50
+        line(1, "2020-03-01", 10, 11, Decimal("100")),  # bank in, income 100
+        line(2, "2020-06-01", 4000, 10, Decimal("30")),  # expense paid from bank 30
+        line(
+            3, "2020-12-31", 11, 13, Decimal("70")
+        ),  # year-end closing (account 13 is 9100): left out
+        line(
+            4, "2021-01-01", 13, 11, Decimal("70"), "Saldovortrag 2020"
+        ),  # carry-forward: left out
+        line(5, "2021-02-01", 10, 11, Decimal("50")),  # bank in, income 50
     ]
 
 
@@ -56,7 +68,9 @@ class BexioEntriesTest(unittest.TestCase):
 
     def test_closing_lines_and_carry_forward_are_left_out(self):
         entries = ctb.bexio_entries(self.data, self.buckets, ACCOUNTS)
-        self.assertEqual(len(entries), 2 * 3)  # lines 1, 2 and 5 only, each with a debit and a credit side
+        self.assertEqual(
+            len(entries), 2 * 3
+        )  # lines 1, 2 and 5 only, each with a debit and a credit side
         self.assertFalse(any(key == "13" for _, key, _ in entries))
 
     def test_debit_positive_credit_negative(self):
@@ -86,21 +100,57 @@ class BalancesTest(unittest.TestCase):
 class ErpEntriesTest(unittest.TestCase):
     def test_unmapped_account_is_keyed_by_its_name(self):
         rows = [
-            {"account": "1020 - Bank - bic", "debit": 100, "credit": 0, "posting_date": "2020-03-01", "voucher_no": "A"},
-            {"account": "Old - bic", "debit": 0, "credit": 5, "posting_date": "2020-03-02", "voucher_no": "B"},
+            {
+                "account": "1020 - Bank - bic",
+                "debit": 100,
+                "credit": 0,
+                "posting_date": "2020-03-01",
+                "voucher_no": "A",
+            },
+            {
+                "account": "Old - bic",
+                "debit": 0,
+                "credit": 5,
+                "posting_date": "2020-03-02",
+                "voucher_no": "B",
+            },
         ]
         entries = ctb.erp_entries(rows, {"1020 - Bank - bic": "10"}, {"13"})
         self.assertEqual(entries[0], ("2020-03-01", "10", Decimal("100")))
-        self.assertEqual(entries[1], ("2020-03-02", ("erp", "Old - bic"), Decimal("-5")))
+        self.assertEqual(
+            entries[1], ("2020-03-02", ("erp", "Old - bic"), Decimal("-5"))
+        )
 
     def test_a_voucher_with_a_leg_on_the_closing_account_is_left_out_whole(self):
         # a year-start carry-forward Journal Entry: 2970 debited, 9100 credited (bexio id 13)
         rows = [
-            {"account": "2970 - Gewinnvortrag - bic", "debit": 50, "credit": 0, "posting_date": "2022-01-01", "voucher_no": "JV-1"},
-            {"account": "9100 - Eroeffnung - bic", "debit": 0, "credit": 50, "posting_date": "2022-01-01", "voucher_no": "JV-1"},
-            {"account": "1020 - Bank - bic", "debit": 100, "credit": 0, "posting_date": "2022-02-01", "voucher_no": "JV-2"},
+            {
+                "account": "2970 - Gewinnvortrag - bic",
+                "debit": 50,
+                "credit": 0,
+                "posting_date": "2022-01-01",
+                "voucher_no": "JV-1",
+            },
+            {
+                "account": "9100 - Eroeffnung - bic",
+                "debit": 0,
+                "credit": 50,
+                "posting_date": "2022-01-01",
+                "voucher_no": "JV-1",
+            },
+            {
+                "account": "1020 - Bank - bic",
+                "debit": 100,
+                "credit": 0,
+                "posting_date": "2022-02-01",
+                "voucher_no": "JV-2",
+            },
         ]
-        erp_bexio_id = {"2970 - Gewinnvortrag - bic": "20", "9100 - Eroeffnung - bic": "13", "1020 - Bank - bic": "10"}
+        erp_bexio_id = {
+            "2970 - Gewinnvortrag - bic": "20",
+            "9100 - Eroeffnung - bic": "13",
+            "1020 - Bank - bic": "10",
+        }
         entries = ctb.erp_entries(rows, erp_bexio_id, {"13"})
         self.assertEqual(entries, [("2022-02-01", "10", Decimal("100"))])
 
@@ -123,7 +173,10 @@ class CompareTest(unittest.TestCase):
         rows = ctb.compare(bexio, erp, YEARS, ACCOUNT_NO_BY_BEXIO_ID)
         self.assertEqual(len(rows), 4)  # every year and account with a figure is a row
         self.assertEqual([r for r in rows if r["difference"] != 0], [])
-        self.assertEqual({(r["account_no"], r["basis"]) for r in rows}, {("1020", "closing"), ("3200", "movement")})
+        self.assertEqual(
+            {(r["account_no"], r["basis"]) for r in rows},
+            {("1020", "closing"), ("3200", "movement")},
+        )
 
     def test_a_difference_in_a_closing_balance_is_reported_with_its_year(self):
         bexio = {(2, "10"): (Decimal("50"), Decimal("120"))}
@@ -149,9 +202,24 @@ ACCOUNT_NO_BY_BEXIO_ID = {"10": "1020", "11": "3200", "12": "4000"}
 class SummaryTest(unittest.TestCase):
     def test_counts_and_the_band_of_the_largest_difference(self):
         rows = [
-            {"year": 1, "bexio_id": "10", "erp_account": "", "difference": Decimal("0.004")},
-            {"year": 2, "bexio_id": "10", "erp_account": "", "difference": Decimal("0.02")},
-            {"year": 2, "bexio_id": "11", "erp_account": "", "difference": Decimal("-3")},
+            {
+                "year": 1,
+                "bexio_id": "10",
+                "erp_account": "",
+                "difference": Decimal("0.004"),
+            },
+            {
+                "year": 2,
+                "bexio_id": "10",
+                "erp_account": "",
+                "difference": Decimal("0.02"),
+            },
+            {
+                "year": 2,
+                "bexio_id": "11",
+                "erp_account": "",
+                "difference": Decimal("-3"),
+            },
         ]
         text = ctb.summary(rows, YEARS, 2)
         self.assertIn("years compared: 2", text)
@@ -161,7 +229,18 @@ class SummaryTest(unittest.TestCase):
         self.assertIn("largest difference: above 1 CHF (rows in that band: 1)", text)
 
     def test_no_difference(self):
-        text = ctb.summary([{"year": 1, "bexio_id": "10", "erp_account": "", "difference": Decimal("0")}], YEARS, 1)
+        text = ctb.summary(
+            [
+                {
+                    "year": 1,
+                    "bexio_id": "10",
+                    "erp_account": "",
+                    "difference": Decimal("0"),
+                }
+            ],
+            YEARS,
+            1,
+        )
         self.assertIn("rows with a difference: 0", text)
         self.assertIn("largest difference: none", text)
 
@@ -175,8 +254,18 @@ class YearOfTest(unittest.TestCase):
 
 class WriteCsvTest(unittest.TestCase):
     def test_rows_are_written_with_plain_decimals(self):
-        rows = [{"year": 2, "account_no": "1020", "bexio_id": "10", "erp_account": "", "basis": "closing",
-                 "bexio": Decimal("120"), "erpnext": Decimal("120.5"), "difference": Decimal("0.5")}]
+        rows = [
+            {
+                "year": 2,
+                "account_no": "1020",
+                "bexio_id": "10",
+                "erp_account": "",
+                "basis": "closing",
+                "bexio": Decimal("120"),
+                "erpnext": Decimal("120.5"),
+                "difference": Decimal("0.5"),
+            }
+        ]
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "check.csv")
             ctb.write_csv(path, rows)

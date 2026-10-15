@@ -23,23 +23,40 @@ import datetime
 from collections import defaultdict
 
 import frappe
+from bi_finance import cash_conversion as cc
+from bi_finance.cash_conversion import (
+    build,
+    membership,
+    month_ends,
+    month_totals,
+    running,
+)
 from frappe import _
 from frappe.utils import cint, escape_html, flt, getdate, nowdate
-
-from bi_finance import cash_conversion as cc
-from bi_finance.cash_conversion import build, membership, month_ends, month_totals, running
 
 HISTORY_FROM = datetime.date(2019, 1, 1)
 
 # Credit balances and credit flows are shown positive: revenue and payables are negated.
-SIGN = {"revenue": -1, "purchases": 1, "cogs": 1, "receivables": 1, "payables": -1, "inventory": 1}
+SIGN = {
+    "revenue": -1,
+    "purchases": 1,
+    "cogs": 1,
+    "receivables": 1,
+    "payables": -1,
+    "inventory": 1,
+}
 FLOWS = ["revenue", "purchases", "cogs"]
 BALANCES = ["receivables", "payables", "inventory"]
 
 
 def columns():
     def col(label, fieldname, fieldtype="Float", precision=2, width=110):
-        column = {"label": _(label), "fieldname": fieldname, "fieldtype": fieldtype, "width": width}
+        column = {
+            "label": _(label),
+            "fieldname": fieldname,
+            "fieldtype": fieldtype,
+            "width": width,
+        }
         if fieldtype == "Float":
             column["precision"] = precision
         return column
@@ -61,10 +78,30 @@ def columns():
         col("DPO 12 months", "dpo_12", precision=1, width=110),
         col("CCC 12 months", "ccc_12", precision=1, width=110),
         col("CCC change 12 months", "ccc_12_change", precision=1, width=140),
-        col("Days to pay customers, month", "paid_days_customers", precision=1, width=170),
-        col("Days to pay suppliers, month", "paid_days_suppliers", precision=1, width=170),
-        col("Days to pay customers, 12 months", "paid_days_customers_12", precision=1, width=200),
-        col("Days to pay suppliers, 12 months", "paid_days_suppliers_12", precision=1, width=200),
+        col(
+            "Days to pay customers, month",
+            "paid_days_customers",
+            precision=1,
+            width=170,
+        ),
+        col(
+            "Days to pay suppliers, month",
+            "paid_days_suppliers",
+            precision=1,
+            width=170,
+        ),
+        col(
+            "Days to pay customers, 12 months",
+            "paid_days_customers_12",
+            precision=1,
+            width=200,
+        ),
+        col(
+            "Days to pay suppliers, 12 months",
+            "paid_days_suppliers_12",
+            precision=1,
+            width=200,
+        ),
     ]
 
 
@@ -76,7 +113,9 @@ def payments(company, as_of, doctype, payment_type):
         join `tabPayment Entry` pe on pe.name = per.parent
         join `tab{doctype}` inv on inv.name = per.reference_name
         where per.reference_doctype = %s and pe.payment_type = %s and pe.company = %s
-            and pe.docstatus = 1 and inv.docstatus = 1 and pe.posting_date <= %s""".format(doctype=doctype),
+            and pe.docstatus = 1 and inv.docstatus = 1 and pe.posting_date <= %s""".format(
+            doctype=doctype
+        ),
         (doctype, payment_type, company, as_of),
     )
     return [(paid, invoiced, flt(amount)) for paid, invoiced, amount in found]
@@ -90,7 +129,10 @@ def execute(filters=None):
 
     payables_excluded = {
         frappe.get_cached_value("Company", company, field)
-        for field in ("default_payroll_payable_account", "default_expense_claim_payable_account")
+        for field in (
+            "default_payroll_payable_account",
+            "default_expense_claim_payable_account",
+        )
     }
     accounts = frappe.get_all(
         "Account",
@@ -125,13 +167,18 @@ def execute(filters=None):
     rows = build(months, flows, balances, customers, suppliers)
 
     messages = [
-        _("DSO = receivables / revenue x days; DPO = payables / purchases x days; DIO = stock / cost of goods sold x days; "
-          "CCC = DSO + DIO - DPO. The 12-month values use the 12 months to the row; days to pay are from the Payment Entries."),
+        _(
+            "DSO = receivables / revenue x days; DPO = payables / purchases x days; DIO = stock / cost of goods sold x days; "
+            "CCC = DSO + DIO - DPO. The 12-month values use the 12 months to the row; days to pay are from the Payment Entries."
+        ),
     ]
     if rows:
         # the table starts at the first month with a posting: the months before it are all zero and are left out
-        messages.append(_("The books start in {0}: the months before it have no entries and are left out.").format(
-            rows[-1]["month"].strftime("%b %Y")))
+        messages.append(
+            _(
+                "The books start in {0}: the months before it have no entries and are left out."
+            ).format(rows[-1]["month"].strftime("%b %Y"))
+        )
     if months and all(balance == 0 for balance in balances["inventory"]):
         messages.append(_("No stock in any month: DIO is 0 days."))
     message = "<br>".join(escape_html(m) for m in messages)
@@ -142,10 +189,22 @@ def execute(filters=None):
         "data": {
             "labels": [cc.month_label(row["month"]) for row in chart_rows],
             "datasets": [
-                {"name": _("DSO 12 months"), "values": [row["dso_12"] for row in chart_rows]},
-                {"name": _("DPO 12 months"), "values": [row["dpo_12"] for row in chart_rows]},
-                {"name": _("DIO 12 months"), "values": [row["dio_12"] for row in chart_rows]},
-                {"name": _("CCC 12 months"), "values": [row["ccc_12"] for row in chart_rows]},
+                {
+                    "name": _("DSO 12 months"),
+                    "values": [row["dso_12"] for row in chart_rows],
+                },
+                {
+                    "name": _("DPO 12 months"),
+                    "values": [row["dpo_12"] for row in chart_rows],
+                },
+                {
+                    "name": _("DIO 12 months"),
+                    "values": [row["dio_12"] for row in chart_rows],
+                },
+                {
+                    "name": _("CCC 12 months"),
+                    "values": [row["ccc_12"] for row in chart_rows],
+                },
             ],
         },
         "type": "line",

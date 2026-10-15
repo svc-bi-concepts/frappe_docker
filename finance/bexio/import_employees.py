@@ -42,7 +42,7 @@ import json
 import os
 import sys
 
-from import_master import COMPANY, Erp, ErpError, PRIVATE, TOKEN_FILE, differs
+from import_master import COMPANY, PRIVATE, TOKEN_FILE, Erp, ErpError, differs
 
 PAYROLL_DIR = os.path.join(PRIVATE, "bexio-payroll")
 DATES_CSV = os.path.join(PRIVATE, "payroll", "employee-dates.csv")
@@ -60,18 +60,26 @@ SWISS_COUNTRY = "CH"
 
 # Employee field <- bexio employees.json key, for the dry run's fill counts.
 FIELD_SOURCES = [
-    ("first_name", "first_name"), ("last_name", "last_name"), ("gender", "gender"),
-    ("date_of_birth", "date_of_birth"), ("marital_status", "marital_status"),
-    ("cell_number", "phone_number"), ("personal_email", "email"),
-    ("current_address", "address"), ("iban", "iban"),
-    ("social_security_number", "ahv_number"), ("employment_type", "employment_level"),
-    ("swiss_employment_level", "employment_level"), ("swiss_hours_per_week", "hours_per_week"),
+    ("first_name", "first_name"),
+    ("last_name", "last_name"),
+    ("gender", "gender"),
+    ("date_of_birth", "date_of_birth"),
+    ("marital_status", "marital_status"),
+    ("cell_number", "phone_number"),
+    ("personal_email", "email"),
+    ("current_address", "address"),
+    ("iban", "iban"),
+    ("social_security_number", "ahv_number"),
+    ("employment_type", "employment_level"),
+    ("swiss_employment_level", "employment_level"),
+    ("swiss_hours_per_week", "hours_per_week"),
     ("swiss_stay_permit", "stay_permit_category"),
 ]
 PERMIT_CATEGORIES = {"B", "C", "G", "L", "Ci", "F", "N", "S"}
 
 
 # ---- the export ----
+
 
 def load_payroll(path):
     """(employees, paystubs) of the payroll export (export.py --payroll)."""
@@ -94,13 +102,17 @@ def read_dates_csv(path=DATES_CSV):
     rows = {}
     with open(path, newline="", encoding="utf-8") as f:
         for raw in csv.DictReader(f):
-            row = {(k or "").strip().lower().replace(" ", "_"): (v or "").strip() for k, v in raw.items()}
+            row = {
+                (k or "").strip().lower().replace(" ", "_"): (v or "").strip()
+                for k, v in raw.items()
+            }
             if row.get("bexio_id"):
                 rows[row["bexio_id"]] = row
     return rows
 
 
 # ---- the mapping ----
+
 
 def month_key(stub):
     return (int(stub["year"]), int(stub["month"]))
@@ -111,12 +123,14 @@ def month_start(month):
 
 
 def month_end(month):
-    return "{:04d}-{:02d}-{:02d}".format(month[0], month[1], calendar.monthrange(month[0], month[1])[1])
+    return f"{month[0]:04d}-{month[1]:02d}-{calendar.monthrange(month[0], month[1])[1]:02d}"
 
 
 def marital_status(value):
     """bexio's lowercase word onto Employee's Select options; empty when not one of them (reported, not guessed)."""
-    return {option.lower(): option for option in MARITAL_OPTIONS}.get(str(value or "").lower(), "")
+    return {option.lower(): option for option in MARITAL_OPTIONS}.get(
+        str(value or "").lower(), ""
+    )
 
 
 def composed_address(addr):
@@ -128,10 +142,24 @@ def composed_address(addr):
     """
     if not isinstance(addr, dict):
         return ""
-    street = " ".join(part for part in (addr.get("street_name"), addr.get("house_number")) if part) or addr.get("street") or ""
-    city = addr.get("locality") if addr.get("locality") and addr.get("locality") != addr.get("city") else addr.get("city")
-    lines = [street, addr.get("complementary_line") or "", addr.get("postbox") or "",
-             " ".join(part for part in (addr.get("zip_code"), city) if part)]
+    street = (
+        " ".join(
+            part for part in (addr.get("street_name"), addr.get("house_number")) if part
+        )
+        or addr.get("street")
+        or ""
+    )
+    city = (
+        addr.get("locality")
+        if addr.get("locality") and addr.get("locality") != addr.get("city")
+        else addr.get("city")
+    )
+    lines = [
+        street,
+        addr.get("complementary_line") or "",
+        addr.get("postbox") or "",
+        " ".join(part for part in (addr.get("zip_code"), city) if part),
+    ]
     country = str(addr.get("country") or "").upper()
     if country and country != SWISS_COUNTRY:
         lines.append(country)
@@ -141,7 +169,7 @@ def composed_address(addr):
 def bio_text(emp):
     """Nationality and language have no Employee field; they go into the bio."""
     rows = [("Nationality", emp.get("nationality")), ("Language", emp.get("language"))]
-    return "\n".join("{}: {}".format(label, value) for label, value in rows if value)
+    return "\n".join(f"{label}: {value}" for label, value in rows if value)
 
 
 def stay_permit(value):
@@ -188,9 +216,17 @@ def employee_doc(emp, gender, joined, left):
         "iban": emp.get("iban") or "",
         "social_security_number": emp.get("ahv_number") or "",
         "company": COMPANY,
-        "employment_type": FULL_TIME if emp.get("employment_level") == FULL_TIME_LEVEL else PART_TIME,
-        "swiss_employment_level": emp.get("employment_level") if emp.get("employment_level") is not None else "",
-        "swiss_hours_per_week": emp.get("hours_per_week") if emp.get("hours_per_week") is not None else "",
+        "employment_type": (
+            FULL_TIME if emp.get("employment_level") == FULL_TIME_LEVEL else PART_TIME
+        ),
+        "swiss_employment_level": (
+            emp.get("employment_level")
+            if emp.get("employment_level") is not None
+            else ""
+        ),
+        "swiss_hours_per_week": (
+            emp.get("hours_per_week") if emp.get("hours_per_week") is not None else ""
+        ),
         "swiss_stay_permit": stay_permit(emp.get("stay_permit_category")),
         "bio": bio_text(emp),
         "date_of_joining": joined,
@@ -220,7 +256,9 @@ def build_plan(employees, paystubs, overrides, gender_names):
         if not gender:
             plan.append((emp, None, "unknown gender: {}".format(emp.get("gender"))))
             continue
-        dates = dates_for(months.get(str(emp["id"])), last_month, overrides.get(str(emp["id"])))
+        dates = dates_for(
+            months.get(str(emp["id"])), last_month, overrides.get(str(emp["id"]))
+        )
         if dates is None:
             plan.append((emp, None, "needs joining date"))
             continue
@@ -230,6 +268,7 @@ def build_plan(employees, paystubs, overrides, gender_names):
 
 # ---- the upsert ----
 
+
 class Counts:
     def __init__(self):
         self.created = self.updated = self.unchanged = self.failed = 0
@@ -237,8 +276,14 @@ class Counts:
 
     def line(self, dry_run):
         return "{} {}  already there: {}  {}: {}  unchanged: {}  failed: {}".format(
-            "to create:" if dry_run else "created:", self.created, self.existing,
-            "to update" if dry_run else "updated", self.updated, self.unchanged, self.failed)
+            "to create:" if dry_run else "created:",
+            self.created,
+            self.existing,
+            "to update" if dry_run else "updated",
+            self.updated,
+            self.unchanged,
+            self.failed,
+        )
 
 
 class EmployeeImporter:
@@ -255,7 +300,9 @@ class EmployeeImporter:
 
     def index(self):
         if self._index is None:
-            rows = self.erp.list("Employee", [["bexio_id", "is", "set"]], ["name", "bexio_id"])
+            rows = self.erp.list(
+                "Employee", [["bexio_id", "is", "set"]], ["name", "bexio_id"]
+            )
             self._index = {r["bexio_id"]: r["name"] for r in rows}
         return self._index
 
@@ -268,7 +315,7 @@ class EmployeeImporter:
                     self.needs_dates.append(emp)
                 else:
                     self.counts.failed += 1
-                    self.problems.append("record {}: {}".format(position, reason))
+                    self.problems.append(f"record {position}: {reason}")
                 continue
             self.upsert(str(emp["id"]), doc, position)
         return self.counts
@@ -282,7 +329,9 @@ class EmployeeImporter:
                 # the naming series only matters on create; an existing Employee keeps its series
                 want = {k: v for k, v in doc.items() if k != "naming_series"}
                 have = self.erp.get("Employee", name)
-                changed = [key for key, value in want.items() if differs(have, {key: value})]
+                changed = [
+                    key for key, value in want.items() if differs(have, {key: value})
+                ]
                 if changed:
                     self.field_writes[position] = changed
                     if not self.dry_run:
@@ -297,22 +346,34 @@ class EmployeeImporter:
                 self.counts.created += 1
         except ErpError as err:
             self.counts.failed += 1
-            self.problems.append("record {}: write refused ({})".format(position, type(err).__name__))
+            self.problems.append(
+                f"record {position}: write refused ({type(err).__name__})"
+            )
 
 
 # ---- output ----
 
+
 def fill_counts(employees):
     """Per mapped field, how many records carry it (counts only, no values)."""
-    return [(label, sum(1 for emp in employees if emp.get(key))) for label, key in FIELD_SOURCES]
+    return [
+        (label, sum(1 for emp in employees if emp.get(key)))
+        for label, key in FIELD_SOURCES
+    ]
 
 
 def write_needs_dates(path, employees):
     """The list for the operator: who has no joining date. Counts in the first line, mode 600."""
-    lines = ["# employees without a joining date: {}".format(len(employees))]
+    lines = [f"# employees without a joining date: {len(employees)}"]
     for emp in employees:
-        lines.append("{} {}  bexio id {}  personal nr {}".format(
-            emp.get("first_name") or "", emp.get("last_name") or "", emp.get("id"), emp.get("personal_number") or ""))
+        lines.append(
+            "{} {}  bexio id {}  personal nr {}".format(
+                emp.get("first_name") or "",
+                emp.get("last_name") or "",
+                emp.get("id"),
+                emp.get("personal_number") or "",
+            )
+        )
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
@@ -324,24 +385,45 @@ def report(importer, plan, dry_run):
     for _emp, doc, _reason in plan:
         if doc:
             status[doc["status"]] += 1
-    print("records: {}".format(len(plan)))
+    print(f"records: {len(plan)}")
     print(importer.counts.line(dry_run))
-    print("fields filled: " + ", ".join("{}/{}".format(label, count) for label, count in fill_counts(employees)))
-    unknown = sum(1 for _emp, doc, reason in plan if doc is None and reason.startswith("unknown gender"))
-    print("unknown gender: {}  needs joining date: {}".format(unknown, len(importer.needs_dates)))
+    print(
+        "fields filled: "
+        + ", ".join(f"{label}/{count}" for label, count in fill_counts(employees))
+    )
+    unknown = sum(
+        1
+        for _emp, doc, reason in plan
+        if doc is None and reason.startswith("unknown gender")
+    )
+    print(f"unknown gender: {unknown}  needs joining date: {len(importer.needs_dates)}")
     print("status: Active {}, Left {}".format(status["Active"], status["Left"]))
     if dry_run:
         for position, fields in sorted(importer.field_writes.items()):
             print("record {} fields to write: {}".format(position, ", ".join(fields)))
     print("dry run: nothing was written" if dry_run else "written to ERPNext")
-    print("needs-dates list: {}".format(NEEDS_DATES))
+    print(f"needs-dates list: {NEEDS_DATES}")
 
 
 def main(argv):
-    parser = argparse.ArgumentParser(description="Import the bexio payroll employees into ERPNext Employee.")
-    parser.add_argument("--dry-run", action="store_true", help="read ERPNext, write nothing but the needs-dates list (default)")
-    parser.add_argument("--apply", action="store_true", help="create and update the Employees through the API user")
-    parser.add_argument("--token-file", default=TOKEN_FILE, help="API keys file (default: the master importer's)")
+    parser = argparse.ArgumentParser(
+        description="Import the bexio payroll employees into ERPNext Employee."
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="read ERPNext, write nothing but the needs-dates list (default)",
+    )
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="create and update the Employees through the API user",
+    )
+    parser.add_argument(
+        "--token-file",
+        default=TOKEN_FILE,
+        help="API keys file (default: the master importer's)",
+    )
     args = parser.parse_args(argv)
     if args.dry_run and args.apply:
         parser.error("--dry-run and --apply are mutually exclusive")
@@ -353,7 +435,7 @@ def main(argv):
     try:
         genders = [row["name"] for row in erp.list("Gender")]
     except ErpError as err:
-        print("aborted: the Gender list is not readable: {}".format(err), file=sys.stderr)
+        print(f"aborted: the Gender list is not readable: {err}", file=sys.stderr)
         return 2
     importer = EmployeeImporter(erp, dry_run=dry_run)
     try:
@@ -362,7 +444,7 @@ def main(argv):
     except ErpError as err:
         # the lookup every record depends on failed (the bexio_id field is
         # missing: run finance/scripts/swiss-setup.sh fields first)
-        print("aborted: {}".format(err), file=sys.stderr)
+        print(f"aborted: {err}", file=sys.stderr)
         return 2
     write_needs_dates(NEEDS_DATES, importer.needs_dates)
     report(importer, plan, dry_run)

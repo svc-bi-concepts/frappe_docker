@@ -19,7 +19,9 @@ def current_tag(compose_text):
     rewrites all of them, so a mixed file would not come back to a known state."""
     tags = {m.group(2) for m in IMAGE.finditer(compose_text)}
     if len(tags) != 1:
-        raise ValueError(f"expected one {REPO} tag in the compose file, found {sorted(tags) or 'none'}")
+        raise ValueError(
+            f"expected one {REPO} tag in the compose file, found {sorted(tags) or 'none'}"
+        )
     return tags.pop()
 
 

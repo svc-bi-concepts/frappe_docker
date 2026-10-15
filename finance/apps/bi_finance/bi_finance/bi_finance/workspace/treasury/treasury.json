@@ -1,343 +1,343 @@
 {
- "doctype": "Workspace",
- "name": "Treasury",
- "label": "Treasury",
- "title": "Treasury",
- "module": "BI Finance",
- "public": 1,
- "is_hidden": 0,
- "standard": 1,
- "icon": "wallet",
- "content": "[{\"id\": \"a1d7e3c904\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Transactions\", \"col\": 3}}, {\"id\": \"0f5b9c28e6\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Unreconciled\", \"col\": 3}}, {\"id\": \"f1c3a7d902\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Cash Flow Forecast\", \"col\": 3}}, {\"id\": \"c9a2f6b81d\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"MWST pro Quartal\", \"col\": 3}}, {\"id\": \"44559c07eb\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Total CHF\", \"col\": 3}}, {\"id\": \"84d6ad5962\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Account 1000\", \"col\": 3}}, {\"id\": \"aa2ecadc9b\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Account 1010\", \"col\": 3}}, {\"id\": \"609f9111a2\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Account 1020\", \"col\": 3}}, {\"id\": \"6c0b18e0fd\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Account 1021\", \"col\": 3}}, {\"id\": \"3f9a1c6e27\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"CCC (days)\", \"col\": 3}}, {\"id\": \"c8d24b0f93\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"CCC change (days)\", \"col\": 3}}, {\"id\": \"de64bbef1e\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Cash Position History\", \"col\": 12}}, {\"id\": \"7e61a9d5c0\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Cash Conversion Trend\", \"col\": 12}}, {\"id\": \"b2f0c4a913\", \"type\": \"card\", \"data\": {\"card_name\": \"Banking\", \"col\": 4}}, {\"id\": \"e83d5a0c17\", \"type\": \"card\", \"data\": {\"card_name\": \"Payments\", \"col\": 4}}, {\"id\": \"5d9c1e7b42\", \"type\": \"card\", \"data\": {\"card_name\": \"MWST\", \"col\": 4}}, {\"id\": \"91a6f3d0e8\", \"type\": \"card\", \"data\": {\"card_name\": \"Cash Forecast\", \"col\": 4}}]",
- "number_cards": [
-  {
-   "number_card_name": "Total CHF",
-   "label": "Total CHF"
-  },
-  {
-   "number_card_name": "Account 1000",
-   "label": "Account 1000"
-  },
-  {
-   "number_card_name": "Account 1010",
-   "label": "Account 1010"
-  },
-  {
-   "number_card_name": "Account 1020",
-   "label": "Account 1020"
-  },
-  {
-   "number_card_name": "Account 1021",
-   "label": "Account 1021"
-  },
-  {
-   "number_card_name": "CCC (days)",
-   "label": "CCC (days)"
-  },
-  {
-   "number_card_name": "CCC change (days)",
-   "label": "CCC change (days)"
-  }
- ],
- "charts": [
-  {
-   "chart_name": "Cash Position History",
-   "label": "Cash Position History"
-  },
-  {
-   "chart_name": "Cash Conversion Trend",
-   "label": "Cash Conversion Trend"
-  }
- ],
- "shortcuts": [
-  {
-   "label": "Transactions",
-   "type": "DocType",
-   "link_to": "Bank Transaction",
-   "doc_view": "List",
-   "stats_filter": "{}",
-   "url": ""
-  },
-  {
-   "label": "Unreconciled",
-   "type": "URL",
-   "link_to": "",
-   "doc_view": "",
-   "stats_filter": "",
-   "url": "/app/bank-transaction?status=Unreconciled"
-  },
-  {
-   "label": "Cash Flow Forecast",
-   "type": "Report",
-   "link_to": "Cash Flow Forecast",
-   "doc_view": "",
-   "stats_filter": ""
-  },
-  {
-   "label": "MWST pro Quartal",
-   "type": "Report",
-   "link_to": "MWST pro Quartal",
-   "doc_view": "",
-   "stats_filter": ""
-  }
- ],
- "links": [
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Banking",
-   "link_count": 6,
-   "link_to": "",
-   "link_type": "",
-   "onboard": 0,
-   "type": "Card Break",
-   "only_for": "",
-   "dependencies": "",
-   "description": ""
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Bank Statement Upload",
-   "link_count": 0,
-   "link_to": "Bank Statement Upload",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link",
-   "only_for": "",
-   "dependencies": "",
-   "description": "",
-   "doc_view": "List"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Bank Transaction",
-   "link_count": 0,
-   "link_to": "Bank Transaction",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link",
-   "only_for": "",
-   "dependencies": "",
-   "description": "",
-   "doc_view": "List"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Bank Reconciliation Tool",
-   "link_count": 0,
-   "link_to": "Bank Reconciliation Tool",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link",
-   "only_for": "",
-   "dependencies": "",
-   "description": "",
-   "doc_view": ""
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Wise Settings",
-   "link_count": 0,
-   "link_to": "Wise Settings",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link",
-   "only_for": "",
-   "dependencies": "",
-   "description": "",
-   "doc_view": ""
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "PayPal Settings",
-   "link_count": 0,
-   "link_to": "PayPal Settings",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link",
-   "only_for": "",
-   "dependencies": "",
-   "description": "",
-   "doc_view": ""
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Bank Matching Settings",
-   "link_count": 0,
-   "link_to": "Bank Matching Settings",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link",
-   "only_for": "",
-   "dependencies": "",
-   "description": "",
-   "doc_view": ""
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Payments",
-   "link_count": 1,
-   "link_to": "",
-   "link_type": "",
-   "onboard": 0,
-   "type": "Card Break",
-   "only_for": "",
-   "dependencies": "",
-   "description": ""
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Payment Proposal",
-   "link_count": 0,
-   "link_to": "Payment Proposal",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link",
-   "only_for": "",
-   "dependencies": "",
-   "description": "",
-   "doc_view": "List"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "MWST",
-   "link_count": 2,
-   "link_to": "",
-   "link_type": "",
-   "onboard": 0,
-   "type": "Card Break",
-   "only_for": "",
-   "dependencies": "",
-   "description": ""
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "VAT Declaration",
-   "link_count": 0,
-   "link_to": "VAT Declaration",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link",
-   "only_for": "",
-   "dependencies": "",
-   "description": "",
-   "doc_view": "List"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 1,
-   "label": "MWST pro Quartal",
-   "link_count": 0,
-   "link_to": "MWST pro Quartal",
-   "link_type": "Report",
-   "onboard": 0,
-   "type": "Link",
-   "only_for": "",
-   "dependencies": "",
-   "description": "",
-   "doc_view": ""
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Cash Forecast",
-   "link_count": 5,
-   "link_to": "",
-   "link_type": "",
-   "onboard": 0,
-   "type": "Card Break",
-   "only_for": "",
-   "dependencies": "",
-   "description": ""
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 1,
-   "label": "Cash Position",
-   "link_count": 0,
-   "link_to": "Cash Position",
-   "link_type": "Report",
-   "onboard": 0,
-   "type": "Link",
-   "only_for": "",
-   "dependencies": "",
-   "description": "",
-   "doc_view": ""
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 1,
-   "label": "Cash Flow Forecast",
-   "link_count": 0,
-   "link_to": "Cash Flow Forecast",
-   "link_type": "Report",
-   "onboard": 0,
-   "type": "Link",
-   "only_for": "",
-   "dependencies": "",
-   "description": "",
-   "doc_view": ""
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 1,
-   "label": "Cash Flow Forecast Lines",
-   "link_count": 0,
-   "link_to": "Cash Flow Forecast Lines",
-   "link_type": "Report",
-   "onboard": 0,
-   "type": "Link",
-   "only_for": "",
-   "dependencies": "",
-   "description": "",
-   "doc_view": ""
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 1,
-   "label": "Cash Conversion Cycle",
-   "link_count": 0,
-   "link_to": "Cash Conversion Cycle",
-   "link_type": "Report",
-   "onboard": 0,
-   "type": "Link",
-   "only_for": "",
-   "dependencies": "",
-   "description": "",
-   "doc_view": ""
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Cash Forecast Settings",
-   "link_count": 0,
-   "link_to": "Cash Forecast Settings",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link",
-   "only_for": "",
-   "dependencies": "",
-   "description": "",
-   "doc_view": ""
-  }
- ],
- "quick_lists": [],
- "roles": [],
- "custom_blocks": [],
- "creation": "2026-10-10 09:00:00.000000",
- "modified": "2026-10-12 12:00:00.000000",
- "modified_by": "Administrator",
- "owner": "Administrator",
- "docstatus": 0,
- "idx": 0
+  "doctype": "Workspace",
+  "name": "Treasury",
+  "label": "Treasury",
+  "title": "Treasury",
+  "module": "BI Finance",
+  "public": 1,
+  "is_hidden": 0,
+  "standard": 1,
+  "icon": "wallet",
+  "content": "[{\"id\": \"a1d7e3c904\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Transactions\", \"col\": 3}}, {\"id\": \"0f5b9c28e6\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Unreconciled\", \"col\": 3}}, {\"id\": \"f1c3a7d902\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Cash Flow Forecast\", \"col\": 3}}, {\"id\": \"c9a2f6b81d\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"MWST pro Quartal\", \"col\": 3}}, {\"id\": \"44559c07eb\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Total CHF\", \"col\": 3}}, {\"id\": \"84d6ad5962\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Account 1000\", \"col\": 3}}, {\"id\": \"aa2ecadc9b\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Account 1010\", \"col\": 3}}, {\"id\": \"609f9111a2\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Account 1020\", \"col\": 3}}, {\"id\": \"6c0b18e0fd\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Account 1021\", \"col\": 3}}, {\"id\": \"3f9a1c6e27\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"CCC (days)\", \"col\": 3}}, {\"id\": \"c8d24b0f93\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"CCC change (days)\", \"col\": 3}}, {\"id\": \"de64bbef1e\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Cash Position History\", \"col\": 12}}, {\"id\": \"7e61a9d5c0\", \"type\": \"chart\", \"data\": {\"chart_name\": \"Cash Conversion Trend\", \"col\": 12}}, {\"id\": \"b2f0c4a913\", \"type\": \"card\", \"data\": {\"card_name\": \"Banking\", \"col\": 4}}, {\"id\": \"e83d5a0c17\", \"type\": \"card\", \"data\": {\"card_name\": \"Payments\", \"col\": 4}}, {\"id\": \"5d9c1e7b42\", \"type\": \"card\", \"data\": {\"card_name\": \"MWST\", \"col\": 4}}, {\"id\": \"91a6f3d0e8\", \"type\": \"card\", \"data\": {\"card_name\": \"Cash Forecast\", \"col\": 4}}]",
+  "number_cards": [
+    {
+      "number_card_name": "Total CHF",
+      "label": "Total CHF"
+    },
+    {
+      "number_card_name": "Account 1000",
+      "label": "Account 1000"
+    },
+    {
+      "number_card_name": "Account 1010",
+      "label": "Account 1010"
+    },
+    {
+      "number_card_name": "Account 1020",
+      "label": "Account 1020"
+    },
+    {
+      "number_card_name": "Account 1021",
+      "label": "Account 1021"
+    },
+    {
+      "number_card_name": "CCC (days)",
+      "label": "CCC (days)"
+    },
+    {
+      "number_card_name": "CCC change (days)",
+      "label": "CCC change (days)"
+    }
+  ],
+  "charts": [
+    {
+      "chart_name": "Cash Position History",
+      "label": "Cash Position History"
+    },
+    {
+      "chart_name": "Cash Conversion Trend",
+      "label": "Cash Conversion Trend"
+    }
+  ],
+  "shortcuts": [
+    {
+      "label": "Transactions",
+      "type": "DocType",
+      "link_to": "Bank Transaction",
+      "doc_view": "List",
+      "stats_filter": "{}",
+      "url": ""
+    },
+    {
+      "label": "Unreconciled",
+      "type": "URL",
+      "link_to": "",
+      "doc_view": "",
+      "stats_filter": "",
+      "url": "/app/bank-transaction?status=Unreconciled"
+    },
+    {
+      "label": "Cash Flow Forecast",
+      "type": "Report",
+      "link_to": "Cash Flow Forecast",
+      "doc_view": "",
+      "stats_filter": ""
+    },
+    {
+      "label": "MWST pro Quartal",
+      "type": "Report",
+      "link_to": "MWST pro Quartal",
+      "doc_view": "",
+      "stats_filter": ""
+    }
+  ],
+  "links": [
+    {
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Banking",
+      "link_count": 6,
+      "link_to": "",
+      "link_type": "",
+      "onboard": 0,
+      "type": "Card Break",
+      "only_for": "",
+      "dependencies": "",
+      "description": ""
+    },
+    {
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Bank Statement Upload",
+      "link_count": 0,
+      "link_to": "Bank Statement Upload",
+      "link_type": "DocType",
+      "onboard": 0,
+      "type": "Link",
+      "only_for": "",
+      "dependencies": "",
+      "description": "",
+      "doc_view": "List"
+    },
+    {
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Bank Transaction",
+      "link_count": 0,
+      "link_to": "Bank Transaction",
+      "link_type": "DocType",
+      "onboard": 0,
+      "type": "Link",
+      "only_for": "",
+      "dependencies": "",
+      "description": "",
+      "doc_view": "List"
+    },
+    {
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Bank Reconciliation Tool",
+      "link_count": 0,
+      "link_to": "Bank Reconciliation Tool",
+      "link_type": "DocType",
+      "onboard": 0,
+      "type": "Link",
+      "only_for": "",
+      "dependencies": "",
+      "description": "",
+      "doc_view": ""
+    },
+    {
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Wise Settings",
+      "link_count": 0,
+      "link_to": "Wise Settings",
+      "link_type": "DocType",
+      "onboard": 0,
+      "type": "Link",
+      "only_for": "",
+      "dependencies": "",
+      "description": "",
+      "doc_view": ""
+    },
+    {
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "PayPal Settings",
+      "link_count": 0,
+      "link_to": "PayPal Settings",
+      "link_type": "DocType",
+      "onboard": 0,
+      "type": "Link",
+      "only_for": "",
+      "dependencies": "",
+      "description": "",
+      "doc_view": ""
+    },
+    {
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Bank Matching Settings",
+      "link_count": 0,
+      "link_to": "Bank Matching Settings",
+      "link_type": "DocType",
+      "onboard": 0,
+      "type": "Link",
+      "only_for": "",
+      "dependencies": "",
+      "description": "",
+      "doc_view": ""
+    },
+    {
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Payments",
+      "link_count": 1,
+      "link_to": "",
+      "link_type": "",
+      "onboard": 0,
+      "type": "Card Break",
+      "only_for": "",
+      "dependencies": "",
+      "description": ""
+    },
+    {
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Payment Proposal",
+      "link_count": 0,
+      "link_to": "Payment Proposal",
+      "link_type": "DocType",
+      "onboard": 0,
+      "type": "Link",
+      "only_for": "",
+      "dependencies": "",
+      "description": "",
+      "doc_view": "List"
+    },
+    {
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "MWST",
+      "link_count": 2,
+      "link_to": "",
+      "link_type": "",
+      "onboard": 0,
+      "type": "Card Break",
+      "only_for": "",
+      "dependencies": "",
+      "description": ""
+    },
+    {
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "VAT Declaration",
+      "link_count": 0,
+      "link_to": "VAT Declaration",
+      "link_type": "DocType",
+      "onboard": 0,
+      "type": "Link",
+      "only_for": "",
+      "dependencies": "",
+      "description": "",
+      "doc_view": "List"
+    },
+    {
+      "hidden": 0,
+      "is_query_report": 1,
+      "label": "MWST pro Quartal",
+      "link_count": 0,
+      "link_to": "MWST pro Quartal",
+      "link_type": "Report",
+      "onboard": 0,
+      "type": "Link",
+      "only_for": "",
+      "dependencies": "",
+      "description": "",
+      "doc_view": ""
+    },
+    {
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Cash Forecast",
+      "link_count": 5,
+      "link_to": "",
+      "link_type": "",
+      "onboard": 0,
+      "type": "Card Break",
+      "only_for": "",
+      "dependencies": "",
+      "description": ""
+    },
+    {
+      "hidden": 0,
+      "is_query_report": 1,
+      "label": "Cash Position",
+      "link_count": 0,
+      "link_to": "Cash Position",
+      "link_type": "Report",
+      "onboard": 0,
+      "type": "Link",
+      "only_for": "",
+      "dependencies": "",
+      "description": "",
+      "doc_view": ""
+    },
+    {
+      "hidden": 0,
+      "is_query_report": 1,
+      "label": "Cash Flow Forecast",
+      "link_count": 0,
+      "link_to": "Cash Flow Forecast",
+      "link_type": "Report",
+      "onboard": 0,
+      "type": "Link",
+      "only_for": "",
+      "dependencies": "",
+      "description": "",
+      "doc_view": ""
+    },
+    {
+      "hidden": 0,
+      "is_query_report": 1,
+      "label": "Cash Flow Forecast Lines",
+      "link_count": 0,
+      "link_to": "Cash Flow Forecast Lines",
+      "link_type": "Report",
+      "onboard": 0,
+      "type": "Link",
+      "only_for": "",
+      "dependencies": "",
+      "description": "",
+      "doc_view": ""
+    },
+    {
+      "hidden": 0,
+      "is_query_report": 1,
+      "label": "Cash Conversion Cycle",
+      "link_count": 0,
+      "link_to": "Cash Conversion Cycle",
+      "link_type": "Report",
+      "onboard": 0,
+      "type": "Link",
+      "only_for": "",
+      "dependencies": "",
+      "description": "",
+      "doc_view": ""
+    },
+    {
+      "hidden": 0,
+      "is_query_report": 0,
+      "label": "Cash Forecast Settings",
+      "link_count": 0,
+      "link_to": "Cash Forecast Settings",
+      "link_type": "DocType",
+      "onboard": 0,
+      "type": "Link",
+      "only_for": "",
+      "dependencies": "",
+      "description": "",
+      "doc_view": ""
+    }
+  ],
+  "quick_lists": [],
+  "roles": [],
+  "custom_blocks": [],
+  "creation": "2026-10-10 09:00:00.000000",
+  "modified": "2026-10-12 12:00:00.000000",
+  "modified_by": "Administrator",
+  "owner": "Administrator",
+  "docstatus": 0,
+  "idx": 0
 }

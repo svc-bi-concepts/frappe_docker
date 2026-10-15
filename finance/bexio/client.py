@@ -47,7 +47,7 @@ class BexioError(Exception):
     """
 
     def __init__(self, status, path, detail=None):
-        super().__init__("bexio GET {} failed with HTTP {}".format(path, status))
+        super().__init__(f"bexio GET {path} failed with HTTP {status}")
         self.status = status
         self.path = path
         self.detail = detail
@@ -73,16 +73,21 @@ def resolve_token():
     if read_token:
         return read_token, "pat"
     import launcher  # lazy: only the OAuth path needs it
-    oauth = launcher.load("oauth.py")  # oauth.py is a bash launcher; its python body is what runs here
+
+    oauth = launcher.load(
+        "oauth.py"
+    )  # oauth.py is a bash launcher; its python body is what runs here
 
     if oauth.read_refresh_token(oauth.REFRESH_KEY) is not None:
         try:
             return oauth.refresh_access_token(), "oauth"
         except (oauth.OAuthError, oauth.VaultError) as err:
-            raise SystemExit("bexio login: {}".format(err))
+            raise SystemExit(f"bexio login: {err}")
     raise SystemExit(
         "no bexio read token (BEXIO_READ_TOKEN is not set) and no refresh token ({} is not set); "
-        "log in with `{}` (see finance/bexio/README.md)".format(oauth.REFRESH_KEY, oauth.LOGIN_COMMAND)
+        "log in with `{}` (see finance/bexio/README.md)".format(
+            oauth.REFRESH_KEY, oauth.LOGIN_COMMAND
+        )
     )
 
 
@@ -90,7 +95,7 @@ class Client:
     def __init__(self, token=None, base_url=BASE_URL):
         if token is None:
             token, self.token_kind = resolve_token()
-            print("bexio token: {}".format(TOKEN_NAMES[self.token_kind]), file=sys.stderr)
+            print(f"bexio token: {TOKEN_NAMES[self.token_kind]}", file=sys.stderr)
         else:
             self.token_kind = "given"
         self._token = token
@@ -126,7 +131,7 @@ class Client:
             except urllib.error.URLError:
                 if attempt == MAX_RETRIES:
                     raise BexioError("network", path) from None
-                time.sleep(2 ** attempt)
+                time.sleep(2**attempt)
         raise AssertionError("unreachable")
 
     def paginate(self, path, params=None, page_size=PAGE_SIZE):
@@ -156,7 +161,9 @@ class Client:
             yield from fresh
             offset += len(page)
 
-    def paginate_pages(self, path, size_param, rows_key=None, params=None, page_size=PAGE_SIZE):
+    def paginate_pages(
+        self, path, size_param, rows_key=None, params=None, page_size=PAGE_SIZE
+    ):
         """Yield every record of a page-numbered endpoint (the API 4.0 lists).
 
         These take `page` and a size parameter whose name differs by endpoint
@@ -214,4 +221,4 @@ def _wait_seconds(err, attempt):
     try:
         return max(1.0, float(retry_after))
     except (TypeError, ValueError):
-        return float(2 ** attempt)
+        return float(2**attempt)

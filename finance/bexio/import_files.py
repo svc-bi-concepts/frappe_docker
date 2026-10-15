@@ -37,7 +37,10 @@ import urllib.request
 import uuid
 
 import launcher
-ex = launcher.load("export.py")  # export.py is a bash launcher; its python body is what runs here
+
+ex = launcher.load(
+    "export.py"
+)  # export.py is a bash launcher; its python body is what runs here
 import import_master as im
 import import_purchase as ip
 
@@ -52,7 +55,14 @@ ARCHIVE_FOLDER = "Home/" + ARCHIVE_FOLDER_NAME
 
 ATTACH, ATTACHED, REENCODED = "attach", "attached", "re-encoded"
 ARCHIVE, ARCHIVED = "archive", "archived"
-PROBLEMS = ("unlinked", "shared", "no metadata", "no document", "no content", "size differs")
+PROBLEMS = (
+    "unlinked",
+    "shared",
+    "no metadata",
+    "no document",
+    "no content",
+    "size differs",
+)
 IMAGES = (".jpg", ".jpeg", ".png", ".gif", ".webp")
 
 
@@ -62,17 +72,32 @@ class Lookups:
 
     def __init__(self, documents, attached, archived=frozenset()):
         self.documents = documents  # bexio id -> Purchase Invoice name
-        self.attached = attached    # Purchase Invoice name -> [File rows]
-        self.archived = archived    # bexio ids of the Files in ARCHIVE_FOLDER
+        self.attached = attached  # Purchase Invoice name -> [File rows]
+        self.archived = archived  # bexio ids of the Files in ARCHIVE_FOLDER
 
     @classmethod
     def from_erp(cls, erp):
-        documents = {r["bexio_id"]: r["name"] for r in erp.list(DOCTYPE, [["bexio_id", "is", "set"]], ["name", "bexio_id"])}
+        documents = {
+            r["bexio_id"]: r["name"]
+            for r in erp.list(
+                DOCTYPE, [["bexio_id", "is", "set"]], ["name", "bexio_id"]
+            )
+        }
         attached = {}
-        for f in erp.list("File", [["attached_to_doctype", "=", DOCTYPE]],
-                          ["name", "attached_to_name", "file_name", "file_size", "bexio_id"]):
+        for f in erp.list(
+            "File",
+            [["attached_to_doctype", "=", DOCTYPE]],
+            ["name", "attached_to_name", "file_name", "file_size", "bexio_id"],
+        ):
             attached.setdefault(f["attached_to_name"], []).append(f)
-        archived = {f["bexio_id"] for f in erp.list("File", [["folder", "=", ARCHIVE_FOLDER], ["bexio_id", "is", "set"]], ["bexio_id"])}
+        archived = {
+            f["bexio_id"]
+            for f in erp.list(
+                "File",
+                [["folder", "=", ARCHIVE_FOLDER], ["bexio_id", "is", "set"]],
+                ["bexio_id"],
+            )
+        }
         return cls(documents, attached, archived)
 
 
@@ -93,7 +118,11 @@ def load_files(export_dir):
     A uuid in both lists keeps its files.json row: that row has the bexio name the File was uploaded under,
     while the bill's row is named by the uuid.
     """
-    names = [n for n in (FILES_FILE, BILL_ATTACHMENTS_FILE) if os.path.exists(os.path.join(export_dir, n))]
+    names = [
+        n
+        for n in (FILES_FILE, BILL_ATTACHMENTS_FILE)
+        if os.path.exists(os.path.join(export_dir, n))
+    ]
     if not names:
         return None
     files = {}
@@ -108,7 +137,7 @@ def with_extension(row):
     """The row with its name carrying the extension: files.json has the name without it, and the File keeps it."""
     name, extension = row.get("name"), row.get("extension") or ""
     if name and extension and not name.lower().endswith("." + extension.lower()):
-        return dict(row, name="{}.{}".format(name, extension))
+        return dict(row, name=f"{name}.{extension}")
     return row
 
 
@@ -122,8 +151,12 @@ def already_attached(file_id, meta, files):
     return any(
         f.get("bexio_id") == file_id
         # a bill attachment whose download failed has no name or size: it matches nothing by them
-        or (not f.get("bexio_id") and meta.get("name") and f.get("file_name") == meta["name"]
-            and f.get("file_size") == meta.get("size_in_bytes"))
+        or (
+            not f.get("bexio_id")
+            and meta.get("name")
+            and f.get("file_name") == meta["name"]
+            and f.get("file_size") == meta.get("size_in_bytes")
+        )
         for f in files
     )
 
@@ -132,7 +165,9 @@ def same_file(meta, f):
     # the planned file a File without a bexio_id is: the same name, and the same size or an image Frappe re-encoded
     if not meta or not meta.get("name") or f.get("file_name") != meta["name"]:
         return False
-    return f.get("file_size") == meta.get("size_in_bytes") or meta["name"].lower().endswith(IMAGES)
+    return f.get("file_size") == meta.get("size_in_bytes") or meta[
+        "name"
+    ].lower().endswith(IMAGES)
 
 
 def backfill_plan(rows, files, lookups):
@@ -142,13 +177,31 @@ def backfill_plan(rows, files, lookups):
     file of its Purchase Invoice; listed are the file names of the Files that match none or several, left alone.
     A planned file is claimed by one File only, since a bexio id is unique: two Files that both match it are listed.
     """
-    keyed = {f["bexio_id"] for group in lookups.attached.values() for f in group if f.get("bexio_id")}
+    keyed = {
+        f["bexio_id"]
+        for group in lookups.attached.values()
+        for f in group
+        if f.get("bexio_id")
+    }
     matches = []  # (File row, the bexio ids of the planned files it matches)
     for document, group in lookups.attached.items():
-        planned = [r["file"] for r in rows if r["document"] == document and r["file"] not in keyed]
+        planned = [
+            r["file"]
+            for r in rows
+            if r["document"] == document and r["file"] not in keyed
+        ]
         for f in group:
             if not f.get("bexio_id"):
-                matches.append((f, [file_id for file_id in planned if same_file(files.get(file_id), f)]))
+                matches.append(
+                    (
+                        f,
+                        [
+                            file_id
+                            for file_id in planned
+                            if same_file(files.get(file_id), f)
+                        ],
+                    )
+                )
     claims = {}
     for _, ids in matches:
         for file_id in ids:
@@ -166,7 +219,11 @@ def reencoded(meta, files):
     # Frappe strips the EXIF data of an uploaded image, so the File's bytes and size differ from the export's
     # while its name stays: the same picture, not a missing one. Only images, so a PDF of another size still differs.
     name = meta.get("name")
-    return bool(name) and name.lower().endswith(IMAGES) and any(f.get("file_name") == name for f in files)
+    return (
+        bool(name)
+        and name.lower().endswith(IMAGES)
+        and any(f.get("file_name") == name for f in files)
+    )
 
 
 def classify(file_id, meta, holders, lookups, export_dir):
@@ -211,10 +268,15 @@ def plan(files, owners, lookups, export_dir):
         holders = owners.get(file_id, [])
         meta = files.get(file_id)
         outcome, document = classify(file_id, meta, holders, lookups, export_dir)
-        rows.append({
-            "file": file_id, "outcome": outcome, "doctype": DOCTYPE if holders else "-",
-            "document": document, "size": meta.get("size_in_bytes") if meta else None,
-        })
+        rows.append(
+            {
+                "file": file_id,
+                "outcome": outcome,
+                "doctype": DOCTYPE if holders else "-",
+                "document": document,
+                "size": meta.get("size_in_bytes") if meta else None,
+            }
+        )
     return rows
 
 
@@ -224,34 +286,58 @@ def run(export_dir, erp):
     files = load_files(export_dir) or {}
     lookups = Lookups.from_erp(erp)
     rows = plan(files, attachment_owners(bills, expenses), lookups, export_dir)
-    return rows, os.path.exists(os.path.join(export_dir, FILES_FILE)), backfill_plan(rows, files, lookups)
+    return (
+        rows,
+        os.path.exists(os.path.join(export_dir, FILES_FILE)),
+        backfill_plan(rows, files, lookups),
+    )
 
 
 def report(rows, export_dir, has_files, applied=False, backfills=None):
     """Totals only: no file ids, no names. backfills is the (writes, listed) pair of backfill_plan."""
-    lines = ["file dry run from {}".format(export_dir),
-             "files.json: {}".format("in the export" if has_files else "not in the export, so no file has its bytes or content checked yet"),
-             "{:<18}{:>7}{:>14}{:>9}{:>14}{:>10}{:>10}".format("doctype", "files", "bytes", "attach", "bytes", "attached", "problems")]
+    lines = [
+        f"file dry run from {export_dir}",
+        "files.json: {}".format(
+            "in the export"
+            if has_files
+            else "not in the export, so no file has its bytes or content checked yet"
+        ),
+        "{:<18}{:>7}{:>14}{:>9}{:>14}{:>10}{:>10}".format(
+            "doctype", "files", "bytes", "attach", "bytes", "attached", "problems"
+        ),
+    ]
     for doctype in sorted({r["doctype"] for r in rows}):
         group = [r for r in rows if r["doctype"] == doctype]
         todo = [r for r in group if r["outcome"] == ATTACH]
         done = [r for r in group if r["outcome"] in (ATTACHED, REENCODED)]
         problems = [r for r in group if r["outcome"] in PROBLEMS]
-        lines.append("{:<18}{:>7}{:>14}{:>9}{:>14}{:>10}{:>10}".format(
-            doctype, len(group), _bytes(group, has_files), len(todo), _bytes(todo, has_files), len(done), len(problems)))
+        lines.append(
+            "{:<18}{:>7}{:>14}{:>9}{:>14}{:>10}{:>10}".format(
+                doctype,
+                len(group),
+                _bytes(group, has_files),
+                len(todo),
+                _bytes(todo, has_files),
+                len(done),
+                len(problems),
+            )
+        )
     counts = {}
     for r in rows:
         counts[r["outcome"]] = counts.get(r["outcome"], 0) + 1
     for outcome in (ATTACH, ATTACHED, REENCODED, ARCHIVE, ARCHIVED) + PROBLEMS:
         if counts.get(outcome):
-            lines.append("  {:<14}{:>6}".format(outcome, counts[outcome]))
+            lines.append(f"  {outcome:<14}{counts[outcome]:>6}")
     if backfills is not None:
         writes, listed = backfills
         lines.append("  {:<14}{:>6}".format("to backfill", len(writes)))
         if listed:
             lines.append("  {:<14}{:>6}".format("unmatched", len(listed)))
-    lines.append("applied: the files marked attach or archive are uploaded and the Files to backfill get their bexio_id" if applied
-                 else "dry run: nothing was written")
+    lines.append(
+        "applied: the files marked attach or archive are uploaded and the Files to backfill get their bexio_id"
+        if applied
+        else "dry run: nothing was written"
+    )
     return "\n".join(lines)
 
 
@@ -267,37 +353,56 @@ def _header_safe(name):
 def _multipart(erp, fields, file_name, content):
     """The multipart request for Frappe's upload_file with these form fields and the file. Built here, sent by upload() in the live run only."""
     boundary = uuid.uuid4().hex
-    sep = "--{}\r\n".format(boundary)
+    sep = f"--{boundary}\r\n"
     body = b""
     for key, value in fields:
-        body += (sep + 'Content-Disposition: form-data; name="{}"\r\n\r\n{}\r\n'.format(key, value)).encode("utf-8")
-    body += (sep + 'Content-Disposition: form-data; name="file"; filename="{}"\r\n'
-             'Content-Type: application/octet-stream\r\n\r\n'.format(_header_safe(file_name))).encode("utf-8")
-    body += content + ("\r\n--{}--\r\n".format(boundary)).encode("ascii")
+        body += (
+            sep + f'Content-Disposition: form-data; name="{key}"\r\n\r\n{value}\r\n'
+        ).encode("utf-8")
+    body += (
+        sep + 'Content-Disposition: form-data; name="file"; filename="{}"\r\n'
+        "Content-Type: application/octet-stream\r\n\r\n".format(_header_safe(file_name))
+    ).encode("utf-8")
+    body += content + (f"\r\n--{boundary}--\r\n").encode("ascii")
     # Erp's base URL already ends in /api (its own paths are /resource/... and /method/...)
-    req = urllib.request.Request(erp._url + "/method/upload_file", data=body, method="POST")
-    req.add_header("Authorization", erp._auth)  # the Erp object keeps its secret; it is only read here
+    req = urllib.request.Request(
+        erp._url + "/method/upload_file", data=body, method="POST"
+    )
+    req.add_header(
+        "Authorization", erp._auth
+    )  # the Erp object keeps its secret; it is only read here
     req.add_header("Content-Type", "multipart/form-data; boundary=" + boundary)
     return req
 
 
 def upload_request(erp, document, file_name, content, doctype=DOCTYPE):
     """The multipart request for one private File on the document (a Purchase Invoice unless doctype says otherwise)."""
-    return _multipart(erp, (("doctype", doctype), ("docname", document), ("is_private", "1")), file_name, content)
+    return _multipart(
+        erp,
+        (("doctype", doctype), ("docname", document), ("is_private", "1")),
+        file_name,
+        content,
+    )
 
 
 def archive_request(erp, file_name, content):
     """The multipart request for one private File in the archive folder, on no document."""
-    return _multipart(erp, (("folder", ARCHIVE_FOLDER), ("is_private", "1")), file_name, content)
+    return _multipart(
+        erp, (("folder", ARCHIVE_FOLDER), ("is_private", "1")), file_name, content
+    )
 
 
 def upload(erp, document, file_id, file_name, content, doctype=DOCTYPE):
     """Upload one file and mark it with its bexio id, so a second run skips it. The live run calls this; the dry run never does."""
     try:
-        with urllib.request.urlopen(upload_request(erp, document, file_name, content, doctype), timeout=300) as resp:
+        with urllib.request.urlopen(
+            upload_request(erp, document, file_name, content, doctype), timeout=300
+        ) as resp:
             name = json.loads(resp.read().decode("utf-8"))["message"]["name"]
     except urllib.error.HTTPError as err:
-        raise im.ErpError(err.code, "upload_file for {}".format(document) + im._reason(err)) from None
+        raise im.ErpError(
+            err.code, f"upload_file for {document}" + im._reason(err)
+        ) from None
     erp.update("File", name, {"bexio_id": file_id})
     return name
 
@@ -305,10 +410,14 @@ def upload(erp, document, file_id, file_name, content, doctype=DOCTYPE):
 def upload_archive(erp, file_id, file_name, content):
     """Upload one unlinked file into the archive folder, marked with its bexio id."""
     try:
-        with urllib.request.urlopen(archive_request(erp, file_name, content), timeout=300) as resp:
+        with urllib.request.urlopen(
+            archive_request(erp, file_name, content), timeout=300
+        ) as resp:
             name = json.loads(resp.read().decode("utf-8"))["message"]["name"]
     except urllib.error.HTTPError as err:
-        raise im.ErpError(err.code, "upload_file into {}".format(ARCHIVE_FOLDER) + im._reason(err)) from None
+        raise im.ErpError(
+            err.code, f"upload_file into {ARCHIVE_FOLDER}" + im._reason(err)
+        ) from None
     erp.update("File", name, {"bexio_id": file_id})
     return name
 
@@ -316,7 +425,9 @@ def upload_archive(erp, file_id, file_name, content):
 def ensure_archive_folder(erp):
     """Create the archive folder under Home, once: a File folder is named by its path, so the uploads find it by ARCHIVE_FOLDER."""
     if not erp.list("File", [["name", "=", ARCHIVE_FOLDER]], ["name"]):
-        erp.insert("File", {"file_name": ARCHIVE_FOLDER_NAME, "is_folder": 1, "folder": "Home"})
+        erp.insert(
+            "File", {"file_name": ARCHIVE_FOLDER_NAME, "is_folder": 1, "folder": "Home"}
+        )
 
 
 def apply(rows, export_dir, erp):
@@ -348,10 +459,24 @@ def backfill(writes, erp):
 
 
 def main(argv):
-    parser = argparse.ArgumentParser(description="Attach the bexio files to the Purchase Invoices (a dry run by default).")
-    parser.add_argument("--export", default=None, help="export directory (default: the newest under <private>/bexio-export/)")
-    parser.add_argument("--dry-run", action="store_true", help="read ERPNext, write nothing, print the totals (the default)")
-    parser.add_argument("--apply", action="store_true", help="upload the files that would be attached, as private Files")
+    parser = argparse.ArgumentParser(
+        description="Attach the bexio files to the Purchase Invoices (a dry run by default)."
+    )
+    parser.add_argument(
+        "--export",
+        default=None,
+        help="export directory (default: the newest under <private>/bexio-export/)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="read ERPNext, write nothing, print the totals (the default)",
+    )
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="upload the files that would be attached, as private Files",
+    )
     parser.add_argument("--token-file", default=im.TOKEN_FILE)
     args = parser.parse_args(argv)
     if args.apply and args.dry_run:
@@ -361,26 +486,34 @@ def main(argv):
         erp = im.Erp.from_file(args.token_file)
         rows, has_files, backfills = run(export_dir, erp)
         if args.apply:
-            print("uploaded {} file(s)".format(apply(rows, export_dir, erp)))
-            print("backfilled {} File(s)".format(backfill(backfills[0], erp)))
+            print(f"uploaded {apply(rows, export_dir, erp)} file(s)")
+            print(f"backfilled {backfill(backfills[0], erp)} File(s)")
             rows, has_files, backfills = run(export_dir, erp)
     except im.ErpError as err:
-        print("aborted: {}".format(err), file=sys.stderr)
+        print(f"aborted: {err}", file=sys.stderr)
         return 2
     print(report(rows, export_dir, has_files, applied=args.apply, backfills=backfills))
     problems = [r for r in rows if r["outcome"] in PROBLEMS]
     listed = [r for r in rows if r["outcome"] in PROBLEMS or r["outcome"] == REENCODED]
     unmatched = backfills[1]
     if listed or unmatched:
-        lines = [problem_line(r) for r in listed] + ["File {}: no single planned file to backfill from".format(name) for name in unmatched]
+        lines = [problem_line(r) for r in listed] + [
+            f"File {name}: no single planned file to backfill from"
+            for name in unmatched
+        ]
         ip.write_private(os.path.join(im.PRIVATE, PROBLEMS_FILE), lines)
-        print("{} line(s) listed in {}".format(len(lines), os.path.join(im.PRIVATE, PROBLEMS_FILE)), file=sys.stderr)
+        print(
+            f"{len(lines)} line(s) listed in {os.path.join(im.PRIVATE, PROBLEMS_FILE)}",
+            file=sys.stderr,
+        )
     return 1 if problems or unmatched else 0
 
 
 def problem_line(row):
     if row["outcome"] == REENCODED:
-        return "file {}: attached, re-encoded by Frappe (size differs)".format(row["file"])
+        return "file {}: attached, re-encoded by Frappe (size differs)".format(
+            row["file"]
+        )
     return "file {}: {}".format(row["file"], row["outcome"])
 
 

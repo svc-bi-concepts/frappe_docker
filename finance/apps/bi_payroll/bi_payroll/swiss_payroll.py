@@ -9,13 +9,16 @@ import json
 from decimal import Decimal
 
 import frappe
-from frappe.utils import flt, getdate
-
 from bi_payroll.payslip import prepare
 from bi_payroll.quellensteuer import parse_tariff_file, qst_amount
 from bi_payroll.swiss_rates import (
-    RATE_FIELDS, STRUCTURE_DEDUCTIONS, STRUCTURE_EARNINGS, STRUCTURE_EMPLOYER_CONTRIBUTIONS, missing_components,
+    RATE_FIELDS,
+    STRUCTURE_DEDUCTIONS,
+    STRUCTURE_EARNINGS,
+    STRUCTURE_EMPLOYER_CONTRIBUTIONS,
+    missing_components,
 )
+from frappe.utils import flt, getdate
 
 QST_DECIMAL_FIELDS = ("income_from", "step", "minimum_tax", "rate")
 
@@ -32,30 +35,43 @@ def withhold_qst(doc, method=None):
     # read the tariff table, so the tax is worked out here from the gross and set on the slip; the deductions are then
     # computed again, because the QST component's formula reads the field. Only when the amount changed, so a slip
     # saved again with the same gross is not computed twice.
-    canton, code = frappe.db.get_value("Employee", doc.employee, ["swiss_qst_canton", "swiss_qst_code"]) or (None, None)
+    canton, code = frappe.db.get_value(
+        "Employee", doc.employee, ["swiss_qst_canton", "swiss_qst_code"]
+    ) or (None, None)
     # the canton and code the tax was worked out with, kept on the slip for the Quellensteuer view of the hand-over report
     doc.swiss_qst_canton = canton or None
     doc.swiss_qst_code = code or None
     amount = 0
     if code:
         rows = frappe.get_all(
-            "QST Tariff", filters={"canton": canton, "tariff_code": code},
+            "QST Tariff",
+            filters={"canton": canton, "tariff_code": code},
             fields=["canton", "tariff_code", "valid_from", *QST_DECIMAL_FIELDS],
         )
         # a Decimal of the float the database gives, so the tariff arithmetic stays exact
-        rows = [{**row, **{f: Decimal(str(row[f])) for f in QST_DECIMAL_FIELDS}} for row in rows]
+        rows = [
+            {**row, **{f: Decimal(str(row[f])) for f in QST_DECIMAL_FIELDS}}
+            for row in rows
+        ]
         try:
-            amount = qst_amount(rows, canton, code, doc.gross_pay, getdate(doc.end_date))
+            amount = qst_amount(
+                rows, canton, code, doc.gross_pay, getdate(doc.end_date)
+            )
         except LookupError as error:
             frappe.throw(str(error))
     # a structure made before the Quellensteuer row existed has none: the tax would be computed and not deducted, so the
     # slip stops here, naming the manual step (README, Salary Structure). It is the structure that is checked, not the
     # slip's rows: a row whose amount was 0 on the first calculation is not on the slip yet. A slip without a tax is
     # not affected.
-    has_row = frappe.db.exists("Salary Detail", {
-        "parent": doc.salary_structure, "parenttype": "Salary Structure", "parentfield": "deductions",
-        "salary_component": "Quellensteuer Employee",
-    })
+    has_row = frappe.db.exists(
+        "Salary Detail",
+        {
+            "parent": doc.salary_structure,
+            "parenttype": "Salary Structure",
+            "parentfield": "deductions",
+            "salary_component": "Quellensteuer Employee",
+        },
+    )
     if amount and not has_row:
         frappe.throw(
             f"Salary Structure {doc.salary_structure} has no Quellensteuer Employee row, so the tax of {amount} "
@@ -73,11 +89,19 @@ def ensure_structure():
     # be. One in use is not replaced here: its missing components are logged, so they are in the Error Log and not
     # silent. Its rows whose formula or condition differs from the component's (the fixture changed after the row was
     # copied) are refreshed through HRMS's own sync, which changes no submitted slip.
-    for company in frappe.get_all("Company", filters={"country": "Switzerland"}, pluck="name"):
-        existing = frappe.db.get_value("Salary Structure", {"company": company, "docstatus": ["<", 2]}, "name")
+    for company in frappe.get_all(
+        "Company", filters={"country": "Switzerland"}, pluck="name"
+    ):
+        existing = frappe.db.get_value(
+            "Salary Structure", {"company": company, "docstatus": ["<", 2]}, "name"
+        )
         if existing:
             structure = frappe.get_doc("Salary Structure", existing)
-            lines = structure.earnings + structure.deductions + structure.employer_contributions
+            lines = (
+                structure.earnings
+                + structure.deductions
+                + structure.employer_contributions
+            )
             missing = missing_components(
                 [row.salary_component for row in structure.earnings],
                 [row.salary_component for row in structure.deductions],
@@ -108,17 +132,23 @@ def ensure_structure():
                 message=f"Salary Structure {existing} for {company} was not used and had {len(missing)} missing "
                 f"components and {len(bare)} rows without a formula. It is made again from swiss_rates.py.",
             )
-        doc = frappe.get_doc({
-            "doctype": "Salary Structure",
-            "name": f"Swiss Monthly {company}",
-            "company": company,
-            "currency": frappe.get_cached_value("Company", company, "default_currency"),
-            "payroll_frequency": "Monthly",
-            "is_active": "Yes",
-            "earnings": structure_rows(STRUCTURE_EARNINGS),
-            "deductions": structure_rows(STRUCTURE_DEDUCTIONS),
-            "employer_contributions": structure_rows(STRUCTURE_EMPLOYER_CONTRIBUTIONS),
-        })
+        doc = frappe.get_doc(
+            {
+                "doctype": "Salary Structure",
+                "name": f"Swiss Monthly {company}",
+                "company": company,
+                "currency": frappe.get_cached_value(
+                    "Company", company, "default_currency"
+                ),
+                "payroll_frequency": "Monthly",
+                "is_active": "Yes",
+                "earnings": structure_rows(STRUCTURE_EARNINGS),
+                "deductions": structure_rows(STRUCTURE_DEDUCTIONS),
+                "employer_contributions": structure_rows(
+                    STRUCTURE_EMPLOYER_CONTRIBUTIONS
+                ),
+            }
+        )
         doc.insert()
         doc.submit()
 
@@ -134,8 +164,10 @@ def structure_in_use(name):
 def formula_gaps(rows):
     # the rows whose component has a formula but which have none of their own: HRMS computes such a row as 0
     return [
-        row.salary_component for row in rows
-        if not row.formula and frappe.db.get_value("Salary Component", row.salary_component, "formula")
+        row.salary_component
+        for row in rows
+        if not row.formula
+        and frappe.db.get_value("Salary Component", row.salary_component, "formula")
     ]
 
 
@@ -147,13 +179,18 @@ def stale_rows(rows):
     stale = []
     for row in rows:
         component = frappe.db.get_value(
-            "Salary Component", row.salary_component, ["formula", "condition", "amount_based_on_formula"], as_dict=True
+            "Salary Component",
+            row.salary_component,
+            ["formula", "condition", "amount_based_on_formula"],
+            as_dict=True,
         )
         if not component:
             continue
         formula = component.formula if component.amount_based_on_formula else ""
         changes = []
-        amount_changed = bool(row.amount_based_on_formula) != bool(component.amount_based_on_formula)
+        amount_changed = bool(row.amount_based_on_formula) != bool(
+            component.amount_based_on_formula
+        )
         if (row.formula or "") != (formula or "") or amount_changed:
             changes.append(("formula", component.formula))
         if (row.condition or "") != (component.condition or ""):
@@ -184,14 +221,19 @@ def structure_rows(components):
     rows = []
     for name in components:
         component = frappe.db.get_value(
-            "Salary Component", name, ["formula", "amount_based_on_formula", "statistical_component"], as_dict=True
+            "Salary Component",
+            name,
+            ["formula", "amount_based_on_formula", "statistical_component"],
+            as_dict=True,
         )
-        rows.append({
-            "salary_component": name,
-            "formula": component.formula or "",
-            "amount_based_on_formula": component.amount_based_on_formula,
-            "statistical_component": component.statistical_component,
-        })
+        rows.append(
+            {
+                "salary_component": name,
+                "formula": component.formula or "",
+                "amount_based_on_formula": component.amount_based_on_formula,
+                "statistical_component": component.statistical_component,
+            }
+        )
     return rows
 
 
@@ -202,10 +244,13 @@ def load_tariff(path):
         rows = parse_tariff_file(f.read())
     if not rows:
         frappe.throw("The tariff file has no tariff records (Recordart 06 or 11).")
-    frappe.db.delete("QST Tariff", {
-        "canton": rows[0]["canton"],
-        "valid_from": ["in", sorted({row["valid_from"] for row in rows})],
-    })
+    frappe.db.delete(
+        "QST Tariff",
+        {
+            "canton": rows[0]["canton"],
+            "valid_from": ["in", sorted({row["valid_from"] for row in rows})],
+        },
+    )
     for row in rows:
         frappe.get_doc({"doctype": "QST Tariff", **row}).insert(ignore_permissions=True)
     create_tariff_codes(row["tariff_code"] for row in rows)
@@ -219,14 +264,23 @@ def create_tariff_codes(codes):
     made = 0
     for code in sorted(set(codes)):
         if not frappe.db.exists("QST Tariff Code", code):
-            frappe.get_doc({"doctype": "QST Tariff Code", "code": code}).insert(ignore_permissions=True)
+            frappe.get_doc({"doctype": "QST Tariff Code", "code": code}).insert(
+                ignore_permissions=True
+            )
             made += 1
     return made
 
 
 def ensure_tariff_codes():
     # after_migrate: a site with tariffs loaded before the QST Tariff Code doctype existed gets its codes on the next migrate
-    create_tariff_codes(frappe.get_all("QST Tariff", fields=["tariff_code"], group_by="tariff_code", pluck="tariff_code"))
+    create_tariff_codes(
+        frappe.get_all(
+            "QST Tariff",
+            fields=["tariff_code"],
+            group_by="tariff_code",
+            pluck="tariff_code",
+        )
+    )
 
 
 @frappe.whitelist()
@@ -234,7 +288,11 @@ def qst_codes_for_canton(canton=None):
     # the codes an Employee of the canton may carry, all of them when no canton is set (the form's dropdown)
     filters = {"canton": canton} if canton else {}
     return frappe.get_all(
-        "QST Tariff", filters=filters, fields=["tariff_code"], group_by="tariff_code", order_by="tariff_code asc",
+        "QST Tariff",
+        filters=filters,
+        fields=["tariff_code"],
+        group_by="tariff_code",
+        order_by="tariff_code asc",
         pluck="tariff_code",
     )
 
@@ -249,27 +307,44 @@ def payslip_data(doc):
     if doc.employee and doc.salary_structure:
         name = frappe.get_all(
             "Salary Structure Assignment",
-            filters={"employee": doc.employee, "salary_structure": doc.salary_structure, "docstatus": 1,
-                     "from_date": ["<=", doc.start_date]},
-            order_by="from_date desc", limit_page_length=1, pluck="name",
+            filters={
+                "employee": doc.employee,
+                "salary_structure": doc.salary_structure,
+                "docstatus": 1,
+                "from_date": ["<=", doc.start_date],
+            },
+            order_by="from_date desc",
+            limit_page_length=1,
+            pluck="name",
         )
         if name:
             assignment = frappe.db.get_value(
-                "Salary Structure Assignment", name[0], ["swiss_bvg_insured_salary"], as_dict=True
+                "Salary Structure Assignment",
+                name[0],
+                ["swiss_bvg_insured_salary"],
+                as_dict=True,
             )
-    company = frappe.db.get_value("Company", doc.company, "company_name") if doc.company else None
+    company = (
+        frappe.db.get_value("Company", doc.company, "company_name")
+        if doc.company
+        else None
+    )
     return prepare(doc, employee=employee, assignment=assignment, company_name=company)
 
 
 @frappe.whitelist()
-def search_qst_codes(doctype, txt, searchfield, start, page_len, filters, as_dict=False):
+def search_qst_codes(
+    doctype, txt, searchfield, start, page_len, filters, as_dict=False
+):
     # the Link query of Employee's swiss_qst_code (client script public/js/employee.js): frappe passes the Link's filters,
     # which carry the canton, and the typed text, which narrows the codes
     if isinstance(filters, str):
         filters = json.loads(filters)
     codes = qst_codes_for_canton((filters or {}).get("swiss_qst_canton"))
     start, page_len = int(start or 0), int(page_len or 10)
-    return [(code,) for code in codes if (txt or "").upper() in code][start:start + page_len]
+    return [(code,) for code in codes if (txt or "").upper() in code][
+        start : start + page_len
+    ]
 
 
 def validate_qst_fields(doc, method=None):
@@ -280,7 +355,9 @@ def validate_qst_fields(doc, method=None):
         return
     canton = doc.get("swiss_qst_canton")
     if not canton:
-        frappe.throw(f"The Quellensteuer tariff code {code} needs its canton. Pick the canton, or clear the code.")
+        frappe.throw(
+            f"The Quellensteuer tariff code {code} needs its canton. Pick the canton, or clear the code."
+        )
     if not frappe.db.exists("QST Tariff", {"canton": canton, "tariff_code": code}):
         frappe.throw(
             f"There is no QST Tariff {code} for the canton {canton}. Load the canton's tariff file with "

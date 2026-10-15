@@ -47,15 +47,21 @@ def _get(token, path, params=None, opener=urllib.request.urlopen):
     url = BASE_URL + path
     if params:
         url += "?" + urllib.parse.urlencode(params)
-    request = urllib.request.Request(url, headers={"Authorization": "Bearer " + token, "Accept": "application/json"}, method="GET")
+    request = urllib.request.Request(
+        url,
+        headers={"Authorization": "Bearer " + token, "Accept": "application/json"},
+        method="GET",
+    )
     try:
         with opener(request, timeout=TIMEOUT_SECONDS) as response:
             return json.load(response)
     except urllib.error.HTTPError as err:
-        raise WiseError("HTTP {} from Wise on {}".format(err.code, path)) from None
+        raise WiseError(f"HTTP {err.code} from Wise on {path}") from None
     except (urllib.error.URLError, TimeoutError, ValueError) as err:
         # a network failure or a body that is not JSON; the reason is a class name, the text may carry the URL
-        raise WiseError("no usable answer from Wise on {} ({})".format(path, type(err).__name__)) from None
+        raise WiseError(
+            f"no usable answer from Wise on {path} ({type(err).__name__})"
+        ) from None
 
 
 def profiles(token, opener=urllib.request.urlopen):
@@ -65,12 +71,17 @@ def profiles(token, opener=urllib.request.urlopen):
 
 def balances(token, profile_id, opener=urllib.request.urlopen):
     """The standard and savings balances of a profile: a list of dicts with id, currency and amount."""
-    return _get(token, "/v4/profiles/{}/balances".format(profile_id), {"types": "STANDARD,SAVINGS"}, opener=opener)
+    return _get(
+        token,
+        f"/v4/profiles/{profile_id}/balances",
+        {"types": "STANDARD,SAVINGS"},
+        opener=opener,
+    )
 
 
 def activities(token, profile_id, start, opener=urllib.request.urlopen):
     """The profile's activities created at or after start (a datetime, UTC), newest first, paged by nextCursor."""
-    path = "/v1/profiles/{}/activities".format(profile_id)
+    path = f"/v1/profiles/{profile_id}/activities"
     out = []
     cursor = None
     while True:
@@ -102,7 +113,7 @@ def transfers(token, profile_id, start, end, opener=urllib.request.urlopen):
         }
         page = _get(token, path, params, opener=opener)
         if not isinstance(page, list):
-            raise WiseError("unexpected answer from Wise on {}".format(path))
+            raise WiseError(f"unexpected answer from Wise on {path}")
         out += page
         if len(page) < PAGE_SIZE:
             return out
@@ -111,12 +122,12 @@ def transfers(token, profile_id, start, end, opener=urllib.request.urlopen):
 
 def quote(token, profile_id, quote_uuid, opener=urllib.request.urlopen):
     """One quote of a transfer: the JSON with its payment options, the fee among them."""
-    return _get(token, "/v3/profiles/{}/quotes/{}".format(profile_id, quote_uuid), opener=opener)
+    return _get(token, f"/v3/profiles/{profile_id}/quotes/{quote_uuid}", opener=opener)
 
 
 def recipient(token, account_id, opener=urllib.request.urlopen):
     """One recipient account of a payout: the JSON, with its ownedByCustomer flag. Its other details are not kept."""
-    return _get(token, "/v1/accounts/{}".format(account_id), opener=opener)
+    return _get(token, f"/v1/accounts/{account_id}", opener=opener)
 
 
 def payout_recipients(token, transfer_items, opener=urllib.request.urlopen):
@@ -130,11 +141,15 @@ def payout_recipients(token, transfer_items, opener=urllib.request.urlopen):
     owned = {}
     for item in transfer_items:
         target = item.get("targetAccount")
-        if item.get("status") != COMPLETED_TRANSFER or item.get("sourceCurrency") == item.get("targetCurrency"):
+        if item.get("status") != COMPLETED_TRANSFER or item.get(
+            "sourceCurrency"
+        ) == item.get("targetCurrency"):
             continue
         if target not in owned:
             try:
-                owned[target] = bool(recipient(token, target, opener=opener).get("ownedByCustomer"))
+                owned[target] = bool(
+                    recipient(token, target, opener=opener).get("ownedByCustomer")
+                )
             except WiseError:
                 owned[target] = None
         if owned[target] is None:
@@ -176,7 +191,11 @@ def feed_rows(activity_items, transfer_items, fees):
     activities = [_activity(item) for item in activity_items]
     transfer_ids = {str(t["id"]) for t in transfer_items}
     # a balance deposit can come from a payout of the same id: the deposit is kept, the payout is its mirror
-    deposit_ids = {a["resource_id"] for a in activities if a["type"] == "BALANCE_DEPOSIT" and a["resource_type"] == "TRANSFER"}
+    deposit_ids = {
+        a["resource_id"]
+        for a in activities
+        if a["type"] == "BALANCE_DEPOSIT" and a["resource_type"] == "TRANSFER"
+    }
     rows = []
     for a in activities:
         if a["status"] != COMPLETED_ACTIVITY:
@@ -191,25 +210,50 @@ def feed_rows(activity_items, transfer_items, fees):
                 skipped["payout also in the transfers"] += 1
                 continue
             # without a resource id the activity's own id keys it, so two such payouts do not share one id
-            transaction_id = "wise:transfer:{}".format(a["resource_id"]) if a["resource_id"] else "wise:activity:{}".format(a["id"])
+            transaction_id = (
+                "wise:transfer:{}".format(a["resource_id"])
+                if a["resource_id"]
+                else "wise:activity:{}".format(a["id"])
+            )
         else:
             transaction_id = "wise:activity:{}".format(a["id"])
         if a["secondary_unread"]:
             # without the debited balance's amount the row would land on the primary currency's account, which the feed
             # writes only for a balance Wise held: so it is left out and counted, its shape shown
-            skipped["activity secondary amount not read: {} ({})".format(a["type"], amount_shape(a["raw_secondary"]))] += 1
+            skipped[
+                "activity secondary amount not read: {} ({})".format(
+                    a["type"], amount_shape(a["raw_secondary"])
+                )
+            ] += 1
             continue
         if a["amount"] is None or a["amount"][0] == 0:
-            skipped["activity without an amount: {} ({})".format(a["type"], amount_shape(a["raw_amount"]))] += 1
+            skipped[
+                "activity without an amount: {} ({})".format(
+                    a["type"], amount_shape(a["raw_amount"])
+                )
+            ] += 1
             continue
         value, currency = a["amount"]
-        rows.append(_row(transaction_id, a["date"], value, currency, a["description"], a["id"], a["chf"], a["type"]))
+        rows.append(
+            _row(
+                transaction_id,
+                a["date"],
+                value,
+                currency,
+                a["description"],
+                a["id"],
+                a["chf"],
+                a["type"],
+            )
+        )
     for t in transfer_items:
         transfer_id = str(t["id"])
         if t.get("status") != COMPLETED_TRANSFER:
             skipped["transfer status {}".format(t.get("status"))] += 1
             continue
-        if transfer_id in deposit_ids and t.get("sourceCurrency") == t.get("targetCurrency"):
+        if transfer_id in deposit_ids and t.get("sourceCurrency") == t.get(
+            "targetCurrency"
+        ):
             skipped["payout mirrors a balance deposit"] += 1
             continue
         date = _day(t.get("created"))
@@ -218,10 +262,32 @@ def feed_rows(activity_items, transfer_items, fees):
         if not principal:
             skipped["transfer without an amount"] += 1
             continue
-        rows.append(_row("wise:transfer:" + transfer_id, date, -principal, t["sourceCurrency"], reference, transfer_id, None, "TRANSFER"))
+        rows.append(
+            _row(
+                "wise:transfer:" + transfer_id,
+                date,
+                -principal,
+                t["sourceCurrency"],
+                reference,
+                transfer_id,
+                None,
+                "TRANSFER",
+            )
+        )
         fee = fees.get(transfer_id)
         if fee:
-            rows.append(_row("wise:transfer:{}:fee".format(transfer_id), date, -fee, "CHF", "Wise fee: " + reference, transfer_id, fee, "FEE"))
+            rows.append(
+                _row(
+                    f"wise:transfer:{transfer_id}:fee",
+                    date,
+                    -fee,
+                    "CHF",
+                    "Wise fee: " + reference,
+                    transfer_id,
+                    fee,
+                    "FEE",
+                )
+            )
     return rows, skipped
 
 
@@ -246,7 +312,7 @@ def amount_shape(text):
     if not isinstance(text, str):
         return "not text: " + type(text).__name__
     shape = re.sub(r"\b[A-Z]{3}\b", "CUR", re.sub(r"\d", "9", text))
-    return "".join(ch if ch.isascii() else "<U+{:04X}>".format(ord(ch)) for ch in shape)
+    return "".join(ch if ch.isascii() else f"<U+{ord(ch):04X}>" for ch in shape)
 
 
 def strip_html(text):
@@ -277,7 +343,11 @@ def _activity(item):
     if amount:
         value, currency = amount
         if not primary.lstrip().startswith(("+", "-")):
-            value = -abs(value) if item.get("type") in OUTGOING_ACTIVITY_TYPES else abs(value)
+            value = (
+                -abs(value)
+                if item.get("type") in OUTGOING_ACTIVITY_TYPES
+                else abs(value)
+            )
         amount = (value, currency)
     if amount and secondary:
         # the sign comes from the primary, the size and the currency from the secondary: the balance that was debited
@@ -291,10 +361,14 @@ def _activity(item):
         "amount": amount,
         "raw_amount": item.get("primaryAmount"),
         # an empty secondaryAmount is no secondary (a CHF movement has one as ""), a filled one that does not parse is unread
-        "secondary_unread": bool(secondary_text and str(secondary_text).strip()) and secondary is None,
+        "secondary_unread": bool(secondary_text and str(secondary_text).strip())
+        and secondary is None,
         "raw_secondary": item.get("secondaryAmount"),
         "chf": abs(secondary[0]) if secondary and secondary[1] == "CHF" else None,
-        "description": strip_html(item.get("title")) or strip_html(item.get("description")) or item.get("type") or "",
+        "description": strip_html(item.get("title"))
+        or strip_html(item.get("description"))
+        or item.get("type")
+        or "",
         "resource_type": resource.get("type"),
         "resource_id": str(resource["id"]) if resource.get("id") is not None else None,
     }

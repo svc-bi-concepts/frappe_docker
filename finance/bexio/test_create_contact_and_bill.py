@@ -15,12 +15,27 @@ from unittest import mock
 
 import launcher
 
-os.environ["BEXIO_DIR"] = os.path.dirname(os.path.abspath(__file__))  # run this checkout's files, never the main checkout's
-cb = launcher.load("create_contact_and_bill.py")  # the launcher is a bash file; the tests run its python body
-from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
+os.environ["BEXIO_DIR"] = os.path.dirname(
+    os.path.abspath(__file__)
+)  # run this checkout's files, never the main checkout's
+cb = launcher.load(
+    "create_contact_and_bill.py"
+)  # the launcher is a bash file; the tests run its python body
+from private_guard import (  # every test below runs against a temp private folder, never the real one
+    setUpModule,
+)
 
 TOKEN = "tok-invented-not-real"
-ARGS = ["--file-uuid", "uuid-invented-1", "--nr", "INV-TEST-1", "--date", "2026-01-15", "--total", "733.30"]
+ARGS = [
+    "--file-uuid",
+    "uuid-invented-1",
+    "--nr",
+    "INV-TEST-1",
+    "--date",
+    "2026-01-15",
+    "--total",
+    "733.30",
+]
 
 
 def _answer(body):
@@ -70,8 +85,12 @@ def _body(req):
 def standard_answers(contacts=None, bills=None):
     """A yard with no Vebego contact and no bill of that number yet, unless the caller says otherwise."""
     return {
-        ("GET", "/2.0/contact"): [contacts if contacts is not None else [{"id": 1, "name_1": "Muster AG"}]],
-        ("GET", "/2.0/country"): [[{"id": 5, "iso_3166_alpha2": "CH"}, {"id": 6, "iso_3166_alpha2": "DE"}]],
+        ("GET", "/2.0/contact"): [
+            contacts if contacts is not None else [{"id": 1, "name_1": "Muster AG"}]
+        ],
+        ("GET", "/2.0/country"): [
+            [{"id": 5, "iso_3166_alpha2": "CH"}, {"id": 6, "iso_3166_alpha2": "DE"}]
+        ],
         ("GET", "/3.0/users/me"): [{"id": 9}],
         ("GET", "/4.0/purchase/bills"): [{"data": bills if bills is not None else []}],
         ("POST", "/2.0/contact"): [{"id": 77}],
@@ -81,7 +100,9 @@ def standard_answers(contacts=None, bills=None):
 
 class TokenTest(unittest.TestCase):
     def test_refuses_without_the_token(self):
-        with mock.patch.dict(os.environ, {}, clear=True), mock.patch.object(cb.urllib.request, "urlopen") as urlopen:
+        with mock.patch.dict(os.environ, {}, clear=True), mock.patch.object(
+            cb.urllib.request, "urlopen"
+        ) as urlopen:
             with self.assertRaises(SystemExit) as cm:
                 _run(ARGS)
         self.assertIn("BEXIO_TOKEN", str(cm.exception))
@@ -95,7 +116,9 @@ class LauncherTest(unittest.TestCase):
     # this file cannot spell it.
     RETIRED = "".join(("var", "lock"))
 
-    PATH = os.path.join(os.path.dirname(os.path.abspath(cb.__file__)), "create_contact_and_bill.py")
+    PATH = os.path.join(
+        os.path.dirname(os.path.abspath(cb.__file__)), "create_contact_and_bill.py"
+    )
     SHEBANG = "#!/usr/local/bin/av inject +BEXIO_TOKEN /bin/bash"
 
     def test_the_first_line_is_the_av_inject_shebang_for_bash(self):
@@ -104,7 +127,9 @@ class LauncherTest(unittest.TestCase):
         self.assertEqual(first, self.SHEBANG)
 
     def test_the_file_is_executable(self):
-        self.assertTrue(os.access(self.PATH, os.X_OK), "chmod +x create_contact_and_bill.py")
+        self.assertTrue(
+            os.access(self.PATH, os.X_OK), "chmod +x create_contact_and_bill.py"
+        )
 
     def test_no_retired_name_is_left_in_the_file(self):
         with open(self.PATH) as f:
@@ -147,7 +172,9 @@ class ResultFileTest(unittest.TestCase):
         urlopen, calls = fake_bexio(standard_answers())
         with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
             _run(ARGS)
-        self.assertFalse(os.path.exists(os.path.join(cb.PRIVATE, "bexio-upload", "last-result.txt")))
+        self.assertFalse(
+            os.path.exists(os.path.join(cb.PRIVATE, "bexio-upload", "last-result.txt"))
+        )
 
 
 class PlanTest(unittest.TestCase):
@@ -199,19 +226,29 @@ class PlanTest(unittest.TestCase):
         self.assertNotIn(TOKEN, out)
 
     def test_an_existing_contact_is_found_and_not_created(self):
-        contacts = [{"id": i, "name_1": "Kunde {}".format(i)} for i in range(cb.PAGE_SIZE)]
+        contacts = [{"id": i, "name_1": f"Kunde {i}"} for i in range(cb.PAGE_SIZE)]
         answers = standard_answers()
-        answers[("GET", "/2.0/contact")] = [contacts, [{"id": 12, "name_1": "VEBEGO AG"}]]
+        answers[("GET", "/2.0/contact")] = [
+            contacts,
+            [{"id": 12, "name_1": "VEBEGO AG"}],
+        ]
         del answers[("GET", "/2.0/country")], answers[("GET", "/3.0/users/me")]
         urlopen, calls = fake_bexio(answers)
         with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
             out = _run(["--yes"] + ARGS)
         self.assertEqual(_sent(calls, "POST", "/2.0/contact"), [])
-        self.assertEqual(_body(_sent(calls, "POST", "/4.0/purchase/bills")[0])["supplier_id"], 12)
+        self.assertEqual(
+            _body(_sent(calls, "POST", "/4.0/purchase/bills")[0])["supplier_id"], 12
+        )
         self.assertIn("found 'VEBEGO AG' as bexio contact id 12; not created", out)
 
     def test_two_matching_contacts_refuse_before_any_write(self):
-        answers = standard_answers(contacts=[{"id": 3, "name_1": "Vebego AG"}, {"id": 4, "name_1": "Vebego Ost"}])
+        answers = standard_answers(
+            contacts=[
+                {"id": 3, "name_1": "Vebego AG"},
+                {"id": 4, "name_1": "Vebego Ost"},
+            ]
+        )
         urlopen, calls = fake_bexio(answers)
         with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
             with self.assertRaises(SystemExit) as cm:
@@ -220,7 +257,9 @@ class PlanTest(unittest.TestCase):
         self.assertEqual([k for (k, _) in calls if k[0] == "POST"], [])
 
     def test_an_invoice_number_already_in_bexio_refuses_before_any_write(self):
-        urlopen, calls = fake_bexio(standard_answers(bills=[{"id": 5, "vendor_ref": "INV-TEST-1"}]))
+        urlopen, calls = fake_bexio(
+            standard_answers(bills=[{"id": 5, "vendor_ref": "INV-TEST-1"}])
+        )
         with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
             with self.assertRaises(SystemExit) as cm:
                 _run(["--yes"] + ARGS)
@@ -228,14 +267,20 @@ class PlanTest(unittest.TestCase):
         self.assertEqual([k for (k, _) in calls if k[0] == "POST"], [])
 
     def test_bills_are_read_page_by_page(self):
-        full = [{"id": i, "vendor_ref": "other-{}".format(i)} for i in range(cb.PAGE_SIZE)]
+        full = [{"id": i, "vendor_ref": f"other-{i}"} for i in range(cb.PAGE_SIZE)]
         answers = standard_answers()
-        answers[("GET", "/4.0/purchase/bills")] = [{"data": full}, {"data": [{"id": 6, "vendor_ref": "INV-TEST-1"}]}]
+        answers[("GET", "/4.0/purchase/bills")] = [
+            {"data": full},
+            {"data": [{"id": 6, "vendor_ref": "INV-TEST-1"}]},
+        ]
         urlopen, calls = fake_bexio(answers)
         with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
             with self.assertRaises(SystemExit):
                 _run(["--yes"] + ARGS)
-        pages = [urllib.parse.parse_qs(urllib.parse.urlparse(r.full_url).query)["page"] for r in _sent(calls, "GET", "/4.0/purchase/bills")]
+        pages = [
+            urllib.parse.parse_qs(urllib.parse.urlparse(r.full_url).query)["page"]
+            for r in _sent(calls, "GET", "/4.0/purchase/bills")
+        ]
         self.assertEqual(pages, [["1"], ["2"]])
 
 
@@ -247,7 +292,11 @@ class PostGuardTest(unittest.TestCase):
 
     def test_a_failed_contact_post_is_not_retried(self):
         answers = standard_answers()
-        answers[("POST", "/2.0/contact")] = [urllib.error.HTTPError("u", 500, "x", {}, io.BytesIO(b'{"error": "invented"}'))]
+        answers[("POST", "/2.0/contact")] = [
+            urllib.error.HTTPError(
+                "u", 500, "x", {}, io.BytesIO(b'{"error": "invented"}')
+            )
+        ]
         urlopen, calls = fake_bexio(answers)
         with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
             with self.assertRaises(SystemExit) as cm:
@@ -259,7 +308,11 @@ class PostGuardTest(unittest.TestCase):
 
     def test_a_failed_bill_post_is_not_retried(self):
         answers = standard_answers()
-        answers[("POST", "/4.0/purchase/bills")] = [urllib.error.HTTPError("u", 400, "bad", {}, io.BytesIO(b'{"error": "invented"}'))]
+        answers[("POST", "/4.0/purchase/bills")] = [
+            urllib.error.HTTPError(
+                "u", 400, "bad", {}, io.BytesIO(b'{"error": "invented"}')
+            )
+        ]
         urlopen, calls = fake_bexio(answers)
         with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
             with self.assertRaises(SystemExit) as cm:
@@ -278,7 +331,9 @@ class PostGuardTest(unittest.TestCase):
             ("POST", "/3.0/files"),
         ]
         for method, path in refused:
-            with self.subTest(method=method, path=path), mock.patch.object(cb.urllib.request, "urlopen") as urlopen:
+            with self.subTest(method=method, path=path), mock.patch.object(
+                cb.urllib.request, "urlopen"
+            ) as urlopen:
                 with self.assertRaises(cb.RefusedRequest):
                     cb._send(method, path, TOKEN, body={})
                 urlopen.assert_not_called()
@@ -297,7 +352,9 @@ class ArgumentTest(unittest.TestCase):
         cases = [base + ["--date", "2026-01-15", "--total", t] for t in bad_totals]
         cases += [base + ["--date", d, "--total", "733.30"] for d in bad_dates]
         for argv in cases:
-            with self.subTest(argv=argv), mock.patch.object(cb.urllib.request, "urlopen") as urlopen:
+            with self.subTest(argv=argv), mock.patch.object(
+                cb.urllib.request, "urlopen"
+            ) as urlopen:
                 with self.assertRaises(SystemExit):
                     _run(argv)
                 urlopen.assert_not_called()
@@ -305,7 +362,19 @@ class ArgumentTest(unittest.TestCase):
     def test_empty_invoice_number_sends_nothing(self):
         with mock.patch.object(cb.urllib.request, "urlopen") as urlopen:
             with self.assertRaises(SystemExit):
-                _run(["--yes", "--file-uuid", "uuid-invented-1", "--nr", " ", "--date", "2026-01-15", "--total", "733.30"])
+                _run(
+                    [
+                        "--yes",
+                        "--file-uuid",
+                        "uuid-invented-1",
+                        "--nr",
+                        " ",
+                        "--date",
+                        "2026-01-15",
+                        "--total",
+                        "733.30",
+                    ]
+                )
         urlopen.assert_not_called()
 
 

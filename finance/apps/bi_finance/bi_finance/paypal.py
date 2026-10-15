@@ -9,9 +9,8 @@ import collections
 import datetime
 
 import frappe
-from frappe import _
-
 from bi_finance import bank_feed, paypal_client
+from frappe import _
 
 BANK = "PAYPAL"
 
@@ -44,7 +43,9 @@ def test_connection():
         found = paypal_client.balances(token)
     except paypal_client.PayPalError as err:
         frappe.throw(str(err))
-    frappe.msgprint(_("Connected. Currencies: {0}").format(", ".join(sorted(found)) or _("none")))
+    frappe.msgprint(
+        _("Connected. Currencies: {0}").format(", ".join(sorted(found)) or _("none"))
+    )
     return sorted(found)
 
 
@@ -53,7 +54,11 @@ def sync_now(dry_run=True):
     """Sync every currency now. dry_run, the default, reports what would be written; a live run writes it."""
     dry_run = frappe.parse_json(dry_run) if isinstance(dry_run, str) else bool(dry_run)
     report = run(dry_run=dry_run)
-    frappe.msgprint(_("{0} account(s) {1}.").format(len(report["accounts"]), _("planned") if dry_run else _("synced")))
+    frappe.msgprint(
+        _("{0} account(s) {1}.").format(
+            len(report["accounts"]), _("planned") if dry_run else _("synced")
+        )
+    )
     frappe.msgprint("<br>".join(_summary_lines(report)))
     return report
 
@@ -85,12 +90,18 @@ def run(dry_run):
     accounts = []
     for currency in sorted(set(rows_by_currency) | set(balances)):
         bank_account = bank_feed.bank_account_name(PREFIX, currency, BANK)
-        create, summary = bank_feed.plan(bank_account, rows_by_currency.get(currency, []))
+        create, summary = bank_feed.plan(
+            bank_account, rows_by_currency.get(currency, [])
+        )
         if not dry_run:
             ensure_bank_account(currency)
             bank_feed.write(bank_account, create)
             frappe.db.commit()
-        accounts.append(_account_report(currency, bank_account, create, summary, balances.get(currency, 0.0)))
+        accounts.append(
+            _account_report(
+                currency, bank_account, create, summary, balances.get(currency, 0.0)
+            )
+        )
     if not dry_run:
         # one field, not settings.save(): a save would write back the secret and switches as read at the start of the run
         frappe.db.set_single_value("PayPal Settings", "last_sync", now)
@@ -100,14 +111,20 @@ def run(dry_run):
 
 def ensure_bank_account(currency):
     """The Bank Account of a currency, with its GL account, made when missing. An existing one is left as it is."""
-    group = frappe.db.get_value("Bank Account", BANK_GROUP_ACCOUNT, ["account", "company"], as_dict=True)
+    group = frappe.db.get_value(
+        "Bank Account", BANK_GROUP_ACCOUNT, ["account", "company"], as_dict=True
+    )
     parent = frappe.db.get_value("Account", group["account"], "parent_account")
-    return bank_feed.open_bank_account(PREFIX, BANK, currency, parent, group["company"], ACCOUNT_NUMBERS)
+    return bank_feed.open_bank_account(
+        PREFIX, BANK, currency, parent, group["company"], ACCOUNT_NUMBERS
+    )
 
 
 def _account_report(currency, bank_account, create, summary, balance):
     """One currency's row: the counts, and PayPal's balance against ERPNext's net once the run's rows are in."""
-    erp_net = _erp_net(bank_account) + sum(row["deposit"] - row["withdrawal"] for row in create)
+    erp_net = _erp_net(bank_account) + sum(
+        row["deposit"] - row["withdrawal"] for row in create
+    )
     return {
         "currency": currency,
         "bank_account": bank_account,
@@ -125,7 +142,9 @@ def _summary_lines(report):
     """One line per currency for the message: the counts, then PayPal's balance and ERPNext's net."""
     lines = []
     for a in report["accounts"]:
-        months = ", ".join("{} {}".format(month, n) for month, n in sorted(a["create_by_month"].items()))
+        months = ", ".join(
+            f"{month} {n}" for month, n in sorted(a["create_by_month"].items())
+        )
         lines.append(
             "{}: {} to create [{}]; PayPal {}; ERPNext {}; gap {}; {} already fed, {} already imported".format(
                 a["currency"],
@@ -164,4 +183,9 @@ def _start(settings, now):
         # last_sync is stored as a string too: every sync after the first live one failed on "str - timedelta"
         return max(frappe.utils.get_datetime(settings.last_sync) - OVERLAP, earliest)
     # a Date single comes back as its stored string, not a date: the first sync failed on datetime.combine with it
-    return max(datetime.datetime.combine(frappe.utils.getdate(settings.backfill_from), datetime.time.min), earliest)
+    return max(
+        datetime.datetime.combine(
+            frappe.utils.getdate(settings.backfill_from), datetime.time.min
+        ),
+        earliest,
+    )

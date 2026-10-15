@@ -1,16 +1,21 @@
 {
- "app": "bi_finance",
- "creation": "2026-10-11 23:55:00.000000",
- "docstatus": 0,
- "doctype": "Dock",
- "idx": 0,
- "items": [
-  {"icon": "wallet-duotone", "link_to": "Treasury", "link_type": "Sidebar", "title": "Treasury"}
- ],
- "modified": "2026-10-12 04:00:00.000000",
- "modified_by": "Administrator",
- "mount_on": "erpnext",
- "name": "bi_finance",
- "owner": "Administrator",
- "standard": 1
+  "app": "bi_finance",
+  "creation": "2026-10-11 23:55:00.000000",
+  "docstatus": 0,
+  "doctype": "Dock",
+  "idx": 0,
+  "items": [
+    {
+      "icon": "wallet-duotone",
+      "link_to": "Treasury",
+      "link_type": "Sidebar",
+      "title": "Treasury"
+    }
+  ],
+  "modified": "2026-10-12 04:00:00.000000",
+  "modified_by": "Administrator",
+  "mount_on": "erpnext",
+  "name": "bi_finance",
+  "owner": "Administrator",
+  "standard": 1
 }

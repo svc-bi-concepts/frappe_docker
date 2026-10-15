@@ -10,8 +10,17 @@ import import_leave as il
 
 class FakeErp:
     def __init__(self):
-        self.docs = {doctype: {} for doctype in ("Holiday List", "Leave Type", "Leave Period", "Employee",
-                                                 "Leave Allocation", "Holiday List Assignment")}
+        self.docs = {
+            doctype: {}
+            for doctype in (
+                "Holiday List",
+                "Leave Type",
+                "Leave Period",
+                "Employee",
+                "Leave Allocation",
+                "Holiday List Assignment",
+            )
+        }
         self.writes = 0
         self.seq = 0
 
@@ -28,8 +37,14 @@ class FakeErp:
     def insert(self, doctype, doc):
         self.writes += 1
         self.seq += 1
-        name = doc.get("holiday_list_name") or doc.get("leave_type_name") or "test-{}".format(self.seq)
-        self.docs[doctype][name] = dict(copy.deepcopy(doc), doctype=doctype, name=name, docstatus=0)
+        name = (
+            doc.get("holiday_list_name")
+            or doc.get("leave_type_name")
+            or f"test-{self.seq}"
+        )
+        self.docs[doctype][name] = dict(
+            copy.deepcopy(doc), doctype=doctype, name=name, docstatus=0
+        )
         return {"name": name}
 
     def update(self, doctype, name, values):
@@ -39,20 +54,29 @@ class FakeErp:
     def call(self, method, **args):
         self.writes += 1
         doc = args.get("doc") or {}
-        if doc.get("doctype") in self.docs and doc.get("name") in self.docs[doc["doctype"]]:
+        if (
+            doc.get("doctype") in self.docs
+            and doc.get("name") in self.docs[doc["doctype"]]
+        ):
             self.docs[doc["doctype"]][doc["name"]]["docstatus"] = 1
         return args
 
 
 class AllocationRuleTest(unittest.TestCase):
     def test_export_days_take_precedence(self):
-        days, default = il.allocation_days({"swiss_employment_level": 50}, {"annual_vacation_days_total": 23})
+        days, default = il.allocation_days(
+            {"swiss_employment_level": 50}, {"annual_vacation_days_total": 23}
+        )
         self.assertEqual((days, default), (23.0, False))
 
     def test_default_minimum_is_prorated_by_employment_level(self):
         employee = {"swiss_employment_level": 60}
-        self.assertEqual(il.allocation_days(employee, {"date_of_birth": "1990-06-01"}), (12.0, True))
-        self.assertEqual(il.allocation_days(employee, {"date_of_birth": "2007-06-01"}), (15.0, True))
+        self.assertEqual(
+            il.allocation_days(employee, {"date_of_birth": "1990-06-01"}), (12.0, True)
+        )
+        self.assertEqual(
+            il.allocation_days(employee, {"date_of_birth": "2007-06-01"}), (15.0, True)
+        )
 
     def test_missing_level_is_reportable_not_assumed_full_time(self):
         with self.assertRaises(ValueError):
@@ -88,11 +112,19 @@ class RepeatabilityTest(unittest.TestCase):
 
     def test_active_employee_gets_one_allocation_and_rerun_creates_none(self):
         erp = FakeErp()
-        employee = {"name": "HR-EMP-8001", "employee_name": "A. Example", "status": "Active",
-                    "swiss_employment_level": 60}
+        employee = {
+            "name": "HR-EMP-8001",
+            "employee_name": "A. Example",
+            "status": "Active",
+            "swiss_employment_level": 60,
+        }
         erp.docs["Employee"][employee["name"]] = copy.deepcopy(employee)
-        export = {"id": "8001", "employment_level": 60, "date_of_birth": "1990-01-01",
-                  "annual_vacation_days_total": 22}
+        export = {
+            "id": "8001",
+            "employment_level": 60,
+            "date_of_birth": "1990-01-01",
+            "annual_vacation_days_total": 22,
+        }
         plan, defaults, problems = il.build_plan([export], {"8001": employee})
         self.assertEqual((len(plan), len(defaults), problems), (1, 0, []))
         first = il.LeaveImporter(erp, dry_run=False)
@@ -108,49 +140,83 @@ class RepeatabilityTest(unittest.TestCase):
 
 
 def active_employee(name="HR-EMP-8001", level=60, status="Active"):
-    return {"name": name, "employee_name": "A. Example", "status": status, "swiss_employment_level": level}
+    return {
+        "name": name,
+        "employee_name": "A. Example",
+        "status": status,
+        "swiss_employment_level": level,
+    }
 
 
 class PlanAndAllocationTest(unittest.TestCase):
     def test_plan_skips_left_reports_unknown_and_lists_defaults(self):
-        export = [{"id": "8001", "employment_level": 60, "date_of_birth": "1990-01-01"},
-                  {"id": "8002", "employment_level": 100, "date_of_birth": "1990-01-01"},
-                  {"id": "8003", "employment_level": 100},
-                  {"id": "8004", "date_of_birth": "1990-01-01"}]
-        erp = {"8001": active_employee("HR-EMP-8001"), "8002": active_employee("HR-EMP-8002", 100, "Left"),
-               "8004": {"name": "HR-EMP-8004", "status": "Active"}}
+        export = [
+            {"id": "8001", "employment_level": 60, "date_of_birth": "1990-01-01"},
+            {"id": "8002", "employment_level": 100, "date_of_birth": "1990-01-01"},
+            {"id": "8003", "employment_level": 100},
+            {"id": "8004", "date_of_birth": "1990-01-01"},
+        ]
+        erp = {
+            "8001": active_employee("HR-EMP-8001"),
+            "8002": active_employee("HR-EMP-8002", 100, "Left"),
+            "8004": {"name": "HR-EMP-8004", "status": "Active"},
+        }
         plan, defaults, problems = il.build_plan(export, erp)
         self.assertEqual([entry["position"] for entry in plan], [1])
         self.assertEqual(len(defaults), 1)
-        self.assertEqual(sorted(problems), [(3, "Employee not found"), (4, "default allocation needs employment level")])
+        self.assertEqual(
+            sorted(problems),
+            [
+                (3, "Employee not found"),
+                (4, "default allocation needs employment level"),
+            ],
+        )
 
     def test_apply_submits_the_allocation_and_sets_the_employee_holiday_list(self):
         erp = FakeErp()
         employee = active_employee()
         erp.docs["Employee"][employee["name"]] = copy.deepcopy(employee)
-        plan, _defaults, _problems = il.build_plan([{"id": "8001", "annual_vacation_days_total": 25}], {"8001": employee})
+        plan, _defaults, _problems = il.build_plan(
+            [{"id": "8001", "annual_vacation_days_total": 25}], {"8001": employee}
+        )
         importer = il.LeaveImporter(erp, dry_run=False)
         importer.run_employees(plan)
         allocation = next(iter(erp.docs["Leave Allocation"].values()))
         self.assertEqual(allocation["docstatus"], 1)
-        self.assertEqual(erp.docs["Employee"][employee["name"]]["holiday_list"], il.HOLIDAY_LIST)
+        self.assertEqual(
+            erp.docs["Employee"][employee["name"]]["holiday_list"], il.HOLIDAY_LIST
+        )
 
     def test_assignment_is_created_submitted_and_unchanged_on_rerun(self):
         erp = FakeErp()
         employee = active_employee()
         erp.docs["Employee"][employee["name"]] = copy.deepcopy(employee)
-        plan, _d, _p = il.build_plan([{"id": "8001", "annual_vacation_days_total": 25}], {"8001": employee})
+        plan, _d, _p = il.build_plan(
+            [{"id": "8001", "annual_vacation_days_total": 25}], {"8001": employee}
+        )
         first = il.LeaveImporter(erp, dry_run=False)
         first.run_employees(plan)
         assignment = next(iter(erp.docs["Holiday List Assignment"].values()))
         self.assertEqual(assignment["docstatus"], 1)
         self.assertEqual(assignment["applicable_for"], "Employee")
         self.assertEqual(assignment["assigned_to"], employee["name"])
-        self.assertEqual((assignment["holiday_list"], assignment["from_date"]), (il.HOLIDAY_LIST, il.FROM_DATE))
-        self.assertEqual((first.counts["assignments planned"], first.counts["assignments created"]), (1, 1))
+        self.assertEqual(
+            (assignment["holiday_list"], assignment["from_date"]),
+            (il.HOLIDAY_LIST, il.FROM_DATE),
+        )
+        self.assertEqual(
+            (first.counts["assignments planned"], first.counts["assignments created"]),
+            (1, 1),
+        )
         second = il.LeaveImporter(erp, dry_run=False)
         second.run_employees(plan)
-        self.assertEqual((second.counts["assignments created"], second.counts["assignments unchanged"]), (0, 1))
+        self.assertEqual(
+            (
+                second.counts["assignments created"],
+                second.counts["assignments unchanged"],
+            ),
+            (0, 1),
+        )
         self.assertEqual(len(erp.docs["Holiday List Assignment"]), 1)
 
     def test_cancelled_assignment_does_not_block_a_new_one(self):
@@ -158,10 +224,18 @@ class PlanAndAllocationTest(unittest.TestCase):
         employee = active_employee()
         erp.docs["Employee"][employee["name"]] = copy.deepcopy(employee)
         erp.docs["Holiday List Assignment"]["old"] = {
-            "name": "old", "doctype": "Holiday List Assignment", "docstatus": 2,
-            "naming_series": il.ASSIGNMENT_SERIES, "applicable_for": "Employee",
-            "assigned_to": employee["name"], "holiday_list": il.HOLIDAY_LIST, "from_date": il.FROM_DATE}
-        plan, _d, _p = il.build_plan([{"id": "8001", "annual_vacation_days_total": 25}], {"8001": employee})
+            "name": "old",
+            "doctype": "Holiday List Assignment",
+            "docstatus": 2,
+            "naming_series": il.ASSIGNMENT_SERIES,
+            "applicable_for": "Employee",
+            "assigned_to": employee["name"],
+            "holiday_list": il.HOLIDAY_LIST,
+            "from_date": il.FROM_DATE,
+        }
+        plan, _d, _p = il.build_plan(
+            [{"id": "8001", "annual_vacation_days_total": 25}], {"8001": employee}
+        )
         importer = il.LeaveImporter(erp, dry_run=False)
         importer.run_employees(plan)
         self.assertEqual(importer.counts["assignments created"], 1)
@@ -171,7 +245,9 @@ class PlanAndAllocationTest(unittest.TestCase):
         erp = FakeErp()
         employee = active_employee()
         erp.docs["Employee"][employee["name"]] = copy.deepcopy(employee)
-        plan, defaults, problems = il.build_plan([{"id": "8001", "annual_vacation_days_total": 0}], {"8001": employee})
+        plan, defaults, problems = il.build_plan(
+            [{"id": "8001", "annual_vacation_days_total": 0}], {"8001": employee}
+        )
         self.assertEqual((plan[0]["days"], defaults, problems), (0.0, [], []))
         importer = il.LeaveImporter(erp, dry_run=False)
         importer.run_employees(plan)
@@ -181,14 +257,23 @@ class PlanAndAllocationTest(unittest.TestCase):
         self.assertEqual(importer.problems, [])
         self.assertEqual(len(erp.docs["Holiday List Assignment"]), 1)
 
-    def test_draft_allocation_is_flagged_not_replaced_and_cancelled_one_does_not_block(self):
+    def test_draft_allocation_is_flagged_not_replaced_and_cancelled_one_does_not_block(
+        self,
+    ):
         erp = FakeErp()
         employee = active_employee()
         erp.docs["Employee"][employee["name"]] = copy.deepcopy(employee)
-        base = {"employee": employee["name"], "leave_type": il.LEAVE_TYPE, "from_date": il.FROM_DATE,
-                "to_date": il.TO_DATE, "new_leaves_allocated": 20}
+        base = {
+            "employee": employee["name"],
+            "leave_type": il.LEAVE_TYPE,
+            "from_date": il.FROM_DATE,
+            "to_date": il.TO_DATE,
+            "new_leaves_allocated": 20,
+        }
         erp.docs["Leave Allocation"]["draft"] = dict(base, name="draft", docstatus=0)
-        plan, _d, _p = il.build_plan([{"id": "8001", "annual_vacation_days_total": 25}], {"8001": employee})
+        plan, _d, _p = il.build_plan(
+            [{"id": "8001", "annual_vacation_days_total": 25}], {"8001": employee}
+        )
         importer = il.LeaveImporter(erp, dry_run=False)
         importer.run_employees(plan)
         self.assertEqual(len(erp.docs["Leave Allocation"]), 1)
@@ -205,7 +290,9 @@ class PlanAndAllocationTest(unittest.TestCase):
             erp = FakeErp()
             employee = active_employee()
             erp.docs["Employee"][employee["name"]] = copy.deepcopy(employee)
-            plan, _d, _p = il.build_plan([{"id": "8001", "annual_vacation_days_total": 25}], {"8001": employee})
+            plan, _d, _p = il.build_plan(
+                [{"id": "8001", "annual_vacation_days_total": 25}], {"8001": employee}
+            )
             importer = il.LeaveImporter(erp, dry_run=dry_run)
             importer.run_employees(plan)
             counts.append(importer.counts["updated"])
@@ -215,17 +302,26 @@ class PlanAndAllocationTest(unittest.TestCase):
         erp = FakeErp()
         employee = active_employee()
         erp.docs["Employee"][employee["name"]] = copy.deepcopy(employee)
-        plan, _d, _p = il.build_plan([{"id": "8001", "annual_vacation_days_total": 25}], {"8001": employee})
+        plan, _d, _p = il.build_plan(
+            [{"id": "8001", "annual_vacation_days_total": 25}], {"8001": employee}
+        )
         importer = il.LeaveImporter(erp, dry_run=True)
         importer.run_employees(plan)
         self.assertEqual(erp.writes, 0)
         self.assertEqual(importer.counts["created"], 1)
-        self.assertEqual((importer.counts["assignments planned"], importer.counts["assignments created"]), (1, 1))
+        self.assertEqual(
+            (
+                importer.counts["assignments planned"],
+                importer.counts["assignments created"],
+            ),
+            (1, 1),
+        )
         self.assertEqual(len(erp.docs["Holiday List Assignment"]), 0)
 
     def test_defaults_file_is_private(self):
         import stat
         import tempfile
+
         path = os.path.join(tempfile.mkdtemp(), "payroll", "leave-defaults.txt")
         il.write_defaults(path, [(active_employee(), 12.0)])
         self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o600)
@@ -234,6 +330,7 @@ class PlanAndAllocationTest(unittest.TestCase):
 class OverrideTest(unittest.TestCase):
     def write_overrides(self, text):
         import tempfile
+
         path = os.path.join(tempfile.mkdtemp(), "payroll", "leave-overrides.txt")
         os.makedirs(os.path.dirname(path))
         with open(path, "w", encoding="utf-8") as stream:
@@ -245,37 +342,68 @@ class OverrideTest(unittest.TestCase):
         employee = active_employee()
         erp.docs["Employee"][employee["name"]] = copy.deepcopy(employee)
         overrides = {"8001": 0.0}
-        plan, defaults, problems = il.build_plan([{"id": "8001", "annual_vacation_days_total": 23}],
-                                                 {"8001": employee}, overrides)
-        self.assertEqual((plan[0]["days"], plan[0]["override"], defaults, problems), (0.0, True, [], []))
+        plan, defaults, problems = il.build_plan(
+            [{"id": "8001", "annual_vacation_days_total": 23}],
+            {"8001": employee},
+            overrides,
+        )
+        self.assertEqual(
+            (plan[0]["days"], plan[0]["override"], defaults, problems),
+            (0.0, True, [], []),
+        )
         importer = il.LeaveImporter(erp, dry_run=False)
         importer.run_employees(plan)
         self.assertEqual(len(erp.docs["Leave Allocation"]), 0)
-        self.assertEqual((importer.counts["no entitlement"], importer.counts["overrides applied"]), (1, 1))
+        self.assertEqual(
+            (importer.counts["no entitlement"], importer.counts["overrides applied"]),
+            (1, 1),
+        )
         self.assertEqual(importer.counts["failed"], 0)
 
     def test_positive_override_wins_over_export_and_default_and_is_not_listed(self):
         employee = active_employee(level=60)
-        export = {"id": "8001", "employment_level": 60, "date_of_birth": "1990-01-01", "annual_vacation_days_total": 22}
+        export = {
+            "id": "8001",
+            "employment_level": 60,
+            "date_of_birth": "1990-01-01",
+            "annual_vacation_days_total": 22,
+        }
         self.assertEqual(il.allocation_days(employee, export, 15), (15.0, False))
-        plan, defaults, problems = il.build_plan([export], {"8001": employee}, {"8001": 15.0})
-        self.assertEqual((plan[0]["days"], plan[0]["override"], defaults, problems), (15.0, True, [], []))
-        no_export = {"id": "8001", "employment_level": 60, "date_of_birth": "1990-01-01"}
-        plan, defaults, _problems = il.build_plan([no_export], {"8001": employee}, {"8001": 15.0})
+        plan, defaults, problems = il.build_plan(
+            [export], {"8001": employee}, {"8001": 15.0}
+        )
+        self.assertEqual(
+            (plan[0]["days"], plan[0]["override"], defaults, problems),
+            (15.0, True, [], []),
+        )
+        no_export = {
+            "id": "8001",
+            "employment_level": 60,
+            "date_of_birth": "1990-01-01",
+        }
+        plan, defaults, _problems = il.build_plan(
+            [no_export], {"8001": employee}, {"8001": 15.0}
+        )
         self.assertEqual((plan[0]["days"], defaults), (15.0, []))
 
     def test_override_needs_no_employment_level(self):
-        plan, _defaults, problems = il.build_plan([{"id": "8001"}], {"8001": {"name": "HR-EMP-8001", "status": "Active"}},
-                                                  {"8001": 0.0})
+        plan, _defaults, problems = il.build_plan(
+            [{"id": "8001"}],
+            {"8001": {"name": "HR-EMP-8001", "status": "Active"}},
+            {"8001": 0.0},
+        )
         self.assertEqual((len(plan), problems), (1, []))
 
     def test_missing_overrides_file_changes_nothing(self):
         import tempfile
+
         path = os.path.join(tempfile.mkdtemp(), "payroll", "leave-overrides.txt")
         self.assertEqual(il.read_overrides(path), ({}, []))
         employee = active_employee(level=60)
         export = [{"id": "8001", "employment_level": 60, "date_of_birth": "1990-01-01"}]
-        with_file = il.build_plan(export, {"8001": employee}, il.read_overrides(path)[0])
+        with_file = il.build_plan(
+            export, {"8001": employee}, il.read_overrides(path)[0]
+        )
         without = il.build_plan(export, {"8001": employee})
         self.assertEqual(with_file, without)
         self.assertEqual(with_file[0][0]["days"], 12.0)
@@ -285,25 +413,33 @@ class OverrideTest(unittest.TestCase):
         self.assertEqual(il.read_overrides(path), ({"8001": 0.0, "8002": 15.5}, []))
 
     def test_malformed_rows_are_named_by_line_number_only(self):
-        path = self.write_overrides("8001\t0\n8002\n8003\tlots\n8004\t-1\n8001\t3\n\t5\n8005\t2\n")
+        path = self.write_overrides(
+            "8001\t0\n8002\n8003\tlots\n8004\t-1\n8001\t3\n\t5\n8005\t2\n"
+        )
         overrides, malformed = il.read_overrides(path)
         self.assertEqual(overrides, {"8001": 0.0, "8005": 2.0})
         self.assertEqual(malformed, [2, 3, 4, 5, 6])
 
     def test_non_finite_days_are_malformed(self):
-        overrides, malformed = il.read_overrides(self.write_overrides("8001\tinf\n8002\tnan\n8003\t1\n"))
+        overrides, malformed = il.read_overrides(
+            self.write_overrides("8001\tinf\n8002\tnan\n8003\t1\n")
+        )
         self.assertEqual((overrides, malformed), ({"8003": 1.0}, [1, 2]))
 
     def test_apply_with_a_malformed_row_stops_before_any_write(self):
         import contextlib
         import io
         from unittest import mock
+
         path = self.write_overrides("8001\tlots\n")
         stderr = io.StringIO()
-        with mock.patch.object(il, "OVERRIDES_FILE", path), \
-                mock.patch.object(il, "load_payroll", return_value=([], [])), \
-                mock.patch.object(il.Erp, "from_file", return_value=FakeErp()) as client, \
-                contextlib.redirect_stderr(stderr):
+        with mock.patch.object(il, "OVERRIDES_FILE", path), mock.patch.object(
+            il, "load_payroll", return_value=([], [])
+        ), mock.patch.object(
+            il.Erp, "from_file", return_value=FakeErp()
+        ) as client, contextlib.redirect_stderr(
+            stderr
+        ):
             code = il.main(["--apply"])
         self.assertEqual(code, 2)
         self.assertIn("lines 1", stderr.getvalue())
@@ -312,36 +448,74 @@ class OverrideTest(unittest.TestCase):
 
     def test_repeat_dry_run_with_override_plans_no_write(self):
         erp = FakeErp()
-        employees = {"8001": active_employee("HR-EMP-8001"), "8002": active_employee("HR-EMP-8002"),
-                     "8003": active_employee("HR-EMP-8003")}
+        employees = {
+            "8001": active_employee("HR-EMP-8001"),
+            "8002": active_employee("HR-EMP-8002"),
+            "8003": active_employee("HR-EMP-8003"),
+        }
         for employee in employees.values():
             erp.docs["Employee"][employee["name"]] = copy.deepcopy(employee)
-        export = [{"id": "8001", "annual_vacation_days_total": 22}, {"id": "8002"}, {"id": "8003"}]
+        export = [
+            {"id": "8001", "annual_vacation_days_total": 22},
+            {"id": "8002"},
+            {"id": "8003"},
+        ]
         overrides = {"8002": 0.0, "8003": 0.0}
         plan, _d, _p = il.build_plan(export, employees, overrides)
         first = il.LeaveImporter(erp, dry_run=False)
         first.run_employees(plan)
-        self.assertEqual((first.counts["created"], len(erp.docs["Leave Allocation"]), len(erp.docs["Holiday List Assignment"])),
-                         (1, 1, 3))
+        self.assertEqual(
+            (
+                first.counts["created"],
+                len(erp.docs["Leave Allocation"]),
+                len(erp.docs["Holiday List Assignment"]),
+            ),
+            (1, 1, 3),
+        )
         writes = erp.writes
         dry = il.LeaveImporter(erp, dry_run=True)
         dry.run_employees(plan)
         self.assertEqual(erp.writes, writes)
-        self.assertEqual((dry.counts["created"], dry.counts["no entitlement"], dry.counts["overrides applied"]), (0, 2, 2))
-        self.assertEqual((dry.counts["assignments unchanged"], dry.counts["assignments created"]), (3, 0))
+        self.assertEqual(
+            (
+                dry.counts["created"],
+                dry.counts["no entitlement"],
+                dry.counts["overrides applied"],
+            ),
+            (0, 2, 2),
+        )
+        self.assertEqual(
+            (dry.counts["assignments unchanged"], dry.counts["assignments created"]),
+            (3, 0),
+        )
         self.assertEqual(dry.counts["updated"], 0)
 
 
 class FixtureTest(unittest.TestCase):
     def test_custom_fields_exist_in_order_and_hook_filter_covers_them(self):
-        root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "apps", "bi_payroll", "bi_payroll"))
-        with open(os.path.join(root, "fixtures", "custom_field.json"), encoding="utf-8") as stream:
+        root = os.path.abspath(
+            os.path.join(
+                os.path.dirname(__file__), "..", "apps", "bi_payroll", "bi_payroll"
+            )
+        )
+        with open(
+            os.path.join(root, "fixtures", "custom_field.json"), encoding="utf-8"
+        ) as stream:
             fields = json.load(stream)
         by_name = {row["name"]: row for row in fields}
-        names = ["Employee-swiss_employment_level", "Employee-swiss_hours_per_week", "Employee-swiss_stay_permit"]
-        self.assertEqual([by_name[name]["insert_after"] for name in names],
-                         ["swiss_qst_code", "swiss_employment_level", "swiss_hours_per_week"])
-        self.assertEqual([by_name[name]["fieldtype"] for name in names], ["Percent", "Float", "Select"])
+        names = [
+            "Employee-swiss_employment_level",
+            "Employee-swiss_hours_per_week",
+            "Employee-swiss_stay_permit",
+        ]
+        self.assertEqual(
+            [by_name[name]["insert_after"] for name in names],
+            ["swiss_qst_code", "swiss_employment_level", "swiss_hours_per_week"],
+        )
+        self.assertEqual(
+            [by_name[name]["fieldtype"] for name in names],
+            ["Percent", "Float", "Select"],
+        )
         self.assertTrue(all(by_name[name]["read_only"] == 0 for name in names))
         with open(os.path.join(root, "hooks.py"), encoding="utf-8") as stream:
             self.assertIn('"like", "Employee-swiss_%"', stream.read())

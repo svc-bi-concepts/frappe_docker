@@ -51,15 +51,15 @@ Swissdec-certified product, and confirm in writing that one accepts our salary d
 
 ## Facts that are settled
 
-| Item | Fact | Source |
-| --- | --- | --- |
-| ELM 4.0 end (tax, Quellensteuer) | Last transmission 31 March 2026, only for the 2025 declaration year. The page also says a software deprecation warning shows 31.12.2025; the page does not explain the difference. Treat 31.03.2026 as the date Swissdec publishes | [Swissdec, ELM 4.0 shutdown](https://www.swissdec.ch/abschaltung-elm-4-0) |
-| ELM 4.0 end (other domains: AHV/FAK, UVG, UVGZ, KTG, statistics) | Last transmission 30 June 2026. **Already passed.** Every ELM report now needs ELM 5.0 or higher | same |
-| ELM 5.0 requirement | "Für das Abrechnungsjahr 2026 (Löhne ab 1. Januar 2026) ist zwingend ELM 5.0 oder höher erforderlich." | same |
-| Current certification basis | ELM 6.0, dated 06.03.2026 ("aktuelle Zertifizierungsbasis"). ELM 5.1 is needed for the voluntary AHV-exemption waiver, ELM 5.3 for FR cross-border workers (mandatory from 2027) | [Swissdec, ELM](https://swissdec.ch/elm), [shutdown page](https://www.swissdec.ch/abschaltung-elm-4-0) |
-| Actors | Transmitter (the payroll program), distributor (forwards the files to each receiver), receivers: AHV/FAK, UVG, BVG, KTG, Quellensteuer (cantonal tax offices), BFS statistics. The distributor forwards only what each receiver is entitled to | [BFS, ELM](https://www.bfs.admin.ch/bfs/de/home/grundlagen/elm.html) (title only in the fetch; the actor list is from the search summary, not opened in full); [Swissdec, user ELM](https://swissdec.ch/user-elm) |
-| Who may transmit | Swissdec's start steps for a company: "a Swissdec-certified payroll system" and internet access. Swissdec does not track which companies use which version; users ask their software vendor | [Swissdec, user ELM](https://swissdec.ch/user-elm), [shutdown page](https://www.swissdec.ch/abschaltung-elm-4-0) |
-| Certified products | 112 product entries from 100 vendors on Swissdec's list, ELM levels 5.0 to 5.5 (no 6.0 column). No entry is open-source or self-built | [Swissdec, certified ERP list](https://swissdec.ch/certified-erp/) |
+| Item                                                             | Fact                                                                                                                                                                                                                                           | Source                                                                                                                                                                                                            |
+| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ELM 4.0 end (tax, Quellensteuer)                                 | Last transmission 31 March 2026, only for the 2025 declaration year. The page also says a software deprecation warning shows 31.12.2025; the page does not explain the difference. Treat 31.03.2026 as the date Swissdec publishes             | [Swissdec, ELM 4.0 shutdown](https://www.swissdec.ch/abschaltung-elm-4-0)                                                                                                                                         |
+| ELM 4.0 end (other domains: AHV/FAK, UVG, UVGZ, KTG, statistics) | Last transmission 30 June 2026. **Already passed.** Every ELM report now needs ELM 5.0 or higher                                                                                                                                               | same                                                                                                                                                                                                              |
+| ELM 5.0 requirement                                              | "Für das Abrechnungsjahr 2026 (Löhne ab 1. Januar 2026) ist zwingend ELM 5.0 oder höher erforderlich."                                                                                                                                         | same                                                                                                                                                                                                              |
+| Current certification basis                                      | ELM 6.0, dated 06.03.2026 ("aktuelle Zertifizierungsbasis"). ELM 5.1 is needed for the voluntary AHV-exemption waiver, ELM 5.3 for FR cross-border workers (mandatory from 2027)                                                               | [Swissdec, ELM](https://swissdec.ch/elm), [shutdown page](https://www.swissdec.ch/abschaltung-elm-4-0)                                                                                                            |
+| Actors                                                           | Transmitter (the payroll program), distributor (forwards the files to each receiver), receivers: AHV/FAK, UVG, BVG, KTG, Quellensteuer (cantonal tax offices), BFS statistics. The distributor forwards only what each receiver is entitled to | [BFS, ELM](https://www.bfs.admin.ch/bfs/de/home/grundlagen/elm.html) (title only in the fetch; the actor list is from the search summary, not opened in full); [Swissdec, user ELM](https://swissdec.ch/user-elm) |
+| Who may transmit                                                 | Swissdec's start steps for a company: "a Swissdec-certified payroll system" and internet access. Swissdec does not track which companies use which version; users ask their software vendor                                                    | [Swissdec, user ELM](https://swissdec.ch/user-elm), [shutdown page](https://www.swissdec.ch/abschaltung-elm-4-0)                                                                                                  |
+| Certified products                                               | 112 product entries from 100 vendors on Swissdec's list, ELM levels 5.0 to 5.5 (no 6.0 column). No entry is open-source or self-built                                                                                                          | [Swissdec, certified ERP list](https://swissdec.ch/certified-erp/)                                                                                                                                                |
 
 ## Certification: process, cost, time, renewal
 
@@ -70,11 +70,11 @@ ERP manufacturers "handelt es sich dabei immer um Lohnbuchhaltungsprogramme".
 
 **Contracts** ([Swissdec, certification agreements](https://www.swissdec.ch/certification-agreements), "Zertifizierungsverträge für ERP-Hersteller"; new contracts in force from 1 April 2026):
 
-| Contract | Cost (CHF) | Support hours |
-| --- | --- | --- |
-| Anschlussvertrag (prerequisite for any standard), per year, 8 years or until the major version at signing expires | 4,500 / year | 10 / year |
-| Basisdienste (technical acceptance), one-time | 7,000 | 20 |
-| Lohnstandard-CH (ELM), one-time | 9,000 | 40 |
+| Contract                                                                                                                  | Cost (CHF)   | Support hours     |
+| ------------------------------------------------------------------------------------------------------------------------- | ------------ | ----------------- |
+| Anschlussvertrag (prerequisite for any standard), per year, 8 years or until the major version at signing expires         | 4,500 / year | 10 / year         |
+| Basisdienste (technical acceptance), one-time                                                                             | 7,000        | 20                |
+| Lohnstandard-CH (ELM), one-time                                                                                           | 9,000        | 40                |
 | Pauschalvertrag (flat rate), per year, 4 years, starting 1.4.2026 (together with the affiliation contract, 11,000 / year) | 6,500 / year | 110, freely split |
 
 Figures from the page. My arithmetic, not a quote:
@@ -97,8 +97,8 @@ and the lab, not on the public pages; we have not seen them.
 
 **Renewal.** A major version is valid for 8 years; a new major version comes every 4 years.
 Minor versions need only proof from the vendor, not a full certification. Re-certification
-is needed when the law changes or the software changes substantially. *Source: a Swissdec
-release-concept document as summarised in a search result; not opened in full.*
+is needed when the law changes or the software changes substantially. _Source: a Swissdec
+release-concept document as summarised in a search result; not opened in full._
 
 **Costs are the vendor's.** Swissdec's page says costs for the company are included in the
 licence of a certified program; the vendor carries certification costs

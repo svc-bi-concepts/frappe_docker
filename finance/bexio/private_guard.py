@@ -34,7 +34,9 @@ def setUpModule():
     if _temp is None:
         _temp = tempfile.mkdtemp(prefix="bexio-test-private-")
         os.environ["BEXIO_PRIVATE"] = _temp
-        atexit.register(shutil.rmtree, _temp, ignore_errors=True)  # one folder for the whole run: per-module cleanup would delete it under the next module
+        atexit.register(
+            shutil.rmtree, _temp, ignore_errors=True
+        )  # one folder for the whole run: per-module cleanup would delete it under the next module
     real = os.path.realpath(REAL)
     here = os.path.dirname(os.path.abspath(__file__))
     for mod in list(sys.modules.values()):
@@ -44,18 +46,25 @@ def setUpModule():
         if os.path.dirname(os.path.abspath(path)) != here:
             continue
         for name, value in list(vars(mod).items()):
-            if isinstance(value, str) and (value == real or value.startswith(real + os.sep)):
-                setattr(mod, name, _temp + value[len(real):])
-            elif callable(value) and getattr(value, "__name__", None) in WRITERS \
-                    and not getattr(value, "_private_guarded", False):
+            if isinstance(value, str) and (
+                value == real or value.startswith(real + os.sep)
+            ):
+                setattr(mod, name, _temp + value[len(real) :])
+            elif (
+                callable(value)
+                and getattr(value, "__name__", None) in WRITERS
+                and not getattr(value, "_private_guarded", False)
+            ):
                 setattr(mod, name, _guarded(value, real))
 
 
 def _guarded(write, real):
     def guarded(path, *args, **kwargs):
         target = os.path.abspath(path)
-        assert not (target == real or target.startswith(real + os.sep)), \
-            "a test wrote into the real private folder: {}".format(path)
+        assert not (
+            target == real or target.startswith(real + os.sep)
+        ), f"a test wrote into the real private folder: {path}"
         return write(path, *args, **kwargs)
+
     guarded._private_guarded = True
     return guarded

@@ -46,9 +46,20 @@ after_migrate = [
 # is made by ensure_structure, because it names a company.
 fixtures = [
     # or_filters: two "like" filters in "filters" are ANDed and would export nothing
-    {"dt": "Salary Component", "or_filters": [
-        ["name", "like", "%Employee"], ["name", "like", "%Employer"], ["name", "in", ["Basic Salary", "Commission", "BVG Age"]]]},
+    {
+        "dt": "Salary Component",
+        "or_filters": [
+            ["name", "like", "%Employee"],
+            ["name", "like", "%Employer"],
+            ["name", "in", ["Basic Salary", "Commission", "BVG Age"]],
+        ],
+    },
     {"dt": "Custom Field", "filters": [["name", "like", "Salary Slip-swiss_%"]]},
-    {"dt": "Custom Field", "filters": [["name", "=", "Salary Structure Assignment-swiss_bvg_insured_salary"]]},
+    {
+        "dt": "Custom Field",
+        "filters": [
+            ["name", "=", "Salary Structure Assignment-swiss_bvg_insured_salary"]
+        ],
+    },
     {"dt": "Custom Field", "filters": [["name", "like", "Employee-swiss_%"]]},
 ]

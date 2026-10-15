@@ -11,13 +11,17 @@ import unittest
 import urllib.request
 from unittest import mock
 
-os.environ["BEXIO_DIR"] = os.path.dirname(os.path.abspath(__file__))  # run this checkout's files, never the main checkout's
+os.environ["BEXIO_DIR"] = os.path.dirname(
+    os.path.abspath(__file__)
+)  # run this checkout's files, never the main checkout's
 
 import import_document_pdfs as idp
 import import_files as imf
 import import_master as im
+from private_guard import (  # every test below runs against a temp private folder, never the real one
+    setUpModule,
+)
 from test_import_master import FakeErp
-from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
 
 
 def write_export(root, pdfs=None, contents=None):
@@ -33,49 +37,105 @@ def write_export(root, pdfs=None, contents=None):
 
 def pdf(kind, doc_id, data=b"%PDF-invented"):
     """A document_pdfs.json row for a PDF of this kind and id, and the bytes it names."""
-    return {"kind": kind, "id": doc_id, "file": "{}-{}.pdf".format(kind, doc_id), "bytes": len(data)}
+    return {
+        "kind": kind,
+        "id": doc_id,
+        "file": f"{kind}-{doc_id}.pdf",
+        "bytes": len(data),
+    }
 
 
-def erp_with(sales_invoices=(), sales_orders=(), quotations=(), delivery_notes=(), files=()):
-    return FakeErp({"Sales Invoice": list(sales_invoices), "Sales Order": list(sales_orders),
-                    "Quotation": list(quotations), "Delivery Note": list(delivery_notes), "File": list(files)})
+def erp_with(
+    sales_invoices=(), sales_orders=(), quotations=(), delivery_notes=(), files=()
+):
+    return FakeErp(
+        {
+            "Sales Invoice": list(sales_invoices),
+            "Sales Order": list(sales_orders),
+            "Quotation": list(quotations),
+            "Delivery Note": list(delivery_notes),
+            "File": list(files),
+        }
+    )
 
 
 class LookupsTest(unittest.TestCase):
     def test_documents_are_keyed_by_doctype_and_bexio_id(self):
-        erp = erp_with(sales_invoices=[{"name": "SINV-1", "bexio_id": "1"}, {"name": "SINV-9", "bexio_id": None}],
-                       quotations=[{"name": "QTN-1", "bexio_id": "3"}])
+        erp = erp_with(
+            sales_invoices=[
+                {"name": "SINV-1", "bexio_id": "1"},
+                {"name": "SINV-9", "bexio_id": None},
+            ],
+            quotations=[{"name": "QTN-1", "bexio_id": "3"}],
+        )
         lookups = idp.Lookups.from_erp(erp)
-        self.assertEqual(lookups.documents, {("Sales Invoice", "1"): "SINV-1", ("Quotation", "3"): "QTN-1"})
+        self.assertEqual(
+            lookups.documents,
+            {("Sales Invoice", "1"): "SINV-1", ("Quotation", "3"): "QTN-1"},
+        )
 
     def test_files_on_a_document_are_read_with_their_bexio_id_and_name(self):
-        erp = erp_with(files=[
-            {"name": "FILE-1", "attached_to_doctype": "Sales Invoice", "attached_to_name": "SINV-1",
-             "file_name": "invoice-1.pdf", "bexio_id": "1"},
-            {"name": "FILE-2", "attached_to_doctype": "Sales Invoice", "attached_to_name": "SINV-1",
-             "file_name": "scan.pdf", "bexio_id": None},
-            {"name": "FILE-3", "attached_to_doctype": "Purchase Invoice", "attached_to_name": "PINV-1",
-             "file_name": "bill.pdf", "bexio_id": "f-1"},
-        ])
-        self.assertEqual(idp.Lookups.from_erp(erp).attached, {
-            ("Sales Invoice", "SINV-1"): [("1", "invoice-1.pdf"), ("", "scan.pdf")]})
+        erp = erp_with(
+            files=[
+                {
+                    "name": "FILE-1",
+                    "attached_to_doctype": "Sales Invoice",
+                    "attached_to_name": "SINV-1",
+                    "file_name": "invoice-1.pdf",
+                    "bexio_id": "1",
+                },
+                {
+                    "name": "FILE-2",
+                    "attached_to_doctype": "Sales Invoice",
+                    "attached_to_name": "SINV-1",
+                    "file_name": "scan.pdf",
+                    "bexio_id": None,
+                },
+                {
+                    "name": "FILE-3",
+                    "attached_to_doctype": "Purchase Invoice",
+                    "attached_to_name": "PINV-1",
+                    "file_name": "bill.pdf",
+                    "bexio_id": "f-1",
+                },
+            ]
+        )
+        self.assertEqual(
+            idp.Lookups.from_erp(erp).attached,
+            {("Sales Invoice", "SINV-1"): [("1", "invoice-1.pdf"), ("", "scan.pdf")]},
+        )
 
 
 class PlanTest(unittest.TestCase):
     def test_each_kind_goes_to_its_doctype_with_the_key_import_sales_gives_it(self):
-        pdfs = [pdf("invoice", 1), pdf("credit_voucher", 4), pdf("order", 2), pdf("offer", 3), pdf("delivery", 5)]
-        erp = erp_with(sales_invoices=[{"name": "SINV-1", "bexio_id": "1"}, {"name": "SINV-4", "bexio_id": "credit-4"}],
-                       sales_orders=[{"name": "SO-2", "bexio_id": "2"}], quotations=[{"name": "QTN-3", "bexio_id": "3"}],
-                       delivery_notes=[{"name": "LI-5", "bexio_id": "5"}])
+        pdfs = [
+            pdf("invoice", 1),
+            pdf("credit_voucher", 4),
+            pdf("order", 2),
+            pdf("offer", 3),
+            pdf("delivery", 5),
+        ]
+        erp = erp_with(
+            sales_invoices=[
+                {"name": "SINV-1", "bexio_id": "1"},
+                {"name": "SINV-4", "bexio_id": "credit-4"},
+            ],
+            sales_orders=[{"name": "SO-2", "bexio_id": "2"}],
+            quotations=[{"name": "QTN-3", "bexio_id": "3"}],
+            delivery_notes=[{"name": "LI-5", "bexio_id": "5"}],
+        )
         with tempfile.TemporaryDirectory() as root:
             rows = idp.plan(pdfs, idp.Lookups.from_erp(erp), root)
-        self.assertEqual([(r["doctype"], r["document"], r["bexio_id"], r["outcome"]) for r in rows], [
-            ("Sales Invoice", "SINV-1", "1", "no content"),
-            ("Sales Invoice", "SINV-4", "credit-4", "no content"),
-            ("Sales Order", "SO-2", "2", "no content"),
-            ("Quotation", "QTN-3", "3", "no content"),
-            ("Delivery Note", "LI-5", "5", "no content"),
-        ])
+        self.assertEqual(
+            [(r["doctype"], r["document"], r["bexio_id"], r["outcome"]) for r in rows],
+            [
+                ("Sales Invoice", "SINV-1", "1", "no content"),
+                ("Sales Invoice", "SINV-4", "credit-4", "no content"),
+                ("Sales Order", "SO-2", "2", "no content"),
+                ("Quotation", "QTN-3", "3", "no content"),
+                ("Delivery Note", "LI-5", "5", "no content"),
+            ],
+        )
 
     def test_a_pdf_whose_document_is_not_in_erpnext_yet_is_no_document(self):
         with tempfile.TemporaryDirectory() as root:
@@ -86,32 +146,75 @@ class PlanTest(unittest.TestCase):
     def test_a_kind_without_an_erpnext_doctype_is_listed_and_never_attached(self):
         # invented kind: it has no entry in KINDS
         with tempfile.TemporaryDirectory() as root:
-            rows = idp.plan([pdf("statement", 7)], idp.Lookups.from_erp(erp_with(sales_invoices=[{"name": "SINV-7", "bexio_id": "7"}])), root)
-        self.assertEqual((rows[0]["outcome"], rows[0]["doctype"], rows[0]["document"]), (idp.NO_DOCUMENT, None, None))
+            rows = idp.plan(
+                [pdf("statement", 7)],
+                idp.Lookups.from_erp(
+                    erp_with(sales_invoices=[{"name": "SINV-7", "bexio_id": "7"}])
+                ),
+                root,
+            )
+        self.assertEqual(
+            (rows[0]["outcome"], rows[0]["doctype"], rows[0]["document"]),
+            (idp.NO_DOCUMENT, None, None),
+        )
 
     def test_a_pdf_on_the_document_already_is_attached_by_its_bexio_id(self):
-        erp = erp_with(sales_invoices=[{"name": "SINV-1", "bexio_id": "1"}], files=[
-            {"name": "FILE-1", "attached_to_doctype": "Sales Invoice", "attached_to_name": "SINV-1",
-             "file_name": "renamed.pdf", "bexio_id": "1"}])
+        erp = erp_with(
+            sales_invoices=[{"name": "SINV-1", "bexio_id": "1"}],
+            files=[
+                {
+                    "name": "FILE-1",
+                    "attached_to_doctype": "Sales Invoice",
+                    "attached_to_name": "SINV-1",
+                    "file_name": "renamed.pdf",
+                    "bexio_id": "1",
+                }
+            ],
+        )
         data = b"%PDF-invented"
         with tempfile.TemporaryDirectory() as root:
-            write_export(root, pdfs=[pdf("invoice", 1, data)], contents={"invoice-1.pdf": data})
+            write_export(
+                root, pdfs=[pdf("invoice", 1, data)], contents={"invoice-1.pdf": data}
+            )
             rows = idp.run(root, erp)
         self.assertEqual(rows[0]["outcome"], idp.ATTACHED)
 
-    def test_a_file_without_a_bexio_id_is_attached_when_its_name_is_on_the_document(self):
+    def test_a_file_without_a_bexio_id_is_attached_when_its_name_is_on_the_document(
+        self,
+    ):
         # a run that stopped between the upload and the key wrote the File without its bexio_id: not uploaded again
-        erp = erp_with(sales_invoices=[{"name": "SINV-1", "bexio_id": "1"}], files=[
-            {"name": "FILE-1", "attached_to_doctype": "Sales Invoice", "attached_to_name": "SINV-1",
-             "file_name": "invoice-1.pdf", "bexio_id": None}])
+        erp = erp_with(
+            sales_invoices=[{"name": "SINV-1", "bexio_id": "1"}],
+            files=[
+                {
+                    "name": "FILE-1",
+                    "attached_to_doctype": "Sales Invoice",
+                    "attached_to_name": "SINV-1",
+                    "file_name": "invoice-1.pdf",
+                    "bexio_id": None,
+                }
+            ],
+        )
         with tempfile.TemporaryDirectory() as root:
             rows = idp.plan([pdf("invoice", 1)], idp.Lookups.from_erp(erp), root)
         self.assertEqual(rows[0]["outcome"], idp.ATTACHED)
 
     def test_a_file_of_another_document_does_not_count(self):
-        erp = erp_with(sales_invoices=[{"name": "SINV-1", "bexio_id": "1"}, {"name": "SINV-2", "bexio_id": "2"}], files=[
-            {"name": "FILE-1", "attached_to_doctype": "Sales Invoice", "attached_to_name": "SINV-2",
-             "file_name": "invoice-1.pdf", "bexio_id": "1"}])
+        erp = erp_with(
+            sales_invoices=[
+                {"name": "SINV-1", "bexio_id": "1"},
+                {"name": "SINV-2", "bexio_id": "2"},
+            ],
+            files=[
+                {
+                    "name": "FILE-1",
+                    "attached_to_doctype": "Sales Invoice",
+                    "attached_to_name": "SINV-2",
+                    "file_name": "invoice-1.pdf",
+                    "bexio_id": "1",
+                }
+            ],
+        )
         data = b"%PDF-invented"
         with tempfile.TemporaryDirectory() as root:
             write_export(root, contents={"invoice-1.pdf": data})
@@ -138,7 +241,10 @@ class PlanTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             write_export(root, contents={"invoice-1.pdf": data})
             rows = idp.plan([pdf("invoice", 1, data)], idp.Lookups.from_erp(erp), root)
-        self.assertEqual((rows[0]["outcome"], rows[0]["document"], rows[0]["doctype"]), (idp.ATTACH, "SINV-1", "Sales Invoice"))
+        self.assertEqual(
+            (rows[0]["outcome"], rows[0]["document"], rows[0]["doctype"]),
+            (idp.ATTACH, "SINV-1", "Sales Invoice"),
+        )
 
 
 class RunTest(unittest.TestCase):
@@ -156,69 +262,137 @@ class RunTest(unittest.TestCase):
 class ApplyTest(unittest.TestCase):
     def test_apply_uploads_each_pdf_to_attach_on_its_own_doctype(self):
         data = b"%PDF-invented"
-        erp = erp_with(sales_invoices=[{"name": "SINV-4", "bexio_id": "credit-4"}], quotations=[{"name": "QTN-3", "bexio_id": "3"}])
+        erp = erp_with(
+            sales_invoices=[{"name": "SINV-4", "bexio_id": "credit-4"}],
+            quotations=[{"name": "QTN-3", "bexio_id": "3"}],
+        )
         with tempfile.TemporaryDirectory() as root:
-            write_export(root, pdfs=[pdf("credit_voucher", 4, data), pdf("offer", 3, data), pdf("statement", 5, data)],
-                         contents={"credit_voucher-4.pdf": data, "offer-3.pdf": data, "statement-5.pdf": data})
+            write_export(
+                root,
+                pdfs=[
+                    pdf("credit_voucher", 4, data),
+                    pdf("offer", 3, data),
+                    pdf("statement", 5, data),
+                ],
+                contents={
+                    "credit_voucher-4.pdf": data,
+                    "offer-3.pdf": data,
+                    "statement-5.pdf": data,
+                },
+            )
             rows = idp.run(root, erp)
             calls = []
-            with mock.patch.object(imf, "upload", lambda erp, doc, file_id, name, content, doctype: calls.append((doctype, doc, file_id, name, content))):
+            with mock.patch.object(
+                imf,
+                "upload",
+                lambda erp, doc, file_id, name, content, doctype: calls.append(
+                    (doctype, doc, file_id, name, content)
+                ),
+            ):
                 uploaded = idp.apply(rows, root, erp)
         self.assertEqual(uploaded, 2)
-        self.assertEqual(calls, [("Sales Invoice", "SINV-4", "credit-4", "credit_voucher-4.pdf", data),
-                                 ("Quotation", "QTN-3", "offer-3", "offer-3.pdf", data)])
+        self.assertEqual(
+            calls,
+            [
+                ("Sales Invoice", "SINV-4", "credit-4", "credit_voucher-4.pdf", data),
+                ("Quotation", "QTN-3", "offer-3", "offer-3.pdf", data),
+            ],
+        )
 
     def test_a_second_run_finds_the_files_the_first_one_attached(self):
         data = b"%PDF-invented"
         erp = erp_with(sales_invoices=[{"name": "SINV-1", "bexio_id": "1"}])
 
-        def fake_upload(erp, document, file_id, file_name, content, doctype=imf.DOCTYPE):
+        def fake_upload(
+            erp, document, file_id, file_name, content, doctype=imf.DOCTYPE
+        ):
             # what upload() does: the File on the document, keyed by the bexio id
-            erp.insert("File", {"attached_to_doctype": doctype, "attached_to_name": document,
-                                "file_name": file_name, "bexio_id": file_id})
+            erp.insert(
+                "File",
+                {
+                    "attached_to_doctype": doctype,
+                    "attached_to_name": document,
+                    "file_name": file_name,
+                    "bexio_id": file_id,
+                },
+            )
 
         with tempfile.TemporaryDirectory() as root:
-            write_export(root, pdfs=[pdf("invoice", 1, data)], contents={"invoice-1.pdf": data})
+            write_export(
+                root, pdfs=[pdf("invoice", 1, data)], contents={"invoice-1.pdf": data}
+            )
             with mock.patch.object(imf, "upload", fake_upload):
                 self.assertEqual(idp.apply(idp.run(root, erp), root, erp), 1)
             rows = idp.run(root, erp)
             self.assertEqual(idp.apply(rows, root, erp), 0)
         self.assertEqual([r["outcome"] for r in rows], [idp.ATTACHED])
-        self.assertEqual(sum(1 for f in erp.docs["File"].values() if f.get("bexio_id") == "1"), 1)
+        self.assertEqual(
+            sum(1 for f in erp.docs["File"].values() if f.get("bexio_id") == "1"), 1
+        )
 
     def test_an_offer_and_an_invoice_with_the_same_number_get_different_file_keys(self):
         # File.bexio_id is unique: invoice 3 and offer 3 must not both be keyed "3"
         data = b"%PDF-invented"
-        erp = erp_with(sales_invoices=[{"name": "SINV-3", "bexio_id": "3"}], quotations=[{"name": "QTN-3", "bexio_id": "3"}])
+        erp = erp_with(
+            sales_invoices=[{"name": "SINV-3", "bexio_id": "3"}],
+            quotations=[{"name": "QTN-3", "bexio_id": "3"}],
+        )
 
-        def fake_upload(erp, document, file_id, file_name, content, doctype=imf.DOCTYPE):
-            erp.insert("File", {"attached_to_doctype": doctype, "attached_to_name": document,
-                                "file_name": file_name, "bexio_id": file_id})
+        def fake_upload(
+            erp, document, file_id, file_name, content, doctype=imf.DOCTYPE
+        ):
+            erp.insert(
+                "File",
+                {
+                    "attached_to_doctype": doctype,
+                    "attached_to_name": document,
+                    "file_name": file_name,
+                    "bexio_id": file_id,
+                },
+            )
 
         with tempfile.TemporaryDirectory() as root:
-            write_export(root, pdfs=[pdf("invoice", 3, data), pdf("offer", 3, data)],
-                         contents={"invoice-3.pdf": data, "offer-3.pdf": data})
+            write_export(
+                root,
+                pdfs=[pdf("invoice", 3, data), pdf("offer", 3, data)],
+                contents={"invoice-3.pdf": data, "offer-3.pdf": data},
+            )
             with mock.patch.object(imf, "upload", fake_upload):
                 self.assertEqual(idp.apply(idp.run(root, erp), root, erp), 2)
             rows = idp.run(root, erp)
             self.assertEqual(idp.apply(rows, root, erp), 0)
         self.assertEqual([r["file_key"] for r in rows], ["3", "offer-3"])
         self.assertEqual([r["outcome"] for r in rows], [idp.ATTACHED, idp.ATTACHED])
-        self.assertEqual(sorted(f["bexio_id"] for f in erp.docs["File"].values()), ["3", "offer-3"])
+        self.assertEqual(
+            sorted(f["bexio_id"] for f in erp.docs["File"].values()), ["3", "offer-3"]
+        )
 
     def test_an_offer_file_keyed_before_the_prefix_is_attached_not_uploaded_again(self):
         # the first run keyed offer 2 by its bare id: that File is the same PDF, so the rerun finds it
         data = b"%PDF-invented"
-        erp = erp_with(quotations=[{"name": "QTN-2", "bexio_id": "2"}], files=[
-            {"name": "FILE-2", "attached_to_doctype": "Quotation", "attached_to_name": "QTN-2",
-             "file_name": "offer-2.pdf", "bexio_id": "2"}])
+        erp = erp_with(
+            quotations=[{"name": "QTN-2", "bexio_id": "2"}],
+            files=[
+                {
+                    "name": "FILE-2",
+                    "attached_to_doctype": "Quotation",
+                    "attached_to_name": "QTN-2",
+                    "file_name": "offer-2.pdf",
+                    "bexio_id": "2",
+                }
+            ],
+        )
         with tempfile.TemporaryDirectory() as root:
             rows = idp.plan([pdf("offer", 2, data)], idp.Lookups.from_erp(erp), root)
-        self.assertEqual((rows[0]["outcome"], rows[0]["file_key"]), (idp.ATTACHED, "offer-2"))
+        self.assertEqual(
+            (rows[0]["outcome"], rows[0]["file_key"]), (idp.ATTACHED, "offer-2")
+        )
 
     def test_an_upload_request_names_the_sales_document_not_a_purchase_invoice(self):
         erp = im.Erp("https://erp.test/api", "key", "secret")
-        req = imf.upload_request(erp, "SINV-1", "invoice-1.pdf", b"%PDF-invented", doctype="Sales Invoice")
+        req = imf.upload_request(
+            erp, "SINV-1", "invoice-1.pdf", b"%PDF-invented", doctype="Sales Invoice"
+        )
         self.assertEqual(req.full_url, "https://erp.test/api/method/upload_file")
         body = req.data
         self.assertIn(b'name="doctype"\r\n\r\nSales Invoice', body)
@@ -234,10 +408,26 @@ class ApplyTest(unittest.TestCase):
 class ReportTest(unittest.TestCase):
     def test_the_report_has_totals_per_kind_and_no_ids_or_names(self):
         rows = [
-            {"kind": "invoice", "id": 1, "bexio_id": "1", "file": "invoice-1.pdf", "doctype": "Sales Invoice",
-             "document": "SINV-1", "outcome": idp.ATTACH, "bytes": 10},
-            {"kind": "statement", "id": 7, "bexio_id": None, "file": "statement-7.pdf", "doctype": None,
-             "document": None, "outcome": idp.NO_DOCUMENT, "bytes": 20},
+            {
+                "kind": "invoice",
+                "id": 1,
+                "bexio_id": "1",
+                "file": "invoice-1.pdf",
+                "doctype": "Sales Invoice",
+                "document": "SINV-1",
+                "outcome": idp.ATTACH,
+                "bytes": 10,
+            },
+            {
+                "kind": "statement",
+                "id": 7,
+                "bexio_id": None,
+                "file": "statement-7.pdf",
+                "doctype": None,
+                "document": None,
+                "outcome": idp.NO_DOCUMENT,
+                "bytes": 20,
+            },
         ]
         text = idp.report(rows, "/invented/export")
         self.assertIn("invoice", text)
@@ -261,9 +451,14 @@ class MainTest(unittest.TestCase):
         data = b"%PDF-invented"
         erp = erp_with(sales_invoices=[{"name": "SINV-1", "bexio_id": "1"}])
         with tempfile.TemporaryDirectory() as root:
-            write_export(root, pdfs=[pdf("invoice", 1, data)], contents={"invoice-1.pdf": data})
-            with mock.patch.object(im.Erp, "from_file", return_value=erp), \
-                    mock.patch.object(imf, "upload") as upload, mock.patch.object(idp.ip, "write_private") as write:
+            write_export(
+                root, pdfs=[pdf("invoice", 1, data)], contents={"invoice-1.pdf": data}
+            )
+            with mock.patch.object(
+                im.Erp, "from_file", return_value=erp
+            ), mock.patch.object(imf, "upload") as upload, mock.patch.object(
+                idp.ip, "write_private"
+            ) as write:
                 self.assertEqual(idp.main(["--export", root]), 0)
         upload.assert_not_called()
         write.assert_not_called()
@@ -272,8 +467,12 @@ class MainTest(unittest.TestCase):
         data = b"%PDF-invented"
         erp = erp_with(sales_invoices=[{"name": "SINV-1", "bexio_id": "1"}])
         with tempfile.TemporaryDirectory() as root:
-            write_export(root, pdfs=[pdf("invoice", 1, data)], contents={"invoice-1.pdf": data})
-            with mock.patch.object(im.Erp, "from_file", return_value=erp), mock.patch.object(imf, "upload") as upload:
+            write_export(
+                root, pdfs=[pdf("invoice", 1, data)], contents={"invoice-1.pdf": data}
+            )
+            with mock.patch.object(
+                im.Erp, "from_file", return_value=erp
+            ), mock.patch.object(imf, "upload") as upload:
                 self.assertEqual(idp.main(["--export", root, "--apply"]), 0)
         upload.assert_called_once()
 
@@ -281,8 +480,9 @@ class MainTest(unittest.TestCase):
         erp = erp_with(sales_invoices=[{"name": "SINV-1", "bexio_id": "1"}])
         with tempfile.TemporaryDirectory() as root:
             write_export(root, pdfs=[pdf("invoice", 1)])
-            with mock.patch.object(im.Erp, "from_file", return_value=erp), \
-                    mock.patch.object(idp.ip, "write_private") as write:
+            with mock.patch.object(
+                im.Erp, "from_file", return_value=erp
+            ), mock.patch.object(idp.ip, "write_private") as write:
                 self.assertEqual(idp.main(["--export", root]), 1)
         lines = write.call_args[0][1]
         self.assertEqual(lines, ["document invoice:1: no content"])

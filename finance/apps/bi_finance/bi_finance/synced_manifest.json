@@ -1,102 +1,102 @@
 {
- "bi_finance/dashboard_chart/cash_conversion_trend/cash_conversion_trend.json": {
-  "modified": "2026-10-11 23:57:00.000000",
-  "sha": "3649cb6f1f4ceb1f780088d2d0b5114bc622706733688ef1ab92c3f6b95011a9"
- },
- "bi_finance/dashboard_chart/cash_position_history/cash_position_history.json": {
-  "modified": "2026-10-11 23:57:00.000000",
-  "sha": "2bd0924fa67d8fb7cfeab53b84bbf9dce7139ec29e6f685b55f45c284370fc03"
- },
- "bi_finance/doctype/bank_matching_settings/bank_matching_settings.json": {
-  "modified": "2026-10-12 12:00:00.000000",
-  "sha": "a588b9de5807b61bbcf4eb112db5d8f4416473cfbb3c6a42691097ff5b67b96f"
- },
- "bi_finance/doctype/bank_statement_upload/bank_statement_upload.json": {
-  "modified": "2026-10-12 12:00:00.000000",
-  "sha": "9b64f35b67f59baea417195418ebb3cd8d72f0fe85516a03a9a5fe6bc4a44196"
- },
- "bi_finance/doctype/cash_forecast_manual_line/cash_forecast_manual_line.json": {
-  "modified": "2026-10-10 17:00:00.000000",
-  "sha": "c2e7119969caa63dacb1efbbc0728f392017c78b7331adf9839f8fc5d37bcd7f"
- },
- "bi_finance/doctype/cash_forecast_settings/cash_forecast_settings.json": {
-  "modified": "2026-10-10 17:00:00.000000",
-  "sha": "6f6a41b7c0b5a863fd49238d093e7969da48ef014289ffcc19b6e4780c2d16e3"
- },
- "bi_finance/doctype/paypal_settings/paypal_settings.json": {
-  "modified": "2026-10-12 12:00:00.000000",
-  "sha": "b2b940d62c540db13f44c81ab7a5eedc0796d0803af6f364ed844ce220b1c72b"
- },
- "bi_finance/doctype/wise_settings/wise_settings.json": {
-  "modified": "2026-10-12 12:00:00.000000",
-  "sha": "6e8860c2e2626bf15724996913123bee77a928cec068aaaeb22951738f3abf97"
- },
- "bi_finance/number_card/account_1000/account_1000.json": {
-  "modified": "2026-10-12 09:00:00.000000",
-  "sha": "d8869102441a9439bdeb35ce6c7d450c7fae279747d951411d4d15199af584f2"
- },
- "bi_finance/number_card/account_1010/account_1010.json": {
-  "modified": "2026-10-12 09:00:00.000000",
-  "sha": "35c05c8de5161a7b3d3003aad818d7ce3001c16313a1b23cc8591ee0b55df2b7"
- },
- "bi_finance/number_card/account_1020/account_1020.json": {
-  "modified": "2026-10-12 09:00:00.000000",
-  "sha": "c6d9a4c00940e01c82b26022b4b0b809c370c5e8b97b48be8e1ffac4cefd06b1"
- },
- "bi_finance/number_card/account_1021/account_1021.json": {
-  "modified": "2026-10-12 09:00:00.000000",
-  "sha": "65288252c7b44d300e6bfe887a3309b30cdc6b665c469d1dc0b8d629724fbb59"
- },
- "bi_finance/number_card/ccc_change_days/ccc_change_days.json": {
-  "modified": "2026-10-12 09:00:00.000000",
-  "sha": "95ecf1696c945ee14a3cb739227b3658c56bf279723c2d06517ca587925f99f3"
- },
- "bi_finance/number_card/ccc_days/ccc_days.json": {
-  "modified": "2026-10-12 09:00:00.000000",
-  "sha": "b8b4292bb921dfd20e5dcc9b137065e64c9e990c30e48d8be325111d6a624b0e"
- },
- "bi_finance/number_card/total_chf/total_chf.json": {
-  "modified": "2026-10-12 09:00:00.000000",
-  "sha": "4d00d1322120a0eaf719f51ea49252b222e871739fe3b778e816404492d499f6"
- },
- "bi_finance/report/cash_conversion_cycle/cash_conversion_cycle.json": {
-  "modified": "2026-10-10 09:00:00.000000",
-  "sha": "3559350d69dbf69ac139d4263f2d2f4f42576233470bc4f6f7e39a38d5063a51"
- },
- "bi_finance/report/cash_flow_forecast/cash_flow_forecast.json": {
-  "modified": "2026-10-10 12:00:00.000000",
-  "sha": "ed5a66b8e5b861c6940f8bb8c6b4f58a195baf68ad74af12ec8d4e5083f61ca2"
- },
- "bi_finance/report/cash_flow_forecast_lines/cash_flow_forecast_lines.json": {
-  "modified": "2026-10-10 12:00:00.000000",
-  "sha": "031480eae5149ed7c967325c459aa1bcc1f544a4afdb74c1460b13e42166128c"
- },
- "bi_finance/report/cash_position/cash_position.json": {
-  "modified": "2026-10-10 09:00:00.000000",
-  "sha": "e97c1cc5a35c712e1ccfb82324513a3af4024cf20c0fc3ca678820094f4492df"
- },
- "bi_finance/workspace/treasury/treasury.json": {
-  "modified": "2026-10-12 12:00:00.000000",
-  "sha": "44b28edea44f7aa0fc291607cbbf7f57761d95b927594526ce4c7749bc6893fc"
- },
- "bi_finance/workspace_sidebar/treasury/treasury.json": {
-  "modified": "2026-10-11 15:00:00.000000",
-  "sha": "00a3ef1295b4e16df36858fdaa289c4aaa70bb74529daf3f376b0abe33326d87"
- },
- "bi_finance/doctype/mwst_bexio_ziffer/mwst_bexio_ziffer.json": {
-  "modified": "2026-10-12 12:00:00.000000",
-  "sha": "59f0f7ca0006dc3567facf774ef2334fdf5bedd5d15fb9a893fe7ffe30343c05"
- },
- "bi_finance/report/mwst_pro_quartal/mwst_pro_quartal.json": {
-  "modified": "2026-10-11 00:25:00.000000",
-  "sha": "74e99d5618d48042d5bb35b684a59533cb9312156a4fdde72280c6277f02c8e4"
- },
- "dock/bi_finance/bi_finance.json": {
-  "modified": "2026-10-12 04:00:00.000000",
-  "sha": "bd9672372f08194816164451b7d0758811fc6cd2a7a8b840e19e79684ac01f5d"
- },
- "bi_finance/sidebar/treasury/treasury.json": {
-  "modified": "2026-10-12 05:00:00.000000",
-  "sha": "079b9a4bb32cbb670036001a2135f1087967d7db7d7f150401bbe36c5629a754"
- }
+  "bi_finance/dashboard_chart/cash_conversion_trend/cash_conversion_trend.json": {
+    "modified": "2026-10-11 23:57:00.000000",
+    "sha": "3649cb6f1f4ceb1f780088d2d0b5114bc622706733688ef1ab92c3f6b95011a9"
+  },
+  "bi_finance/dashboard_chart/cash_position_history/cash_position_history.json": {
+    "modified": "2026-10-11 23:57:00.000000",
+    "sha": "2bd0924fa67d8fb7cfeab53b84bbf9dce7139ec29e6f685b55f45c284370fc03"
+  },
+  "bi_finance/doctype/bank_matching_settings/bank_matching_settings.json": {
+    "modified": "2026-10-12 12:00:00.000000",
+    "sha": "a588b9de5807b61bbcf4eb112db5d8f4416473cfbb3c6a42691097ff5b67b96f"
+  },
+  "bi_finance/doctype/bank_statement_upload/bank_statement_upload.json": {
+    "modified": "2026-10-12 12:00:00.000000",
+    "sha": "9b64f35b67f59baea417195418ebb3cd8d72f0fe85516a03a9a5fe6bc4a44196"
+  },
+  "bi_finance/doctype/cash_forecast_manual_line/cash_forecast_manual_line.json": {
+    "modified": "2026-10-10 17:00:00.000000",
+    "sha": "c2e7119969caa63dacb1efbbc0728f392017c78b7331adf9839f8fc5d37bcd7f"
+  },
+  "bi_finance/doctype/cash_forecast_settings/cash_forecast_settings.json": {
+    "modified": "2026-10-10 17:00:00.000000",
+    "sha": "6f6a41b7c0b5a863fd49238d093e7969da48ef014289ffcc19b6e4780c2d16e3"
+  },
+  "bi_finance/doctype/paypal_settings/paypal_settings.json": {
+    "modified": "2026-10-12 12:00:00.000000",
+    "sha": "b2b940d62c540db13f44c81ab7a5eedc0796d0803af6f364ed844ce220b1c72b"
+  },
+  "bi_finance/doctype/wise_settings/wise_settings.json": {
+    "modified": "2026-10-12 12:00:00.000000",
+    "sha": "6e8860c2e2626bf15724996913123bee77a928cec068aaaeb22951738f3abf97"
+  },
+  "bi_finance/number_card/account_1000/account_1000.json": {
+    "modified": "2026-10-12 09:00:00.000000",
+    "sha": "d8869102441a9439bdeb35ce6c7d450c7fae279747d951411d4d15199af584f2"
+  },
+  "bi_finance/number_card/account_1010/account_1010.json": {
+    "modified": "2026-10-12 09:00:00.000000",
+    "sha": "35c05c8de5161a7b3d3003aad818d7ce3001c16313a1b23cc8591ee0b55df2b7"
+  },
+  "bi_finance/number_card/account_1020/account_1020.json": {
+    "modified": "2026-10-12 09:00:00.000000",
+    "sha": "c6d9a4c00940e01c82b26022b4b0b809c370c5e8b97b48be8e1ffac4cefd06b1"
+  },
+  "bi_finance/number_card/account_1021/account_1021.json": {
+    "modified": "2026-10-12 09:00:00.000000",
+    "sha": "65288252c7b44d300e6bfe887a3309b30cdc6b665c469d1dc0b8d629724fbb59"
+  },
+  "bi_finance/number_card/ccc_change_days/ccc_change_days.json": {
+    "modified": "2026-10-12 09:00:00.000000",
+    "sha": "95ecf1696c945ee14a3cb739227b3658c56bf279723c2d06517ca587925f99f3"
+  },
+  "bi_finance/number_card/ccc_days/ccc_days.json": {
+    "modified": "2026-10-12 09:00:00.000000",
+    "sha": "b8b4292bb921dfd20e5dcc9b137065e64c9e990c30e48d8be325111d6a624b0e"
+  },
+  "bi_finance/number_card/total_chf/total_chf.json": {
+    "modified": "2026-10-12 09:00:00.000000",
+    "sha": "4d00d1322120a0eaf719f51ea49252b222e871739fe3b778e816404492d499f6"
+  },
+  "bi_finance/report/cash_conversion_cycle/cash_conversion_cycle.json": {
+    "modified": "2026-10-10 09:00:00.000000",
+    "sha": "3559350d69dbf69ac139d4263f2d2f4f42576233470bc4f6f7e39a38d5063a51"
+  },
+  "bi_finance/report/cash_flow_forecast/cash_flow_forecast.json": {
+    "modified": "2026-10-10 12:00:00.000000",
+    "sha": "ed5a66b8e5b861c6940f8bb8c6b4f58a195baf68ad74af12ec8d4e5083f61ca2"
+  },
+  "bi_finance/report/cash_flow_forecast_lines/cash_flow_forecast_lines.json": {
+    "modified": "2026-10-10 12:00:00.000000",
+    "sha": "031480eae5149ed7c967325c459aa1bcc1f544a4afdb74c1460b13e42166128c"
+  },
+  "bi_finance/report/cash_position/cash_position.json": {
+    "modified": "2026-10-10 09:00:00.000000",
+    "sha": "e97c1cc5a35c712e1ccfb82324513a3af4024cf20c0fc3ca678820094f4492df"
+  },
+  "bi_finance/workspace/treasury/treasury.json": {
+    "modified": "2026-10-12 12:00:00.000000",
+    "sha": "44b28edea44f7aa0fc291607cbbf7f57761d95b927594526ce4c7749bc6893fc"
+  },
+  "bi_finance/workspace_sidebar/treasury/treasury.json": {
+    "modified": "2026-10-11 15:00:00.000000",
+    "sha": "00a3ef1295b4e16df36858fdaa289c4aaa70bb74529daf3f376b0abe33326d87"
+  },
+  "bi_finance/doctype/mwst_bexio_ziffer/mwst_bexio_ziffer.json": {
+    "modified": "2026-10-12 12:00:00.000000",
+    "sha": "59f0f7ca0006dc3567facf774ef2334fdf5bedd5d15fb9a893fe7ffe30343c05"
+  },
+  "bi_finance/report/mwst_pro_quartal/mwst_pro_quartal.json": {
+    "modified": "2026-10-11 00:25:00.000000",
+    "sha": "74e99d5618d48042d5bb35b684a59533cb9312156a4fdde72280c6277f02c8e4"
+  },
+  "dock/bi_finance/bi_finance.json": {
+    "modified": "2026-10-12 04:00:00.000000",
+    "sha": "bd9672372f08194816164451b7d0758811fc6cd2a7a8b840e19e79684ac01f5d"
+  },
+  "bi_finance/sidebar/treasury/treasury.json": {
+    "modified": "2026-10-12 05:00:00.000000",
+    "sha": "079b9a4bb32cbb670036001a2135f1087967d7db7d7f150401bbe36c5629a754"
+  }
 }

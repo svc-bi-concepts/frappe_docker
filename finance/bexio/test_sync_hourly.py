@@ -13,7 +13,10 @@ import shutil
 import subprocess
 import tempfile
 import unittest
-from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
+
+from private_guard import (  # every test below runs against a temp private folder, never the real one
+    setUpModule,
+)
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 SCRIPT = os.path.join(ROOT, "finance", "bexio", "sync_hourly.sh")
@@ -30,8 +33,12 @@ TRACEBACK = "Traceback (most recent call last):\nsubprocess.CalledProcessError: 
 
 COUNTS = "Sales Invoice\t{}\nPurchase Invoice\t{}\nPayment Entry\t{}\nJournal Entry\t3\nBank Transaction\t9\nFile\t100\n"
 COUNTS_BEFORE = COUNTS.format(10, 5, 7)
-COUNTS_AFTER_CLEAN = COUNTS.format(12, 6, 7)  # sales created 2, purchase created 1, the rest still
-COUNTS_AFTER_SI_15 = COUNTS.format(15, 6, 7)  # Sales Invoice moved 5, sales created 2, purchase its 1
+COUNTS_AFTER_CLEAN = COUNTS.format(
+    12, 6, 7
+)  # sales created 2, purchase created 1, the rest still
+COUNTS_AFTER_SI_15 = COUNTS.format(
+    15, 6, 7
+)  # Sales Invoice moved 5, sales created 2, purchase its 1
 COUNTS_AFTER_PE_8 = COUNTS.format(10, 5, 8)  # a doctype no loader writes moved
 
 PYTHON_STUB = """#!/bin/sh
@@ -177,7 +184,9 @@ class SyncHourlyTest(unittest.TestCase):
         self.assertEqual(len([c for c in calls if c.startswith("exporter ")]), 1)
         self.assertIn(ONLY_ARGS, calls[0])
         self.assertIn("--dry-run", " ".join(c for c in calls if "import_sales.py" in c))
-        self.assertIn("--dry-run", " ".join(c for c in calls if "import_purchase.py" in c))
+        self.assertIn(
+            "--dry-run", " ".join(c for c in calls if "import_purchase.py" in c)
+        )
         self.assertEqual(self.mails(), [])
         with open(os.path.join(self.run_dir(), "summary.txt")) as f:
             self.assertIn("ok (dry)", f.read())
@@ -194,7 +203,9 @@ class SyncHourlyTest(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         calls = self.calls()
         self.assertIn("--apply", " ".join(c for c in calls if "import_sales.py" in c))
-        self.assertIn("--apply", " ".join(c for c in calls if "import_purchase.py" in c))
+        self.assertIn(
+            "--apply", " ".join(c for c in calls if "import_purchase.py" in c)
+        )
         self.assertEqual(self.mails(), [])
         rundir = self.run_dir()
         with open(os.path.join(rundir, "gate.txt")) as f:
@@ -258,7 +269,9 @@ class SyncHourlyTest(unittest.TestCase):
         proc = self.run_script(EXPORTER_RC="3")
         self.assertEqual(proc.returncode, 3, proc.stdout + proc.stderr)
         self.assertNotIn("import_sales.py", " ".join(self.calls()))
-        self.assertFalse(os.path.exists(os.path.join(self.run_dir(), "counts-after.rc")))
+        self.assertFalse(
+            os.path.exists(os.path.join(self.run_dir(), "counts-after.rc"))
+        )
         mails = self.mails()
         self.assertEqual([m[0] for m in mails], ["yardmaster", "Benchi"])
         self.assertIn("the bexio export failed (exit 3)", mails[0][1])
@@ -266,7 +279,9 @@ class SyncHourlyTest(unittest.TestCase):
     def test_loader_abort_mails(self):
         """The loader's abort (exit 2, 'aborted:' on stderr, ERPNext unreachable) is a failure."""
         self.counts_seq(COUNTS_BEFORE, COUNTS_BEFORE)
-        sales_out = self.canned("sales.out", "aborted: ERPNext at http://... did not answer\n")
+        sales_out = self.canned(
+            "sales.out", "aborted: ERPNext at http://... did not answer\n"
+        )
         proc = self.run_script(SALES_OUT=sales_out, SALES_RC="2")
         self.assertEqual(proc.returncode, 3, proc.stdout + proc.stderr)
         self.assertIn("import_sales.py failed (exit 2)", self.mails()[0][1])
@@ -282,16 +297,27 @@ class SyncHourlyTest(unittest.TestCase):
     def test_loader_differences_are_accepted(self):
         """Exit 1 without a traceback is the loaders' accepted differences: no failure, no mail."""
         self.counts_seq(COUNTS_BEFORE, COUNTS_AFTER_CLEAN)
-        sales_out = self.canned("sales.out", CREATED_SALES_2 + "sales differences: 3 lines\n")
-        purchase_out = self.canned("purchase.out", CREATED_PURCHASE_1 + "1 record(s) listed by bexio id\n")
-        proc = self.run_script(SALES_OUT=sales_out, SALES_RC="1", PURCHASE_OUT=purchase_out, PURCHASE_RC="1")
+        sales_out = self.canned(
+            "sales.out", CREATED_SALES_2 + "sales differences: 3 lines\n"
+        )
+        purchase_out = self.canned(
+            "purchase.out", CREATED_PURCHASE_1 + "1 record(s) listed by bexio id\n"
+        )
+        proc = self.run_script(
+            SALES_OUT=sales_out,
+            SALES_RC="1",
+            PURCHASE_OUT=purchase_out,
+            PURCHASE_RC="1",
+        )
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertEqual(self.mails(), [])
 
     def test_counts_failure_mails(self):
         """delta_counts.py failing after the loaders is a failure, with the loaders' writes done."""
         self.counts_seq(COUNTS_BEFORE, COUNTS_AFTER_CLEAN)
-        os.remove(os.path.join(self.seqdir, "2.txt"))  # the after snapshot answers nothing
+        os.remove(
+            os.path.join(self.seqdir, "2.txt")
+        )  # the after snapshot answers nothing
         proc = self.run_script(
             SALES_OUT=self.canned("sales.out", CREATED_SALES_2),
             PURCHASE_OUT=self.canned("purchase.out", CREATED_PURCHASE_1),
@@ -312,7 +338,9 @@ class SyncHourlyTest(unittest.TestCase):
         proc = self.run_script(EXPORTER_RC="3")
         self.assertEqual(proc.returncode, 3, proc.stdout + proc.stderr)
         self.assertEqual([m[0] for m in self.mails()], ["yardmaster", "Benchi"])
-        self.assertEqual(self.yardr_envs(), ["/Users/bsaladin/ws_yardr_finance/.yardr"] * 2)
+        self.assertEqual(
+            self.yardr_envs(), ["/Users/bsaladin/ws_yardr_finance/.yardr"] * 2
+        )
 
     def test_mail_honors_a_yardr_home_the_caller_set(self):
         """A YARDR_HOME in the environment wins over the wrapper's default (overridable)."""
@@ -328,8 +356,12 @@ class SyncHourlyTest(unittest.TestCase):
         the yard's home, so a manual run behaves like the launchd run."""
         with open(SCRIPT) as f:
             body = f.read()
-        self.assertIn("YARDR_BIN=${BEXIO_SYNC_YARDR:-/Users/bsaladin/ws_yardr/yardr}", body)
-        self.assertIn("YARDR_HOME=${YARDR_HOME:-/Users/bsaladin/ws_yardr_finance/.yardr}", body)
+        self.assertIn(
+            "YARDR_BIN=${BEXIO_SYNC_YARDR:-/Users/bsaladin/ws_yardr/yardr}", body
+        )
+        self.assertIn(
+            "YARDR_HOME=${YARDR_HOME:-/Users/bsaladin/ws_yardr_finance/.yardr}", body
+        )
 
     def test_mail_failure_is_logged_per_recipient(self):
         """A yardr that fails must not mask the verdict: each recipient's failure lands
@@ -342,7 +374,9 @@ class SyncHourlyTest(unittest.TestCase):
                 f.read().splitlines(),
                 ["mail to yardmaster FAILED", "mail to Benchi FAILED"],
             )
-        self.assertEqual(self.yardr_envs(), ["/Users/bsaladin/ws_yardr_finance/.yardr"] * 2)
+        self.assertEqual(
+            self.yardr_envs(), ["/Users/bsaladin/ws_yardr_finance/.yardr"] * 2
+        )
 
     # ---- the locks -----------------------------------------------------------------
 
@@ -352,7 +386,7 @@ class SyncHourlyTest(unittest.TestCase):
         os.makedirs(lock)
         self.addCleanup(shutil.rmtree, lock, True)
         with open(os.path.join(lock, "holder"), "w") as f:
-            f.write("{} now\n".format(os.getpid()))
+            f.write(f"{os.getpid()} now\n")
         proc = self.run_script()
         self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
         stamps = [d for d in os.listdir(self.syncdir) if d[0].isdigit()]
@@ -378,7 +412,7 @@ class SyncHourlyTest(unittest.TestCase):
         os.makedirs(lock)
         self.addCleanup(shutil.rmtree, lock, True)
         with open(os.path.join(lock, "holder"), "w") as f:
-            f.write("{} now\n".format(os.getpid()))
+            f.write(f"{os.getpid()} now\n")
         proc = self.run_script()
         self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
         self.assertEqual([d for d in os.listdir(self.syncdir) if d[0].isdigit()], [])
@@ -397,7 +431,9 @@ class SyncHourlyTest(unittest.TestCase):
 
     def test_old_run_folders_are_pruned(self):
         """BEXIO_SYNC_KEEP run folders stay, the older ones go."""
-        for i, stamp in enumerate(["20260101-080000", "20260101-090000", "20260101-100000"]):
+        for i, stamp in enumerate(
+            ["20260101-080000", "20260101-090000", "20260101-100000"]
+        ):
             path = os.path.join(self.syncdir, stamp)
             os.makedirs(path)
             os.utime(path, (1000000 + i * 10000, 1000000 + i * 10000))
@@ -436,8 +472,12 @@ class SyncHourlyTest(unittest.TestCase):
         self.assertTrue(os.path.exists(launcher))
         with open(launcher) as f:
             first = f.readline().strip()
-        self.assertEqual(first, "#!/usr/local/bin/av inject +BEXIO_READ_TOKEN /bin/bash")
-        self.assertFalse(os.path.exists(os.path.join(ROOT, "finance", "bexio", "export_readonly.py")))
+        self.assertEqual(
+            first, "#!/usr/local/bin/av inject +BEXIO_READ_TOKEN /bin/bash"
+        )
+        self.assertFalse(
+            os.path.exists(os.path.join(ROOT, "finance", "bexio", "export_readonly.py"))
+        )
 
 
 class PlistTest(unittest.TestCase):
@@ -448,8 +488,12 @@ class PlistTest(unittest.TestCase):
             self.plist = plistlib.load(f)
 
     def test_window_is_weekdays_eight_to_eighteen(self):
-        entries = {(e["Weekday"], e["Hour"]) for e in self.plist["StartCalendarInterval"]}
-        self.assertEqual(entries, {(d, h) for d in (1, 2, 3, 4, 5) for h in range(8, 19)})
+        entries = {
+            (e["Weekday"], e["Hour"]) for e in self.plist["StartCalendarInterval"]
+        }
+        self.assertEqual(
+            entries, {(d, h) for d in (1, 2, 3, 4, 5) for h in range(8, 19)}
+        )
         for entry in self.plist["StartCalendarInterval"]:
             self.assertEqual(entry["Minute"], 0)
 
@@ -460,14 +504,18 @@ class PlistTest(unittest.TestCase):
             args[1],
             "/Users/bsaladin/ws_yardr_finance/frappe_docker/finance/bexio/sync_hourly.sh",
         )
-        self.assertEqual(self.plist["WorkingDirectory"], "/Users/bsaladin/ws_yardr_finance")
+        self.assertEqual(
+            self.plist["WorkingDirectory"], "/Users/bsaladin/ws_yardr_finance"
+        )
 
     def test_calendar_only_and_logs_under_bexio_sync(self):
         self.assertNotIn("KeepAlive", self.plist)
         self.assertNotIn("RunAtLoad", self.plist)
         self.assertNotIn("StartInterval", self.plist)
         for key in ("StandardOutPath", "StandardErrorPath"):
-            self.assertIn(os.path.join("private", "bexio-sync", "launchd.log"), self.plist[key])
+            self.assertIn(
+                os.path.join("private", "bexio-sync", "launchd.log"), self.plist[key]
+            )
 
     def test_label(self):
         self.assertEqual(self.plist["Label"], "ch.bi-concepts.bexio-sync")

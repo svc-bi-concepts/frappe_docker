@@ -38,7 +38,10 @@ class Method(unittest.TestCase):
     def test_the_script_calls_a_whitelisted_method_for_post(self):
         self.assertIn('"%s"' % METHOD, read(SCRIPT))
         source = read("vat_declaration.py")
-        self.assertRegex(source, r'@frappe\.whitelist\(methods=\["POST"\]\)\ndef fill_payment_basis\(')
+        self.assertRegex(
+            source,
+            r'@frappe\.whitelist\(methods=\["POST"\]\)\ndef fill_payment_basis\(',
+        )
 
     def test_the_preview_is_a_dry_run_and_the_write_is_not(self):
         script = read(SCRIPT)
@@ -46,17 +49,21 @@ class Method(unittest.TestCase):
         self.assertEqual(len(re.findall(r"dry_run: 0", script)), 1)
 
     def test_a_submitted_declaration_gets_a_disabled_button(self):
-        self.assertIn("button.prop(\"disabled\", true)", read(SCRIPT))
+        self.assertIn('button.prop("disabled", true)', read(SCRIPT))
         self.assertIn("frm.doc.docstatus === 1", read(SCRIPT))
 
     def test_the_fill_button_shows_on_a_new_form_once_company_and_dates_are_set(self):
         script = read(SCRIPT)
-        self.assertIn("frm.doc.company && frm.doc.start_date && frm.doc.end_date", script)
+        self.assertIn(
+            "frm.doc.company && frm.doc.start_date && frm.doc.end_date", script
+        )
         self.assertNotIn("if (!frm.is_new()) {", script)
 
     def test_a_write_routes_to_the_draft_the_fill_names(self):
         script = read(SCRIPT)
-        self.assertIn('frappe.set_route("Form", "VAT Declaration", r.message.name)', script)
+        self.assertIn(
+            'frappe.set_route("Form", "VAT Declaration", r.message.name)', script
+        )
         self.assertNotIn("frm.reload_doc()", script)
 
     def test_the_fill_returns_the_draft_name_with_the_fields(self):
@@ -69,10 +76,16 @@ class Desk(unittest.TestCase):
     def test_get_values_is_removed_on_a_draft_after_erpnextswiss_adds_it(self):
         script = read(SCRIPT)
         self.assertIn('frm.remove_custom_button(__("Get values"))', script)
-        self.assertLess(script.index("docstatus === 0"), script.index('frm.remove_custom_button(__("Get values"))'))
+        self.assertLess(
+            script.index("docstatus === 0"),
+            script.index('frm.remove_custom_button(__("Get values"))'),
+        )
 
     def test_the_intro_names_the_fill_and_the_recalculation(self):
-        self.assertIn("Fill from payments fills this draft; Recalculate updates 289/299.", read(SCRIPT))
+        self.assertIn(
+            "Fill from payments fills this draft; Recalculate updates 289/299.",
+            read(SCRIPT),
+        )
 
     def test_the_title_of_a_new_declaration_follows_the_period_convention(self):
         script = read(SCRIPT)

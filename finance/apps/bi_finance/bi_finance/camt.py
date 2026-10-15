@@ -32,19 +32,25 @@ def parse(content):
     try:
         root = ElementTree.fromstring(content)
     except ElementTree.ParseError as err:
-        raise CamtError("not XML: {}".format(err))
-    match = re.fullmatch(r"\{" + re.escape(ISO) + r"(camt\.05[34]\.001\.\d\d)\}Document", root.tag)
+        raise CamtError(f"not XML: {err}")
+    match = re.fullmatch(
+        r"\{" + re.escape(ISO) + r"(camt\.05[34]\.001\.\d\d)\}Document", root.tag
+    )
     if not match or match.group(1) not in VERSIONS:
-        raise CamtError("not a camt.053 or camt.054 file of version .04 or .08 (root {})".format(root.tag))
+        raise CamtError(
+            f"not a camt.053 or camt.054 file of version .04 or .08 (root {root.tag})"
+        )
     version = match.group(1)
     kind = version[:8]
 
     bodies = _kids(root, BODY[kind])
     if len(bodies) != 1:
-        raise CamtError("{} is not in the file".format(BODY[kind]))
+        raise CamtError(f"{BODY[kind]} is not in the file")
     statements = _kids(bodies[0], STATEMENT[kind])
     if len(statements) != 1:
-        raise CamtError("{} statements in the file; one account per file".format(len(statements)))
+        raise CamtError(
+            f"{len(statements)} statements in the file; one account per file"
+        )
     statement = statements[0]
 
     iban = _iban(_text(statement, "Acct", "Id", "IBAN"))
@@ -55,7 +61,11 @@ def parse(content):
         code = _text(bal, "Tp", "CdOrPrtry", "Cd")
         if code in ("OPBD", "CLBD"):
             amount, currency = _money(bal)
-            balances[code] = {"date": _date(_first(bal, "Dt")), "amount": _signed(amount, _text(bal, "CdtDbtInd")), "currency": currency}
+            balances[code] = {
+                "date": _date(_first(bal, "Dt")),
+                "amount": _signed(amount, _text(bal, "CdtDbtInd")),
+                "currency": currency,
+            }
 
     skipped = {"not booked": 0, "covered": 0}
     booked = []
@@ -75,15 +85,24 @@ def parse(content):
             skipped["covered"] += 1
             continue
         if txds:
-            transactions.extend(_transaction(entry, txd, len(txds) == 1) for txd in txds)
+            transactions.extend(
+                _transaction(entry, txd, len(txds) == 1) for txd in txds
+            )
         else:
             transactions.append(_transaction(entry, None, True))
     _fill_references(transactions)
 
-    currency = _text(statement, "Acct", "Ccy") or (transactions[0]["currency"] if transactions else None)
+    currency = _text(statement, "Acct", "Ccy") or (
+        transactions[0]["currency"] if transactions else None
+    )
     return {
-        "version": version, "kind": kind, "iban": iban, "currency": currency,
-        "balances": balances, "transactions": transactions, "skipped": skipped,
+        "version": version,
+        "kind": kind,
+        "iban": iban,
+        "currency": currency,
+        "balances": balances,
+        "transactions": transactions,
+        "skipped": skipped,
     }
 
 
@@ -123,7 +142,9 @@ def summary(decisions, skipped):
     totals = {"new": 0, "id": 0, "bexio": 0}
     for tx in decisions:
         totals[tx["rule"]] += 1
-        month = months.setdefault(tx["booking_date"][:7], {"new": 0, "id": 0, "bexio": 0})
+        month = months.setdefault(
+            tx["booking_date"][:7], {"new": 0, "id": 0, "bexio": 0}
+        )
         month[tx["rule"]] += 1
     return dict(totals, skipped=dict(skipped), by_month=dict(sorted(months.items())))
 
@@ -137,7 +158,12 @@ def check_balances(balances, ledger):
     for code in ("OPBD", "CLBD"):
         if code in balances:
             filed = balances[code]["amount"]
-            checks[code] = {"date": balances[code]["date"], "file": filed, "ledger": ledger[code], "diff": filed - ledger[code]}
+            checks[code] = {
+                "date": balances[code]["date"],
+                "file": filed,
+                "ledger": ledger[code],
+                "diff": filed - ledger[code],
+            }
     return checks
 
 
@@ -164,29 +190,48 @@ def _transaction(entry, txd, single):
     value = _date(_first(entry, "ValDt"))
 
     refs = _first(txd, "Refs")
-    reference = next((ref for ref in (_text(refs, name) for name in ("UETR", "AcctSvcrRef", "TxId", "PmtInfId")) if ref), None)
+    reference = next(
+        (
+            ref
+            for ref in (
+                _text(refs, name)
+                for name in ("UETR", "AcctSvcrRef", "TxId", "PmtInfId")
+            )
+            if ref
+        ),
+        None,
+    )
     if reference is None and single:
         reference = _text(entry, "AcctSvcrRef")
         ntry = _text(entry, "NtryRef")
         if reference is None and ntry:
             # NtryRef counts the entries of one statement (1, 2, 3 ...), so it repeats from file to file:
             # with the booking date and the amount it is not mistaken for an entry of another statement.
-            reference = "{}-{}-{}".format(ntry, booking, amount)
+            reference = f"{ntry}-{booking}-{amount}"
 
     remittance = _first(txd, "RmtInf")
-    text = " ".join(_texts(remittance, "Ustrd")) or " ".join(_texts(entry, "AddtlNtryInf"))
+    text = " ".join(_texts(remittance, "Ustrd")) or " ".join(
+        _texts(entry, "AddtlNtryInf")
+    )
     end_to_end = _text(refs, "EndToEndId")
     parties = _first(txd, "RltdPties")
     side = "Dbtr" if direction == "CRDT" else "Cdtr"
     if value and value != booking:
-        text = " ".join(part for part in ("Valuta {}".format(value), text) if part)
-    deposit, withdrawal = (amount, Decimal("0")) if direction == "CRDT" else (Decimal("0"), amount)
+        text = " ".join(part for part in (f"Valuta {value}", text) if part)
+    deposit, withdrawal = (
+        (amount, Decimal("0")) if direction == "CRDT" else (Decimal("0"), amount)
+    )
     return {
-        "reference": reference, "booking_date": booking, "value_date": value, "currency": currency,
-        "deposit": deposit, "withdrawal": withdrawal,
+        "reference": reference,
+        "booking_date": booking,
+        "value_date": value,
+        "currency": currency,
+        "deposit": deposit,
+        "withdrawal": withdrawal,
         # the payment run's EndToEndId, which bank_match finds on the Payment Entry; NOTPROVIDED is the standard's 'none'
         "end_to_end_id": None if end_to_end in (None, "NOTPROVIDED") else end_to_end,
-        "bank_party_name": _text(parties, side, "Nm"), "bank_party_iban": _iban(_text(parties, side + "Acct", "Id", "IBAN")),
+        "bank_party_name": _text(parties, side, "Nm"),
+        "bank_party_iban": _iban(_text(parties, side + "Acct", "Id", "IBAN")),
         "reference_number": _text(remittance, "Strd", "CdtrRefInf", "Ref"),
         "description": text[:DESCRIPTION_LENGTH] or None,
     }
@@ -201,12 +246,25 @@ def _fill_references(transactions):
     for tx in transactions:
         if tx["reference"] is not None:
             continue
-        key = "|".join(str(tx[field]) for field in (
-            "booking_date", "value_date", "deposit", "withdrawal", "currency",
-            "bank_party_name", "bank_party_iban", "reference_number", "description"))
+        key = "|".join(
+            str(tx[field])
+            for field in (
+                "booking_date",
+                "value_date",
+                "deposit",
+                "withdrawal",
+                "currency",
+                "bank_party_name",
+                "bank_party_iban",
+                "reference_number",
+                "description",
+            )
+        )
         digest = "camt-" + hashlib.sha256(key.encode("utf-8")).hexdigest()[:24]
         counts[digest] = counts.get(digest, 0) + 1
-        tx["reference"] = digest if counts[digest] == 1 else "{}-{}".format(digest, counts[digest])
+        tx["reference"] = (
+            digest if counts[digest] == 1 else f"{digest}-{counts[digest]}"
+        )
 
 
 def _entry_reference(entry):
@@ -214,7 +272,9 @@ def _entry_reference(entry):
 
 
 def _txdtls(entry):
-    return [txd for details in _kids(entry, "NtryDtls") for txd in _kids(details, "TxDtls")]
+    return [
+        txd for details in _kids(entry, "NtryDtls") for txd in _kids(details, "TxDtls")
+    ]
 
 
 def _money(el):
@@ -224,7 +284,7 @@ def _money(el):
     try:
         return Decimal(amt.text.strip()), amt.get("Ccy")
     except InvalidOperation:
-        raise CamtError("amount {!r} is not a number".format(amt.text))
+        raise CamtError(f"amount {amt.text!r} is not a number")
 
 
 def _signed(amount, direction):
@@ -247,7 +307,9 @@ def _local(tag):
 
 
 def _kids(el, name):
-    return [child for child in el if _local(child.tag) == name] if el is not None else []
+    return (
+        [child for child in el if _local(child.tag) == name] if el is not None else []
+    )
 
 
 def _first(el, *path):
@@ -264,4 +326,8 @@ def _text(el, *path):
 
 
 def _texts(el, name):
-    return [child.text.strip() for child in _kids(el, name) if child.text and child.text.strip()]
+    return [
+        child.text.strip()
+        for child in _kids(el, name)
+        if child.text and child.text.strip()
+    ]

@@ -29,18 +29,34 @@ ERSTEINREICHUNG = 1
 # The turnover rows of the form, with the rate of each. The rates changed on 2024-01-01: 302, 312 and 342 carry
 # the old rates before, 303, 313 and 343 the new ones. 342 is 3.7 %, the old Sondersatz; erpnextswiss's template
 # gave it 3.8 % for every period, which is the rate of 343.
-SUPPLY_ROWS = [("302", "7.7"), ("303", "8.1"), ("312", "2.5"), ("313", "2.6"), ("342", "3.7"), ("343", "3.8")]
+SUPPLY_ROWS = [
+    ("302", "7.7"),
+    ("303", "8.1"),
+    ("312", "2.5"),
+    ("313", "2.6"),
+    ("342", "3.7"),
+    ("343", "3.8"),
+]
 
 # The totals of turnoverComputation, each with its Ziffer.
-TURNOVER_ROWS = [("totalConsideration", "200"), ("suppliesToForeignCountries", "220"), ("suppliesAbroad", "221"),
-                 ("transferNotificationProcedure", "225"), ("suppliesExemptFromTax", "230"),
-                 ("reductionOfConsideration", "235")]
+TURNOVER_ROWS = [
+    ("totalConsideration", "200"),
+    ("suppliesToForeignCountries", "220"),
+    ("suppliesAbroad", "221"),
+    ("transferNotificationProcedure", "225"),
+    ("suppliesExemptFromTax", "230"),
+    ("reductionOfConsideration", "235"),
+]
 
 # The input tax of effectiveReportingMethod, with its Ziffer. 420 is the form's Vorsteuerkürzungen (inputTaxReductions);
 # the total of the Vorsteuern is 479, which the file does not carry.
-INPUT_TAX_ROWS = [("inputTaxMaterialAndServices", "400"), ("inputTaxInvestments", "405"),
-                  ("subsequentInputTaxDeduction", "410"), ("inputTaxCorrections", "415"),
-                  ("inputTaxReductions", "420")]
+INPUT_TAX_ROWS = [
+    ("inputTaxMaterialAndServices", "400"),
+    ("inputTaxInvestments", "405"),
+    ("subsequentInputTaxDeduction", "410"),
+    ("inputTaxCorrections", "415"),
+    ("inputTaxReductions", "420"),
+]
 
 # The acquisition tax (Bezugsteuer): the rate of the period, and the Ziffer that carries it (382 to 2023, 383 from 2024).
 ACQUISITION_RATE_CHANGE = datetime.date(2024, 1, 1)
@@ -53,25 +69,37 @@ UID_PATTERN = re.compile(r"CHE-\d{3}\.\d{3}\.\d{3}( MWST)?")
 def uid_of(tax_id):
     """The nine digits of the company's UID (CHE-123.456.789 MWST): eCH-0108 takes CHE and the number only.
 
-    Any other form is refused, not read: digits in another form may be a number of another kind."""
+    Any other form is refused, not read: digits in another form may be a number of another kind.
+    """
     if not UID_PATTERN.fullmatch((tax_id or "").strip()):
-        raise ValueError("the company's Tax ID is not CHE-123.456.789 (with or without MWST), ESTV needs the UID")
+        raise ValueError(
+            "the company's Tax ID is not CHE-123.456.789 (with or without MWST), ESTV needs the UID"
+        )
     return re.sub(r"\D", "", tax_id)
 
 
 def _amount(value):
-    return "{:.2f}".format(Decimal(str(value or 0)).quantize(CENT, rounding=ROUND_HALF_UP))
+    return f"{Decimal(str(value or 0)).quantize(CENT, rounding=ROUND_HALF_UP):.2f}"
 
 
 def _el(parent, name, text=None, ns=ECH_0217):
-    el = ET.SubElement(parent, "{%s}%s" % (ns, name))
+    el = ET.SubElement(parent, f"{{{ns}}}{name}")
     if text is not None:
         el.text = text
     return el
 
 
-def declaration_xml(figures, uid, company, title, start_date, end_date, generated,
-                    product_version, form_of_reporting=VEREINNAHMT):
+def declaration_xml(
+    figures,
+    uid,
+    company,
+    title,
+    start_date,
+    end_date,
+    generated,
+    product_version,
+    form_of_reporting=VEREINNAHMT,
+):
     """The eCH-0217 2.0.0 file of one declaration, as text.
 
     figures: Ziffer (str) -> amount. uid: the nine digits from uid_of(). start_date, end_date: the period's first and
@@ -89,7 +117,11 @@ def declaration_xml(figures, uid, company, title, start_date, end_date, generate
     info = _el(root, "generalInformation")
     _el(info, "uid", "CHE" + uid)
     _el(info, "organisationName", company)
-    _el(info, "generationTime", generated.astimezone(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
+    _el(
+        info,
+        "generationTime",
+        generated.astimezone(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    )
     _el(info, "reportingPeriodFrom", start_date.isoformat())
     _el(info, "reportingPeriodTill", end_date.isoformat())
     _el(info, "typeOfSubmission", str(ERSTEINREICHUNG))

@@ -23,10 +23,14 @@ def load(filename):
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), filename)
     with open(path) as f:
         lines = f.read().split("\n")
-    start = next(i for i, line in enumerate(lines) if line.startswith("exec ") and "<<" in line)
+    start = next(
+        i for i, line in enumerate(lines) if line.startswith("exec ") and "<<" in line
+    )
     tag = lines[start].split("<<", 1)[1].strip().strip("'")
     end = lines.index(tag, start + 1)
     module = sys.modules[name] = types.ModuleType(name)
     module.__file__ = path
-    exec(compile("\n".join(lines[start + 1:end]) + "\n", path, "exec"), module.__dict__)
+    exec(
+        compile("\n".join(lines[start + 1 : end]) + "\n", path, "exec"), module.__dict__
+    )
     return module

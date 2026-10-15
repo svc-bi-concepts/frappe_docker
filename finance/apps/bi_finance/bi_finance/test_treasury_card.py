@@ -13,27 +13,35 @@ from collections import Counter
 
 from bi_finance.test_layout import PACKAGE
 
-WORKSPACE = os.path.join(PACKAGE, "bi_finance", "workspace", "treasury", "treasury.json")
+WORKSPACE = os.path.join(
+    PACKAGE, "bi_finance", "workspace", "treasury", "treasury.json"
+)
 
 # the cards in the order they sit on the page, with their links in the order Benchi uses them
 AREAS = [
-    ("Banking", [
-        "Bank Statement Upload",
-        "Bank Transaction",
-        "Bank Reconciliation Tool",
-        "Wise Settings",
-        "PayPal Settings",
-        "Bank Matching Settings",
-    ]),
+    (
+        "Banking",
+        [
+            "Bank Statement Upload",
+            "Bank Transaction",
+            "Bank Reconciliation Tool",
+            "Wise Settings",
+            "PayPal Settings",
+            "Bank Matching Settings",
+        ],
+    ),
     ("Payments", ["Payment Proposal"]),
     ("MWST", ["VAT Declaration", "MWST pro Quartal"]),
-    ("Cash Forecast", [
-        "Cash Position",
-        "Cash Flow Forecast",
-        "Cash Flow Forecast Lines",
-        "Cash Conversion Cycle",
-        "Cash Forecast Settings",
-    ]),
+    (
+        "Cash Forecast",
+        [
+            "Cash Position",
+            "Cash Flow Forecast",
+            "Cash Flow Forecast Lines",
+            "Cash Conversion Cycle",
+            "Cash Forecast Settings",
+        ],
+    ),
 ]
 
 # bi_payroll's documents and reports live on the Swiss Payroll rail of ERPNext (its sidebar), not here
@@ -55,26 +63,36 @@ class Cards(unittest.TestCase):
 
     def card_links(self, name):
         links = self.doc["links"]
-        start = next(i for i, link in enumerate(links) if link["type"] == "Card Break" and link["label"] == name)
+        start = next(
+            i
+            for i, link in enumerate(links)
+            if link["type"] == "Card Break" and link["label"] == name
+        )
         out = []
-        for link in links[start + 1:]:
+        for link in links[start + 1 :]:
             if link["type"] == "Card Break":
                 break
             out.append(link)
         return out
 
     def card_breaks(self):
-        return [link["label"] for link in self.doc["links"] if link["type"] == "Card Break"]
+        return [
+            link["label"] for link in self.doc["links"] if link["type"] == "Card Break"
+        ]
 
     def test_the_cards_are_in_the_sidebar_order_with_their_links_in_order(self):
         self.assertEqual(self.card_breaks(), [name for name, _ in AREAS])
         for name, labels in AREAS:
-            self.assertEqual([link["label"] for link in self.card_links(name)], labels, name)
+            self.assertEqual(
+                [link["label"] for link in self.card_links(name)], labels, name
+            )
 
     def test_each_card_counts_its_links(self):
         for name, _ in AREAS:
             self.assertEqual(
-                next(link for link in self.doc["links"] if link["label"] == name)["link_count"],
+                next(link for link in self.doc["links"] if link["label"] == name)[
+                    "link_count"
+                ],
                 len(self.card_links(name)),
                 name,
             )
@@ -87,10 +105,16 @@ class Cards(unittest.TestCase):
 
     def test_the_cards_sit_on_the_page_after_the_charts_in_the_asked_order(self):
         content = json.loads(self.doc["content"])
-        cards = [block["data"]["card_name"] for block in content if block["type"] == "card"]
+        cards = [
+            block["data"]["card_name"] for block in content if block["type"] == "card"
+        ]
         self.assertEqual(cards, [name for name, _ in AREAS])
-        last_chart = max(i for i, block in enumerate(content) if block["type"] == "chart")
-        first_card = min(i for i, block in enumerate(content) if block["type"] == "card")
+        last_chart = max(
+            i for i, block in enumerate(content) if block["type"] == "chart"
+        )
+        first_card = min(
+            i for i, block in enumerate(content) if block["type"] == "card"
+        )
         self.assertLess(last_chart, first_card)
 
     def test_the_page_block_ids_are_unique(self):
@@ -107,7 +131,9 @@ class Cards(unittest.TestCase):
                     continue
                 for file in os.listdir(os.path.join(root, folder)):
                     if file.endswith(".json"):
-                        with open(os.path.join(root, folder, file), encoding="utf-8") as f:
+                        with open(
+                            os.path.join(root, folder, file), encoding="utf-8"
+                        ) as f:
                             names.add(json.load(f)["name"])
         for name, _ in AREAS:
             for link in self.card_links(name):
@@ -118,11 +144,21 @@ class Cards(unittest.TestCase):
     def test_bank_statement_upload_is_in_one_place_only(self):
         shortcuts = [s["label"] for s in self.doc["shortcuts"]]
         links = [link["label"] for link in self.doc["links"] if link["type"] == "Link"]
-        self.assertEqual(shortcuts.count("Bank Statement Upload") + links.count("Bank Statement Upload"), 1)
+        self.assertEqual(
+            shortcuts.count("Bank Statement Upload")
+            + links.count("Bank Statement Upload"),
+            1,
+        )
 
     def test_no_payroll_link_or_card_sits_on_the_treasury_page(self):
-        labels = {link["label"] for link in self.doc["links"]} | {s["label"] for s in self.doc["shortcuts"]}
-        cards = [block["data"]["card_name"] for block in json.loads(self.doc["content"]) if block["type"] == "card"]
+        labels = {link["label"] for link in self.doc["links"]} | {
+            s["label"] for s in self.doc["shortcuts"]
+        }
+        cards = [
+            block["data"]["card_name"]
+            for block in json.loads(self.doc["content"])
+            if block["type"] == "card"
+        ]
         for label in PAYROLL:
             self.assertNotIn(label, labels)
         self.assertNotIn("Payroll", cards)
@@ -140,7 +176,10 @@ class Cards(unittest.TestCase):
         shortcuts = {s["label"] for s in self.doc["shortcuts"]}
         for label in ("Bank Reconciliation Tool", "Cash Forecast Settings"):
             self.assertNotIn(label, shortcuts)
-            self.assertIn(label, [link["label"] for name, _ in AREAS for link in self.card_links(name)])
+            self.assertIn(
+                label,
+                [link["label"] for name, _ in AREAS for link in self.card_links(name)],
+            )
 
 
 if __name__ == "__main__":

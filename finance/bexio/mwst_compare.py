@@ -52,7 +52,13 @@ ALL = COMPARED + ("2202", "1172")
 # date, and the export's journal holds only the manual part of it. The gross is information; the difference count goes
 # by the flow, which is the net of both sides of the same lines (so one net row against a debit and a credit in bexio
 # is no difference), on the same accounts.
-GROSS = {"2200": "credit", "1170": "debit", "1171": "debit", "2202": "debit", "1172": "credit"}
+GROSS = {
+    "2200": "credit",
+    "1170": "debit",
+    "1171": "debit",
+    "2202": "debit",
+    "1172": "credit",
+}
 
 # The settlement account: bexio's quarterly settlement and ERPNext's are the vouchers that post against it, and their
 # lines are left out of the flow. CLOSING is the account of the year-start carry-forward: ERPNext's copies of those
@@ -68,28 +74,39 @@ INVOICE_TYPES = ("Sales Invoice", "Purchase Invoice")
 INVOICE_CORRECTIONS = ("vatfix-invoice-", "vatfix-credit-", "vatfix-bill-")
 MANUAL_KEYS = ("manual-", "vatfix-manual-")
 
-JOURNAL = os.path.join(im.PRIVATE, "bexio-export", "2026-10-10-complete", "journal.json")
-ACCOUNTS = os.path.join(im.PRIVATE, "bexio-export", "2026-10-10-complete", "accounts.json")
+JOURNAL = os.path.join(
+    im.PRIVATE, "bexio-export", "2026-10-10-complete", "journal.json"
+)
+ACCOUNTS = os.path.join(
+    im.PRIVATE, "bexio-export", "2026-10-10-complete", "accounts.json"
+)
 
 
 def quarter_of(day):
     """'2026-08-14' -> '2026Q3'."""
-    return "{}Q{}".format(day[:4], (int(day[5:7]) - 1) // 3 + 1)
+    return f"{day[:4]}Q{(int(day[5:7]) - 1) // 3 + 1}"
 
 
 def numbers_by_id(accounts):
     """bexio account id -> account number, for the accounts this check compares (net or gross) and the settlement's."""
-    return {a["id"]: str(a["account_no"]) for a in accounts if str(a["account_no"]) in ALL + (SETTLEMENT,)}
+    return {
+        a["id"]: str(a["account_no"])
+        for a in accounts
+        if str(a["account_no"]) in ALL + (SETTLEMENT,)
+    }
 
 
 def is_carry_forward(line):
     """The 1 January line that carries last year's closing balance into the new year (posting_plan's test)."""
-    return line["date"][5:10] == "01-01" and any(word in line["description"] for word in pp.CARRY_FORWARD_WORDS)
+    return line["date"][5:10] == "01-01" and any(
+        word in line["description"] for word in pp.CARRY_FORWARD_WORDS
+    )
 
 
 def post(out, quarter, number, side, amount):
     """Adds one leg of a posting to the balances of its account: the net (debit minus credit) for the net accounts,
-    and the amount of its side for the gross accounts, where that side is the one this check keeps."""
+    and the amount of its side for the gross accounts, where that side is the one this check keeps.
+    """
     if number in COMPARED:
         out[(quarter, number, "net")] += amount if side == "debit" else -amount
     if GROSS.get(number) == side:
@@ -107,7 +124,9 @@ def bexio_balances(journal, numbers):
         if is_carry_forward(line):
             continue
         quarter = quarter_of(line["date"][:10])
-        amount = Decimal(str(line["base_currency_amount"])).quantize(CENT, rounding=ROUND_HALF_UP)
+        amount = Decimal(str(line["base_currency_amount"])).quantize(
+            CENT, rounding=ROUND_HALF_UP
+        )
         debit = numbers.get(line["debit_account_id"])
         credit = numbers.get(line["credit_account_id"])
         if debit is not None:
@@ -145,9 +164,18 @@ def erp_balances(entries, numbers_by_name, keys):
     net of the others, on the gross accounts, which must come to zero per quarter and account: the ERPNext-made pairs
     (an invoice and its vatfix mirror, a wrong manual line and its correction) cancel in the quarter they are made.
     The flow is the net of the bexio-keyed lines on the gross accounts, left out for the vouchers that carry a leg on
-    the settlement account or on the closing account (the carry-forward): bexio's side leaves those lines out too."""
-    settled = {(e["voucher_type"], e["voucher_no"]) for e in entries if numbers_by_name.get(e["account"]) == SETTLEMENT}
-    carried = {(e["voucher_type"], e["voucher_no"]) for e in entries if numbers_by_name.get(e["account"]) == CLOSING}
+    the settlement account or on the closing account (the carry-forward): bexio's side leaves those lines out too.
+    """
+    settled = {
+        (e["voucher_type"], e["voucher_no"])
+        for e in entries
+        if numbers_by_name.get(e["account"]) == SETTLEMENT
+    }
+    carried = {
+        (e["voucher_type"], e["voucher_no"])
+        for e in entries
+        if numbers_by_name.get(e["account"]) == CLOSING
+    }
     out = defaultdict(lambda: ZERO)
     for e in entries:
         number = numbers_by_name.get(e["account"])
@@ -160,7 +188,9 @@ def erp_balances(entries, numbers_by_name, keys):
             out[(quarter, number, "net")] += debit - credit
         if number in GROSS:
             if bexio_keyed(e, number, keys):
-                out[(quarter, number, "gross")] += debit if GROSS[number] == "debit" else credit
+                out[(quarter, number, "gross")] += (
+                    debit if GROSS[number] == "debit" else credit
+                )
                 if (e["voucher_type"], e["voucher_no"]) not in settled | carried:
                     out[(quarter, number, "flow")] += debit - credit
             else:
@@ -181,7 +211,8 @@ def compare(bexio, erp):
 
 def differences(rows):
     """The rows whose two sides differ by at least a rappen, on the counted measures (net, flow, ERPNext-only). The
-    gross rows are information: bexio books a netted pair in one voucher differently from ERPNext's one net row."""
+    gross rows are information: bexio books a netted pair in one voucher differently from ERPNext's one net row.
+    """
     return [r for r in rows if r[2] in COUNTED and r[5] != ZERO]
 
 
@@ -189,9 +220,20 @@ def write_csv(path, rows):
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["quarter", "account", "measure", "bexio_chf", "erpnext_chf", "difference_chf"])
+        writer.writerow(
+            [
+                "quarter",
+                "account",
+                "measure",
+                "bexio_chf",
+                "erpnext_chf",
+                "difference_chf",
+            ]
+        )
         for quarter, number, measure, b, e, d in rows:
-            writer.writerow([quarter, number, measure, "{:.2f}".format(b), "{:.2f}".format(e), "{:.2f}".format(d)])
+            writer.writerow(
+                [quarter, number, measure, f"{b:.2f}", f"{e:.2f}", f"{d:.2f}"]
+            )
 
 
 def summary_lines(rows):
@@ -200,22 +242,30 @@ def summary_lines(rows):
     bad = differences(rows)
     gross_bad = [r for r in rows if r[2] == "gross" and r[5] != ZERO]
     return [
-        "quarters compared: {}".format(len(quarters)),
+        f"quarters compared: {len(quarters)}",
         "comparisons compared: {} (net of {} accounts, flow and gross of {}, ERPNext-only nets on the gross "
         "accounts)".format(len(rows), len(COMPARED), len(GROSS)),
-        "comparisons with a difference: {}".format(len(bad)),
+        f"comparisons with a difference: {len(bad)}",
         "  by measure: net {}, flow {}, ERPNext-only {}".format(
-            *[len([r for r in bad if r[2] == m]) for m in ("net", "flow", "erpnext_only")]),
-        "quarters with a difference: {}".format(len({r[0] for r in bad})),
-        "gross comparisons with a difference (information, not counted): {}".format(len(gross_bad)),
+            *[
+                len([r for r in bad if r[2] == m])
+                for m in ("net", "flow", "erpnext_only")
+            ]
+        ),
+        f"quarters with a difference: {len({r[0] for r in bad})}",
+        f"gross comparisons with a difference (information, not counted): {len(gross_bad)}",
     ]
 
 
 def main(argv):
-    parser = argparse.ArgumentParser(description="bexio's VAT postings per quarter against ERPNext's (read only).")
+    parser = argparse.ArgumentParser(
+        description="bexio's VAT postings per quarter against ERPNext's (read only)."
+    )
     parser.add_argument("--journal", default=JOURNAL)
     parser.add_argument("--accounts", default=ACCOUNTS)
-    parser.add_argument("--report", default=os.path.join(im.PRIVATE, "bexio-mwst-compare.csv"))
+    parser.add_argument(
+        "--report", default=os.path.join(im.PRIVATE, "bexio-mwst-compare.csv")
+    )
     parser.add_argument("--token-file", default=im.TOKEN_FILE)
     args = parser.parse_args(argv)
 
@@ -227,26 +277,52 @@ def main(argv):
 
     erp = im.Erp.from_file(args.token_file)
     try:
-        accounts = erp.list("Account",
-                            [["company", "=", COMPANY], ["account_number", "in", list(ALL + (SETTLEMENT, CLOSING))]],
-                            ["name", "account_number"])
+        accounts = erp.list(
+            "Account",
+            [
+                ["company", "=", COMPANY],
+                ["account_number", "in", list(ALL + (SETTLEMENT, CLOSING))],
+            ],
+            ["name", "account_number"],
+        )
         names = {a["name"]: str(a["account_number"]) for a in accounts}
-        entries = erp.list("GL Entry", [["account", "in", list(names)], ["is_cancelled", "=", 0]],
-                           ["account", "voucher_type", "voucher_no", "posting_date", "debit", "credit"]) if names else []
+        entries = (
+            erp.list(
+                "GL Entry",
+                [["account", "in", list(names)], ["is_cancelled", "=", 0]],
+                [
+                    "account",
+                    "voucher_type",
+                    "voucher_no",
+                    "posting_date",
+                    "debit",
+                    "credit",
+                ],
+            )
+            if names
+            else []
+        )
         keys = {}
         for doctype in BEXIO_VOUCHERS:
-            for r in erp.list(doctype, [["company", "=", COMPANY], ["docstatus", "=", 1], ["bexio_id", "is", "set"]],
-                              ["name", "bexio_id"]):
+            for r in erp.list(
+                doctype,
+                [
+                    ["company", "=", COMPANY],
+                    ["docstatus", "=", 1],
+                    ["bexio_id", "is", "set"],
+                ],
+                ["name", "bexio_id"],
+            ):
                 keys[(doctype, r["name"])] = r["bexio_id"]
     except im.ErpError as err:
-        print("aborted: {}".format(err), file=sys.stderr)
+        print(f"aborted: {err}", file=sys.stderr)
         return 2
 
     rows = compare(bexio, erp_balances(entries, names, keys))
     for line in summary_lines(rows):
         print(line)
     write_csv(args.report, rows)
-    print("written: {}".format(args.report))
+    print(f"written: {args.report}")
     return 1 if differences(rows) else 0
 
 

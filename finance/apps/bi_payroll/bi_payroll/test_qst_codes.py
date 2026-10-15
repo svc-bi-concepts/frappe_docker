@@ -79,7 +79,9 @@ class Load:
     # imports bi_payroll.swiss_payroll with frappe stood in for, as test_structure_gap does
     def load(self, db, tariff_rows=()):
         frappe, utils = fake_frappe(db, tariff_rows)
-        patcher = mock.patch.dict(sys.modules, {"frappe": frappe, "frappe.utils": utils})
+        patcher = mock.patch.dict(
+            sys.modules, {"frappe": frappe, "frappe.utils": utils}
+        )
         patcher.start()
         self.addCleanup(patcher.stop)
         sys.modules.pop("bi_payroll.swiss_payroll", None)
@@ -107,7 +109,9 @@ class Codes(Load, unittest.TestCase):
         self.assertEqual(module.ensure_tariff_codes(), None)
         self.assertEqual(sorted(db.codes), ["A0N", "B2N"])
         _, kwargs = frappe.get_all.call_args
-        self.assertEqual((kwargs["pluck"], kwargs["group_by"]), ("tariff_code", "tariff_code"))
+        self.assertEqual(
+            (kwargs["pluck"], kwargs["group_by"]), ("tariff_code", "tariff_code")
+        )
 
     def test_the_loader_makes_the_codes_of_its_file_once(self):
         db = FakeDb(codes=["A0N"])
@@ -117,8 +121,9 @@ class Codes(Load, unittest.TestCase):
             {"canton": "ZG", "tariff_code": "A0N", "valid_from": date(2026, 1, 1)},
             {"canton": "ZG", "tariff_code": "B2N", "valid_from": date(2026, 1, 1)},
         ]
-        with mock.patch.object(module, "parse_tariff_file", return_value=file_rows), \
-                mock.patch("builtins.open", mock.mock_open(read_data="")):
+        with mock.patch.object(
+            module, "parse_tariff_file", return_value=file_rows
+        ), mock.patch("builtins.open", mock.mock_open(read_data="")):
             self.assertEqual(module.load_tariff("/invented/ZG.txt"), 3)
         self.assertEqual([values["code"] for values in db.inserted], ["B2N"])
         self.assertEqual(db.inserted[0]["doctype"], "QST Tariff Code")
@@ -139,9 +144,19 @@ class FormOffers(Load, unittest.TestCase):
 
     def test_the_link_search_takes_the_canton_from_the_filters_and_the_text(self):
         module, _ = self.load(FakeDb(), tariff_rows=["A0N", "B2N", "B2Y"])
-        filters = json.dumps({"swiss_qst_canton": "ZG"})  # the form sends the filters as JSON text
-        self.assertEqual(module.search_qst_codes("QST Tariff Code", "b2", "code", 0, 10, filters), [("B2N",), ("B2Y",)])
-        self.assertEqual(module.search_qst_codes("QST Tariff Code", "", "code", 1, 1, {"swiss_qst_canton": "ZG"}), [("B2N",)])
+        filters = json.dumps(
+            {"swiss_qst_canton": "ZG"}
+        )  # the form sends the filters as JSON text
+        self.assertEqual(
+            module.search_qst_codes("QST Tariff Code", "b2", "code", 0, 10, filters),
+            [("B2N",), ("B2Y",)],
+        )
+        self.assertEqual(
+            module.search_qst_codes(
+                "QST Tariff Code", "", "code", 1, 1, {"swiss_qst_canton": "ZG"}
+            ),
+            [("B2N",)],
+        )
 
 
 class SaveCheck(Load, unittest.TestCase):
@@ -163,7 +178,9 @@ class SaveCheck(Load, unittest.TestCase):
             self.check(None, "B2N")
         self.assertIn("needs its canton", str(caught.exception))
 
-    def test_a_pair_no_tariff_row_carries_stops_and_names_the_canton_and_the_loader(self):
+    def test_a_pair_no_tariff_row_carries_stops_and_names_the_canton_and_the_loader(
+        self,
+    ):
         with self.assertRaises(Thrown) as caught:
             self.check("ZH", "A0N")  # A0N is a code of ZG only
         message = str(caught.exception)

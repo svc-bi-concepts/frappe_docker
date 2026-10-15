@@ -14,9 +14,15 @@ from unittest import mock
 
 import launcher
 
-os.environ["BEXIO_DIR"] = os.path.dirname(os.path.abspath(__file__))  # run this checkout's files, never the main checkout's
-ub = launcher.load("upload_bill.py")  # the launcher is a bash file; the tests run its python body
-from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
+os.environ["BEXIO_DIR"] = os.path.dirname(
+    os.path.abspath(__file__)
+)  # run this checkout's files, never the main checkout's
+ub = launcher.load(
+    "upload_bill.py"
+)  # the launcher is a bash file; the tests run its python body
+from private_guard import (  # every test below runs against a temp private folder, never the real one
+    setUpModule,
+)
 
 PDF = b"%PDF-1.4\n% invented test bill\n"
 TOKEN = "tok-invented-not-real"
@@ -70,13 +76,19 @@ class UploadTest(unittest.TestCase):
 
     def test_posts_the_pdf_once_to_the_file_endpoint(self):
         path = _pdf()
-        with mock.patch.object(ub.urllib.request, "urlopen", return_value=_answer(b'[{"id": 4711, "uuid": "uuid-invented-1"}]')) as urlopen:
+        with mock.patch.object(
+            ub.urllib.request,
+            "urlopen",
+            return_value=_answer(b'[{"id": 4711, "uuid": "uuid-invented-1"}]'),
+        ) as urlopen:
             out = _run(["--yes", path])
         self.assertEqual(urlopen.call_count, 1)
         req = urlopen.call_args[0][0]
         self.assertEqual(req.get_method(), "POST")
         self.assertEqual(req.full_url, ub.client.BASE_URL + "/3.0/files")
-        self.assertTrue(req.get_header("Content-type").startswith("multipart/form-data; boundary="))
+        self.assertTrue(
+            req.get_header("Content-type").startswith("multipart/form-data; boundary=")
+        )
         self.assertIn(b'name="file"; filename="bill-a.pdf"', req.data)
         self.assertIn(PDF, req.data)
         self.assertEqual(req.get_header("Authorization"), "Bearer " + TOKEN)
@@ -92,7 +104,9 @@ class UploadTest(unittest.TestCase):
 
     def test_http_error_is_reported_with_status_and_no_token(self):
         path = _pdf()
-        err = urllib.error.HTTPError("u", 400, "bad", {}, io.BytesIO(b'{"error": "invented"}'))
+        err = urllib.error.HTTPError(
+            "u", 400, "bad", {}, io.BytesIO(b'{"error": "invented"}')
+        )
         with mock.patch.object(ub.urllib.request, "urlopen", side_effect=err):
             with self.assertRaises(SystemExit) as cm:
                 _run(["--yes", path])
@@ -102,7 +116,9 @@ class UploadTest(unittest.TestCase):
     def test_answer_without_id_is_an_error(self):
         path = _pdf()
         for body in (b"{}", b"[]", b"[{}]"):
-            with self.subTest(body=body), mock.patch.object(ub.urllib.request, "urlopen", return_value=_answer(body)):
+            with self.subTest(body=body), mock.patch.object(
+                ub.urllib.request, "urlopen", return_value=_answer(body)
+            ):
                 with self.assertRaises(SystemExit):
                     _run(["--yes", path])
 
@@ -117,8 +133,9 @@ class RequestGuardTest(unittest.TestCase):
             ("POST", "/3.0/files/file-invented-1/download"),
         ]
         for method, path in refused:
-            with self.subTest(method=method, path=path), \
-                    mock.patch.object(ub.urllib.request, "urlopen") as urlopen:
+            with self.subTest(method=method, path=path), mock.patch.object(
+                ub.urllib.request, "urlopen"
+            ) as urlopen:
                 with self.assertRaises(ub.RefusedRequest):
                     ub._send(method, path, b"", "text/plain", TOKEN)
                 urlopen.assert_not_called()
@@ -164,7 +181,9 @@ class FileGuardTest(unittest.TestCase):
 class TokenTest(unittest.TestCase):
     def test_refuses_without_the_token_even_for_a_dry_run(self):
         path = _pdf()
-        with mock.patch.dict(os.environ, clear=False) as env, mock.patch.object(ub.urllib.request, "urlopen") as urlopen:
+        with mock.patch.dict(os.environ, clear=False) as env, mock.patch.object(
+            ub.urllib.request, "urlopen"
+        ) as urlopen:
             env.pop("BEXIO_TOKEN", None)
             for argv in ([path], ["--yes", path]):
                 with self.subTest(argv=argv), self.assertRaises(SystemExit) as cm:
@@ -209,7 +228,11 @@ class ResultFileTest(unittest.TestCase):
 
     def test_a_real_upload_appends_the_result_line_with_ids_and_no_token(self):
         path = _pdf()
-        with mock.patch.object(ub.urllib.request, "urlopen", return_value=_answer(b'[{"id": 4711, "uuid": "uuid-invented-1"}]')):
+        with mock.patch.object(
+            ub.urllib.request,
+            "urlopen",
+            return_value=_answer(b'[{"id": 4711, "uuid": "uuid-invented-1"}]'),
+        ):
             _run(["--yes", path])
         content = self.result()
         self.assertIn("bill-a.pdf", content)
@@ -219,9 +242,17 @@ class ResultFileTest(unittest.TestCase):
 
     def test_two_uploads_append_two_lines(self):
         path = _pdf()
-        with mock.patch.object(ub.urllib.request, "urlopen", return_value=_answer(b'[{"id": 4711, "uuid": "uuid-invented-1"}]')):
+        with mock.patch.object(
+            ub.urllib.request,
+            "urlopen",
+            return_value=_answer(b'[{"id": 4711, "uuid": "uuid-invented-1"}]'),
+        ):
             _run(["--yes", path])
-        with mock.patch.object(ub.urllib.request, "urlopen", return_value=_answer(b'[{"id": 4712, "uuid": "uuid-invented-2"}]')):
+        with mock.patch.object(
+            ub.urllib.request,
+            "urlopen",
+            return_value=_answer(b'[{"id": 4712, "uuid": "uuid-invented-2"}]'),
+        ):
             _run(["--yes", path])
         lines = self.result().splitlines()
         self.assertEqual(len(lines), 2)
@@ -230,7 +261,9 @@ class ResultFileTest(unittest.TestCase):
     def test_a_dry_run_writes_no_result_file(self):
         path = _pdf()
         _run([path])
-        self.assertFalse(os.path.exists(os.path.join(ub.PRIVATE, "bexio-upload", "last-result.txt")))
+        self.assertFalse(
+            os.path.exists(os.path.join(ub.PRIVATE, "bexio-upload", "last-result.txt"))
+        )
 
 
 if __name__ == "__main__":

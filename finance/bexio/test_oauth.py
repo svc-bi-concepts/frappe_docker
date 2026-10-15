@@ -14,16 +14,28 @@ from unittest import mock
 
 import launcher
 
-os.environ["BEXIO_DIR"] = os.path.dirname(os.path.abspath(__file__))  # run this checkout's files, never the main checkout's
-oauth = launcher.load("oauth.py")  # the launcher is a bash file; the tests run its python body
+os.environ["BEXIO_DIR"] = os.path.dirname(
+    os.path.abspath(__file__)
+)  # run this checkout's files, never the main checkout's
+oauth = launcher.load(
+    "oauth.py"
+)  # the launcher is a bash file; the tests run its python body
 import private_guard
+
 OAuthError = oauth.OAuthError
 VaultError = oauth.VaultError
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-FAKE_ENV = {"BEXIO_CLIENT_ID": "client-id-not-real", "BEXIO_CLIENT_SECRET": "secret-not-real"}
+FAKE_ENV = {
+    "BEXIO_CLIENT_ID": "client-id-not-real",
+    "BEXIO_CLIENT_SECRET": "secret-not-real",
+}
 SAVE_ARGV = [
-    "/usr/local/bin/av", "save", "--stdin", "--project-directory", "/Users/bsaladin/ws_yardr_finance",
+    "/usr/local/bin/av",
+    "save",
+    "--stdin",
+    "--project-directory",
+    "/Users/bsaladin/ws_yardr_finance",
     "BEXIO_REFRESH_TOKEN",
 ]
 
@@ -43,7 +55,7 @@ class ScopeTest(unittest.TestCase):
         for scope in oauth.SCOPE.split():
             self.assertTrue(
                 scope in ("openid", "offline_access") or scope.endswith("_show"),
-                "unexpected scope {!r}".format(scope),
+                f"unexpected scope {scope!r}",
             )
         self.assertNotIn("accounting", oauth.SCOPE.split())
         self.assertFalse(any(s.endswith("_edit") for s in oauth.SCOPE.split()))
@@ -86,19 +98,32 @@ class ExportLoginGoneTest(unittest.TestCase):
     def test_no_export_scope_parameter_is_left_on_the_login_helpers(self):
         import inspect
 
-        for function in (oauth.login, oauth.refresh_access_token, oauth.authorize_url,
-                         oauth.wait_for_code, oauth._login_hint):
-            self.assertNotIn("export_scope", inspect.signature(function).parameters, function.__name__)
+        for function in (
+            oauth.login,
+            oauth.refresh_access_token,
+            oauth.authorize_url,
+            oauth.wait_for_code,
+            oauth._login_hint,
+        ):
+            self.assertNotIn(
+                "export_scope",
+                inspect.signature(function).parameters,
+                function.__name__,
+            )
 
     def test_the_login_saves_to_the_read_value(self):
         body = {"access_token": "access-not-real", "refresh_token": "refresh-not-real"}
-        with mock.patch.dict(os.environ, FAKE_ENV), \
-                mock.patch.object(oauth, "authorize_url", return_value="https://example.invalid/"), \
-                mock.patch.object(oauth.webbrowser, "open"), \
-                mock.patch.object(oauth, "wait_for_code", return_value="code-not-real"), \
-                mock.patch.object(oauth, "exchange_code", return_value=body), \
-                mock.patch.object(oauth, "save_refresh_token") as save, \
-                contextlib.redirect_stderr(io.StringIO()):
+        with mock.patch.dict(os.environ, FAKE_ENV), mock.patch.object(
+            oauth, "authorize_url", return_value="https://example.invalid/"
+        ), mock.patch.object(oauth.webbrowser, "open"), mock.patch.object(
+            oauth, "wait_for_code", return_value="code-not-real"
+        ), mock.patch.object(
+            oauth, "exchange_code", return_value=body
+        ), mock.patch.object(
+            oauth, "save_refresh_token"
+        ) as save, contextlib.redirect_stderr(
+            io.StringIO()
+        ):
             oauth.login()
         save.assert_called_once_with("refresh-not-real", oauth.REFRESH_KEY)
 
@@ -107,7 +132,9 @@ class PkceTest(unittest.TestCase):
     def test_challenge_matches_the_rfc_7636_example(self):
         # RFC 7636, appendix B: the verifier and challenge pair.
         verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
-        self.assertEqual(oauth._challenge(verifier), "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM")
+        self.assertEqual(
+            oauth._challenge(verifier), "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+        )
 
 
 class AuthorizeUrlTest(unittest.TestCase):
@@ -131,9 +158,12 @@ class AuthorizeUrlTest(unittest.TestCase):
 class LoginExchangeTest(unittest.TestCase):
     def test_code_is_exchanged_with_the_verifier_and_the_secret(self):
         body = {"access_token": "access-not-real", "refresh_token": "refresh-not-real"}
-        with mock.patch.dict(os.environ, FAKE_ENV), \
-                mock.patch.object(oauth, "_token_request", return_value=body) as request:
-            self.assertEqual(oauth.exchange_code("code-not-real", "verifier-not-real"), body)
+        with mock.patch.dict(os.environ, FAKE_ENV), mock.patch.object(
+            oauth, "_token_request", return_value=body
+        ) as request:
+            self.assertEqual(
+                oauth.exchange_code("code-not-real", "verifier-not-real"), body
+            )
         fields = request.call_args.args[0]
         self.assertEqual(fields["grant_type"], "authorization_code")
         self.assertEqual(fields["code"], "code-not-real")
@@ -146,7 +176,9 @@ class ReadTokenTest(unittest.TestCase):
     def test_refresh_token_is_read_from_the_environment(self):
         with mock.patch.dict(os.environ, {oauth.REFRESH_KEY: "refresh-from-env"}):
             self.assertEqual(oauth.read_refresh_token(), "refresh-from-env")
-            self.assertEqual(oauth.read_refresh_token(oauth.REFRESH_KEY), "refresh-from-env")
+            self.assertEqual(
+                oauth.read_refresh_token(oauth.REFRESH_KEY), "refresh-from-env"
+            )
 
     def test_unset_or_empty_refresh_token_is_none(self):
         with mock.patch.dict(os.environ, {}, clear=True):
@@ -158,10 +190,13 @@ class ReadTokenTest(unittest.TestCase):
 class RefreshTest(unittest.TestCase):
     def test_refresh_returns_access_token_and_saves_the_rotated_refresh_token(self):
         answer = {"access_token": "access-new", "refresh_token": "refresh-rotated"}
-        with mock.patch.dict(os.environ, FAKE_ENV), \
-                mock.patch.object(oauth, "read_refresh_token", return_value="refresh-old"), \
-                mock.patch.object(oauth, "_token_request", return_value=answer) as request, \
-                mock.patch.object(oauth, "save_refresh_token") as save:
+        with mock.patch.dict(os.environ, FAKE_ENV), mock.patch.object(
+            oauth, "read_refresh_token", return_value="refresh-old"
+        ), mock.patch.object(
+            oauth, "_token_request", return_value=answer
+        ) as request, mock.patch.object(
+            oauth, "save_refresh_token"
+        ) as save:
             self.assertEqual(oauth.refresh_access_token(), "access-new")
         fields = request.call_args.args[0]
         self.assertEqual(fields["grant_type"], "refresh_token")
@@ -170,34 +205,46 @@ class RefreshTest(unittest.TestCase):
 
     def test_rotated_token_goes_to_av_on_stdin_and_never_on_argv(self):
         answer = {"access_token": "access-new", "refresh_token": "refresh-rotated"}
-        with mock.patch.dict(os.environ, FAKE_ENV), \
-                mock.patch.object(oauth, "read_refresh_token", return_value="refresh-old"), \
-                mock.patch.object(oauth, "_token_request", return_value=answer), \
-                mock.patch.object(oauth, "subprocess") as sub:
+        with mock.patch.dict(os.environ, FAKE_ENV), mock.patch.object(
+            oauth, "read_refresh_token", return_value="refresh-old"
+        ), mock.patch.object(
+            oauth, "_token_request", return_value=answer
+        ), mock.patch.object(
+            oauth, "subprocess"
+        ) as sub:
             sub.run.return_value = types.SimpleNamespace(returncode=0)
             self.assertEqual(oauth.refresh_access_token(), "access-new")
         sub.run.assert_called_once()
         self.assertEqual(sub.run.call_args.args[0], SAVE_ARGV)
         self.assertEqual(sub.run.call_args.kwargs["input"], b"refresh-rotated")
-        self.assertTrue(sub.run.call_args.kwargs["capture_output"])  # av's output is dropped, never shown
+        self.assertTrue(
+            sub.run.call_args.kwargs["capture_output"]
+        )  # av's output is dropped, never shown
         self.assertNotIn("refresh-rotated", " ".join(sub.run.call_args.args[0]))
 
     def test_the_rotated_token_is_the_one_the_rest_of_the_run_reads(self):
         # bexio spent the old token, so a second Client in the same run must read the new one.
         answer = {"access_token": "access-new", "refresh_token": "refresh-rotated"}
-        with mock.patch.dict(os.environ, dict(FAKE_ENV, **{oauth.REFRESH_KEY: "refresh-old"})), \
-                mock.patch.object(oauth, "_token_request", return_value=answer), \
-                mock.patch.object(oauth, "subprocess") as sub:
+        with mock.patch.dict(
+            os.environ, dict(FAKE_ENV, **{oauth.REFRESH_KEY: "refresh-old"})
+        ), mock.patch.object(
+            oauth, "_token_request", return_value=answer
+        ), mock.patch.object(
+            oauth, "subprocess"
+        ) as sub:
             sub.run.return_value = types.SimpleNamespace(returncode=0)
             oauth.refresh_access_token()
             self.assertEqual(oauth.read_refresh_token(), "refresh-rotated")
 
     def test_failed_save_stops_the_refresh_and_hands_out_no_access_token(self):
         answer = {"access_token": "access-new", "refresh_token": "refresh-rotated"}
-        with mock.patch.dict(os.environ, FAKE_ENV), \
-                mock.patch.object(oauth, "read_refresh_token", return_value="refresh-old"), \
-                mock.patch.object(oauth, "_token_request", return_value=answer), \
-                mock.patch.object(oauth, "subprocess") as sub:
+        with mock.patch.dict(os.environ, FAKE_ENV), mock.patch.object(
+            oauth, "read_refresh_token", return_value="refresh-old"
+        ), mock.patch.object(
+            oauth, "_token_request", return_value=answer
+        ), mock.patch.object(
+            oauth, "subprocess"
+        ) as sub:
             sub.run.return_value = types.SimpleNamespace(returncode=1)
             with self.assertRaises(OAuthError) as ctx:
                 oauth.refresh_access_token()
@@ -210,10 +257,13 @@ class RefreshTest(unittest.TestCase):
 
     def test_av_that_cannot_run_stops_the_refresh_too(self):
         answer = {"access_token": "access-new", "refresh_token": "refresh-rotated"}
-        with mock.patch.dict(os.environ, FAKE_ENV), \
-                mock.patch.object(oauth, "read_refresh_token", return_value="refresh-old"), \
-                mock.patch.object(oauth, "_token_request", return_value=answer), \
-                mock.patch.object(oauth, "subprocess") as sub:
+        with mock.patch.dict(os.environ, FAKE_ENV), mock.patch.object(
+            oauth, "read_refresh_token", return_value="refresh-old"
+        ), mock.patch.object(
+            oauth, "_token_request", return_value=answer
+        ), mock.patch.object(
+            oauth, "subprocess"
+        ) as sub:
             sub.run.side_effect = FileNotFoundError(2, "No such file or directory")
             with self.assertRaises(OAuthError) as ctx:
                 oauth.refresh_access_token()
@@ -223,13 +273,20 @@ class RefreshTest(unittest.TestCase):
     def test_refresh_takes_no_export_scope_any_more(self):
         import inspect
 
-        self.assertNotIn("export_scope", inspect.signature(oauth.refresh_access_token).parameters)
+        self.assertNotIn(
+            "export_scope", inspect.signature(oauth.refresh_access_token).parameters
+        )
 
     def test_refused_refresh_token_asks_for_a_new_login(self):
-        with mock.patch.dict(os.environ, FAKE_ENV), \
-                mock.patch.object(oauth, "read_refresh_token", return_value="refresh-old"), \
-                mock.patch.object(oauth, "_token_request", side_effect=OAuthError("bexio answered HTTP 400 (invalid_grant)")), \
-                mock.patch.object(oauth, "save_refresh_token") as save:
+        with mock.patch.dict(os.environ, FAKE_ENV), mock.patch.object(
+            oauth, "read_refresh_token", return_value="refresh-old"
+        ), mock.patch.object(
+            oauth,
+            "_token_request",
+            side_effect=OAuthError("bexio answered HTTP 400 (invalid_grant)"),
+        ), mock.patch.object(
+            oauth, "save_refresh_token"
+        ) as save:
             with self.assertRaises(OAuthError) as ctx:
                 oauth.refresh_access_token()
         self.assertIn("invalid_grant", str(ctx.exception))
@@ -238,18 +295,22 @@ class RefreshTest(unittest.TestCase):
         save.assert_not_called()
 
     def test_missing_refresh_token_asks_for_a_login(self):
-        with mock.patch.object(oauth, "read_refresh_token", return_value=None), \
-                mock.patch.object(oauth, "_token_request") as request:
+        with mock.patch.object(
+            oauth, "read_refresh_token", return_value=None
+        ), mock.patch.object(oauth, "_token_request") as request:
             with self.assertRaises(OAuthError) as ctx:
                 oauth.refresh_access_token()
         self.assertIn("oauth.py login", str(ctx.exception))
         request.assert_not_called()
 
     def test_answer_without_tokens_is_an_error(self):
-        with mock.patch.dict(os.environ, FAKE_ENV), \
-                mock.patch.object(oauth, "read_refresh_token", return_value="refresh-old"), \
-                mock.patch.object(oauth, "_token_request", return_value={"access_token": "a"}), \
-                mock.patch.object(oauth, "save_refresh_token") as save:
+        with mock.patch.dict(os.environ, FAKE_ENV), mock.patch.object(
+            oauth, "read_refresh_token", return_value="refresh-old"
+        ), mock.patch.object(
+            oauth, "_token_request", return_value={"access_token": "a"}
+        ), mock.patch.object(
+            oauth, "save_refresh_token"
+        ) as save:
             with self.assertRaises(OAuthError):
                 oauth.refresh_access_token()
         save.assert_not_called()
@@ -257,13 +318,20 @@ class RefreshTest(unittest.TestCase):
 
 class TokenRequestTest(unittest.TestCase):
     def _http_error(self, code, body):
-        return urllib.error.HTTPError(oauth.TOKEN_URL, code, "err", {}, io.BytesIO(body))
+        return urllib.error.HTTPError(
+            oauth.TOKEN_URL, code, "err", {}, io.BytesIO(body)
+        )
 
     def test_refusal_carries_bexio_error_code_only(self):
-        err = self._http_error(400, b'{"error":"invalid_grant","error_description":"refresh-old is not active"}')
+        err = self._http_error(
+            400,
+            b'{"error":"invalid_grant","error_description":"refresh-old is not active"}',
+        )
         with mock.patch("urllib.request.urlopen", side_effect=err):
             with self.assertRaises(OAuthError) as ctx:
-                oauth._token_request({"grant_type": "refresh_token", "refresh_token": "refresh-old"})
+                oauth._token_request(
+                    {"grant_type": "refresh_token", "refresh_token": "refresh-old"}
+                )
         self.assertIn("invalid_grant", str(ctx.exception))
         self.assertNotIn("refresh-old", str(ctx.exception))
 
@@ -275,7 +343,9 @@ class TokenRequestTest(unittest.TestCase):
         self.assertIn("HTTP 502", str(ctx.exception))
 
     def test_network_failure_is_not_called_a_refusal(self):
-        with mock.patch("urllib.request.urlopen", side_effect=urllib.error.URLError("no route")):
+        with mock.patch(
+            "urllib.request.urlopen", side_effect=urllib.error.URLError("no route")
+        ):
             with self.assertRaises(OAuthError) as ctx:
                 oauth._token_request({"grant_type": "refresh_token"})
         self.assertIn("could not reach", str(ctx.exception))
@@ -301,7 +371,9 @@ class CallbackHandlerTest(unittest.TestCase):
         self.assertEqual(outcome, {"code": "code-not-real"})
 
     def test_state_mismatch_ends_the_login(self):
-        outcome, _ = self._run("/callback?code=code-not-real&state=other", expected_state="state-ok")
+        outcome, _ = self._run(
+            "/callback?code=code-not-real&state=other", expected_state="state-ok"
+        )
         self.assertIn("error", outcome)
         self.assertNotIn("code", outcome)
 
@@ -346,17 +418,24 @@ class LauncherTest(unittest.TestCase):
         for name, keys in self.LAUNCHERS.items():
             with open(os.path.join(HERE, name)) as f:
                 first = f.readline().rstrip("\n")
-            self.assertEqual(first, "#!/usr/local/bin/av inject {} {}".format(keys, self.SHELL), name)
+            self.assertEqual(
+                first, f"#!/usr/local/bin/av inject {keys} {self.SHELL}", name
+            )
 
     def test_the_launchers_are_executable(self):
         for name in self.LAUNCHERS:
-            self.assertTrue(os.access(os.path.join(HERE, name), os.X_OK), "chmod +x {}".format(name))
+            self.assertTrue(
+                os.access(os.path.join(HERE, name), os.X_OK), f"chmod +x {name}"
+            )
 
     def test_no_keychain_or_retired_name_is_left(self):
         for name in self.TEXTS:
             with open(os.path.join(HERE, name)) as f:
-                stray = [line for line in f
-                         if any(n in line.lower() for n in self.RETIRED + ("keychain",))]
+                stray = [
+                    line
+                    for line in f
+                    if any(n in line.lower() for n in self.RETIRED + ("keychain",))
+                ]
             self.assertEqual(stray, [], name)
 
 

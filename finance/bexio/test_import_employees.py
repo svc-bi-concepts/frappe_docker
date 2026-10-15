@@ -12,7 +12,9 @@ import tempfile
 import unittest
 
 import import_employees as ie
-from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
+from private_guard import (  # every test below runs against a temp private folder, never the real one
+    setUpModule,
+)
 
 
 def invented_employee(**overrides):
@@ -36,9 +38,16 @@ def invented_employee(**overrides):
         "phone_number": "+41 00 000 00 00",
         "stay_permit_category": "C",
         "address": {
-            "street_name": "Testgasse", "house_number": "3", "street": "Testgasse 3",
-            "complementary_line": None, "postbox": None, "zip_code": "8001",
-            "city": "Teststadt", "locality": None, "canton": "ZH", "country": "CH",
+            "street_name": "Testgasse",
+            "house_number": "3",
+            "street": "Testgasse 3",
+            "complementary_line": None,
+            "postbox": None,
+            "zip_code": "8001",
+            "city": "Teststadt",
+            "locality": None,
+            "canton": "ZH",
+            "country": "CH",
             "municipality_id": 1,
         },
     }
@@ -51,8 +60,15 @@ def stubs(*month_lists):
     rows = []
     for i, months in enumerate(month_lists, start=1):
         for year, month in months:
-            rows.append({"employee_id": "test-emp-{}".format(i), "year": year, "month": month,
-                         "file": "test-emp-{}-{}-{:02d}.pdf".format(i, year, month), "bytes": 100})
+            rows.append(
+                {
+                    "employee_id": f"test-emp-{i}",
+                    "year": year,
+                    "month": month,
+                    "file": f"test-emp-{i}-{year}-{month:02d}.pdf",
+                    "bytes": 100,
+                }
+            )
     return rows
 
 
@@ -92,7 +108,7 @@ class FakeErp:
         self.writes += 1
         doc = {k: v for k, v in copy.deepcopy(doc).items() if k != "doctype"}
         self.counter += 1
-        doc["name"] = "HR-EMP-{:04d}".format(self.counter)
+        doc["name"] = f"HR-EMP-{self.counter:04d}"
         self.docs.setdefault(doctype, {})[doc["name"]] = doc
         return {"name": doc["name"]}
 
@@ -103,8 +119,13 @@ class FakeErp:
 
 def build(employees, paystubs, overrides=None, erp=None):
     """The plan against the fake site's Gender names."""
-    return ie.build_plan(employees, paystubs, overrides or {},
-                         [d["name"] for d in (erp or FakeErp()).docs.get("Gender", {}).values()] or GENDERS)
+    return ie.build_plan(
+        employees,
+        paystubs,
+        overrides or {},
+        [d["name"] for d in (erp or FakeErp()).docs.get("Gender", {}).values()]
+        or GENDERS,
+    )
 
 
 def import_all(erp, employees, paystubs, overrides=None, dry_run=False):
@@ -151,11 +172,20 @@ class MappingTest(unittest.TestCase):
 
     def test_employment_level_100_is_full_time_otherwise_part(self):
         erp = FakeErp()
-        import_all(erp, [invented_employee(id="test-emp-1", employment_level=100),
-                         invented_employee(id="test-emp-2", employment_level=60)],
-                   stubs([(2025, 1)], [(2025, 1)]))
-        self.assertEqual(erp.docs["Employee"]["HR-EMP-0001"]["employment_type"], "Full-time")
-        self.assertEqual(erp.docs["Employee"]["HR-EMP-0002"]["employment_type"], "Part-time")
+        import_all(
+            erp,
+            [
+                invented_employee(id="test-emp-1", employment_level=100),
+                invented_employee(id="test-emp-2", employment_level=60),
+            ],
+            stubs([(2025, 1)], [(2025, 1)]),
+        )
+        self.assertEqual(
+            erp.docs["Employee"]["HR-EMP-0001"]["employment_type"], "Full-time"
+        )
+        self.assertEqual(
+            erp.docs["Employee"]["HR-EMP-0002"]["employment_type"], "Part-time"
+        )
 
     def test_nationality_permit_and_language_go_into_the_bio(self):
         erp = FakeErp()
@@ -165,7 +195,9 @@ class MappingTest(unittest.TestCase):
 
     def test_missing_swiss_fields_and_swiss_nationals_stay_empty(self):
         erp = FakeErp()
-        emp = invented_employee(employment_level=None, hours_per_week=None, stay_permit_category="Swiss")
+        emp = invented_employee(
+            employment_level=None, hours_per_week=None, stay_permit_category="Swiss"
+        )
         import_all(erp, [emp], stubs([(2025, 1)]))
         doc = erp.docs["Employee"]["HR-EMP-0001"]
         self.assertEqual(doc["swiss_employment_level"], "")
@@ -180,23 +212,46 @@ class MappingTest(unittest.TestCase):
 
     def test_bio_skips_what_the_record_does_not_carry(self):
         erp = FakeErp()
-        import_all(erp, [invented_employee(stay_permit_category=None, language=None)],
-                   stubs([(2025, 1)]))
+        import_all(
+            erp,
+            [invented_employee(stay_permit_category=None, language=None)],
+            stubs([(2025, 1)]),
+        )
         self.assertEqual(erp.docs["Employee"]["HR-EMP-0001"]["bio"], "Nationality: xx")
 
     def test_address_is_composed_from_the_dict(self):
-        addr = {"street_name": "Testgasse", "house_number": "3", "street": "Testgasse 3",
-                "complementary_line": None, "postbox": None, "zip_code": "8001",
-                "city": "Teststadt", "locality": None, "canton": "ZH", "country": "CH",
-                "municipality_id": 1}
+        addr = {
+            "street_name": "Testgasse",
+            "house_number": "3",
+            "street": "Testgasse 3",
+            "complementary_line": None,
+            "postbox": None,
+            "zip_code": "8001",
+            "city": "Teststadt",
+            "locality": None,
+            "canton": "ZH",
+            "country": "CH",
+            "municipality_id": 1,
+        }
         self.assertEqual(ie.composed_address(addr), "Testgasse 3\n8001 Teststadt")
 
     def test_address_falls_back_to_street_and_names_a_foreign_country(self):
-        addr = {"street_name": None, "house_number": None, "street": "Langstrasse 9",
-                "complementary_line": "c/o Test", "postbox": None, "zip_code": "8001",
-                "city": "Teststadt", "locality": "Testdorf", "canton": "ZH", "country": "de",
-                "municipality_id": 1}
-        self.assertEqual(ie.composed_address(addr), "Langstrasse 9\nc/o Test\n8001 Testdorf\nDE")
+        addr = {
+            "street_name": None,
+            "house_number": None,
+            "street": "Langstrasse 9",
+            "complementary_line": "c/o Test",
+            "postbox": None,
+            "zip_code": "8001",
+            "city": "Teststadt",
+            "locality": "Testdorf",
+            "canton": "ZH",
+            "country": "de",
+            "municipality_id": 1,
+        }
+        self.assertEqual(
+            ie.composed_address(addr), "Langstrasse 9\nc/o Test\n8001 Testdorf\nDE"
+        )
 
     def test_address_empty_when_the_dict_is(self):
         self.assertEqual(ie.composed_address(None), "")
@@ -221,12 +276,17 @@ class DatesTest(unittest.TestCase):
         self.assertEqual(left, "")
 
     def test_the_override_wins(self):
-        joined, left = ie.dates_for([(2023, 11), (2026, 9)], (2026, 9),
-                                    {"joined": "2020-03-02", "left": "2025-12-31"})
+        joined, left = ie.dates_for(
+            [(2023, 11), (2026, 9)],
+            (2026, 9),
+            {"joined": "2020-03-02", "left": "2025-12-31"},
+        )
         self.assertEqual((joined, left), ("2020-03-02", "2025-12-31"))
 
     def test_an_override_left_empty_keeps_the_employee_active(self):
-        joined, left = ie.dates_for([(2023, 11), (2024, 2)], (2026, 9), {"joined": "2020-03-02", "left": ""})
+        joined, left = ie.dates_for(
+            [(2023, 11), (2024, 2)], (2026, 9), {"joined": "2020-03-02", "left": ""}
+        )
         self.assertEqual((joined, left), ("2020-03-02", ""))
 
     def test_no_paystubs_and_no_override_gives_no_dates(self):
@@ -235,8 +295,11 @@ class DatesTest(unittest.TestCase):
 
     def test_status_and_relieving_date_follow_the_dates(self):
         erp = FakeErp()
-        import_all(erp, [invented_employee(id="test-emp-1"), invented_employee(id="test-emp-2")],
-                   stubs([(2023, 11), (2024, 2)], [(2025, 8), (2026, 9)]))
+        import_all(
+            erp,
+            [invented_employee(id="test-emp-1"), invented_employee(id="test-emp-2")],
+            stubs([(2023, 11), (2024, 2)], [(2025, 8), (2026, 9)]),
+        )
         gone = erp.docs["Employee"]["HR-EMP-0001"]
         self.assertEqual(gone["status"], "Left")
         self.assertEqual(gone["relieving_date"], "2024-02-29")
@@ -248,14 +311,18 @@ class DatesTest(unittest.TestCase):
 
 class PlanTest(unittest.TestCase):
     def test_unknown_gender_is_reported_and_not_created(self):
-        importer = import_all(FakeErp(), [invented_employee(gender="divers")], stubs([(2025, 1)]))
+        importer = import_all(
+            FakeErp(), [invented_employee(gender="divers")], stubs([(2025, 1)])
+        )
         self.assertEqual(importer.counts.created, 0)
         self.assertEqual(importer.counts.failed, 1)
         self.assertIn("unknown gender", importer.problems[0])
         self.assertNotIn("test-emp", importer.problems[0])
 
     def test_a_missing_gender_is_reported_too(self):
-        importer = import_all(FakeErp(), [invented_employee(gender=None)], stubs([(2025, 1)]))
+        importer = import_all(
+            FakeErp(), [invented_employee(gender=None)], stubs([(2025, 1)])
+        )
         self.assertEqual(importer.counts.created, 0)
         self.assertEqual(importer.counts.failed, 1)
 
@@ -269,7 +336,9 @@ class PlanTest(unittest.TestCase):
 class UpsertTest(unittest.TestCase):
     def test_dry_run_writes_nothing_but_counts(self):
         erp = FakeErp()
-        importer = import_all(erp, [invented_employee()], stubs([(2025, 1)]), dry_run=True)
+        importer = import_all(
+            erp, [invented_employee()], stubs([(2025, 1)]), dry_run=True
+        )
         self.assertEqual(erp.writes, 0)
         self.assertEqual(importer.counts.created, 1)
 
@@ -291,7 +360,9 @@ class UpsertTest(unittest.TestCase):
         employees[0]["phone_number"] = "+41 00 111 11 11"
         importer = import_all(erp, employees, paystubs)
         self.assertEqual(importer.counts.updated, 1)
-        self.assertEqual(erp.docs["Employee"]["HR-EMP-0001"]["cell_number"], "+41 00 111 11 11")
+        self.assertEqual(
+            erp.docs["Employee"]["HR-EMP-0001"]["cell_number"], "+41 00 111 11 11"
+        )
 
     def test_existing_employees_count_as_existing(self):
         erp = FakeErp()
@@ -302,7 +373,13 @@ class UpsertTest(unittest.TestCase):
 
     def test_override_dates_a_employee_without_paystubs(self):
         erp = FakeErp()
-        overrides = {"test-emp-1": {"bexio_id": "test-emp-1", "joined": "2019-08-01", "left": "2026-03-31"}}
+        overrides = {
+            "test-emp-1": {
+                "bexio_id": "test-emp-1",
+                "joined": "2019-08-01",
+                "left": "2026-03-31",
+            }
+        }
         import_all(erp, [invented_employee()], [], overrides)
         gone = erp.docs["Employee"]["HR-EMP-0001"]
         self.assertEqual(gone["date_of_joining"], "2019-08-01")
@@ -318,8 +395,11 @@ class FailingErp(FakeErp):
 class WriteFailureTest(unittest.TestCase):
     def test_a_refused_write_is_counted_and_the_problem_carries_no_values(self):
         erp = FailingErp()
-        importer = import_all(erp, [invented_employee(), invented_employee(id="test-emp-2")],
-                              stubs([(2025, 1)], [(2025, 1)]))
+        importer = import_all(
+            erp,
+            [invented_employee(), invented_employee(id="test-emp-2")],
+            stubs([(2025, 1)], [(2025, 1)]),
+        )
         self.assertEqual(importer.counts.failed, 2)
         self.assertEqual(importer.counts.created, 0)
         self.assertEqual(len(importer.problems), 2)
@@ -339,8 +419,12 @@ class CsvTest(unittest.TestCase):
         self.assertEqual(ie.read_dates_csv("/nonexistent/employee-dates.csv"), {})
 
     def test_rows_are_keyed_by_the_bexio_id(self):
-        with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False, newline="") as f:
-            f.write("bexio_id,joined,left\ntest-emp-1,2019-08-01,\ntest-emp-2,2020-01-15,2025-12-31\n")
+        with tempfile.NamedTemporaryFile(
+            "w", suffix=".csv", delete=False, newline=""
+        ) as f:
+            f.write(
+                "bexio_id,joined,left\ntest-emp-1,2019-08-01,\ntest-emp-2,2020-01-15,2025-12-31\n"
+            )
             path = f.name
         try:
             rows = ie.read_dates_csv(path)
@@ -350,7 +434,9 @@ class CsvTest(unittest.TestCase):
         self.assertEqual(rows["test-emp-2"]["left"], "2025-12-31")
 
     def test_the_header_may_spell_the_id_column_with_a_space(self):
-        with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False, newline="") as f:
+        with tempfile.NamedTemporaryFile(
+            "w", suffix=".csv", delete=False, newline=""
+        ) as f:
             f.write("bexio id,joined,left\ntest-emp-1,2019-08-01,\n")
             path = f.name
         try:
@@ -362,8 +448,12 @@ class CsvTest(unittest.TestCase):
 
 class NeedsDatesTest(unittest.TestCase):
     def test_the_list_is_written_mode_600_with_a_count_header(self):
-        emp = invented_employee(id="test-emp-9", first_name="Bea", last_name="Beispiel",
-                                personal_number="T-009")
+        emp = invented_employee(
+            id="test-emp-9",
+            first_name="Bea",
+            last_name="Beispiel",
+            personal_number="T-009",
+        )
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "needs-dates.txt")
             ie.write_needs_dates(path, [emp])
@@ -380,15 +470,23 @@ class NeedsDatesTest(unittest.TestCase):
             path = os.path.join(tmp, "needs-dates.txt")
             ie.write_needs_dates(path, [])
             with open(path, encoding="utf-8") as f:
-                self.assertEqual(f.read().splitlines(), ["# employees without a joining date: 0"])
+                self.assertEqual(
+                    f.read().splitlines(), ["# employees without a joining date: 0"]
+                )
 
 
 class ReportTest(unittest.TestCase):
     def test_the_report_carries_counts_only(self):
         erp = FakeErp()
-        employees = [invented_employee(id="test-emp-1"),
-                     invented_employee(id="test-emp-2", first_name="Bea", last_name="Beispiel",
-                                       employment_level=60)]
+        employees = [
+            invented_employee(id="test-emp-1"),
+            invented_employee(
+                id="test-emp-2",
+                first_name="Bea",
+                last_name="Beispiel",
+                employment_level=60,
+            ),
+        ]
         plan = build(employees, stubs([(2023, 11), (2024, 2)], [(2025, 8), (2026, 9)]))
         importer = ie.EmployeeImporter(erp, dry_run=True)
         importer.run(plan)
@@ -405,6 +503,7 @@ class ReportTest(unittest.TestCase):
     def capture(call):
         import contextlib
         import io
+
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer):
             call()
@@ -414,7 +513,9 @@ class ReportTest(unittest.TestCase):
 class ExportMonthTest(unittest.TestCase):
     def test_the_export_last_month_comes_from_the_paystubs(self):
         paystubs = stubs([(2023, 11), (2026, 9)], [(2025, 8), (2026, 8)])
-        _joined, left = ie.dates_for([(2025, 8), (2026, 8)], max(ie.month_key(s) for s in paystubs))
+        _joined, left = ie.dates_for(
+            [(2025, 8), (2026, 8)], max(ie.month_key(s) for s in paystubs)
+        )
         # 2026-08 is before the export's 2026-09: Left on the month's end
         self.assertEqual(left, "2026-08-31")
 

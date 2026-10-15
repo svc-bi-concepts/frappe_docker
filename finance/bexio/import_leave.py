@@ -23,7 +23,7 @@ import stat
 import sys
 
 from import_employees import load_payroll
-from import_master import COMPANY, Erp, ErpError, PRIVATE, TOKEN_FILE, differs
+from import_master import COMPANY, PRIVATE, TOKEN_FILE, Erp, ErpError, differs
 
 YEAR = 2026
 FROM_DATE = "2026-01-01"
@@ -55,15 +55,22 @@ PUBLIC_HOLIDAYS = [
 
 def holiday_rows():
     """Rows for public holidays and the standard Saturday/Sunday work week."""
-    rows = {date: {"holiday_date": date, "description": name} for date, name in PUBLIC_HOLIDAYS}
+    rows = {
+        date: {"holiday_date": date, "description": name}
+        for date, name in PUBLIC_HOLIDAYS
+    }
     day = datetime.date(YEAR, 1, 1)
     last = datetime.date(YEAR, 12, 31)
     while day <= last:
         if day.weekday() >= 5:
-            rows.setdefault(day.isoformat(), {
-                "holiday_date": day.isoformat(), "description": "Saturday" if day.weekday() == 5 else "Sunday",
-                "weekly_off": 1,
-            })
+            rows.setdefault(
+                day.isoformat(),
+                {
+                    "holiday_date": day.isoformat(),
+                    "description": "Saturday" if day.weekday() == 5 else "Sunday",
+                    "weekly_off": 1,
+                },
+            )
         day += datetime.timedelta(days=1)
     return sorted(rows.values(), key=lambda row: row["holiday_date"])
 
@@ -140,8 +147,16 @@ def build_plan(export_employees, erp_employees, overrides=None):
         except (TypeError, ValueError):
             problems.append((position, "default allocation needs employment level"))
             continue
-        plan.append({"position": position, "employee": employee, "bexio_id": bexio_id, "days": days,
-                     "default": is_default, "override": override is not None})
+        plan.append(
+            {
+                "position": position,
+                "employee": employee,
+                "bexio_id": bexio_id,
+                "days": days,
+                "default": is_default,
+                "override": override is not None,
+            }
+        )
         if is_default:
             defaults.append((employee, days))
     return plan, defaults, problems
@@ -151,11 +166,23 @@ class LeaveImporter:
     def __init__(self, erp, dry_run=True):
         self.erp = erp
         self.dry_run = dry_run
-        self.counts = {key: 0 for key in (
-            "created", "updated", "unchanged", "failed", "skipped", "no entitlement",
-            "assignments planned", "assignments created", "assignments updated",
-            "assignments unchanged", "assignments failed", "overrides applied",
-        )}
+        self.counts = {
+            key: 0
+            for key in (
+                "created",
+                "updated",
+                "unchanged",
+                "failed",
+                "skipped",
+                "no entitlement",
+                "assignments planned",
+                "assignments created",
+                "assignments updated",
+                "assignments unchanged",
+                "assignments failed",
+                "overrides applied",
+            )
+        }
         self.problems = []
 
     def upsert(self, doctype, key_filters, doc):
@@ -179,31 +206,67 @@ class LeaveImporter:
         return name
 
     def run_setup(self):
-        self.upsert("Holiday List", [["holiday_list_name", "=", HOLIDAY_LIST]], {
-            "holiday_list_name": HOLIDAY_LIST, "from_date": FROM_DATE, "to_date": TO_DATE,
-            "country": "Switzerland", "subdivision": "Schwyz", "weekly_off": "",
-            "holidays": holiday_rows(),
-        })
-        self.upsert("Leave Type", [["leave_type_name", "=", LEAVE_TYPE]], {
-            "leave_type_name": LEAVE_TYPE, "is_carry_forward": 1, "is_earned_leave": 0,
-        })
-        self.upsert("Leave Period", [["from_date", "=", FROM_DATE], ["to_date", "=", TO_DATE],
-                                      ["company", "=", COMPANY]], {
-            "from_date": FROM_DATE, "to_date": TO_DATE, "company": COMPANY, "is_active": 1,
-        })
+        self.upsert(
+            "Holiday List",
+            [["holiday_list_name", "=", HOLIDAY_LIST]],
+            {
+                "holiday_list_name": HOLIDAY_LIST,
+                "from_date": FROM_DATE,
+                "to_date": TO_DATE,
+                "country": "Switzerland",
+                "subdivision": "Schwyz",
+                "weekly_off": "",
+                "holidays": holiday_rows(),
+            },
+        )
+        self.upsert(
+            "Leave Type",
+            [["leave_type_name", "=", LEAVE_TYPE]],
+            {
+                "leave_type_name": LEAVE_TYPE,
+                "is_carry_forward": 1,
+                "is_earned_leave": 0,
+            },
+        )
+        self.upsert(
+            "Leave Period",
+            [
+                ["from_date", "=", FROM_DATE],
+                ["to_date", "=", TO_DATE],
+                ["company", "=", COMPANY],
+            ],
+            {
+                "from_date": FROM_DATE,
+                "to_date": TO_DATE,
+                "company": COMPANY,
+                "is_active": 1,
+            },
+        )
 
     def run_holiday_assignment(self, entry):
         """Upsert one Holiday List Assignment per plan employee; HRMS v16 payroll
-        resolves holidays through submitted assignments only, never Employee.holiday_list."""
+        resolves holidays through submitted assignments only, never Employee.holiday_list.
+        """
         employee = entry["employee"]
         doc = {
-            "naming_series": ASSIGNMENT_SERIES, "applicable_for": "Employee",
-            "assigned_to": employee["name"], "holiday_list": HOLIDAY_LIST, "from_date": FROM_DATE,
+            "naming_series": ASSIGNMENT_SERIES,
+            "applicable_for": "Employee",
+            "assigned_to": employee["name"],
+            "holiday_list": HOLIDAY_LIST,
+            "from_date": FROM_DATE,
         }
-        filters = [["assigned_to", "=", employee["name"]], ["holiday_list", "=", HOLIDAY_LIST],
-                   ["from_date", "=", FROM_DATE]]
-        found = [row for row in self.erp.list("Holiday List Assignment", filters, ["name", "docstatus"])
-                 if row.get("docstatus") != 2]  # a cancelled assignment does not count
+        filters = [
+            ["assigned_to", "=", employee["name"]],
+            ["holiday_list", "=", HOLIDAY_LIST],
+            ["from_date", "=", FROM_DATE],
+        ]
+        found = [
+            row
+            for row in self.erp.list(
+                "Holiday List Assignment", filters, ["name", "docstatus"]
+            )
+            if row.get("docstatus") != 2
+        ]  # a cancelled assignment does not count
         if found:
             name = found[0]["name"]
             if not differs(self.erp.get("Holiday List Assignment", name), doc):
@@ -214,17 +277,30 @@ class LeaveImporter:
                     self.erp.update("Holiday List Assignment", name, doc)
                 except ErpError as err:
                     self.counts["assignments failed"] += 1
-                    self.problems.append((entry["position"], "Holiday List Assignment refused ({})".format(type(err).__name__)))
+                    self.problems.append(
+                        (
+                            entry["position"],
+                            f"Holiday List Assignment refused ({type(err).__name__})",
+                        )
+                    )
                     return
             self.counts["assignments updated"] += 1
             return
         if not self.dry_run:
             try:
                 created = self.erp.insert("Holiday List Assignment", doc)
-                self.erp.call("frappe.client.submit", doc=self.erp.get("Holiday List Assignment", created["name"]))
+                self.erp.call(
+                    "frappe.client.submit",
+                    doc=self.erp.get("Holiday List Assignment", created["name"]),
+                )
             except ErpError as err:
                 self.counts["assignments failed"] += 1
-                self.problems.append((entry["position"], "Holiday List Assignment refused ({})".format(type(err).__name__)))
+                self.problems.append(
+                    (
+                        entry["position"],
+                        f"Holiday List Assignment refused ({type(err).__name__})",
+                    )
+                )
                 return
         self.counts["assignments created"] += 1
 
@@ -244,7 +320,12 @@ class LeaveImporter:
                         employee.update(employee_patch)
                     except ErpError as err:
                         self.counts["failed"] += 1
-                        self.problems.append((entry["position"], "Employee holiday list refused ({})".format(type(err).__name__)))
+                        self.problems.append(
+                            (
+                                entry["position"],
+                                f"Employee holiday list refused ({type(err).__name__})",
+                            )
+                        )
                         continue
                 self.counts["updated"] += 1
             else:
@@ -254,30 +335,54 @@ class LeaveImporter:
                 # An export or override of 0 gets no allocation: a count, not a problem.
                 self.counts["no entitlement"] += 1
                 continue
-            filters = [["employee", "=", employee["name"]], ["leave_type", "=", LEAVE_TYPE],
-                       ["from_date", "=", FROM_DATE], ["to_date", "=", TO_DATE]]
-            found = [row for row in self.erp.list("Leave Allocation", filters, ["name", "docstatus"])
-                     if row.get("docstatus") != 2]  # a cancelled allocation does not count
+            filters = [
+                ["employee", "=", employee["name"]],
+                ["leave_type", "=", LEAVE_TYPE],
+                ["from_date", "=", FROM_DATE],
+                ["to_date", "=", TO_DATE],
+            ]
+            found = [
+                row
+                for row in self.erp.list(
+                    "Leave Allocation", filters, ["name", "docstatus"]
+                )
+                if row.get("docstatus") != 2
+            ]  # a cancelled allocation does not count
             if found:
                 # A pre-existing draft is not silently submitted or replaced.
                 self.counts["unchanged"] += 1
                 if found[0].get("docstatus") == 0:
-                    self.problems.append((entry["position"], "matching Leave Allocation is draft"))
+                    self.problems.append(
+                        (entry["position"], "matching Leave Allocation is draft")
+                    )
                 continue
             allocation = {
-                "naming_series": "HR-LAL-.YYYY.-", "employee": employee["name"], "company": COMPANY,
-                "leave_type": LEAVE_TYPE, "from_date": FROM_DATE, "to_date": TO_DATE,
-                "new_leaves_allocated": entry["days"], "carry_forward": 1,
+                "naming_series": "HR-LAL-.YYYY.-",
+                "employee": employee["name"],
+                "company": COMPANY,
+                "leave_type": LEAVE_TYPE,
+                "from_date": FROM_DATE,
+                "to_date": TO_DATE,
+                "new_leaves_allocated": entry["days"],
+                "carry_forward": 1,
             }
             if leave_period_name:
                 allocation["leave_period"] = leave_period_name
             if not self.dry_run:
                 try:
                     created = self.erp.insert("Leave Allocation", allocation)
-                    self.erp.call("frappe.client.submit", doc=self.erp.get("Leave Allocation", created["name"]))
+                    self.erp.call(
+                        "frappe.client.submit",
+                        doc=self.erp.get("Leave Allocation", created["name"]),
+                    )
                 except ErpError as err:
                     self.counts["failed"] += 1
-                    self.problems.append((entry["position"], "Leave Allocation refused ({})".format(type(err).__name__)))
+                    self.problems.append(
+                        (
+                            entry["position"],
+                            f"Leave Allocation refused ({type(err).__name__})",
+                        )
+                    )
                     continue
             self.counts["created"] += 1
 
@@ -288,16 +393,27 @@ def write_defaults(path, defaults):
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     os.fchmod(fd, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as stream:
-        stream.write("# default allocations, check with Benchi: {}\n".format(len(defaults)))
+        stream.write(f"# default allocations, check with Benchi: {len(defaults)}\n")
         for employee, days in defaults:
-            stream.write("{}\t{}\t{}\n".format(employee.get("employee_name") or employee.get("name"),
-                                                  employee.get("name"), days))
+            stream.write(
+                "{}\t{}\t{}\n".format(
+                    employee.get("employee_name") or employee.get("name"),
+                    employee.get("name"),
+                    days,
+                )
+            )
 
 
 def main(argv):
-    parser = argparse.ArgumentParser(description="Set up 2026 HRMS holidays and Ferien allocations.")
-    parser.add_argument("--apply", action="store_true", help="write through the API (go-live bead only)")
-    parser.add_argument("--dry-run", action="store_true", help="read and report only (default)")
+    parser = argparse.ArgumentParser(
+        description="Set up 2026 HRMS holidays and Ferien allocations."
+    )
+    parser.add_argument(
+        "--apply", action="store_true", help="write through the API (go-live bead only)"
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="read and report only (default)"
+    )
     parser.add_argument("--token-file", default=TOKEN_FILE)
     args = parser.parse_args(argv)
     if args.apply and args.dry_run:
@@ -308,16 +424,40 @@ def main(argv):
     overrides, malformed = read_overrides(OVERRIDES_FILE)
     if malformed and not dry_run:
         # An apply with a row that did not parse would write the default for that employee.
-        print("aborted: {} malformed row(s) in {} (lines {}), nothing written".format(
-            len(malformed), OVERRIDES_FILE, ", ".join(str(number) for number in malformed)), file=sys.stderr)
+        print(
+            "aborted: {} malformed row(s) in {} (lines {}), nothing written".format(
+                len(malformed),
+                OVERRIDES_FILE,
+                ", ".join(str(number) for number in malformed),
+            ),
+            file=sys.stderr,
+        )
         return 2
     importer = LeaveImporter(erp, dry_run=dry_run)
     try:
-        all_employees = erp.list("Employee", fields=["name", "bexio_id", "status", "date_of_birth", "swiss_employment_level", "holiday_list", "employee_name"])
+        all_employees = erp.list(
+            "Employee",
+            fields=[
+                "name",
+                "bexio_id",
+                "status",
+                "date_of_birth",
+                "swiss_employment_level",
+                "holiday_list",
+                "employee_name",
+            ],
+        )
         company = erp.get("Company", COMPANY)
-        by_id = {str(row.get("bexio_id")): row for row in all_employees if row.get("bexio_id")}
+        by_id = {
+            str(row.get("bexio_id")): row
+            for row in all_employees
+            if row.get("bexio_id")
+        }
         plan, defaults, problems = build_plan(exports, by_id, overrides)
-        problems += [("overrides line {}".format(number), "row malformed, not applied") for number in malformed]
+        problems += [
+            (f"overrides line {number}", "row malformed, not applied")
+            for number in malformed
+        ]
         importer.run_setup()
         importer.run_employees(plan)
         if company.get("default_holiday_list") != HOLIDAY_LIST:
@@ -330,17 +470,19 @@ def main(argv):
             importer.counts["unchanged"] += 1
         write_defaults(DEFAULTS_FILE, defaults)
     except ErpError as err:
-        print("aborted: {}".format(err), file=sys.stderr)
+        print(f"aborted: {err}", file=sys.stderr)
         return 2
     for key, value in importer.counts.items():
-        print("{}: {}".format(key, value))
-    print("active employees: {}  defaults to check: {}".format(len(plan), len(defaults)))
-    print("holiday dates: {} public, {} total with weekends".format(len(PUBLIC_HOLIDAYS), len(holiday_rows())))
+        print(f"{key}: {value}")
+    print(f"active employees: {len(plan)}  defaults to check: {len(defaults)}")
+    print(
+        f"holiday dates: {len(PUBLIC_HOLIDAYS)} public, {len(holiday_rows())} total with weekends"
+    )
     print("dry run: nothing was written" if dry_run else "written to ERPNext")
-    print("private defaults list: {}".format(DEFAULTS_FILE))
-    print("private overrides list: {}".format(OVERRIDES_FILE))
+    print(f"private defaults list: {DEFAULTS_FILE}")
+    print(f"private overrides list: {OVERRIDES_FILE}")
     for position, problem in problems + importer.problems:
-        print("record {}: {}".format(position, problem), file=sys.stderr)
+        print(f"record {position}: {problem}", file=sys.stderr)
     return 1 if importer.counts["failed"] or problems or importer.problems else 0
 
 

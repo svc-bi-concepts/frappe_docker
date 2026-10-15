@@ -15,7 +15,10 @@ LIBRACORE_HOST = "data.libracore.ch"
 # erpnextswiss's QR endpoint (phpqrcode/api/iso20022.php), on libracore's host and on the others.
 QR_HELPER = "api/iso20022.php"
 # erpnextswiss's two QR formats, by their public names.
-QR_FORMATS = ["QR Sales Invoice", "QR Sales Invoice Switzerland Rounding - Description Details"]
+QR_FORMATS = [
+    "QR Sales Invoice",
+    "QR Sales Invoice Switzerland Rounding - Description Details",
+]
 
 
 def disable_libracore_print_formats():
@@ -36,7 +39,9 @@ def disable_libracore_print_formats():
     for name in rows:
         frappe.db.set_value("Print Format", name, "disabled", 1, update_modified=False)
     if rows:
-        print(f"bi_finance: disabled {len(rows)} erpnextswiss QR print format(s): {', '.join(rows)}")
+        print(
+            f"bi_finance: disabled {len(rows)} erpnextswiss QR print format(s): {', '.join(rows)}"
+        )
     return rows
 
 

@@ -41,7 +41,9 @@ DIFFERENCES_FILE = "bexio-payroll-live-differences.txt"
 VAT_ID_FILES = ("bexio-vat-on-payment-ids.txt", "bexio-vat-on-payment-out-ids.txt")
 JOURNAL = "Journal Entry"
 CURRENCY = "CHF"
-RULE_5 = "a banking entry and a manual entry of the same day and text (posting plan rule 5)"
+RULE_5 = (
+    "a banking entry and a manual entry of the same day and text (posting plan rule 5)"
+)
 VAT_BOOKED = "already booked by a VAT Journal Entry (import_vat_fix)"
 
 
@@ -59,9 +61,14 @@ def rule5_conflicts(data):
     for entry in data["manual_entries"]:
         for row in entry["entries"]:
             if row.get("id") is not None:
-                kinds[(str(entry["date"])[:10], row["description"])].add(pp._manual_bucket(entry))
-    return {line["id"] for line in data["journal"]
-            if len(kinds.get((line["date"][:10], line["description"]), ())) > 1}
+                kinds[(str(entry["date"])[:10], row["description"])].add(
+                    pp._manual_bucket(entry)
+                )
+    return {
+        line["id"]
+        for line in data["journal"]
+        if len(kinds.get((line["date"][:10], line["description"]), ())) > 1
+    }
 
 
 def vat_booked_ids(private=None):
@@ -96,7 +103,7 @@ def select(data, buckets, vat_ids):
 def _account(accounts, bexio_id):
     name = accounts.get(str(bexio_id))
     if name is None:
-        raise Unmapped("no ERPNext Account for bexio account {}".format(bexio_id))
+        raise Unmapped(f"no ERPNext Account for bexio account {bexio_id}")
     return name
 
 
@@ -113,15 +120,36 @@ def journal_entry(line, accounts):
     amount = float(line["amount"])
     remark = "bexio journal {}: {}".format(line["id"], line["description"])
     rows = [
-        {"account": debit, "user_remark": remark, "exchange_rate": factor, "debit": chf, "debit_in_account_currency": amount},
-        {"account": credit, "user_remark": remark, "exchange_rate": factor, "credit": chf, "credit_in_account_currency": amount},
+        {
+            "account": debit,
+            "user_remark": remark,
+            "exchange_rate": factor,
+            "debit": chf,
+            "debit_in_account_currency": amount,
+        },
+        {
+            "account": credit,
+            "user_remark": remark,
+            "exchange_rate": factor,
+            "credit": chf,
+            "credit_in_account_currency": amount,
+        },
     ]
     key = "journal-{}".format(line["id"])
-    return {"doctype": JOURNAL, "name": None, "bexio_id": key, "values": {
-        "company": im.COMPANY, "voucher_type": "Journal Entry", "bexio_id": key,
-        "posting_date": line["date"][:10], "user_remark": remark,
-        "multi_currency": int(factor != 1), "accounts": rows,
-    }}
+    return {
+        "doctype": JOURNAL,
+        "name": None,
+        "bexio_id": key,
+        "values": {
+            "company": im.COMPANY,
+            "voucher_type": "Journal Entry",
+            "bexio_id": key,
+            "posting_date": line["date"][:10],
+            "user_remark": remark,
+            "multi_currency": int(factor != 1),
+            "accounts": rows,
+        },
+    }
 
 
 def plan(lines, accounts):
@@ -146,21 +174,33 @@ def totals(lines):
 
 
 def report(per_year, left_out, unmapped, export_dir):
-    out = ["payroll lines dry run from {}".format(export_dir),
-           "{:<6}{:>8}{:>18}".format("year", "lines", "CHF")]
+    out = [
+        f"payroll lines dry run from {export_dir}",
+        "{:<6}{:>8}{:>18}".format("year", "lines", "CHF"),
+    ]
     for year in sorted(per_year):
         count, total = per_year[year]
-        out.append("{:<6}{:>8}{:>18,.2f}".format(year, count, total))
-    out.append("{:<6}{:>8}{:>18,.2f}".format("all", sum(c for c, _ in per_year.values()), sum((t for _, t in per_year.values()), Decimal("0"))))
-    out.append("left out: {}".format(len(left_out)))
-    out.append("unmapped: {}".format(len(unmapped)))
+        out.append(f"{year:<6}{count:>8}{total:>18,.2f}")
+    out.append(
+        "{:<6}{:>8}{:>18,.2f}".format(
+            "all",
+            sum(c for c, _ in per_year.values()),
+            sum((t for _, t in per_year.values()), Decimal("0")),
+        )
+    )
+    out.append(f"left out: {len(left_out)}")
+    out.append(f"unmapped: {len(unmapped)}")
     return "\n".join(out)
 
 
 def load_accounts(token_file):
     """bexio account id -> ERPNext Account name, read from ERPNext (read only)."""
     erp = im.Erp.from_file(token_file)
-    rows = erp.list("Account", [["company", "=", im.COMPANY], ["bexio_id", "is", "set"]], ["name", "bexio_id"])
+    rows = erp.list(
+        "Account",
+        [["company", "=", im.COMPANY], ["bexio_id", "is", "set"]],
+        ["name", "bexio_id"],
+    )
     return {str(r["bexio_id"]): r["name"] for r in rows}
 
 
@@ -175,8 +215,15 @@ def check(lines, accounts, erp, private=None):
 
     Returns the number of lines that are missing or differ.
     """
-    posted = erp.list("Journal Entry", [["company", "=", im.COMPANY], ["bexio_id", "like", "journal-%"], ["docstatus", "=", 1]],
-                      ["name", "bexio_id"])
+    posted = erp.list(
+        "Journal Entry",
+        [
+            ["company", "=", im.COMPANY],
+            ["bexio_id", "like", "journal-%"],
+            ["docstatus", "=", 1],
+        ],
+        ["name", "bexio_id"],
+    )
     voucher = {row["bexio_id"]: row["name"] for row in posted}
     wanted = ["journal-{}".format(line["id"]) for line in lines]
     names = [voucher[key] for key in wanted if key in voucher]
@@ -184,16 +231,34 @@ def check(lines, accounts, erp, private=None):
     # the GL of these vouchers, per bexio key and ERPNext account, debit minus credit
     gl = collections.defaultdict(lambda: collections.defaultdict(Decimal))
     for start in range(0, len(names), 50):
-        for row in erp.list("GL Entry", [["company", "=", im.COMPANY], ["is_cancelled", "=", 0], ["voucher_type", "=", "Journal Entry"],
-                                         ["voucher_no", "in", names[start:start + 50]]],
-                            ["voucher_no", "account", "debit", "credit"]):
-            gl[key_of[row["voucher_no"]]][row["account"]] += Decimal(str(row["debit"])) - Decimal(str(row["credit"]))
-    differs, want_total, have_total = [], collections.defaultdict(Decimal), collections.defaultdict(Decimal)
+        for row in erp.list(
+            "GL Entry",
+            [
+                ["company", "=", im.COMPANY],
+                ["is_cancelled", "=", 0],
+                ["voucher_type", "=", "Journal Entry"],
+                ["voucher_no", "in", names[start : start + 50]],
+            ],
+            ["voucher_no", "account", "debit", "credit"],
+        ):
+            gl[key_of[row["voucher_no"]]][row["account"]] += Decimal(
+                str(row["debit"])
+            ) - Decimal(str(row["credit"]))
+    differs, want_total, have_total = (
+        [],
+        collections.defaultdict(Decimal),
+        collections.defaultdict(Decimal),
+    )
     for line, key in zip(lines, wanted):
         chf = Decimal(str(line["base_currency_amount"]))
-        debit, credit = accounts[str(line["debit_account_id"])], accounts[str(line["credit_account_id"])]
+        debit, credit = (
+            accounts[str(line["debit_account_id"])],
+            accounts[str(line["credit_account_id"])],
+        )
         want = {debit: chf, credit: -chf}
-        have = {account: value for account, value in gl.get(key, {}).items() if value != 0}
+        have = {
+            account: value for account, value in gl.get(key, {}).items() if value != 0
+        }
         for account, value in want.items():
             want_total[(line["date"][:4], account)] += value
         for account, value in have.items():
@@ -204,23 +269,54 @@ def check(lines, accounts, erp, private=None):
             differs.append("journal {}: differs".format(line["id"]))
     ids = sorted(int(key.split("-")[1]) for key in wanted if key in voucher)
     # the same shape as the VAT id files, so vat_booked_ids and erp-fd93 read it the same way
-    ip.write_private(os.path.join(private, IDS_FILE), ["journal {} posted as a payroll Journal Entry (import_payroll)".format(i) for i in ids] or ["none"])
+    ip.write_private(
+        os.path.join(private, IDS_FILE),
+        [f"journal {i} posted as a payroll Journal Entry (import_payroll)" for i in ids]
+        or ["none"],
+    )
     ip.write_private(os.path.join(private, DIFFERENCES_FILE), differs or ["none"])
-    print("submitted Journal Entries keyed journal-%: {}; payroll lines: {}; posted for them: {}".format(len(posted), len(lines), len(ids)))
-    print("missing or differing: {}".format(len(differs)))
-    print("{:<6}{:<32}{:>18}{:>18}{:>14}".format("year", "account", "bexio", "ERPNext", "difference"))
+    print(
+        f"submitted Journal Entries keyed journal-%: {len(posted)}; payroll lines: {len(lines)}; posted for them: {len(ids)}"
+    )
+    print(f"missing or differing: {len(differs)}")
+    print(
+        "{:<6}{:<32}{:>18}{:>18}{:>14}".format(
+            "year", "account", "bexio", "ERPNext", "difference"
+        )
+    )
     for year, account in sorted(set(want_total) | set(have_total)):
         want, have = want_total[(year, account)], have_total[(year, account)]
-        print("{:<6}{:<32}{:>18,.2f}{:>18,.2f}{:>14,.2f}".format(year, account[:31], want, have, have - want))
+        print(
+            f"{year:<6}{account[:31]:<32}{want:>18,.2f}{have:>18,.2f}{have - want:>14,.2f}"
+        )
     return len(differs)
 
 
 def main(argv):
-    parser = argparse.ArgumentParser(description="Map the bexio payroll journal lines to ERPNext Journal Entries (offline).")
-    parser.add_argument("--export", default=None, help="export directory (default: the newest under <private>/bexio-export/)")
-    parser.add_argument("--dry-run", action="store_true", help="print the totals per year, write nothing to ERPNext")
-    parser.add_argument("--write", metavar="FILE", default=None, help="write the loader plan to a private file (bexio-drafts.sh FILE submit)")
-    parser.add_argument("--check", action="store_true", help="read ERPNext after the loader run: counts and GL sums against the lines, write nothing")
+    parser = argparse.ArgumentParser(
+        description="Map the bexio payroll journal lines to ERPNext Journal Entries (offline)."
+    )
+    parser.add_argument(
+        "--export",
+        default=None,
+        help="export directory (default: the newest under <private>/bexio-export/)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="print the totals per year, write nothing to ERPNext",
+    )
+    parser.add_argument(
+        "--write",
+        metavar="FILE",
+        default=None,
+        help="write the loader plan to a private file (bexio-drafts.sh FILE submit)",
+    )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="read ERPNext after the loader run: counts and GL sums against the lines, write nothing",
+    )
     parser.add_argument("--token-file", default=im.TOKEN_FILE)
     args = parser.parse_args(argv)
     if sum(bool(x) for x in (args.dry_run, args.write is not None, args.check)) != 1:
@@ -237,20 +333,28 @@ def main(argv):
             # the bexio account ids on the lines, as the accounts of the check
             return 1 if check(lines, accounts, erp) else 0
     except im.ErpError as err:
-        print("aborted: {}".format(err), file=sys.stderr)
+        print(f"aborted: {err}", file=sys.stderr)
         return 2
     documents, unmapped = plan(lines, accounts)
     print(report(totals(lines), left_out, unmapped, export_dir))
-    listed = ["journal {}: left out, {}".format(i, reason) for i, reason in left_out]
-    listed += ["journal {}: not written, {}".format(i, reason) for i, reason in unmapped]
+    listed = [f"journal {i}: left out, {reason}" for i, reason in left_out]
+    listed += [f"journal {i}: not written, {reason}" for i, reason in unmapped]
     ip.write_private(os.path.join(im.PRIVATE, LEFT_OUT_FILE), listed or ["none"])
-    print("left out and not written are listed by journal id in {}".format(os.path.join(im.PRIVATE, LEFT_OUT_FILE)))
+    print(
+        f"left out and not written are listed by journal id in {os.path.join(im.PRIVATE, LEFT_OUT_FILE)}"
+    )
     if args.write:
         if unmapped:
-            print("not written: {} line(s) have an unmapped account".format(len(unmapped)), file=sys.stderr)
+            print(
+                f"not written: {len(unmapped)} line(s) have an unmapped account",
+                file=sys.stderr,
+            )
             return 1
-        ip.write_private(args.write, [json.dumps({"documents": documents, "exchange_rates": []}, indent=1)])
-        print("{} Journal Entries handed to the loader in {}".format(len(documents), args.write))
+        ip.write_private(
+            args.write,
+            [json.dumps({"documents": documents, "exchange_rates": []}, indent=1)],
+        )
+        print(f"{len(documents)} Journal Entries handed to the loader in {args.write}")
     else:
         print("dry run: nothing was written to ERPNext")
     return 1 if unmapped else 0

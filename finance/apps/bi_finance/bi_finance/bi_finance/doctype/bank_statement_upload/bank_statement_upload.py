@@ -6,16 +6,18 @@ A failed run leaves the record Failed with the reason, and nothing of that run i
 """
 
 import frappe
+from bi_finance import camt_import
 from frappe.model.document import Document
 from frappe.utils import now_datetime
-
-from bi_finance import camt_import
 
 
 class BankStatementUpload(Document):
     def validate(self):
         before = self.get_doc_before_save()
-        if before is None or (before.statement_file == self.statement_file and before.bank_account == self.bank_account):
+        if before is None or (
+            before.statement_file == self.statement_file
+            and before.bank_account == self.bank_account
+        ):
             return
         if before.status == "Imported":
             frappe.throw("An imported upload keeps its file and Bank Account")
@@ -26,7 +28,7 @@ class BankStatementUpload(Document):
 
     def run_dry_run(self):
         if self.status == "Imported":
-            frappe.throw("{} is imported already; it keeps its dry run".format(self.name))
+            frappe.throw(f"{self.name} is imported already; it keeps its dry run")
         try:
             result = camt_import.dry_run(self.statement_file, self.bank_account)
         except Exception as err:
@@ -37,11 +39,15 @@ class BankStatementUpload(Document):
 
     def run_import(self):
         if self.status == "Imported":
-            frappe.throw("{} was imported on {}; an upload imports once".format(self.name, self.imported_on))
+            frappe.throw(
+                f"{self.name} was imported on {self.imported_on}; an upload imports once"
+            )
         if self.status != "Dry run":
             frappe.throw("Run the dry run on this file before the import")
         try:
-            result = camt_import.import_statement(self.statement_file, self.bank_account, upload=self.name)
+            result = camt_import.import_statement(
+                self.statement_file, self.bank_account, upload=self.name
+            )
         except Exception as err:
             self._fail(err)
         self._record(result, "Imported")
@@ -50,7 +56,11 @@ class BankStatementUpload(Document):
         self.imported_on = now_datetime()
         self.imported_by = frappe.session.user
         self.save()
-        return {"status": self.status, "imported": self.imported_count, "summary": self.summary}
+        return {
+            "status": self.status,
+            "imported": self.imported_count,
+            "summary": self.summary,
+        }
 
     def _record(self, result, status):
         self.status = status
@@ -69,21 +79,36 @@ def summary_text(result):
     """The dry run's (or import's) result as the record's summary: plain lines, one per count."""
     counts = result["counts"]
     lines = [
-        "Bank Account {} (IBAN {}, {})".format(result["bank_account"], result["iban"], result["currency"]),
+        "Bank Account {} (IBAN {}, {})".format(
+            result["bank_account"], result["iban"], result["currency"]
+        ),
         "File {}".format(result["version"]),
-        "Transactions: {} new, {} already on the account, {} matched to bexio lines".format(counts["new"], counts["id"], counts["bexio"]),
-        "Skipped: {} not booked, {} covered by a details entry".format(counts["skipped"]["not booked"], counts["skipped"]["covered"]),
+        "Transactions: {} new, {} already on the account, {} matched to bexio lines".format(
+            counts["new"], counts["id"], counts["bexio"]
+        ),
+        "Skipped: {} not booked, {} covered by a details entry".format(
+            counts["skipped"]["not booked"], counts["skipped"]["covered"]
+        ),
     ]
     if counts["by_month"]:
         lines.append("By booking month:")
         for month, month_counts in counts["by_month"].items():
-            lines.append("  {}: {} new, {} already on the account, {} matched to bexio lines".format(
-                month, month_counts["new"], month_counts["id"], month_counts["bexio"]))
+            lines.append(
+                "  {}: {} new, {} already on the account, {} matched to bexio lines".format(
+                    month,
+                    month_counts["new"],
+                    month_counts["id"],
+                    month_counts["bexio"],
+                )
+            )
     if result["balances"]:
         lines.append("Balance check (reported, never blocks):")
         for code, check in result["balances"].items():
-            lines.append("  {} {}: file {:.2f}, ledger {:.2f}, difference {:.2f}".format(
-                code, check["date"], check["file"], check["ledger"], check["diff"]))
+            lines.append(
+                "  {} {}: file {:.2f}, ledger {:.2f}, difference {:.2f}".format(
+                    code, check["date"], check["file"], check["ledger"], check["diff"]
+                )
+            )
     return "\n".join(lines)
 
 

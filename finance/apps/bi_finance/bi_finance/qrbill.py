@@ -17,15 +17,20 @@ import re
 from decimal import ROUND_HALF_UP, Decimal
 
 import frappe
-from frappe import _
-
-from pypdf import PdfReader
-
 from bi_finance.reference import creditor_reference, reference_text
+from frappe import _
+from pypdf import PdfReader
 
 # Field limits from the guidelines: name and street 70, building number and
 # postal code 16, town 35, message 140.
-NAME_MAX, STREET_MAX, BUILDING_MAX, POSTAL_MAX, TOWN_MAX, MESSAGE_MAX = 70, 70, 16, 16, 35, 140
+NAME_MAX, STREET_MAX, BUILDING_MAX, POSTAL_MAX, TOWN_MAX, MESSAGE_MAX = (
+    70,
+    70,
+    16,
+    16,
+    35,
+    140,
+)
 CURRENCIES = ("CHF", "EUR")
 EOL = "\r\n"
 EMPTY_ADDRESS = [""] * 7
@@ -52,7 +57,7 @@ def split_street(line):
 def iban_text(iban):
     """The IBAN in groups of four, as the slip prints it (SIX); the QR text keeps it unspaced."""
     compact = iban.replace(" ", "").upper()
-    return " ".join(compact[i:i + 4] for i in range(0, len(compact), 4))
+    return " ".join(compact[i : i + 4] for i in range(0, len(compact), 4))
 
 
 def is_qr_iban(iban):
@@ -62,7 +67,9 @@ def is_qr_iban(iban):
 
 def amount_text(amount, currency):
     if currency not in CURRENCIES:
-        raise ValueError(f"currency {currency} is not allowed on a QR-bill; use CHF or EUR")
+        raise ValueError(
+            f"currency {currency} is not allowed on a QR-bill; use CHF or EUR"
+        )
     value = Decimal(str(amount)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     if not Decimal("0.01") <= value <= Decimal("999999999.99"):
         raise ValueError(f"amount {value} is outside the QR-bill range")
@@ -91,10 +98,14 @@ def payload(iban, creditor, amount, currency, debtor=None, message="", reference
     if is_qr_iban(iban):
         raise ValueError("QR-IBAN needs a QR reference, which is not supported yet")
     lines = [
-        "SPC", "0200", "1", iban,
+        "SPC",
+        "0200",
+        "1",
+        iban,
         *creditor,
         *EMPTY_ADDRESS,  # ultimate creditor, not used
-        amount_text(amount, currency), currency,
+        amount_text(amount, currency),
+        currency,
         *(debtor or EMPTY_ADDRESS),
         *(["SCOR", reference] if reference else ["NON", ""]),
         _clip(message, MESSAGE_MAX),
@@ -125,7 +136,9 @@ def svg(text):
     size = n + 2 * QUIET_MODULES
     dark = "".join(
         f"M{x + QUIET_MODULES},{y + QUIET_MODULES}h1v1h-1z"
-        for y, row in enumerate(code) for x, v in enumerate(row) if v
+        for y, row in enumerate(code)
+        for x, v in enumerate(row)
+        if v
     )
     # The Swiss cross of the guidelines: a 7 mm box with a white border, a black square
     # in it and a white cross on the square. Measured on a 19.8 unit box: square 0.7 to
@@ -180,15 +193,28 @@ def _company_account(company, currency):
     """
     rows = frappe.get_all(
         "Bank Account",
-        filters={"company": company, "is_company_account": 1, "disabled": 0, "iban": ["is", "set"]},
+        filters={
+            "company": company,
+            "is_company_account": 1,
+            "disabled": 0,
+            "iban": ["is", "set"],
+        },
         fields=["name", "iban", "account"],
     )
-    rows = [r for r in rows if frappe.db.get_value("Account", r.account, "account_currency") == currency]
+    rows = [
+        r
+        for r in rows
+        if frappe.db.get_value("Account", r.account, "account_currency") == currency
+    ]
     if len(rows) > 1:
         default = frappe.db.get_value("Company", company, "default_bank_account")
         rows = [r for r in rows if r.account == default] or rows
     if len(rows) != 1:
-        frappe.throw(_("Expected one company bank account with an IBAN in {0}, found {1}").format(currency, len(rows)))
+        frappe.throw(
+            _(
+                "Expected one company bank account with an IBAN in {0}, found {1}"
+            ).format(currency, len(rows))
+        )
     return rows[0]
 
 
@@ -202,24 +228,52 @@ def sales_invoice_iban(inv):
 # language picks the set; "invoice" is the word of the additional information line ("Rechnung 1").
 SLIP_LABELS = {
     "de": {
-        "payment_part": "Zahlteil", "receipt": "Empfangsschein", "account": "Konto / Zahlbar an",
-        "reference": "Referenz", "additional": "Zusätzliche Informationen", "payable_by": "Zahlbar durch",
-        "currency": "Währung", "amount": "Betrag", "acceptance": "Annahmestelle", "invoice": "Rechnung",
+        "payment_part": "Zahlteil",
+        "receipt": "Empfangsschein",
+        "account": "Konto / Zahlbar an",
+        "reference": "Referenz",
+        "additional": "Zusätzliche Informationen",
+        "payable_by": "Zahlbar durch",
+        "currency": "Währung",
+        "amount": "Betrag",
+        "acceptance": "Annahmestelle",
+        "invoice": "Rechnung",
     },
     "fr": {
-        "payment_part": "Section paiement", "receipt": "Récépissé", "account": "Compte / Payable à",
-        "reference": "Référence", "additional": "Informations supplémentaires", "payable_by": "Payable par",
-        "currency": "Monnaie", "amount": "Montant", "acceptance": "Point de dépôt", "invoice": "Facture",
+        "payment_part": "Section paiement",
+        "receipt": "Récépissé",
+        "account": "Compte / Payable à",
+        "reference": "Référence",
+        "additional": "Informations supplémentaires",
+        "payable_by": "Payable par",
+        "currency": "Monnaie",
+        "amount": "Montant",
+        "acceptance": "Point de dépôt",
+        "invoice": "Facture",
     },
     "it": {
-        "payment_part": "Sezione pagamento", "receipt": "Ricevuta", "account": "Conto / Pagabile da",
-        "reference": "Riferimento", "additional": "Informazioni supplementari", "payable_by": "Pagabile da",
-        "currency": "Valuta", "amount": "Importo", "acceptance": "Punto di accettazione", "invoice": "Fattura",
+        "payment_part": "Sezione pagamento",
+        "receipt": "Ricevuta",
+        "account": "Conto / Pagabile da",
+        "reference": "Riferimento",
+        "additional": "Informazioni supplementari",
+        "payable_by": "Pagabile da",
+        "currency": "Valuta",
+        "amount": "Importo",
+        "acceptance": "Punto di accettazione",
+        "invoice": "Fattura",
     },
     "en": {
-        "payment_part": "Payment part", "receipt": "Receipt", "account": "Account / Payable to",
-        "reference": "Reference", "additional": "Additional information", "payable_by": "Payable by",
-        "currency": "Currency", "amount": "Amount", "acceptance": "Acceptance point", "invoice": "Invoice",
+        "payment_part": "Payment part",
+        "receipt": "Receipt",
+        "account": "Account / Payable to",
+        "reference": "Reference",
+        "additional": "Additional information",
+        "payable_by": "Payable by",
+        "currency": "Currency",
+        "amount": "Amount",
+        "acceptance": "Acceptance point",
+        "invoice": "Invoice",
     },
 }
 
@@ -242,14 +296,24 @@ def sales_invoice_payload(inv):
     account = _company_account(inv.company, inv.currency)
     creditor = _address(inv.company_address)
     if not creditor or not (creditor[4] and creditor[5]):
-        frappe.throw(_("The company address needs a postal code and a town for the QR-bill"))
-    creditor[1] = _clip(frappe.db.get_value("Company", inv.company, "company_name") or inv.company, NAME_MAX)
+        frappe.throw(
+            _("The company address needs a postal code and a town for the QR-bill")
+        )
+    creditor[1] = _clip(
+        frappe.db.get_value("Company", inv.company, "company_name") or inv.company,
+        NAME_MAX,
+    )
     debtor = _address(inv.customer_address)
     if debtor:
         debtor[1] = _clip(inv.customer_name or debtor[1], NAME_MAX)
     return payload(
-        account.iban, creditor, inv.rounded_total or inv.grand_total, inv.currency, debtor,
-        f"{slip_labels(inv)['invoice']} {inv.name}", reference=creditor_reference(inv.name),
+        account.iban,
+        creditor,
+        inv.rounded_total or inv.grand_total,
+        inv.currency,
+        debtor,
+        f"{slip_labels(inv)['invoice']} {inv.name}",
+        reference=creditor_reference(inv.name),
     )
 
 
@@ -263,7 +327,9 @@ def sales_invoice_qr_uri(inv):
         text = sales_invoice_payload(inv)
     except ValueError as e:
         frappe.throw(str(e))
-    return "data:image/svg+xml;base64," + base64.b64encode(svg(text).encode("utf-8")).decode("ascii")
+    return "data:image/svg+xml;base64," + base64.b64encode(
+        svg(text).encode("utf-8")
+    ).decode("ascii")
 
 
 # The slip sits at the foot of the last page. The page cannot measure its body (wkhtmltopdf
@@ -301,7 +367,11 @@ def marker_mm(pdf_bytes, marker):
 
     reader.pages[-1].extract_text(visitor_text=visitor)
     if not found:
-        frappe.throw(_("The payment slip cannot be placed: {0} is missing from the rendered PDF").format(marker))
+        frappe.throw(
+            _(
+                "The payment slip cannot be placed: {0} is missing from the rendered PDF"
+            ).format(marker)
+        )
     return len(reader.pages), found[-1] * PT_MM
 
 
@@ -319,7 +389,9 @@ def sales_invoice_slip_spacer(inv):
         return 0.0
     inv.flags.bi_qr_measure = True
     try:
-        pdf = frappe.get_print(inv.doctype, inv.name, print_format=PRINT_FORMAT, as_pdf=True, doc=inv)
+        pdf = frappe.get_print(
+            inv.doctype, inv.name, print_format=PRINT_FORMAT, as_pdf=True, doc=inv
+        )
     finally:
         inv.flags.bi_qr_measure = False
     return spacer_mm(body_end_mm(pdf)[1])

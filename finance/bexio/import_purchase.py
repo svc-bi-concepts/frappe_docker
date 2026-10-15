@@ -52,7 +52,7 @@ import json
 import os
 import subprocess
 import sys
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 
 import import_master as im
 
@@ -66,7 +66,9 @@ DETAIL_FILE = "bills-detail.json"
 EXPENSES_FILE = "expenses.json"
 PROBLEMS_FILE = "bexio-purchase-dry-run.txt"
 DRAFTS_FILE = "bexio-purchase-drafts.json"
-LOADER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "scripts", "bexio-drafts.sh")
+LOADER = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "scripts", "bexio-drafts.sh"
+)
 # the most a line's VAT may differ from its rate worked out on the net
 TAX_TOLERANCE = Decimal("0.05")
 # the most a foreign bill's CHF total may differ from bexio's own CHF booking on the payables account
@@ -75,14 +77,34 @@ PAYABLES = "2000"
 
 # bexio purchase VAT codes. bexio books the input VAT of a bill to its transitory account 1172 at the bill date and moves
 # it to 1170 or 1171 when the bill is paid (import_payments_out.VAT_MOVES), so every code books to 1172 here
-MAT_SV_IDS = (22, 35, 8, 34, 21, 36)  # VM77, VM81, VM25, VM26, VM37, VM38: Material und Dienstleistungen
-INV_BA_IDS = (24, 38, 12, 37, 23, 39)  # VB77, VB81, VB25, VB26, VB37, VB38: Investitionen und Aufwand
-VORSTEUER = dict([(i, "1172") for i in MAT_SV_IDS + INV_BA_IDS])
+MAT_SV_IDS = (
+    22,
+    35,
+    8,
+    34,
+    21,
+    36,
+)  # VM77, VM81, VM25, VM26, VM37, VM38: Material und Dienstleistungen
+INV_BA_IDS = (
+    24,
+    38,
+    12,
+    37,
+    23,
+    39,
+)  # VB77, VB81, VB25, VB26, VB37, VB38: Investitionen und Aufwand
+VORSTEUER = {i: "1172" for i in MAT_SV_IDS + INV_BA_IDS}
 # reverse charge (Bezugsteuer): the Vorsteuer account of the kind, and the rate; the deduction is on BEZUGSTEUER
-BEZUG = {19: ("1172", 7.7), 33: ("1172", 8.1), 20: ("1172", 7.7), 32: ("1172", 8.1)}  # BZM77, BZM81, BZB77, BZB81
+BEZUG = {
+    19: ("1172", 7.7),
+    33: ("1172", 8.1),
+    20: ("1172", 7.7),
+    32: ("1172", 8.1),
+}  # BZM77, BZM81, BZB77, BZB81
 BEZUGSTEUER = "2202"  # the liability bexio books the reverse charge on, as its bill-date lines show
 # 0 % purchase code and the import taxes that carry no VAT on the bill: no tax row
 ZERO_RATE_IDS = (47, 7, 10)
+
 
 class MappingError(Exception):
     """A record that has no ERPNext home as it is: the dry run lists it, the live run does not write it."""
@@ -96,19 +118,37 @@ class Lookups:
     """What the mapping reads from ERPNext: suppliers, accounts and Item Tax Templates by bexio_id."""
 
     def __init__(self, suppliers, accounts, account_by_number, taxes):
-        self.suppliers = suppliers              # bexio contact id -> Supplier name
-        self.accounts = accounts                # bexio account id -> Account name
+        self.suppliers = suppliers  # bexio contact id -> Supplier name
+        self.accounts = accounts  # bexio account id -> Account name
         self.account_by_number = account_by_number  # KMU account number -> Account name
-        self.taxes = taxes                      # bexio tax id -> Item Tax Template name
+        self.taxes = taxes  # bexio tax id -> Item Tax Template name
 
     @classmethod
     def from_erp(cls, erp):
-        accounts = erp.list("Account", [["company", "=", im.COMPANY]], ["name", "account_number", "bexio_id"])
+        accounts = erp.list(
+            "Account",
+            [["company", "=", im.COMPANY]],
+            ["name", "account_number", "bexio_id"],
+        )
         return cls(
-            suppliers={r["bexio_id"]: r["name"] for r in erp.list("Supplier", [["bexio_id", "is", "set"]], ["name", "bexio_id"])},
+            suppliers={
+                r["bexio_id"]: r["name"]
+                for r in erp.list(
+                    "Supplier", [["bexio_id", "is", "set"]], ["name", "bexio_id"]
+                )
+            },
             accounts={r["bexio_id"]: r["name"] for r in accounts if r["bexio_id"]},
-            account_by_number={r["account_number"]: r["name"] for r in accounts if r["account_number"]},
-            taxes={r["bexio_id"]: r["name"] for r in erp.list("Item Tax Template", [["company", "=", im.COMPANY], ["bexio_id", "is", "set"]], ["name", "bexio_id"])},
+            account_by_number={
+                r["account_number"]: r["name"] for r in accounts if r["account_number"]
+            },
+            taxes={
+                r["bexio_id"]: r["name"]
+                for r in erp.list(
+                    "Item Tax Template",
+                    [["company", "=", im.COMPANY], ["bexio_id", "is", "set"]],
+                    ["name", "bexio_id"],
+                )
+            },
         )
 
 
@@ -123,7 +163,7 @@ def line_vat(tax_id):
         account, rate = BEZUG[tax_id]
         return rate, None, account
     if tax_id not in VORSTEUER:
-        raise MappingError("unknown purchase VAT code {}".format(tax_id))
+        raise MappingError(f"unknown purchase VAT code {tax_id}")
     rate, kind = im.VAT_OF_TAX_ID[tax_id]
     return rate, kind, VORSTEUER[tax_id]
 
@@ -148,17 +188,29 @@ def _sign(row):
 def _document(bexio_id, record, supplier, currency, rate_of_exchange, lines, taxes):
     """The Purchase Invoice dict; lines are (item row, Decimal net), taxes are {(account, title, Add or Deduct): Decimal}."""
     return {
-        "doctype": "Purchase Invoice", "company": im.COMPANY, "supplier": supplier,
-        "bill_no": record.get("vendor_ref") or record.get("document_no") or str(bexio_id),
-        "bill_date": record["bill_date"], "posting_date": record["bill_date"], "set_posting_time": 1,
+        "doctype": "Purchase Invoice",
+        "company": im.COMPANY,
+        "supplier": supplier,
+        "bill_no": record.get("vendor_ref")
+        or record.get("document_no")
+        or str(bexio_id),
+        "bill_date": record["bill_date"],
+        "posting_date": record["bill_date"],
+        "set_posting_time": 1,
         "due_date": record.get("due_date") or record["bill_date"],
-        "currency": currency, "conversion_rate": rate_of_exchange,
+        "currency": currency,
+        "conversion_rate": rate_of_exchange,
         "bexio_id": str(bexio_id),
         ATTACHMENTS_FIELD: ",".join(record.get("attachment_ids") or []),
         "items": [row for row, _ in lines],
         "taxes": [
-            {"charge_type": "Actual", "account_head": account, "description": title,
-             "tax_amount": float(amount), "add_deduct_tax": kind}
+            {
+                "charge_type": "Actual",
+                "account_head": account,
+                "description": title,
+                "tax_amount": float(amount),
+                "add_deduct_tax": kind,
+            }
             for (account, title, kind), amount in taxes.items()
         ],
     }
@@ -170,8 +222,13 @@ def _lines_of(bill):
     The lines are line_items where the bill has them; otherwise the detail positions, with a quantity and a unit price.
     """
     if bill.get("line_items"):
-        if bill.get("item_net") and any(line.get("tax_calc") and line.get("tax_id") not in BEZUG for line in bill["line_items"]):
-            raise MappingError("net amounts with VAT other than reverse charge are not mapped")
+        if bill.get("item_net") and any(
+            line.get("tax_calc") and line.get("tax_id") not in BEZUG
+            for line in bill["line_items"]
+        ):
+            raise MappingError(
+                "net amounts with VAT other than reverse charge are not mapped"
+            )
         lines = []
         for line in bill["line_items"]:
             if bill.get("item_net"):
@@ -181,15 +238,28 @@ def _lines_of(bill):
             else:
                 given = _money(line.get("tax_calc") or 0)
                 net = _money(line["amount"]) - given
-            lines.append({"text": line.get("title") or "", "account_id": line["booking_account_id"],
-                          "tax_id": line.get("tax_id"), "net": net, "given": given})
+            lines.append(
+                {
+                    "text": line.get("title") or "",
+                    "account_id": line["booking_account_id"],
+                    "tax_id": line.get("tax_id"),
+                    "net": net,
+                    "given": given,
+                }
+            )
         return lines
     lines = []
     for pos in bill.get("positions") or []:
         quantity, price = _money(pos["amount"]), _money(pos["unit_price"])
-        lines.append({"text": pos.get("text") or "", "account_id": pos["booking_account_id"],
-                      "tax_id": pos.get("tax_id"), "net": (quantity * price).quantize(CENT, rounding=ROUND_HALF_UP),
-                      "given": None})
+        lines.append(
+            {
+                "text": pos.get("text") or "",
+                "account_id": pos["booking_account_id"],
+                "tax_id": pos.get("tax_id"),
+                "net": (quantity * price).quantize(CENT, rounding=ROUND_HALF_UP),
+                "given": None,
+            }
+        )
     return lines
 
 
@@ -206,51 +276,81 @@ def map_bill(bill, lookups):
     contact = bill.get("supplier_id", bill.get("contact_id"))
     supplier = lookups.suppliers.get(str(contact))
     if not supplier:
-        raise MappingError("no Supplier for contact {}".format(contact))
+        raise MappingError(f"no Supplier for contact {contact}")
     currency = bill["currency_code"]
     if currency != BASE_CURRENCY and not bill.get("exchange_rate"):
-        raise MappingError("no exchange rate for {}".format(currency))
-    rate_of_exchange = _money(bill["exchange_rate"]) if currency != BASE_CURRENCY else ONE
+        raise MappingError(f"no exchange rate for {currency}")
+    rate_of_exchange = (
+        _money(bill["exchange_rate"]) if currency != BASE_CURRENCY else ONE
+    )
 
     def chf(amount):
-        return amount if currency == BASE_CURRENCY else (amount * rate_of_exchange).quantize(CENT, rounding=ROUND_HALF_UP)
+        return (
+            amount
+            if currency == BASE_CURRENCY
+            else (amount * rate_of_exchange).quantize(CENT, rounding=ROUND_HALF_UP)
+        )
 
     lines, taxes = [], {}
     for line in lines_in:
         expense = lookups.accounts.get(str(line["account_id"]))
         if not expense:
-            raise MappingError("no Account for booking account {}".format(line["account_id"]))
+            raise MappingError(
+                "no Account for booking account {}".format(line["account_id"])
+            )
         net = line["net"]
-        lines.append(({
-            "item_code": ITEM, "item_name": ITEM, "description": line["text"] or ITEM, "uom": "Nos",
-            "qty": 1.0, "rate": float(chf(net)), "amount": float(chf(net)), "expense_account": expense,
-        }, net))
+        lines.append(
+            (
+                {
+                    "item_code": ITEM,
+                    "item_name": ITEM,
+                    "description": line["text"] or ITEM,
+                    "uom": "Nos",
+                    "qty": 1.0,
+                    "rate": float(chf(net)),
+                    "amount": float(chf(net)),
+                    "expense_account": expense,
+                },
+                net,
+            )
+        )
         rate, kind, account = line_vat(line["tax_id"])
         if rate == 0:
             if line["given"]:
-                raise MappingError("VAT {} on a line without a VAT code".format(line["given"]))
+                raise MappingError(
+                    "VAT {} on a line without a VAT code".format(line["given"])
+                )
             continue
         template = lookups.taxes.get(str(line["tax_id"]))
         if not template:
-            raise MappingError("no Item Tax Template with bexio_id {} in ERPNext".format(line["tax_id"]))
+            raise MappingError(
+                "no Item Tax Template with bexio_id {} in ERPNext".format(
+                    line["tax_id"]
+                )
+            )
         account_name = lookups.account_by_number.get(account)
         if not account_name:
-            raise MappingError("no Account {} in ERPNext".format(account))
+            raise MappingError(f"no Account {account} in ERPNext")
         tax = line["given"] if line["given"] is not None else _tax_of(net, rate)
         if abs(tax - _tax_of(net, rate)) > TAX_TOLERANCE:
-            raise MappingError("VAT {} is not {}% of the net {}".format(tax, rate, net))
+            raise MappingError(f"VAT {tax} is not {rate}% of the net {net}")
         if line["tax_id"] in BEZUG:
             deduction = lookups.account_by_number.get(BEZUGSTEUER)
             if not deduction:
-                raise MappingError("no Account {} in ERPNext".format(BEZUGSTEUER))
-            for key in ((account_name, template, "Add"), (deduction, template, "Deduct")):
+                raise MappingError(f"no Account {BEZUGSTEUER} in ERPNext")
+            for key in (
+                (account_name, template, "Add"),
+                (deduction, template, "Deduct"),
+            ):
                 taxes[key] = taxes.get(key, ZERO) + chf(tax)
             continue
         key = (account_name, template, "Add")
         taxes[key] = taxes.get(key, ZERO) + chf(tax)
     doc = _document(bill["id"], bill, supplier, BASE_CURRENCY, 1.0, lines, taxes)
     if currency != BASE_CURRENCY:
-        doc["remarks"] = "bexio: {} {:.2f} @ {:f}".format(currency, _money(bill["gross"]), rate_of_exchange)
+        doc["remarks"] = "bexio: {} {:.2f} @ {:f}".format(
+            currency, _money(bill["gross"]), rate_of_exchange
+        )
     return doc
 
 
@@ -258,10 +358,10 @@ def journal_problem(bill, total, booked):
     """Why a foreign bill's CHF total is not bexio's own CHF booking on the payables account, or None when it is."""
     chf = booked.get(("KbBill", str(bill["id"])))
     if chf is None:
-        return "bexio's journal has no CHF booking on {} for the bill".format(PAYABLES)
+        return f"bexio's journal has no CHF booking on {PAYABLES} for the bill"
     # the payables account is credited: its booking is the negative of the debit-positive sum
     if abs(total + chf) > JOURNAL_TOLERANCE:
-        return "CHF total differs from bexio's CHF booking on {} by {:+}".format(PAYABLES, total + chf)
+        return f"CHF total differs from bexio's CHF booking on {PAYABLES} by {total + chf:+}"
     return None
 
 
@@ -271,18 +371,39 @@ def map_expense(expense, lookups):
     if expense.get("status") == "draft" and gross == ZERO:
         raise Skipped("draft with gross 0")
     if expense.get("tax_id") not in ZERO_RATE_IDS:
-        raise Skipped("expense with VAT: the net split is not in the export; left to erp-a2ma")
+        raise Skipped(
+            "expense with VAT: the net split is not in the export; left to erp-a2ma"
+        )
     supplier = lookups.suppliers.get(str(expense.get("contact_id")))
     if not supplier:
-        raise MappingError("no Supplier for contact {}".format(expense.get("contact_id")))
+        raise MappingError(
+            "no Supplier for contact {}".format(expense.get("contact_id"))
+        )
     account = lookups.accounts.get(str(expense["booking_account_id"]))
     if not account:
-        raise MappingError("no Account for booking account {}".format(expense["booking_account_id"]))
+        raise MappingError(
+            "no Account for booking account {}".format(expense["booking_account_id"])
+        )
     record = dict(expense, bill_date=expense["paid_on"])
-    item = {"item_code": ITEM, "item_name": ITEM, "description": expense.get("text") or ITEM, "uom": "Nos",
-            "qty": 1, "rate": float(gross), "amount": float(gross), "expense_account": account}
-    return _document(expense["id"], record, supplier, expense["currency_code"],
-                     float(expense.get("exchange_rate") or 1), [(item, gross)], {})
+    item = {
+        "item_code": ITEM,
+        "item_name": ITEM,
+        "description": expense.get("text") or ITEM,
+        "uom": "Nos",
+        "qty": 1,
+        "rate": float(gross),
+        "amount": float(gross),
+        "expense_account": account,
+    }
+    return _document(
+        expense["id"],
+        record,
+        supplier,
+        expense["currency_code"],
+        float(expense.get("exchange_rate") or 1),
+        [(item, gross)],
+        {},
+    )
 
 
 def document_totals(doc):
@@ -295,7 +416,8 @@ def document_totals(doc):
 def drafts(bills, lookups, booked):
     """The bills that map and whose total is bexio's, as the loader takes them: each named by bexio's document
     number, its ERPNext name. A bill whose total differs is left out; the dry run lists it. A foreign bill's
-    total is checked against bexio's CHF booking (booked, from import_master.booked_chf) instead."""
+    total is checked against bexio's CHF booking (booked, from import_master.booked_chf) instead.
+    """
     out, names = [], set()
     for bill in bills:
         try:
@@ -309,10 +431,16 @@ def drafts(bills, lookups, booked):
             continue
         name = str(bill["document_no"])
         if name in names:
-            raise MappingError("two bills with the document number {}".format(name))
+            raise MappingError(f"two bills with the document number {name}")
         names.add(name)
-        out.append({"doctype": "Purchase Invoice", "name": name, "bexio_id": doc["bexio_id"],
-                    "values": {k: v for k, v in doc.items() if k != "doctype"}})
+        out.append(
+            {
+                "doctype": "Purchase Invoice",
+                "name": name,
+                "bexio_id": doc["bexio_id"],
+                "values": {k: v for k, v in doc.items() if k != "doctype"},
+            }
+        )
     return out
 
 
@@ -324,20 +452,40 @@ class Totals:
         self.problems = []
 
     def row(self, year, currency):
-        return self.rows.setdefault((year, currency), {
-            "records": 0, "mapped": 0, "skipped": 0, "unmapped": 0, "differ": 0,
-            "net": ZERO, "tax": ZERO, "gross": ZERO, "erp_net": ZERO, "erp_tax": ZERO, "erp_gross": ZERO,
-        })
+        return self.rows.setdefault(
+            (year, currency),
+            {
+                "records": 0,
+                "mapped": 0,
+                "skipped": 0,
+                "unmapped": 0,
+                "differ": 0,
+                "net": ZERO,
+                "tax": ZERO,
+                "gross": ZERO,
+                "erp_net": ZERO,
+                "erp_tax": ZERO,
+                "erp_gross": ZERO,
+            },
+        )
 
 
 def dry_run(bills, expenses, lookups, booked):
     """Map every record and compare the totals with bexio's; writes nothing. Returns the Totals.
 
-    A foreign bill's ERPNext totals are in CHF, so they are compared with bexio's CHF booking, not with its own totals."""
+    A foreign bill's ERPNext totals are in CHF, so they are compared with bexio's CHF booking, not with its own totals.
+    """
     totals = Totals()
-    for kind, records, mapper in (("bill", bills, map_bill), ("expense", expenses, map_expense)):
+    for kind, records, mapper in (
+        ("bill", bills, map_bill),
+        ("expense", expenses, map_expense),
+    ):
         for rec in records:
-            day = _day(rec) if kind == "bill" else datetime.date.fromisoformat(rec["paid_on"])
+            day = (
+                _day(rec)
+                if kind == "bill"
+                else datetime.date.fromisoformat(rec["paid_on"])
+            )
             row = totals.row(day.year, rec["currency_code"])
             row["records"] += 1
             gross = _money(rec["gross"])
@@ -350,11 +498,11 @@ def dry_run(bills, expenses, lookups, booked):
                 doc = mapper(rec, lookups)
             except Skipped as err:
                 row["skipped"] += 1
-                totals.problems.append("{}: skipped, {}".format(ref, err))
+                totals.problems.append(f"{ref}: skipped, {err}")
                 continue
             except MappingError as err:
                 row["unmapped"] += 1
-                totals.problems.append("{}: unmapped, {}".format(ref, err))
+                totals.problems.append(f"{ref}: unmapped, {err}")
                 continue
             row["mapped"] += 1
             erp_net, erp_tax, erp_gross = document_totals(doc)
@@ -365,11 +513,14 @@ def dry_run(bills, expenses, lookups, booked):
                 problem = journal_problem(rec, erp_gross, booked)
                 if problem:
                     row["differ"] += 1
-                    totals.problems.append("{}: differs, {}".format(ref, problem))
+                    totals.problems.append(f"{ref}: differs, {problem}")
             elif (erp_net, erp_tax, erp_gross) != (net, gross - net, gross):
                 row["differ"] += 1
-                totals.problems.append("{}: differs, bexio {} {} {} against ERPNext {} {} {}".format(
-                    ref, net, gross - net, gross, erp_net, erp_tax, erp_gross))
+                totals.problems.append(
+                    "{}: differs, bexio {} {} {} against ERPNext {} {} {}".format(
+                        ref, net, gross - net, gross, erp_net, erp_tax, erp_gross
+                    )
+                )
     return totals
 
 
@@ -380,14 +531,41 @@ def write_private(path, lines):
 
 
 def report(totals, export_dir):
-    lines = ["purchase dry run from {}".format(export_dir),
-             "{:<6}{:<5}{:>8}{:>8}{:>9}{:>9}{:>9}{:>14}{:>12}{:>14}{:>10}".format(
-                 "year", "cur", "records", "mapped", "skipped", "unmapped", "differ", "net", "tax", "gross", "erp gross")]
+    lines = [
+        f"purchase dry run from {export_dir}",
+        "{:<6}{:<5}{:>8}{:>8}{:>9}{:>9}{:>9}{:>14}{:>12}{:>14}{:>10}".format(
+            "year",
+            "cur",
+            "records",
+            "mapped",
+            "skipped",
+            "unmapped",
+            "differ",
+            "net",
+            "tax",
+            "gross",
+            "erp gross",
+        ),
+    ]
     for (year, currency), r in sorted(totals.rows.items()):
-        lines.append("{:<6}{:<5}{:>8}{:>8}{:>9}{:>9}{:>9}{:>14}{:>12}{:>14}{:>10}".format(
-            year, currency, r["records"], r["mapped"], r["skipped"], r["unmapped"], r["differ"],
-            r["net"], r["tax"], r["gross"], r["erp_gross"]))
-    lines.append("a row in a foreign currency: bexio's columns are in that currency; erp gross is CHF, checked against bexio's CHF booking")
+        lines.append(
+            "{:<6}{:<5}{:>8}{:>8}{:>9}{:>9}{:>9}{:>14}{:>12}{:>14}{:>10}".format(
+                year,
+                currency,
+                r["records"],
+                r["mapped"],
+                r["skipped"],
+                r["unmapped"],
+                r["differ"],
+                r["net"],
+                r["tax"],
+                r["gross"],
+                r["erp_gross"],
+            )
+        )
+    lines.append(
+        "a row in a foreign currency: bexio's columns are in that currency; erp gross is CHF, checked against bexio's CHF booking"
+    )
     lines.append("dry run: nothing was written")
     return "\n".join(lines)
 
@@ -421,14 +599,30 @@ def load_booked(export_dir):
         if os.path.exists(path):
             with open(path, encoding="utf-8") as f:
                 loaded[name] = json.load(f)
-    return im.booked_chf(loaded.get("journal", []), loaded.get("accounts", []), PAYABLES)
+    return im.booked_chf(
+        loaded.get("journal", []), loaded.get("accounts", []), PAYABLES
+    )
 
 
 def main(argv):
-    parser = argparse.ArgumentParser(description="Map the bexio purchase bills to ERPNext Purchase Invoices (a dry run by default).")
-    parser.add_argument("--export", default=None, help="export directory (default: the newest under <private>/bexio-export/)")
-    parser.add_argument("--dry-run", action="store_true", help="read ERPNext, write nothing, print the totals (the default)")
-    parser.add_argument("--apply", action="store_true", help="write the bills as drafts into ERPNext, through the loader")
+    parser = argparse.ArgumentParser(
+        description="Map the bexio purchase bills to ERPNext Purchase Invoices (a dry run by default)."
+    )
+    parser.add_argument(
+        "--export",
+        default=None,
+        help="export directory (default: the newest under <private>/bexio-export/)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="read ERPNext, write nothing, print the totals (the default)",
+    )
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="write the bills as drafts into ERPNext, through the loader",
+    )
     parser.add_argument("--token-file", default=im.TOKEN_FILE)
     args = parser.parse_args(argv)
     if args.apply and args.dry_run:
@@ -438,19 +632,24 @@ def main(argv):
     try:
         lookups = Lookups.from_erp(im.Erp.from_file(args.token_file))
     except im.ErpError as err:
-        print("aborted: {}".format(err), file=sys.stderr)
+        print(f"aborted: {err}", file=sys.stderr)
         return 2
     booked = load_booked(export_dir)
     totals = dry_run(bills, expenses, lookups, booked)
     print(report(totals, export_dir))
     if totals.problems:
         write_private(os.path.join(im.PRIVATE, PROBLEMS_FILE), totals.problems)
-        print("{} record(s) listed by bexio id in {}".format(len(totals.problems), os.path.join(im.PRIVATE, PROBLEMS_FILE)), file=sys.stderr)
+        print(
+            f"{len(totals.problems)} record(s) listed by bexio id in {os.path.join(im.PRIVATE, PROBLEMS_FILE)}",
+            file=sys.stderr,
+        )
     if args.apply:
         path = os.path.join(im.PRIVATE, DRAFTS_FILE)
         documents = drafts(bills, lookups, booked)
-        write_private(path, [json.dumps({"documents": documents, "exchange_rates": []}, indent=1)])
-        print("{} bills handed to the loader, in {}".format(len(documents), path))
+        write_private(
+            path, [json.dumps({"documents": documents, "exchange_rates": []}, indent=1)]
+        )
+        print(f"{len(documents)} bills handed to the loader, in {path}")
         subprocess.run(["sh", LOADER, path], check=True)
     bad = sum(r["unmapped"] + r["differ"] for r in totals.rows.values())
     return 1 if bad else 0

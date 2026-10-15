@@ -63,15 +63,59 @@ BANK_ACCOUNT_TYPES = ("Bank", "Cash")
 # month names are dropped, so an invoice number or the month in the text does not split the group. Three words
 # tell apart two services of one bank or telco, and stop short of the invoice reference that follows a name.
 KEY_WORDS = 3
-MONTH_WORDS = frozenset((
-    "jan", "januar", "january", "feb", "februar", "february", "mär", "märz", "maerz", "mar", "march",
-    "apr", "april", "mai", "may", "jun", "juni", "june", "jul", "juli", "july", "aug", "august",
-    "sep", "sept", "september", "okt", "oktober", "october", "oct", "nov", "november",
-    "dez", "dezember", "dec", "december",
-))
+MONTH_WORDS = frozenset(
+    (
+        "jan",
+        "januar",
+        "january",
+        "feb",
+        "februar",
+        "february",
+        "mär",
+        "märz",
+        "maerz",
+        "mar",
+        "march",
+        "apr",
+        "april",
+        "mai",
+        "may",
+        "jun",
+        "juni",
+        "june",
+        "jul",
+        "juli",
+        "july",
+        "aug",
+        "august",
+        "sep",
+        "sept",
+        "september",
+        "okt",
+        "oktober",
+        "october",
+        "oct",
+        "nov",
+        "november",
+        "dez",
+        "dezember",
+        "dec",
+        "december",
+    )
+)
 # Words that start a salary or VAT payment's description (prefix match, so "lohnzahlung" counts). Such a bank
 # line is left out of the recurring costs: the payroll and VAT lines already carry it.
-PAYROLL_VAT_STEMS = ("lohn", "salär", "salar", "gehalt", "ahv", "mwst", "vat", "estv", "steuerverwaltung")
+PAYROLL_VAT_STEMS = (
+    "lohn",
+    "salär",
+    "salar",
+    "gehalt",
+    "ahv",
+    "mwst",
+    "vat",
+    "estv",
+    "steuerverwaltung",
+)
 # A bank line is a purchase bill's payment when a bill of the same amount is dated this close to it.
 BILL_MATCH_DAYS = 5
 # The run-rates (new sales, new purchases): the receipts or payments of the last this many 13-week windows, from the
@@ -81,8 +125,12 @@ RUN_RATE_WINDOWS = 4
 # The seasonal basis reads the window a year back, so the payments are read this far back (RUN_RATE_LOOKBACK_DAYS).
 RUN_RATE_WINDOW_DAYS = WEEKS * DAYS_PER_WEEK
 BASIS_DAYS = {
-    "mean4": 4 * RUN_RATE_WINDOW_DAYS, "mean2": 2 * RUN_RATE_WINDOW_DAYS, "last": RUN_RATE_WINDOW_DAYS,
-    "trailing12": 365, "seasonal": 365 + RUN_RATE_WINDOW_DAYS, "trend": 4 * RUN_RATE_WINDOW_DAYS,
+    "mean4": 4 * RUN_RATE_WINDOW_DAYS,
+    "mean2": 2 * RUN_RATE_WINDOW_DAYS,
+    "last": RUN_RATE_WINDOW_DAYS,
+    "trailing12": 365,
+    "seasonal": 365 + RUN_RATE_WINDOW_DAYS,
+    "trend": 4 * RUN_RATE_WINDOW_DAYS,
 }
 RUN_RATE_LOOKBACK_DAYS = max(BASIS_DAYS.values())
 
@@ -115,7 +163,8 @@ def week_bounds(week, as_of):
 
 def average_days_late(history):
     """history: (due, paid) of one customer's paid invoices. The mean days paid after the due date, rounded;
-    a customer who pays early has negative days. No history: 0, the invoice is due when it is due."""
+    a customer who pays early has negative days. No history: 0, the invoice is due when it is due.
+    """
     if not history:
         return 0
     return round(statistics.mean((paid - due).days for due, paid in history))
@@ -123,7 +172,8 @@ def average_days_late(history):
 
 def detect_period(dates, amounts):
     """The period a supplier's bills repeat on, from the median gap between them, as (period, median amount),
-    or None when they have no fixed period. Needs two bills (one gap): a yearly cost has two in a look-back of a year."""
+    or None when they have no fixed period. Needs two bills (one gap): a yearly cost has two in a look-back of a year.
+    """
     if len(dates) < 2:
         return None
     gaps = [later - earlier for earlier, later in zip(dates, dates[1:])]
@@ -152,17 +202,27 @@ def is_payroll_or_vat(text):
 
 def paid_by_a_bill(day, amount, bills):
     """bills: (posting date, amount) of the purchase bills. True when one of the same amount is dated within
-    BILL_MATCH_DAYS of the bank line on day: that line is the bill's payment, and the bill source has it."""
-    return any(abs((bill_day - day).days) <= BILL_MATCH_DAYS and abs(bill_amount - amount) < 0.005
-               for bill_day, bill_amount in bills)
+    BILL_MATCH_DAYS of the bank line on day: that line is the bill's payment, and the bill source has it.
+    """
+    return any(
+        abs((bill_day - day).days) <= BILL_MATCH_DAYS
+        and abs(bill_amount - amount) < 0.005
+        for bill_day, bill_amount in bills
+    )
 
 
 def carried_elsewhere(number):
     """True when a bank outflow to this contra account already reaches the forecast through another line: the payroll
-    (5xxx and 1091), the insurers' bills (2270 to 2279), VAT (1170 to 1172, 2200 and 2202), or the bills (2000)."""
-    return (number.startswith("5") or number == SALARY_CLEARING_ACCOUNT or number == BILL_PAYABLE_ACCOUNT
-            or INSURER_PAYABLE_ACCOUNTS[0] <= number <= INSURER_PAYABLE_ACCOUNTS[1]
-            or number in VAT_INPUT_ACCOUNTS or number in VAT_LIABILITY_ACCOUNTS)
+    (5xxx and 1091), the insurers' bills (2270 to 2279), VAT (1170 to 1172, 2200 and 2202), or the bills (2000).
+    """
+    return (
+        number.startswith("5")
+        or number == SALARY_CLEARING_ACCOUNT
+        or number == BILL_PAYABLE_ACCOUNT
+        or INSURER_PAYABLE_ACCOUNTS[0] <= number <= INSURER_PAYABLE_ACCOUNTS[1]
+        or number in VAT_INPUT_ACCOUNTS
+        or number in VAT_LIABILITY_ACCOUNTS
+    )
 
 
 def journal_occurrences(rows, billed):
@@ -243,10 +303,16 @@ def recurring_costs(bills, as_of, strict=False):
         last_date, _, last_bill = rows[-1]
         if add_months(last_date, 2 * months) < as_of:
             continue
-        found.append({
-            "supplier": supplier, "period": period, "amount": round(amount, 2), "count": lines,
-            "last_date": last_date, "last_bill": last_bill,
-        })
+        found.append(
+            {
+                "supplier": supplier,
+                "period": period,
+                "amount": round(amount, 2),
+                "count": lines,
+                "last_date": last_date,
+                "last_bill": last_bill,
+            }
+        )
     return found
 
 
@@ -278,17 +344,21 @@ def payroll_level(expected, trailing, hrms=None):
 def hrms_net(slips):
     """slips: (payroll entry, end date, net pay) of the submitted Salary Slips up to the as-of date (the report's
     hrms_slips). The net pay of the last salary run: the sum over the slips of the latest payroll entry, latest by
-    end date, the entry name breaking a tie. None without slips, so the GL's trailing mean stays the basis."""
+    end date, the entry name breaking a tie. None without slips, so the GL's trailing mean stays the basis.
+    """
     if not slips:
         return None
     latest = max((end_date, entry) for entry, end_date, _net in slips)
-    return round(sum(net for entry, end_date, net in slips if (end_date, entry) == latest), 2)
+    return round(
+        sum(net for entry, end_date, net in slips if (end_date, entry) == latest), 2
+    )
 
 
 def hrms_latest_month(slips):
     """slips: (payroll entry, end date, net pay) as hrms_net reads them. The (year, month) of the latest submitted
     slips' end date, the entry name breaking a tie. None without slips. That month's net is what the 1091 accrued
-    line carries, so while that line exists the month's run is not forecast again (payroll_dates' skip_month)."""
+    line carries, so while that line exists the month's run is not forecast again (payroll_dates' skip_month).
+    """
     if not slips:
         return None
     latest_end = max((end_date, entry) for entry, end_date, _net in slips)[0]
@@ -298,7 +368,8 @@ def hrms_latest_month(slips):
 def accrued_net(clearing_balance):
     """The salary clearing account's (1091) balance on the as-of date, credit minus debit, as a positive outflow
     when it is a credit: the accrual credits 1091 with the net and the bank payment debits it later, so a credit
-    balance is the net pay accrued but not yet paid. A debit balance or zero is None: nothing accrued to pay."""
+    balance is the net pay accrued but not yet paid. A debit balance or zero is None: nothing accrued to pay.
+    """
     return round(clearing_balance, 2) if clearing_balance > 0 else None
 
 
@@ -307,12 +378,16 @@ def payroll_basis_note(expected, hrms):
     Forecast Settings when it is set, else the net pay of the last submitted salary slips, else the average of the
     last three salary months."""
     if expected:
-        return ("payroll from settings: the expected monthly payroll, run on the last day of the month "
-                "or the Friday before a weekend")
+        return (
+            "payroll from settings: the expected monthly payroll, run on the last day of the month "
+            "or the Friday before a weekend"
+        )
     if hrms is not None:
         return "net pay of the last submitted salary slips, run on the last day of the month or the Friday before a weekend"
-    return ("average of the last three salary months (accounts 5000 to 5099), run on the last day of the month "
-            "or the Friday before a weekend")
+    return (
+        "average of the last three salary months (accounts 5000 to 5099), run on the last day of the month "
+        "or the Friday before a weekend"
+    )
 
 
 def manual_amount(direction, amount):
@@ -328,13 +403,19 @@ def manual_day_in_window(day, as_of, end):
 
 def payroll_postings(rows):
     """rows: (posting date, account number, debit minus credit) of the personnel accounts (group 5). The salary
-    accounts' postings only, as (posting date, amount): a contribution posted on the same day is not a salary."""
-    return [(day, amount) for day, number, amount in rows if SALARY_ACCOUNTS[0] <= number <= SALARY_ACCOUNTS[1]]
+    accounts' postings only, as (posting date, amount): a contribution posted on the same day is not a salary.
+    """
+    return [
+        (day, amount)
+        for day, number, amount in rows
+        if SALARY_ACCOUNTS[0] <= number <= SALARY_ACCOUNTS[1]
+    ]
 
 
 def payroll_from_postings(postings):
     """postings: (posting date, amount) of the salary accounts over the look-back window (payroll_postings).
-    The payroll is the average of the last three months with postings. None when there are no postings."""
+    The payroll is the average of the last three months with postings. None when there are no postings.
+    """
     monthly = {}
     for day, amount in postings:
         monthly.setdefault((day.year, day.month), 0.0)
@@ -347,7 +428,8 @@ def payroll_from_postings(postings):
 
 def payroll_run(year, month):
     """The salary run of a month: its last day, or the Friday before when that is a Saturday or a Sunday. The books
-    pay the salaries on days 28 to 31 (erp-z54w), so the run is at month end, not on the 25th."""
+    pay the salaries on days 28 to 31 (erp-z54w), so the run is at month end, not on the 25th.
+    """
     day = datetime.date(year, month, calendar.monthrange(year, month)[1])
     return day - datetime.timedelta(days=max(day.weekday() - 4, 0))
 
@@ -356,7 +438,8 @@ def payroll_dates(as_of, end, skip_month=None):
     """Each monthly salary run after as_of and up to end. A run on as_of itself is not one: the books are read through
     as_of, so a run paid that day is already in the opening balance (the back-test of erp-q1w8 reads it so).
     skip_month: a (year, month) whose run is left out — while the accrued line carries the latest slips' month's net
-    (hrms_latest_month), that month's run would count the same net twice; the default keeps every run."""
+    (hrms_latest_month), that month's run would count the same net twice; the default keeps every run.
+    """
     year, month = as_of.year, as_of.month
     while True:
         run = payroll_run(year, month)
@@ -369,7 +452,8 @@ def payroll_dates(as_of, end, skip_month=None):
 
 def vat_owed(balances):
     """balances: the debit minus credit of each VAT account by number, up to the as-of date. The VAT the company
-    owes the tax office: the liabilities less the input tax. Negative when the input tax is the larger."""
+    owes the tax office: the liabilities less the input tax. Negative when the input tax is the larger.
+    """
     liabilities = -sum(balances.get(number, 0.0) for number in VAT_LIABILITY_ACCOUNTS)
     input_tax = sum(balances.get(number, 0.0) for number in VAT_INPUT_ACCOUNTS)
     return round(liabilities - input_tax, 2)
@@ -384,22 +468,31 @@ def quarter_end(day):
     """The last day of the calendar quarter day falls in."""
     start = quarter_start(day)
     last_month = start.month + 2
-    return datetime.date(start.year, last_month, calendar.monthrange(start.year, last_month)[1])
+    return datetime.date(
+        start.year, last_month, calendar.monthrange(start.year, last_month)[1]
+    )
 
 
 def vat_due_date(end):
     """The VAT return and payment for the quarter ending on end are due at the end of its second month after it:
     Q1 by 31 May, Q2 by 31 August, Q3 by 30 November, Q4 by the end of February."""
     later = add_months(end.replace(day=1), 2)
-    return datetime.date(later.year, later.month, calendar.monthrange(later.year, later.month)[1])
+    return datetime.date(
+        later.year, later.month, calendar.monthrange(later.year, later.month)[1]
+    )
 
 
 def vat_split(owed_at_closed_end, paid_since, owed_now):
     """Splits the VAT on the books into (closed quarter, current quarter so far). owed_at_closed_end: the VAT owed
     when the last quarter closed; paid_since: what was paid to the tax office since (debits on the liability
     accounts); owed_now: the VAT owed on the as-of date. A closed quarter's VAT already paid is not owed again,
-    and is not taken off the current quarter. A refund due is left as the books show it."""
-    closed = max(owed_at_closed_end - paid_since, 0.0) if owed_at_closed_end > 0 else owed_at_closed_end
+    and is not taken off the current quarter. A refund due is left as the books show it.
+    """
+    closed = (
+        max(owed_at_closed_end - paid_since, 0.0)
+        if owed_at_closed_end > 0
+        else owed_at_closed_end
+    )
     return round(closed, 2), round(owed_now - closed, 2)
 
 
@@ -409,10 +502,14 @@ def vat_lines(as_of, owed_closed, owed_this_quarter):
     last; it is paid on that quarter's due date. owed_this_quarter: the VAT booked since the current quarter
     started, paid on the current quarter's due date (it may fall beyond the horizon). The open invoices' VAT is
     already in the books, since a submitted invoice is booked to VAT, so it is not added again.
-    A refund (input tax above output tax) comes in VAT_REFUND_DAYS after the due date."""
+    A refund (input tax above output tax) comes in VAT_REFUND_DAYS after the due date.
+    """
     closed_end = quarter_start(as_of) - datetime.timedelta(days=1)
     lines = []
-    for end, owed in ((closed_end, owed_closed), (quarter_end(as_of), owed_this_quarter)):
+    for end, owed in (
+        (closed_end, owed_closed),
+        (quarter_end(as_of), owed_this_quarter),
+    ):
         amount = round(owed, 2)
         if amount == 0:
             continue
@@ -437,8 +534,13 @@ RUN_RATE_BASIS = "mean2"
 
 def window_total(payments, start, stop):
     """The amount collected inside [start, stop) from the invoices issued inside it: payments are (invoice date, payment
-    date, amount), and an invoice a forecast cannot see yet (not open on the as-of date) is the one issued in the window."""
-    return sum(amount for issued, paid, amount in payments if start <= issued < stop and start <= paid < stop)
+    date, amount), and an invoice a forecast cannot see yet (not open on the as-of date) is the one issued in the window.
+    """
+    return sum(
+        amount
+        for issued, paid, amount in payments
+        if start <= issued < stop and start <= paid < stop
+    )
 
 
 def basis_total(payments, as_of, basis):
@@ -450,8 +552,10 @@ def basis_total(payments, as_of, basis):
     windows, one window on, not below zero."""
     length = datetime.timedelta(days=WEEKS * DAYS_PER_WEEK)
     year = datetime.timedelta(days=365)
-    totals = [window_total(payments, as_of - length * back, as_of - length * (back - 1))
-              for back in range(1, RUN_RATE_WINDOWS + 1)]
+    totals = [
+        window_total(payments, as_of - length * back, as_of - length * (back - 1))
+        for back in range(1, RUN_RATE_WINDOWS + 1)
+    ]
     if basis == "mean4":
         return statistics.mean(totals), min(totals), max(totals)
     if basis == "mean2":
@@ -468,9 +572,14 @@ def basis_total(payments, as_of, basis):
         ys = totals[::-1]
         x_mean = (RUN_RATE_WINDOWS + 1) / 2
         y_mean = statistics.mean(ys)
-        slope = (sum((x - x_mean) * (y - y_mean) for x, y in enumerate(ys, 1))
-                 / sum((x - x_mean) ** 2 for x in range(1, RUN_RATE_WINDOWS + 1)))
-        return max(y_mean + slope * (RUN_RATE_WINDOWS + 1 - x_mean), 0.0), min(totals), max(totals)
+        slope = sum((x - x_mean) * (y - y_mean) for x, y in enumerate(ys, 1)) / sum(
+            (x - x_mean) ** 2 for x in range(1, RUN_RATE_WINDOWS + 1)
+        )
+        return (
+            max(y_mean + slope * (RUN_RATE_WINDOWS + 1 - x_mean), 0.0),
+            min(totals),
+            max(totals),
+        )
     raise ValueError("unknown run-rate basis: %s" % basis)
 
 
@@ -483,15 +592,19 @@ def run_rate(payments, as_of, basis=RUN_RATE_BASIS):
     # the band holds the point, whatever the basis: a trend can run past the windows it reads
     low, high = min(low, total), max(high, total)
     return {
-        "weekly": round(total / WEEKS, 2), "low": round(low / WEEKS, 2), "high": round(high / WEEKS, 2),
-        "since": as_of - datetime.timedelta(days=BASIS_DAYS[basis]), "basis": basis,
+        "weekly": round(total / WEEKS, 2),
+        "low": round(low / WEEKS, 2),
+        "high": round(high / WEEKS, 2),
+        "since": as_of - datetime.timedelta(days=BASIS_DAYS[basis]),
+        "basis": basis,
     }
 
 
 def closing_band(closing, sales, purchases):
     """(low, high) of the closing cash at the end of the horizon, with the new sales and the new purchases run-rates at
     the low and the high of their basis. A run-rate is the same amount each week, so over the thirteen weeks its band
-    moves the closing by thirteen times the difference. sales, purchases: run_rate dicts, or None when left out."""
+    moves the closing by thirteen times the difference. sales, purchases: run_rate dicts, or None when left out.
+    """
     low, high = closing, closing
     if sales:
         low -= WEEKS * (sales["weekly"] - sales["low"])
@@ -507,9 +620,22 @@ def purchase_run_rate(payments, as_of, excluded, basis=RUN_RATE_BASIS):
     The run-rate of run_rate over the suppliers not in excluded: those the recurring costs already forecast,
     and the insurers' bills, which are recurring bills of their own. Returns the run_rate dict with excluded: how many
     excluded suppliers were paid in the windows, the count the basis note tells."""
-    rate = run_rate([(issued, paid, amount) for supplier, issued, paid, amount in payments if supplier not in excluded],
-                    as_of, basis)
-    rate["excluded"] = len({supplier for supplier, _issued, _paid, _amount in payments if supplier in excluded})
+    rate = run_rate(
+        [
+            (issued, paid, amount)
+            for supplier, issued, paid, amount in payments
+            if supplier not in excluded
+        ],
+        as_of,
+        basis,
+    )
+    rate["excluded"] = len(
+        {
+            supplier
+            for supplier, _issued, _paid, _amount in payments
+            if supplier in excluded
+        }
+    )
     return rate
 
 
@@ -522,8 +648,21 @@ def forecast(as_of, opening, lines):
     weeks = []
     for week in range(1, WEEKS + 1):
         start, end = week_bounds(week, as_of)
-        weeks.append({"week": week, "start": start, "end": end, "receipt": 0.0, "new_sales": 0.0, "bill": 0.0,
-                      "new_purchases": 0.0, "recurring": 0.0, "payroll": 0.0, "vat": 0.0, MANUAL: 0.0})
+        weeks.append(
+            {
+                "week": week,
+                "start": start,
+                "end": end,
+                "receipt": 0.0,
+                "new_sales": 0.0,
+                "bill": 0.0,
+                "new_purchases": 0.0,
+                "recurring": 0.0,
+                "payroll": 0.0,
+                "vat": 0.0,
+                MANUAL: 0.0,
+            }
+        )
     beyond = 0
     for line in lines:
         week = week_of(line["day"], as_of)
@@ -539,8 +678,12 @@ def forecast(as_of, opening, lines):
         for kind in INFLOW_KINDS:
             row[kind] = round(row[kind], 2)
         row[MANUAL] = round(row[MANUAL], 2)
-        row["net"] = round(sum(row[kind] for kind in INFLOW_KINDS) + row[MANUAL]
-                           - sum(row[kind] for kind in OUTFLOW_KINDS), 2)
+        row["net"] = round(
+            sum(row[kind] for kind in INFLOW_KINDS)
+            + row[MANUAL]
+            - sum(row[kind] for kind in OUTFLOW_KINDS),
+            2,
+        )
         balance = round(balance + row["net"], 2)
         row["closing"] = balance
     lowest = min(weeks, key=lambda row: row["closing"])["week"]

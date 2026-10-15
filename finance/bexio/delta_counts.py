@@ -28,7 +28,7 @@ def main(argv):
     erp = im.Erp.from_file(im.TOKEN_FILE)
     for doctype in DOCTYPES:
         rows = erp.list(doctype, [["bexio_id", "is", "set"]], ["name"])
-        print("{}\t{}".format(doctype, len(rows)))
+        print(f"{doctype}\t{len(rows)}")
     return 0
 
 

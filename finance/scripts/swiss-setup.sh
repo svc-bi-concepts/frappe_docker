@@ -40,4 +40,4 @@ docker compose -p "$PROJECT" -f pwd.yml -f finance-local.yml exec -T \
   -e BANKS="${BANKS:-}" -e HOST_NAME="${HOST_NAME:-}" -e HR_USER="${HR_USER:-}" \
   -e TAXES_JSON -e ACCOUNTS_JSON backend \
   sh -c 'cd /home/frappe/frappe-bench/sites && exec ../env/bin/python - "$@"' sh "$@" \
-  < finance/scripts/swiss-setup.py
+  <finance/scripts/swiss-setup.py

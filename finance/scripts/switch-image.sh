@@ -16,7 +16,10 @@ usage() {
 }
 
 case "${1:-}" in
-  -h|--help) usage; exit 0 ;;
+-h | --help)
+  usage
+  exit 0
+  ;;
 esac
 if [ $# -ne 1 ]; then
   usage >&2

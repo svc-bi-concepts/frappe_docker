@@ -19,7 +19,9 @@ from unittest import mock
 sys.modules.setdefault("frappe", mock.MagicMock())
 sys.modules.setdefault("frappe.utils", mock.MagicMock())
 
-_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "swiss-structure-remake.py")
+_path = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "swiss-structure-remake.py"
+)
 _spec = importlib.util.spec_from_file_location("swiss_structure_remake", _path)
 remake = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(remake)
@@ -76,8 +78,15 @@ class MovePlanTest(unittest.TestCase):
 
     def test_moves_a_submitted_old_assignment(self):
         old_rows = [
-            {"name": "SSA-1", "docstatus": 1, "employee": "EMP-A", "company": "BI Concepts",
-             "from_date": "2025-01-01", "base": 1, "swiss_bvg_insured_salary": 2},
+            {
+                "name": "SSA-1",
+                "docstatus": 1,
+                "employee": "EMP-A",
+                "company": "BI Concepts",
+                "from_date": "2025-01-01",
+                "base": 1,
+                "swiss_bvg_insured_salary": 2,
+            },
         ]
         moved, created = self.run_moves(old_rows, [])
         self.assertEqual(moved, 1)
@@ -100,7 +109,6 @@ class MovePlanTest(unittest.TestCase):
         self.assertEqual(moved, 1)
         self.assertEqual(created[0].employee, "EMP-A")
 
-
     def test_two_old_rows_of_one_employee_make_one_assignment(self):
         old_rows = [
             {"name": "SSA-1", "docstatus": 2, "employee": "EMP-A"},
@@ -117,12 +125,16 @@ class FreeNameTest(unittest.TestCase):
             self.assertEqual(remake.free_name(remake.OLD_NAME), remake.OLD_NAME)
 
     def test_suffix_follows_the_copy_pattern(self):
-        with mock.patch.object(remake.frappe, "get_all", return_value=[remake.OLD_NAME]):
+        with mock.patch.object(
+            remake.frappe, "get_all", return_value=[remake.OLD_NAME]
+        ):
             self.assertEqual(remake.free_name(remake.OLD_NAME), f"{remake.OLD_NAME} 2")
 
     def test_skips_taken_suffixes(self):
         with mock.patch.object(
-            remake.frappe, "get_all", return_value=[remake.OLD_NAME, f"{remake.OLD_NAME} 2"]
+            remake.frappe,
+            "get_all",
+            return_value=[remake.OLD_NAME, f"{remake.OLD_NAME} 2"],
         ):
             self.assertEqual(remake.free_name(remake.OLD_NAME), f"{remake.OLD_NAME} 3")
 
@@ -135,19 +147,27 @@ class WrapperProjectTest(unittest.TestCase):
             tmp_path = pathlib.Path(tmp)
             docker = tmp_path / "docker"
             docker.write_text(
-                "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$DOCKER_ARGS_FILE\"\ncat >/dev/null\n",
+                '#!/bin/sh\nprintf \'%s\\n\' "$@" > "$DOCKER_ARGS_FILE"\ncat >/dev/null\n',
                 encoding="utf-8",
             )
             docker.chmod(0o755)
             args_file = tmp_path / "docker-args"
-            env = {"PATH": f"{tmp}:{os.environ['PATH']}", "DOCKER_ARGS_FILE": str(args_file)}
+            env = {
+                "PATH": f"{tmp}:{os.environ['PATH']}",
+                "DOCKER_ARGS_FILE": str(args_file),
+            }
             with mock.patch.dict(os.environ, env, clear=False):
                 if project is None:
                     os.environ.pop("FINANCE_PROJECT", None)
                 else:
                     os.environ["FINANCE_PROJECT"] = project
                 subprocess.run(
-                    ["sh", os.path.join(os.path.dirname(_path), "swiss-structure-remake.sh")],
+                    [
+                        "sh",
+                        os.path.join(
+                            os.path.dirname(_path), "swiss-structure-remake.sh"
+                        ),
+                    ],
                     check=True,
                     stdin=subprocess.DEVNULL,
                 )

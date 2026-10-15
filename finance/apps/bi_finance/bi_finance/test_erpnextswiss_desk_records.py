@@ -48,7 +48,11 @@ class Frappe(types.ModuleType):
 
     def get_all(self, doctype, filters=None, pluck=None):
         self.get_all_calls.append((doctype, filters, pluck))
-        found = [r for r in self.rows[doctype] if all(r.get(k) == v for k, v in (filters or {}).items())]
+        found = [
+            r
+            for r in self.rows[doctype]
+            if all(r.get(k) == v for k, v in (filters or {}).items())
+        ]
         return [r[pluck] for r in found] if pluck else found
 
     def delete_doc(self, doctype, name, **kwargs):
@@ -76,7 +80,9 @@ class DeskRecords(unittest.TestCase):
             patch.execute()
         return out.getvalue()
 
-    def test_the_filters_name_only_the_erpnextswiss_rows_and_the_erpnextswiss_module(self):
+    def test_the_filters_name_only_the_erpnextswiss_rows_and_the_erpnextswiss_module(
+        self,
+    ):
         self.run_patch()
         self.assertEqual(
             self.frappe.get_all_calls,
@@ -87,19 +93,36 @@ class DeskRecords(unittest.TestCase):
             ],
         )
 
-    def test_the_rows_go_in_order_the_icon_and_the_sidebar_before_the_workspaces_and_with_force(self):
+    def test_the_rows_go_in_order_the_icon_and_the_sidebar_before_the_workspaces_and_with_force(
+        self,
+    ):
         self.run_patch()
         doctypes = [c[0] for c in self.frappe.delete_calls]
-        self.assertEqual(doctypes, ["Desktop Icon"] + ["Workspace Sidebar"] + ["Workspace"] * 5)
+        self.assertEqual(
+            doctypes, ["Desktop Icon"] + ["Workspace Sidebar"] + ["Workspace"] * 5
+        )
         self.assertEqual([c[1] for c in self.frappe.delete_calls[2:]], SHIPPED)
         for doctype, name, kwargs in self.frappe.delete_calls:
-            self.assertEqual(kwargs, {"ignore_permissions": True, "force": True, "ignore_missing": True}, name)
+            self.assertEqual(
+                kwargs,
+                {"ignore_permissions": True, "force": True, "ignore_missing": True},
+                name,
+            )
 
     def test_bi_finance_rows_are_left_alone(self):
         self.run_patch()
-        self.assertEqual(self.frappe.rows["Desktop Icon"], [{"name": "Treasury", "app": "bi_finance"}])
-        self.assertEqual(self.frappe.rows["Workspace Sidebar"], [{"name": "Treasury", "app": "bi_finance"}])
-        self.assertEqual(self.frappe.rows["Workspace"], [{"name": "Treasury", "module": "BI Finance"}])
+        self.assertEqual(
+            self.frappe.rows["Desktop Icon"],
+            [{"name": "Treasury", "app": "bi_finance"}],
+        )
+        self.assertEqual(
+            self.frappe.rows["Workspace Sidebar"],
+            [{"name": "Treasury", "app": "bi_finance"}],
+        )
+        self.assertEqual(
+            self.frappe.rows["Workspace"],
+            [{"name": "Treasury", "module": "BI Finance"}],
+        )
 
     def test_the_first_run_prints_one_line_with_the_three_counts(self):
         out = self.run_patch()

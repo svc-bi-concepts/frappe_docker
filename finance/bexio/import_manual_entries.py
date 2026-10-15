@@ -61,7 +61,7 @@ import datetime
 import json
 import os
 import sys
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 
 import import_master as im
 import import_purchase as ip
@@ -83,19 +83,33 @@ DOCUMENT_CLASSES = ("KbInvoice", "KbBill", "KbCreditVoucher", "KbClientAccountEn
 # the accounts the journal check compares besides the profit-and-loss ones: the VAT accounts the manual entries book on
 CHECK_NUMBERS = ("1170", "1171", "2200")
 TOLERANCE = Decimal("0.005")
-SINGLE, COMPOUND, GROUP = "manual_single_entry", "manual_compound_entry", "manual_group_entry"
+SINGLE, COMPOUND, GROUP = (
+    "manual_single_entry",
+    "manual_compound_entry",
+    "manual_group_entry",
+)
 # the type of the entries a bank import created; bexio's docs do not list it, the name is from the mapping notes
 BANKING = "banking_transaction"
 TYPES = (SINGLE, COMPOUND, GROUP)
 # the side a VAT account carries: Vorsteuer (assets) is debited, Umsatzsteuer (liabilities) credited
-SIDE_OF_ROOT = {"Asset": "debit", "Expense": "debit", "Liability": "credit", "Income": "credit", "Equity": "credit"}
+SIDE_OF_ROOT = {
+    "Asset": "debit",
+    "Expense": "debit",
+    "Liability": "credit",
+    "Income": "credit",
+    "Equity": "credit",
+}
 PROFIT_AND_LOSS = ("Income", "Expense")
 # the bexio codes with a rate of 0 % in BEXIO_TAXES (swiss-setup), with the purchase importer's: no VAT split on an entry
 MANUAL_ZERO_RATE_IDS = ip.ZERO_RATE_IDS + (3, 4, 5, 6, 13, 14, 48)
 # the account a manual entry's VAT is booked on, by the kind of its code: bexio's journal books it there, on the final
 # accounts, not on the transitory 1172 or 2202. The sales codes are those of import_master's VAT_OF_TAX_ID (S, rates > 0)
 SALES_IDS = (16, 28, 17, 29, 18, 30)
-VAT_NUMBER_OF_CODE = dict([(i, "2200") for i in SALES_IDS] + [(i, "1170") for i in ip.MAT_SV_IDS] + [(i, "1171") for i in ip.INV_BA_IDS])
+VAT_NUMBER_OF_CODE = dict(
+    [(i, "2200") for i in SALES_IDS]
+    + [(i, "1170") for i in ip.MAT_SV_IDS]
+    + [(i, "1171") for i in ip.INV_BA_IDS]
+)
 # a reverse-charge code's Vorsteuer by its kind (BZM Material 19 and 33, BZB Investitionen 20 and 32), taken back on 2203:
 # the liability bexio's manual entries book the reverse charge on (the bills book 1172 and 2202, import_purchase's BEZUG)
 REVERSE_CHARGE_NUMBER_OF_CODE = {19: "1170", 33: "1170", 20: "1171", 32: "1171"}
@@ -110,35 +124,78 @@ ZERO = Decimal("0")
 
 class Lookups:
     """What the mapping reads from ERPNext: Accounts by bexio_id with their root type, Accounts by number (the reverse-charge
-    accounts), the currency of each Account, Item Tax Templates by bexio_id, and the names of the depreciation and party accounts."""
+    accounts), the currency of each Account, Item Tax Templates by bexio_id, and the names of the depreciation and party accounts.
+    """
 
-    def __init__(self, accounts, taxes, by_number=None, currencies=None, depreciation=None, party=None, receivable=None):
-        self.accounts = accounts      # bexio account id -> (Account name, root type)
-        self.taxes = taxes            # bexio tax id -> Item Tax Template name
+    def __init__(
+        self,
+        accounts,
+        taxes,
+        by_number=None,
+        currencies=None,
+        depreciation=None,
+        party=None,
+        receivable=None,
+    ):
+        self.accounts = accounts  # bexio account id -> (Account name, root type)
+        self.taxes = taxes  # bexio tax id -> Item Tax Template name
         self.by_number = by_number or {}  # account number -> (Account name, root type)
         self.currencies = currencies or {}  # Account name -> the account's currency
-        self.depreciation = set(depreciation or ())  # Account names of the depreciation types
-        self.party = set(party or ())  # Account names of the receivable and payable types
-        self.receivable = set(receivable or ())  # Account names of the receivable type: the ones a Customer can be the party of
+        self.depreciation = set(
+            depreciation or ()
+        )  # Account names of the depreciation types
+        self.party = set(
+            party or ()
+        )  # Account names of the receivable and payable types
+        self.receivable = set(
+            receivable or ()
+        )  # Account names of the receivable type: the ones a Customer can be the party of
 
     def currency_of(self, account):
         return self.currencies.get(account)
 
     @classmethod
     def from_erp(cls, erp):
-        rows = erp.list("Account", [["company", "=", im.COMPANY], ["bexio_id", "is", "set"]],
-                        ["name", "bexio_id", "root_type", "account_currency", "account_type"])
-        numbers = sorted(set(VAT_NUMBER_OF_CODE.values()) | set(REVERSE_CHARGE_NUMBER_OF_CODE.values()) | {REVERSE_CHARGE_LIABILITY})
-        by_number = erp.list("Account", [["company", "=", im.COMPANY], ["account_number", "in", numbers]],
-                             ["name", "account_number", "root_type", "account_currency", "account_type"])
+        rows = erp.list(
+            "Account",
+            [["company", "=", im.COMPANY], ["bexio_id", "is", "set"]],
+            ["name", "bexio_id", "root_type", "account_currency", "account_type"],
+        )
+        numbers = sorted(
+            set(VAT_NUMBER_OF_CODE.values())
+            | set(REVERSE_CHARGE_NUMBER_OF_CODE.values())
+            | {REVERSE_CHARGE_LIABILITY}
+        )
+        by_number = erp.list(
+            "Account",
+            [["company", "=", im.COMPANY], ["account_number", "in", numbers]],
+            ["name", "account_number", "root_type", "account_currency", "account_type"],
+        )
         return cls(
             accounts={r["bexio_id"]: (r["name"], r["root_type"]) for r in rows},
-            taxes={r["bexio_id"]: r["name"] for r in erp.list("Item Tax Template", [["company", "=", im.COMPANY], ["bexio_id", "is", "set"]], ["name", "bexio_id"])},
-            by_number={r["account_number"]: (r["name"], r["root_type"]) for r in by_number},
+            taxes={
+                r["bexio_id"]: r["name"]
+                for r in erp.list(
+                    "Item Tax Template",
+                    [["company", "=", im.COMPANY], ["bexio_id", "is", "set"]],
+                    ["name", "bexio_id"],
+                )
+            },
+            by_number={
+                r["account_number"]: (r["name"], r["root_type"]) for r in by_number
+            },
             currencies={r["name"]: r["account_currency"] for r in rows + by_number},
-            depreciation={r["name"] for r in rows + by_number if r["account_type"] in DEPRECIATION_TYPES},
-            party={r["name"] for r in rows + by_number if r["account_type"] in PARTY_TYPES},
-            receivable={r["name"] for r in rows + by_number if r["account_type"] == "Receivable"},
+            depreciation={
+                r["name"]
+                for r in rows + by_number
+                if r["account_type"] in DEPRECIATION_TYPES
+            },
+            party={
+                r["name"] for r in rows + by_number if r["account_type"] in PARTY_TYPES
+            },
+            receivable={
+                r["name"] for r in rows + by_number if r["account_type"] == "Receivable"
+            },
         )
 
 
@@ -160,25 +217,28 @@ def _day(entry):
 def _account(lookups, bexio_id):
     found = lookups.accounts.get(str(bexio_id))
     if not found:
-        raise ip.MappingError("no Account for account {}".format(bexio_id))
+        raise ip.MappingError(f"no Account for account {bexio_id}")
     return found
 
 
 def _vat(line, lookups):
     """(rate, VAT account name, side of the VAT account) of a line, or None when the line carries no VAT. The account
-    comes from the code (VAT_NUMBER_OF_CODE), not from tax_account_id, which _check_tax_accounts only checks."""
+    comes from the code (VAT_NUMBER_OF_CODE), not from tax_account_id, which _check_tax_accounts only checks.
+    """
     tax_id = line.get("tax_id")
     if not tax_id or tax_id in MANUAL_ZERO_RATE_IDS:
         return None
     if tax_id not in im.VAT_OF_TAX_ID:
-        raise ip.MappingError("unknown VAT code {}".format(tax_id))
+        raise ip.MappingError(f"unknown VAT code {tax_id}")
     if tax_id not in VAT_NUMBER_OF_CODE:
-        raise ip.MappingError("no VAT account for code {}".format(tax_id))
+        raise ip.MappingError(f"no VAT account for code {tax_id}")
     if not lookups.taxes.get(str(tax_id)):
-        raise ip.MappingError("no Item Tax Template with bexio_id {} in ERPNext".format(tax_id))
+        raise ip.MappingError(f"no Item Tax Template with bexio_id {tax_id} in ERPNext")
     tax_account, root = _by_number(lookups, VAT_NUMBER_OF_CODE[tax_id])
     if root not in SIDE_OF_ROOT:
-        raise ip.MappingError("VAT account {} has root type {}".format(VAT_NUMBER_OF_CODE[tax_id], root))
+        raise ip.MappingError(
+            f"VAT account {VAT_NUMBER_OF_CODE[tax_id]} has root type {root}"
+        )
     rate, _ = im.VAT_OF_TAX_ID[tax_id]
     return rate, tax_account, SIDE_OF_ROOT[root]
 
@@ -190,12 +250,18 @@ def _postings(kind, lines):
     """
     if kind != COMPOUND:
         if any(line.get("id") is None for line in lines):
-            raise ip.MappingError("row without id in a {} entry".format(kind or "untyped"))
+            raise ip.MappingError(
+                "row without id in a {} entry".format(kind or "untyped")
+            )
         return lines
     counterparts = [line for line in lines if line.get("id") is None]
     if len(counterparts) != 1:
-        raise ip.MappingError("compound entry with {} counterpart rows".format(len(counterparts)))
-    counterpart = counterparts[0].get("debit_account_id") or counterparts[0].get("credit_account_id")
+        raise ip.MappingError(
+            f"compound entry with {len(counterparts)} counterpart rows"
+        )
+    counterpart = counterparts[0].get("debit_account_id") or counterparts[0].get(
+        "credit_account_id"
+    )
     if not counterpart:
         raise ip.MappingError("counterpart row without an account")
     postings = []
@@ -213,14 +279,23 @@ def _postings(kind, lines):
 
 def _check_tax_accounts(lines):
     """A VAT row's tax_account_id is one of the row's own accounts, as bexio writes it. It is checked before a compound
-    row takes its counterpart as the missing side: a row that names another account is listed, not guessed."""
+    row takes its counterpart as the missing side: a row that names another account is listed, not guessed.
+    """
     for line in lines:
         tax_id = line.get("tax_id")
         if not tax_id or tax_id in MANUAL_ZERO_RATE_IDS or tax_id in ip.BEZUG:
             continue
-        own = {str(line[side]) for side in ("debit_account_id", "credit_account_id") if line.get(side) is not None}
+        own = {
+            str(line[side])
+            for side in ("debit_account_id", "credit_account_id")
+            if line.get(side) is not None
+        }
         if str(line.get("tax_account_id")) not in own:
-            raise ip.MappingError("tax account {} is not an account of its row".format(line.get("tax_account_id")))
+            raise ip.MappingError(
+                "tax account {} is not an account of its row".format(
+                    line.get("tax_account_id")
+                )
+            )
 
 
 def _reverse_charge(line, lookups, debit, credit, amount, factor, side):
@@ -232,15 +307,19 @@ def _reverse_charge(line, lookups, debit, credit, amount, factor, side):
     bezugsteuer, _ = _by_number(lookups, REVERSE_CHARGE_LIABILITY)
     tax = (amount * _money(rate) / 100).quantize(CENT, rounding=ROUND_HALF_UP)
     other = "credit" if side == "debit" else "debit"
-    parts = [(debit, "debit", amount, _chf(amount, factor)), (credit, "credit", amount, _chf(amount, factor)),
-             (vorsteuer, side, tax, _chf(tax, factor)), (bezugsteuer, other, tax, _chf(tax, factor))]
+    parts = [
+        (debit, "debit", amount, _chf(amount, factor)),
+        (credit, "credit", amount, _chf(amount, factor)),
+        (vorsteuer, side, tax, _chf(tax, factor)),
+        (bezugsteuer, other, tax, _chf(tax, factor)),
+    ]
     return sorted(parts, key=lambda part: part[1] != "debit")
 
 
 def _by_number(lookups, number):
     found = lookups.by_number.get(number)
     if not found:
-        raise ip.MappingError("no Account {} in ERPNext".format(number))
+        raise ip.MappingError(f"no Account {number} in ERPNext")
     return found
 
 
@@ -256,11 +335,21 @@ def _line_parts(line, lookups, currencies):
     gross = _chf(amount, factor)
     if line.get("tax_id") in ip.BEZUG:
         # the expense or income side decides, as for ordinary VAT: a reversal credits the expense and takes the tax back
-        side = "credit" if credit_root in PROFIT_AND_LOSS and debit_root not in PROFIT_AND_LOSS else "debit"
-        return _reverse_charge(line, lookups, debit, credit, amount, factor, side), factor
+        side = (
+            "credit"
+            if credit_root in PROFIT_AND_LOSS and debit_root not in PROFIT_AND_LOSS
+            else "debit"
+        )
+        return (
+            _reverse_charge(line, lookups, debit, credit, amount, factor, side),
+            factor,
+        )
     vat = _vat(line, lookups)
     if vat is None:
-        return [(debit, "debit", amount, gross), (credit, "credit", amount, gross)], factor
+        return [
+            (debit, "debit", amount, gross),
+            (credit, "credit", amount, gross),
+        ], factor
     rate, tax_account, tax_side = vat
     # the VAT sits on the side of the income or expense account it was charged on, so a reversal (income
     # debited, receivable credited) debits the Umsatzsteuer; with no such account the tax account's own side decides
@@ -274,9 +363,17 @@ def _line_parts(line, lookups, currencies):
     # the CHF tax is the rest of the gross, so the rows add up to the gross in CHF to the rappen
     tax_chf = gross - net_chf
     if side == "debit":
-        parts = [(debit, "debit", net, net_chf), (tax_account, "debit", amount - net, tax_chf), (credit, "credit", amount, gross)]
+        parts = [
+            (debit, "debit", net, net_chf),
+            (tax_account, "debit", amount - net, tax_chf),
+            (credit, "credit", amount, gross),
+        ]
     else:
-        parts = [(credit, "credit", net, net_chf), (tax_account, "credit", amount - net, tax_chf), (debit, "debit", amount, gross)]
+        parts = [
+            (credit, "credit", net, net_chf),
+            (tax_account, "credit", amount - net, tax_chf),
+            (debit, "debit", amount, gross),
+        ]
     # debit rows first, as a journal reads
     return sorted(parts, key=lambda part: part[1] != "debit"), factor
 
@@ -290,14 +387,14 @@ def map_entry(entry, lookups, currencies, customer=None):
     kind = entry.get("type")
     # an untyped entry (type None) has the shape of a single one and is booked as one
     if kind not in TYPES + (BANKING, None):
-        raise ip.MappingError("unknown entry type {!r}".format(kind))
+        raise ip.MappingError(f"unknown entry type {kind!r}")
     if entry.get("id") is None:
         raise ip.MappingError("entry without id")
     lines = entry.get("entries") or []
     if not lines:
         raise ip.MappingError("no entries lines")
     if kind == SINGLE and len(lines) != 1:
-        raise ip.MappingError("single entry with {} lines".format(len(lines)))
+        raise ip.MappingError(f"single entry with {len(lines)} lines")
     rows, debit, credit = [], ZERO, ZERO
     reference = entry.get("reference_nr") or ""
     _check_tax_accounts(lines)
@@ -305,26 +402,38 @@ def map_entry(entry, lookups, currencies, customer=None):
         parts, factor = _line_parts(line, lookups, currencies)
         code = currencies[str(line.get("currency_id"))]
         for account, side, value, chf in parts:
-            if account in lookups.party and (customer is None or account not in lookups.receivable):
-                raise ip.MappingError("account {} needs a party, and a manual entry has none".format(account))
+            if account in lookups.party and (
+                customer is None or account not in lookups.receivable
+            ):
+                raise ip.MappingError(
+                    f"account {account} needs a party, and a manual entry has none"
+                )
             if side == "debit":
                 debit += chf
             else:
                 credit += chf
-            value, row_factor = _account_amount(lookups, account, code, value, chf, factor)
-            row = _row(account, side, value, chf, row_factor, line.get("description") or "")
+            value, row_factor = _account_amount(
+                lookups, account, code, value, chf, factor
+            )
+            row = _row(
+                account, side, value, chf, row_factor, line.get("description") or ""
+            )
             if account in lookups.party:
                 row.update(party_type=CUSTOMER, party=customer)
             rows.append(row)
     if debit != credit:
-        raise ip.MappingError("debit {} and credit {} differ".format(debit, credit))
+        raise ip.MappingError(f"debit {debit} and credit {credit} differ")
     day = _day(entry).isoformat()
     depreciation = any(row["account"] in lookups.depreciation for row in rows)
     return {
-        "doctype": JOURNAL, "company": im.COMPANY,
+        "doctype": JOURNAL,
+        "company": im.COMPANY,
         "voucher_type": DEPRECIATION_ENTRY if depreciation else "Journal Entry",
         # ERPNext wants a reference date with a reference number: bexio's entry has none, so it is the entry's date
-        "posting_date": day, "cheque_no": reference, "cheque_date": day if reference else None, "user_remark": reference,
+        "posting_date": day,
+        "cheque_no": reference,
+        "cheque_date": day if reference else None,
+        "user_remark": reference,
         "multi_currency": int(any(row["exchange_rate"] != 1 for row in rows)),
         "bexio_id": manual_key(entry["id"]),
         "accounts": rows,
@@ -341,21 +450,23 @@ def _account_amount(lookups, account, code, value, chf, factor):
         return value, factor
     if currency == "CHF":
         return chf, _money(1)
-    raise ip.MappingError("a {} line on an account in {}".format(code, currency))
+    raise ip.MappingError(f"a {code} line on an account in {currency}")
 
 
 def manual_key(entry_id):
     """The bexio_id of a manual entry's Journal Entry. Prefixed, because the VAT fix's Journal Entries carry bare journal
     line ids: an unprefixed manual entry id would find one of them and the loader would skip the entry.
     """
-    return "manual-{}".format(entry_id)
+    return f"manual-{entry_id}"
 
 
 def _row(account, side, value, chf, factor, remark):
     """One Journal Entry Account row: the amount in the account's currency, and in CHF with the rate of the line."""
     row = {"account": account, "user_remark": remark, "exchange_rate": float(factor)}
     row["debit" if side == "debit" else "credit"] = float(chf)
-    row["debit_in_account_currency" if side == "debit" else "credit_in_account_currency"] = float(value)
+    row[
+        "debit_in_account_currency" if side == "debit" else "credit_in_account_currency"
+    ] = float(value)
     return row
 
 
@@ -371,7 +482,17 @@ class Totals:
         self.documents = []
 
     def row(self, year):
-        return self.rows.setdefault(year, {"entries": 0, "mapped": 0, "banking": 0, "unmapped": 0, "debit": ZERO, "banking_debit": ZERO})
+        return self.rows.setdefault(
+            year,
+            {
+                "entries": 0,
+                "mapped": 0,
+                "banking": 0,
+                "unmapped": 0,
+                "debit": ZERO,
+                "banking_debit": ZERO,
+            },
+        )
 
 
 def customer_document(entry_id, name):
@@ -379,13 +500,22 @@ def customer_document(entry_id, name):
     (the Journal Entry row refers to it by that name), with the import's default territory for a contact of no known country.
     Keyed by bexio_id, so a rerun finds it and changes nothing."""
     key = party_key(entry_id)
-    return {"doctype": CUSTOMER, "name": name, "bexio_id": key,
-            "values": {"customer_name": name, "customer_type": "Company", "territory": "Rest Of The World", "bexio_id": key}}
+    return {
+        "doctype": CUSTOMER,
+        "name": name,
+        "bexio_id": key,
+        "values": {
+            "customer_name": name,
+            "customer_type": "Company",
+            "territory": "Rest Of The World",
+            "bexio_id": key,
+        },
+    }
 
 
 def party_key(entry_id):
     """The bexio_id of the Customer an entry's party override creates. Prefixed like manual_key, so no other bexio id meets it."""
-    return "manual-party-{}".format(entry_id)
+    return f"manual-party-{entry_id}"
 
 
 def dry_run(entries, lookups, currencies, parties=None):
@@ -408,7 +538,9 @@ def dry_run(entries, lookups, currencies, parties=None):
             doc = map_entry(entry, lookups, currencies, customer)
         except ip.MappingError as err:
             row["unmapped"] += 1
-            totals.problems.append("manual entry {}: unmapped, {}".format(entry.get("id"), err))
+            totals.problems.append(
+                "manual entry {}: unmapped, {}".format(entry.get("id"), err)
+            )
             continue
         debit = sum((_money(r.get("debit", 0)) for r in doc["accounts"]), ZERO)
         row["mapped"] += 1
@@ -418,16 +550,44 @@ def dry_run(entries, lookups, currencies, parties=None):
             row["banking_debit"] += debit
         if customer is not None:
             totals.documents.append(customer_document(entry["id"], customer))
-        totals.documents.append({"doctype": JOURNAL, "name": None, "bexio_id": doc["bexio_id"], "values": doc})
+        totals.documents.append(
+            {
+                "doctype": JOURNAL,
+                "name": None,
+                "bexio_id": doc["bexio_id"],
+                "values": doc,
+            }
+        )
     return totals
 
 
 def report(totals, export_dir):
-    lines = ["manual entries dry run from {}".format(export_dir),
-             "{:<6}{:>9}{:>8}{:>9}{:>10}{:>16}{:>16}".format("year", "entries", "mapped", "banking", "unmapped", "debit CHF", "of banking")]
-    for year, r in sorted(totals.rows.items(), key=lambda item: (item[0] is None, item[0] or 0)):
-        lines.append("{:<6}{:>9}{:>8}{:>9}{:>10}{:>16}{:>16}".format(
-            year if year is not None else "?", r["entries"], r["mapped"], r["banking"], r["unmapped"], r["debit"], r["banking_debit"]))
+    lines = [
+        f"manual entries dry run from {export_dir}",
+        "{:<6}{:>9}{:>8}{:>9}{:>10}{:>16}{:>16}".format(
+            "year",
+            "entries",
+            "mapped",
+            "banking",
+            "unmapped",
+            "debit CHF",
+            "of banking",
+        ),
+    ]
+    for year, r in sorted(
+        totals.rows.items(), key=lambda item: (item[0] is None, item[0] or 0)
+    ):
+        lines.append(
+            "{:<6}{:>9}{:>8}{:>9}{:>10}{:>16}{:>16}".format(
+                year if year is not None else "?",
+                r["entries"],
+                r["mapped"],
+                r["banking"],
+                r["unmapped"],
+                r["debit"],
+                r["banking_debit"],
+            )
+        )
     lines.append("nothing was written to ERPNext")
     return "\n".join(lines)
 
@@ -435,8 +595,13 @@ def report(totals, export_dir):
 def entry_of_lines(entries, journal):
     """{journal line id: manual entry id} of the bexio journal lines an entry books: a line whose id is one of an entry's
     row ids, and a VAT line of a row, found by the entry's date and the row's description (posting_plan's pairing). A
-    line that two entries could claim is left out. The document lines (invoices, bills, payments) are not an entry's."""
-    by_id, by_text, rows_by_text = {}, collections.defaultdict(set), collections.defaultdict(list)
+    line that two entries could claim is left out. The document lines (invoices, bills, payments) are not an entry's.
+    """
+    by_id, by_text, rows_by_text = (
+        {},
+        collections.defaultdict(set),
+        collections.defaultdict(list),
+    )
     for entry in entries:
         for row in entry.get("entries") or []:
             if row.get("id") is not None:
@@ -461,8 +626,12 @@ def entry_of_lines(entries, journal):
             owner[line["id"]] = by_id[line["id"] - 1]
         else:
             # bexio can book a row's VAT line later, after other rows: then the row whose gross is its net line and this line decides
-            grossed = {by_id[row["id"]] for row in rows_by_text[key]
-                       if row["id"] in amounts and _gross_matches(row, amounts[row["id"]], amounts[line["id"]])}
+            grossed = {
+                by_id[row["id"]]
+                for row in rows_by_text[key]
+                if row["id"] in amounts
+                and _gross_matches(row, amounts[row["id"]], amounts[line["id"]])
+            }
             if len(grossed) == 1:
                 owner[line["id"]] = next(iter(grossed))
     return owner
@@ -476,7 +645,8 @@ def _gross_matches(row, net, vat):
 
 def load_journal_wins(path):
     """The entries bexio books differently on purpose, from the private file: one bexio id per line, then its reason.
-    {bexio id: reason}. Blank lines and lines starting with # are skipped; a missing file lists none."""
+    {bexio id: reason}. Blank lines and lines starting with # are skipped; a missing file lists none.
+    """
     if not os.path.exists(path):
         return {}
     reasons = {}
@@ -487,14 +657,15 @@ def load_journal_wins(path):
                 continue
             bexio_id, _, reason = text.partition(" ")
             if not reason.strip():
-                raise ValueError("a line of {} has no reason after its bexio id".format(path))
+                raise ValueError(f"a line of {path} has no reason after its bexio id")
             reasons[bexio_id] = reason.strip()
     return reasons
 
 
 def load_parties(path):
     """The party overrides of the manual entries, from the private file: one bexio id and the Customer's name per line.
-    {str(bexio id): Customer name}. Blank lines and lines starting with # are skipped; a missing file lists none."""
+    {str(bexio id): Customer name}. Blank lines and lines starting with # are skipped; a missing file lists none.
+    """
     if not os.path.exists(path):
         return {}
     parties = {}
@@ -505,7 +676,9 @@ def load_parties(path):
                 continue
             entry_id, _, name = text.partition(" ")
             if not name.strip():
-                raise ValueError("a line of {} has no Customer name after its bexio id".format(path))
+                raise ValueError(
+                    f"a line of {path} has no Customer name after its bexio id"
+                )
             parties[entry_id] = name.strip()
     return parties
 
@@ -525,21 +698,27 @@ def journal_check(entries, totals, journal, lookups, wins=None):
     exported = {manual_key(entry["id"]) for entry in entries}
     names = {str(bexio_id): name for bexio_id, (name, _) in lookups.accounts.items()}
     roots = {name: root for name, root in lookups.accounts.values()}
-    mapped, booked = collections.defaultdict(collections.Counter), collections.defaultdict(collections.Counter)
+    mapped, booked = collections.defaultdict(
+        collections.Counter
+    ), collections.defaultdict(collections.Counter)
     years = {}
     for document in totals.documents:
         if document["bexio_id"] not in exported:
             continue
-        entry_id = document["bexio_id"][len("manual-"):]
+        entry_id = document["bexio_id"][len("manual-") :]
         years[entry_id] = document["values"]["posting_date"][:4]
         for row in document["values"]["accounts"]:
-            mapped[entry_id][row["account"]] += _money(row.get("debit", 0)) - _money(row.get("credit", 0))
+            mapped[entry_id][row["account"]] += _money(row.get("debit", 0)) - _money(
+                row.get("credit", 0)
+            )
     for line in journal:
         entry_id = owner.get(line["id"])
         if entry_id is None:
             continue
         amount = _money(line["base_currency_amount"])
-        debit, credit = names.get(str(line["debit_account_id"])), names.get(str(line["credit_account_id"]))
+        debit, credit = names.get(str(line["debit_account_id"])), names.get(
+            str(line["credit_account_id"])
+        )
         booked[entry_id][debit] += amount
         booked[entry_id][credit] -= amount
         years.setdefault(entry_id, str(line["date"])[:4])
@@ -551,9 +730,14 @@ def journal_check(entries, totals, journal, lookups, wins=None):
         year = years.get(entry_id)
         for account in sorted(set(mapped[entry_id]) | set(booked[entry_id]), key=str):
             if account is None:
-                problems.append("entry {} ({}): a bexio account has no Account in ERPNext".format(entry_id, year))
+                problems.append(
+                    f"entry {entry_id} ({year}): a bexio account has no Account in ERPNext"
+                )
                 continue
-            if not (account.split()[0] in CHECK_NUMBERS or roots.get(account) in PROFIT_AND_LOSS):
+            if not (
+                account.split()[0] in CHECK_NUMBERS
+                or roots.get(account) in PROFIT_AND_LOSS
+            ):
                 continue
             want, have = mapped[entry_id][account], booked[entry_id][account]
             cell = per_year[year]
@@ -561,19 +745,34 @@ def journal_check(entries, totals, journal, lookups, wins=None):
             if abs(want - have) > TOLERANCE:
                 cell[1] += 1
                 cell[2] += abs(want - have)
-                problems.append("entry {} ({}): {} mapped {:.2f} bexio {:.2f}".format(entry_id, year, account, want, have))
+                problems.append(
+                    f"entry {entry_id} ({year}): {account} mapped {want:.2f} bexio {have:.2f}"
+                )
     return problems, dict(per_year), len(seen - won - unmapped), len(won), len(unmapped)
 
 
 def check_report(per_year, compared, unexplained, wins, unmapped):
     """The journal check as totals per year: accounts compared, accounts that differ, and the sum of the differences. The
-    header counts the entries compared, the differences left unexplained, the journal wins (D11) and the unmapped entries (D10)."""
-    header = ("manual entries against bexio's journal: {} entries compared, {} unexplained, {} journal wins (D11), "
-              "{} unmapped (D10), nothing was written")
-    lines = [header.format(compared, unexplained, wins, unmapped),
-             "{:<6}{:>10}{:>10}{:>16}".format("year", "accounts", "differ", "sum of differences")]
-    for year, (count, differ, total) in sorted(per_year.items(), key=lambda item: (item[0] is None, item[0] or "")):
-        lines.append("{:<6}{:>10}{:>10}{:>16,.2f}".format(year if year is not None else "?", count, differ, total))
+    header counts the entries compared, the differences left unexplained, the journal wins (D11) and the unmapped entries (D10).
+    """
+    header = (
+        "manual entries against bexio's journal: {} entries compared, {} unexplained, {} journal wins (D11), "
+        "{} unmapped (D10), nothing was written"
+    )
+    lines = [
+        header.format(compared, unexplained, wins, unmapped),
+        "{:<6}{:>10}{:>10}{:>16}".format(
+            "year", "accounts", "differ", "sum of differences"
+        ),
+    ]
+    for year, (count, differ, total) in sorted(
+        per_year.items(), key=lambda item: (item[0] is None, item[0] or "")
+    ):
+        lines.append(
+            "{:<6}{:>10}{:>10}{:>16,.2f}".format(
+                year if year is not None else "?", count, differ, total
+            )
+        )
     return "\n".join(lines)
 
 
@@ -596,11 +795,31 @@ def load_extra(path):
 
 
 def main(argv):
-    parser = argparse.ArgumentParser(description="Map the bexio manual entries to ERPNext Journal Entries (dry run).")
-    parser.add_argument("--export", default=None, help="export directory (default: the newest under <private>/bexio-export/)")
-    parser.add_argument("--dry-run", action="store_true", help="read ERPNext, write nothing, print the totals")
-    parser.add_argument("--write", metavar="FILE", default=None, help="write the loader plan to a private file (bexio-drafts.sh FILE submit does the live run)")
-    parser.add_argument("--extra", metavar="FILE", default=None, help="entries that are not in the export, in bexio's shape, as a private list")
+    parser = argparse.ArgumentParser(
+        description="Map the bexio manual entries to ERPNext Journal Entries (dry run)."
+    )
+    parser.add_argument(
+        "--export",
+        default=None,
+        help="export directory (default: the newest under <private>/bexio-export/)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="read ERPNext, write nothing, print the totals",
+    )
+    parser.add_argument(
+        "--write",
+        metavar="FILE",
+        default=None,
+        help="write the loader plan to a private file (bexio-drafts.sh FILE submit does the live run)",
+    )
+    parser.add_argument(
+        "--extra",
+        metavar="FILE",
+        default=None,
+        help="entries that are not in the export, in bexio's shape, as a private list",
+    )
     parser.add_argument("--token-file", default=im.TOKEN_FILE)
     args = parser.parse_args(argv)
     if sum(bool(x) for x in (args.dry_run, args.write is not None)) != 1:
@@ -608,7 +827,9 @@ def main(argv):
     export_dir = args.export or im.newest_export()
     loaded = load_entries(export_dir)
     if loaded is None:
-        print("manual entries: not exported yet ({} is not in {})".format(ENTRIES_FILE, export_dir))
+        print(
+            f"manual entries: not exported yet ({ENTRIES_FILE} is not in {export_dir})"
+        )
         return 0
     entries, currencies = loaded
     exported = entries
@@ -617,7 +838,7 @@ def main(argv):
     try:
         lookups = Lookups.from_erp(im.Erp.from_file(args.token_file))
     except im.ErpError as err:
-        print("aborted: {}".format(err), file=sys.stderr)
+        print(f"aborted: {err}", file=sys.stderr)
         return 2
     parties = load_parties(os.path.join(im.PRIVATE, PARTIES_FILE))
     totals = dry_run(entries, lookups, currencies, parties)
@@ -625,16 +846,32 @@ def main(argv):
     with open(os.path.join(export_dir, JOURNAL_FILE), encoding="utf-8") as f:
         journal = json.load(f)
     wins = load_journal_wins(os.path.join(im.PRIVATE, JOURNAL_WINS_FILE))
-    check_problems, per_year, compared, won, unmapped = journal_check(exported, totals, journal, lookups, wins)
+    check_problems, per_year, compared, won, unmapped = journal_check(
+        exported, totals, journal, lookups, wins
+    )
     print(check_report(per_year, compared, len(check_problems), won, unmapped))
-    ip.write_private(os.path.join(im.PRIVATE, JOURNAL_CHECK_FILE), check_problems or ["none"])
+    ip.write_private(
+        os.path.join(im.PRIVATE, JOURNAL_CHECK_FILE), check_problems or ["none"]
+    )
     if totals.problems:
         ip.write_private(os.path.join(im.PRIVATE, PROBLEMS_FILE), totals.problems)
-        print("{} entry(ies) listed by bexio id in {}".format(len(totals.problems), os.path.join(im.PRIVATE, PROBLEMS_FILE)), file=sys.stderr)
+        print(
+            f"{len(totals.problems)} entry(ies) listed by bexio id in {os.path.join(im.PRIVATE, PROBLEMS_FILE)}",
+            file=sys.stderr,
+        )
     if args.write:
         # an entry that does not map is left out and listed, never half written
-        ip.write_private(args.write, [json.dumps({"documents": totals.documents, "exchange_rates": []}, indent=1)])
-        print("{} Journal Entries handed to the loader in {}".format(len(totals.documents), args.write))
+        ip.write_private(
+            args.write,
+            [
+                json.dumps(
+                    {"documents": totals.documents, "exchange_rates": []}, indent=1
+                )
+            ],
+        )
+        print(
+            f"{len(totals.documents)} Journal Entries handed to the loader in {args.write}"
+        )
     return 1 if any(r["unmapped"] for r in totals.rows.values()) else 0
 
 

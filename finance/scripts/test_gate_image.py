@@ -66,16 +66,20 @@ class GateImage(unittest.TestCase):
         self.stub(
             "docker",
             'if [ "$1 $2" = "image inspect" ]; then\n'
-            '  t=${3#frappe-finance-custom:}\n'
+            "  t=${3#frappe-finance-custom:}\n"
             '  case " %s " in *" $t "*) exit 0 ;; esac\n'
             "  exit 1\nfi\n"
             'if [ "$1" = "images" ]; then\n'
-            "  for t in %s; do echo \"$t\"; done\n  exit 0\nfi\n"
+            '  for t in %s; do echo "$t"; done\n  exit 0\nfi\n'
             "exit 0\n" % (held, held),
         )
         env = {"PATH": os.path.join(self.tmp, "bin") + os.pathsep + os.environ["PATH"]}
         return subprocess.run(
-            ["sh", self.script], cwd=self.tmp, capture_output=True, text=True, env=env,
+            ["sh", self.script],
+            cwd=self.tmp,
+            capture_output=True,
+            text=True,
+            env=env,
         )
 
     def test_main_pin_present_wins_over_the_branch_pin(self):

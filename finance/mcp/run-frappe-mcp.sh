@@ -20,11 +20,11 @@ FRAPPE_API_KEY=
 FRAPPE_API_SECRET=
 while IFS='=' read -r key value; do
   case "$key" in
-    url) FRAPPE_URL="$value" ;;
-    api_key) FRAPPE_API_KEY="$value" ;;
-    api_secret) FRAPPE_API_SECRET="$value" ;;
+  url) FRAPPE_URL="$value" ;;
+  api_key) FRAPPE_API_KEY="$value" ;;
+  api_secret) FRAPPE_API_SECRET="$value" ;;
   esac
-done < "$KEYS"
+done <"$KEYS"
 FRAPPE_URL="${FRAPPE_URL%/}"
 FRAPPE_URL="${FRAPPE_URL%/api}"
 export FRAPPE_URL FRAPPE_API_KEY FRAPPE_API_SECRET

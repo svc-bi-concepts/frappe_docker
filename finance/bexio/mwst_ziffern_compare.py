@@ -38,8 +38,10 @@ ZERO = Decimal("0")
 JOURNAL_LABEL = "journal entries (by account)"
 # a total row's journal part is its components': the report's CSV holds no journal sub-row for
 # the totals, so the comparison sums the components' before it classifies a total
-TOTALS = {"399": ("302", "303", "312", "313", "342", "343", "382", "383"),
-          "479": ("400", "405", "410", "415", "420")}
+TOTALS = {
+    "399": ("302", "303", "312", "313", "342", "343", "382", "383"),
+    "479": ("400", "405", "410", "415", "420"),
+}
 # the Ziffern the form states as tax amounts only: their base columns are information and are
 # not compared (400 to 420 with the total 479; 500 and 510 have no base on either side)
 TAX_ONLY = {"400", "405", "410", "415", "420", "479", "500", "510"}
@@ -57,9 +59,13 @@ def read_bexio(path):
     with open(path, encoding="utf-8", newline="") as f:
         for row in csv.DictReader(f):
             out[row["quarter"]][row["ziffer"]] = (
-                money(row["entgelt_chf"]), money(row["steuer_chf"]),
-                money(row["journal_entgelt_chf"]), money(row["journal_steuer_chf"]),
-                money(row["entgelt_tol_chf"]), money(row["steuer_tol_chf"]))
+                money(row["entgelt_chf"]),
+                money(row["steuer_chf"]),
+                money(row["journal_entgelt_chf"]),
+                money(row["journal_steuer_chf"]),
+                money(row["entgelt_tol_chf"]),
+                money(row["steuer_tol_chf"]),
+            )
     return dict(out)
 
 
@@ -104,7 +110,13 @@ def reason_of(ziffer, bexio, erp):
     bexio side with no figure at all is the expected difference: bexio's declarations never
     carried one, the report fills the row from the sales codes (DEDUCTION_ROWS in
     mwst_payment.py), so it is named and explained, not failed."""
-    if ziffer in DEDUCTION_ROWS and not bexio[0] and not bexio[1] and not bexio[4] and not bexio[5]:
+    if (
+        ziffer in DEDUCTION_ROWS
+        and not bexio[0]
+        and not bexio[1]
+        and not bexio[4]
+        and not bexio[5]
+    ):
         return "deduction rows"
     d_base = ZERO if ziffer in TAX_ONLY else erp[0] - bexio[0]
     d_tax = erp[1] - bexio[1]
@@ -144,13 +156,37 @@ def compare(bexio, erpnext):
         if e_rows is None:
             for ziffer in sorted(b_rows):
                 b = b_rows[ziffer]
-                rows.append((quarter, ziffer, b[0], ZERO, b[1], ZERO, b[4], b[5], "no ERPNext report"))
+                rows.append(
+                    (
+                        quarter,
+                        ziffer,
+                        b[0],
+                        ZERO,
+                        b[1],
+                        ZERO,
+                        b[4],
+                        b[5],
+                        "no ERPNext report",
+                    )
+                )
             continue
         e_rows = with_totals_journal(e_rows)
         for ziffer in sorted(set(b_rows) | set(e_rows)):
             b = b_rows.get(ziffer, (ZERO, ZERO, ZERO, ZERO, ZERO, ZERO))
             e = e_rows.get(ziffer, (ZERO, ZERO, ZERO, ZERO))
-            rows.append((quarter, ziffer, b[0], e[0], b[1], e[1], b[4], b[5], reason_of(ziffer, b, e)))
+            rows.append(
+                (
+                    quarter,
+                    ziffer,
+                    b[0],
+                    e[0],
+                    b[1],
+                    e[1],
+                    b[4],
+                    b[5],
+                    reason_of(ziffer, b, e),
+                )
+            )
     return rows
 
 
@@ -175,13 +211,33 @@ def write_csv(path, rows):
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["quarter", "ziffer", "bexio_entgelt_chf", "erpnext_entgelt_chf",
-                         "bexio_steuer_chf", "erpnext_steuer_chf", "entgelt_tol_chf",
-                         "steuer_tol_chf", "reason"])
+        writer.writerow(
+            [
+                "quarter",
+                "ziffer",
+                "bexio_entgelt_chf",
+                "erpnext_entgelt_chf",
+                "bexio_steuer_chf",
+                "erpnext_steuer_chf",
+                "entgelt_tol_chf",
+                "steuer_tol_chf",
+                "reason",
+            ]
+        )
         for quarter, ziffer, b_base, e_base, b_tax, e_tax, b_tol, s_tol, why in rows:
-            writer.writerow([quarter, ziffer, "{:.2f}".format(b_base), "{:.2f}".format(e_base),
-                             "{:.2f}".format(b_tax), "{:.2f}".format(e_tax), "{:.2f}".format(b_tol),
-                             "{:.2f}".format(s_tol), why])
+            writer.writerow(
+                [
+                    quarter,
+                    ziffer,
+                    f"{b_base:.2f}",
+                    f"{e_base:.2f}",
+                    f"{b_tax:.2f}",
+                    f"{e_tax:.2f}",
+                    f"{b_tol:.2f}",
+                    f"{s_tol:.2f}",
+                    why,
+                ]
+            )
 
 
 def summary_lines(rows):
@@ -192,17 +248,23 @@ def summary_lines(rows):
         by_reason[row[8]] += 1
     left = unexplained(rows)
     lines = [
-        "quarters compared: {}".format(len({row[0] for row in rows})),
-        "Ziffern compared: {}".format(len(rows)),
-        "Ziffern with a difference: {}".format(len(bad)),
+        f"quarters compared: {len({row[0] for row in rows})}",
+        f"Ziffern compared: {len(rows)}",
+        f"Ziffern with a difference: {len(bad)}",
     ]
     for reason in sorted(by_reason):
-        lines.append("  {}: {}".format(reason, by_reason[reason]))
-    lines.append("Ziffern with an unexplained difference: {}".format(len(left)))
+        lines.append(f"  {reason}: {by_reason[reason]}")
+    lines.append(f"Ziffern with an unexplained difference: {len(left)}")
     quarters = sorted({row[0] for row in left})
     if quarters:
-        lines.append("quarters with an unexplained difference: {} ({})".format(len(quarters), ", ".join(quarters)))
-    lines.append("the differences are rounding and the journal mirrors, see finance/docs/swiss.md")
+        lines.append(
+            "quarters with an unexplained difference: {} ({})".format(
+                len(quarters), ", ".join(quarters)
+            )
+        )
+    lines.append(
+        "the differences are rounding and the journal mirrors, see finance/docs/swiss.md"
+    )
     return lines
 
 
@@ -213,11 +275,19 @@ def erpnext_reports(directory):
 
 def main(argv):
     parser = argparse.ArgumentParser(
-        description="bexio's payment-basis Ziffern against ERPNext's, per quarter (read only).")
-    parser.add_argument("--bexio", default=os.path.join(im.PRIVATE, "bexio-mwst-ziffern.csv"))
-    parser.add_argument("--reports", default=im.PRIVATE,
-                        help="the directory holding mwst-<quarter>-payment.csv (default <private>)")
-    parser.add_argument("--report", default=os.path.join(im.PRIVATE, "bexio-mwst-ziffern-compare.csv"))
+        description="bexio's payment-basis Ziffern against ERPNext's, per quarter (read only)."
+    )
+    parser.add_argument(
+        "--bexio", default=os.path.join(im.PRIVATE, "bexio-mwst-ziffern.csv")
+    )
+    parser.add_argument(
+        "--reports",
+        default=im.PRIVATE,
+        help="the directory holding mwst-<quarter>-payment.csv (default <private>)",
+    )
+    parser.add_argument(
+        "--report", default=os.path.join(im.PRIVATE, "bexio-mwst-ziffern-compare.csv")
+    )
     args = parser.parse_args(argv)
 
     bexio = read_bexio(args.bexio)
@@ -226,7 +296,7 @@ def main(argv):
     for line in summary_lines(rows):
         print(line)
     write_csv(args.report, rows)
-    print("written: {}".format(args.report))
+    print(f"written: {args.report}")
     return 1 if unexplained(rows) else 0
 
 

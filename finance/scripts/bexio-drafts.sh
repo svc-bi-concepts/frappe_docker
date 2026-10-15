@@ -18,10 +18,14 @@ cd "$(dirname "$0")/../.."
 
 plan="${1:?usage: bexio-drafts.sh <plan.json> [draft|submit|relink|check]}"
 mode="${2:-draft}"
-case "$mode" in draft | submit | relink | check) ;; *) echo "mode is draft, submit, relink or check, not $mode" >&2; exit 2 ;; esac
+case "$mode" in draft | submit | relink | check) ;; *)
+  echo "mode is draft, submit, relink or check, not $mode" >&2
+  exit 2
+  ;;
+esac
 LOADER=$(cat finance/scripts/bexio-drafts.py)
 export LOADER
 
 docker compose -p frappe-finance -f pwd.yml -f finance-local.yml exec -T -e LOADER -e MODE="$mode" backend \
   sh -c 'cd /home/frappe/frappe-bench/sites && exec ../env/bin/python -c "$LOADER"' \
-  < "$plan"
+  <"$plan"

@@ -21,13 +21,29 @@ from bi_finance import qrbill
 IBAN = "CH21 0900 0000 2500 9779 8"  # SIX sample, plain IBAN (IID 09000)
 QR_IBAN = "CH44 3199 9123 0008 8901 2"  # SIX sample, IID 31999: a QR-IBAN
 
-CREDITOR = qrbill.address_lines(name="Beispiel AG", street="Musterweg", building="7", postal="8000", town="Zürich", country="ch")
-DEBTOR = qrbill.address_lines(name="Muster GmbH", street="Teststrasse", building="15a", postal="3000", town="Bern")
+CREDITOR = qrbill.address_lines(
+    name="Beispiel AG",
+    street="Musterweg",
+    building="7",
+    postal="8000",
+    town="Zürich",
+    country="ch",
+)
+DEBTOR = qrbill.address_lines(
+    name="Muster GmbH", street="Teststrasse", building="15a", postal="3000", town="Bern"
+)
 
 
 class Payload(unittest.TestCase):
     def lines(self, **kw):
-        args = dict(iban=IBAN, creditor=CREDITOR, amount=1234.5, currency="CHF", debtor=DEBTOR, message="Rechnung 1")
+        args = dict(
+            iban=IBAN,
+            creditor=CREDITOR,
+            amount=1234.5,
+            currency="CHF",
+            debtor=DEBTOR,
+            message="Rechnung 1",
+        )
         args.update(kw)
         return qrbill.payload(**args).split("\r\n")
 
@@ -35,10 +51,15 @@ class Payload(unittest.TestCase):
         lines = self.lines()
         self.assertEqual(len(lines), 31)
         self.assertEqual(lines[0:4], ["SPC", "0200", "1", "CH2109000000250097798"])
-        self.assertEqual(lines[4:11], ["S", "Beispiel AG", "Musterweg", "7", "8000", "Zürich", "CH"])
+        self.assertEqual(
+            lines[4:11], ["S", "Beispiel AG", "Musterweg", "7", "8000", "Zürich", "CH"]
+        )
         self.assertEqual(lines[11:18], [""] * 7)  # ultimate creditor
         self.assertEqual(lines[18:20], ["1234.50", "CHF"])
-        self.assertEqual(lines[20:27], ["S", "Muster GmbH", "Teststrasse", "15a", "3000", "Bern", "CH"])
+        self.assertEqual(
+            lines[20:27],
+            ["S", "Muster GmbH", "Teststrasse", "15a", "3000", "Bern", "CH"],
+        )
         self.assertEqual(lines[27:30], ["NON", "", "Rechnung 1"])
         self.assertEqual(lines[30], "EPD")
 
@@ -52,7 +73,9 @@ class Payload(unittest.TestCase):
         self.assertEqual(self.lines(debtor=None)[20:27], [""] * 7)
 
     def test_crlf_separates_elements(self):
-        self.assertNotIn("\n", qrbill.payload(IBAN, CREDITOR, 1, "CHF").replace("\r\n", ""))
+        self.assertNotIn(
+            "\n", qrbill.payload(IBAN, CREDITOR, 1, "CHF").replace("\r\n", "")
+        )
 
     def test_amount_format(self):
         self.assertEqual(qrbill.amount_text(0.1 + 0.2, "CHF"), "0.30")
@@ -70,8 +93,16 @@ class Payload(unittest.TestCase):
             self.lines(currency="USD")
 
     def test_address_truncation(self):
-        long = qrbill.address_lines(name="N" * 80, street="S" * 80, building="1" * 20, postal="P" * 20, town="T" * 40)
-        self.assertEqual(long[1:], ["N" * 70, "S" * 70, "1" * 16, "P" * 16, "T" * 35, "CH"])
+        long = qrbill.address_lines(
+            name="N" * 80,
+            street="S" * 80,
+            building="1" * 20,
+            postal="P" * 20,
+            town="T" * 40,
+        )
+        self.assertEqual(
+            long[1:], ["N" * 70, "S" * 70, "1" * 16, "P" * 16, "T" * 35, "CH"]
+        )
 
     def test_message_truncation_and_line_breaks(self):
         lines = self.lines(message="x" * 200)
@@ -83,12 +114,16 @@ class Payload(unittest.TestCase):
             self.lines(iban=QR_IBAN)
 
     def test_split_street(self):
-        self.assertEqual(qrbill.split_street("Musterstrasse 15a"), ("Musterstrasse", "15a"))
+        self.assertEqual(
+            qrbill.split_street("Musterstrasse 15a"), ("Musterstrasse", "15a")
+        )
         self.assertEqual(qrbill.split_street("Bahnhofplatz"), ("Bahnhofplatz", ""))
         self.assertEqual(qrbill.split_street("Postfach 12 3"), ("Postfach 12", "3"))
 
     def test_iban_printed_in_groups_of_four(self):
-        self.assertEqual(qrbill.iban_text("CH2109000000250097798"), "CH21 0900 0000 2500 9779 8")
+        self.assertEqual(
+            qrbill.iban_text("CH2109000000250097798"), "CH21 0900 0000 2500 9779 8"
+        )
         self.assertEqual(qrbill.iban_text(IBAN), "CH21 0900 0000 2500 9779 8")
         # the QR text keeps the IBAN unspaced
         self.assertEqual(self.lines()[3], "CH2109000000250097798")
@@ -102,7 +137,9 @@ class CreditorReference(unittest.TestCase):
         self.assertEqual(qrbill.creditor_reference("539007547034"), "RF18539007547034")
 
     def test_built_from_an_invented_invoice_number(self):
-        self.assertEqual(qrbill.creditor_reference("ACC-SINV-2026-00001"), "RF38ACCSINV202600001")
+        self.assertEqual(
+            qrbill.creditor_reference("ACC-SINV-2026-00001"), "RF38ACCSINV202600001"
+        )
 
     def test_reference_passes_the_mod_97_check(self):
         # independent check: rearranged (first four characters moved to the end) mod 97 is 1
@@ -114,7 +151,9 @@ class CreditorReference(unittest.TestCase):
                 self.assertEqual(int(digits) % 97, 1)
 
     def test_separators_and_case_are_stripped(self):
-        self.assertEqual(qrbill.creditor_reference("acc sinv 2026 00001"), "RF38ACCSINV202600001")
+        self.assertEqual(
+            qrbill.creditor_reference("acc sinv 2026 00001"), "RF38ACCSINV202600001"
+        )
 
     def test_twenty_one_characters_fill_twenty_five(self):
         self.assertEqual(len(qrbill.creditor_reference("A" * 21)), 25)
@@ -125,12 +164,18 @@ class CreditorReference(unittest.TestCase):
                 qrbill.creditor_reference(bad)
 
     def test_reference_prints_in_groups_of_four(self):
-        self.assertEqual(qrbill.reference_text("RF38ACCSINV202600001"), "RF38 ACCS INV2 0260 0001")
+        self.assertEqual(
+            qrbill.reference_text("RF38ACCSINV202600001"), "RF38 ACCS INV2 0260 0001"
+        )
         # the QR text keeps the reference unspaced
-        self.assertEqual(self.lines(reference="RF38ACCSINV202600001")[28], "RF38ACCSINV202600001")
+        self.assertEqual(
+            self.lines(reference="RF38ACCSINV202600001")[28], "RF38ACCSINV202600001"
+        )
 
     def lines(self, **kw):
-        return qrbill.payload(IBAN, CREDITOR, 1234.5, "CHF", reference=kw.get("reference")).split("\r\n")
+        return qrbill.payload(
+            IBAN, CREDITOR, 1234.5, "CHF", reference=kw.get("reference")
+        ).split("\r\n")
 
 
 class SlipReference(unittest.TestCase):
@@ -140,26 +185,46 @@ class SlipReference(unittest.TestCase):
         from types import SimpleNamespace
 
         return SimpleNamespace(
-            doctype="Sales Invoice", name="ACC-SINV-2026-00001", company="Beispiel AG",
-            company_address=None, customer_address=None, customer="MUSTER", customer_name="Muster GmbH",
-            currency="CHF", grand_total=1234.5, rounded_total=0, rounding_adjustment=None,
-            posting_date="2026-10-11", due_date="2026-10-25", address_display="Musterweg 7",
-            items=[], taxes=[], terms=None, get_formatted=lambda field, *a, **kw: "1.00",
-            flags=SimpleNamespace(bi_qr_measure=False), language="",
+            doctype="Sales Invoice",
+            name="ACC-SINV-2026-00001",
+            company="Beispiel AG",
+            company_address=None,
+            customer_address=None,
+            customer="MUSTER",
+            customer_name="Muster GmbH",
+            currency="CHF",
+            grand_total=1234.5,
+            rounded_total=0,
+            rounding_adjustment=None,
+            posting_date="2026-10-11",
+            due_date="2026-10-25",
+            address_display="Musterweg 7",
+            items=[],
+            taxes=[],
+            terms=None,
+            get_formatted=lambda field, *a, **kw: "1.00",
+            flags=SimpleNamespace(bi_qr_measure=False),
+            language="",
         )
 
     def render(self, inv):
-        import jinja2
         from types import SimpleNamespace
+
+        import jinja2
 
         with open(TEMPLATE, encoding="utf-8") as f:
             template = jinja2.Template(f.read())
         company = SimpleNamespace(company_name="Beispiel AG")
-        fake = SimpleNamespace(get_doc=lambda doctype, name: company if doctype == "Company" else None)
+        fake = SimpleNamespace(
+            get_doc=lambda doctype, name: company if doctype == "Company" else None
+        )
         return template.render(
-            doc=inv, frappe=fake,
+            doc=inv,
+            frappe=fake,
             sales_invoice_iban=lambda inv: qrbill.iban_text(IBAN),
-            sales_invoice_reference=lambda inv: qrbill.reference_text(qrbill.creditor_reference(inv.name)),
+            sales_invoice_reference=lambda inv: qrbill.reference_text(
+                qrbill.creditor_reference(inv.name)
+            ),
             sales_invoice_qr_uri=lambda inv: "data:image/svg+xml;base64,",
             sales_invoice_slip_spacer=lambda inv: 0.8,
             slip_labels=qrbill.slip_labels,
@@ -183,12 +248,32 @@ class SlipReference(unittest.TestCase):
         inv.language = "fr"
         # the slip starts at its id; the invoice body above it keeps its own text
         slip = self.render(inv).split('id="bi-qr"', 1)[1]
-        for label in ("Récépissé", "Section paiement", "Compte / Payable à", "Référence", "Payable par",
-                      "Informations supplémentaires", "Monnaie / Montant", "Point de dépôt", "Facture ACC-SINV-2026-00001"):
+        for label in (
+            "Récépissé",
+            "Section paiement",
+            "Compte / Payable à",
+            "Référence",
+            "Payable par",
+            "Informations supplémentaires",
+            "Monnaie / Montant",
+            "Point de dépôt",
+            "Facture ACC-SINV-2026-00001",
+        ):
             with self.subTest(label=label):
                 self.assertIn(label, slip)
-        for german in ("Empfangsschein", "Zahlteil", "Konto", "Referenz", "Zahlbar", "Zusätzliche",
-                       "Währung", "Betrag", "Annahmestelle", "Rechnung", "QR-Code"):
+        for german in (
+            "Empfangsschein",
+            "Zahlteil",
+            "Konto",
+            "Referenz",
+            "Zahlbar",
+            "Zusätzliche",
+            "Währung",
+            "Betrag",
+            "Annahmestelle",
+            "Rechnung",
+            "QR-Code",
+        ):
             with self.subTest(german=german):
                 self.assertNotIn(german, slip)
 
@@ -201,7 +286,12 @@ class SlipLabels(unittest.TestCase):
         return qrbill.slip_labels(SimpleNamespace(language=language))
 
     def test_each_language_picks_its_set(self):
-        for code, receipt in (("de", "Empfangsschein"), ("fr", "Récépissé"), ("it", "Ricevuta"), ("en", "Receipt")):
+        for code, receipt in (
+            ("de", "Empfangsschein"),
+            ("fr", "Récépissé"),
+            ("it", "Ricevuta"),
+            ("en", "Receipt"),
+        ):
             with self.subTest(language=code):
                 self.assertIs(self.pick(code), qrbill.SLIP_LABELS[code])
                 self.assertEqual(self.pick(code)["receipt"], receipt)
@@ -231,13 +321,22 @@ class PayloadLanguage(unittest.TestCase):
         from unittest import mock
 
         inv = SimpleNamespace(
-            name="ACC-SINV-2026-00001", company="Beispiel AG", company_address="ADDR-C", customer_address="ADDR-D",
-            customer_name="Muster GmbH", currency="CHF", grand_total=1234.5, rounded_total=0, language=language,
+            name="ACC-SINV-2026-00001",
+            company="Beispiel AG",
+            company_address="ADDR-C",
+            customer_address="ADDR-D",
+            customer_name="Muster GmbH",
+            currency="CHF",
+            grand_total=1234.5,
+            rounded_total=0,
+            language=language,
         )
         addresses = {"ADDR-C": CREDITOR, "ADDR-D": DEBTOR}
-        with mock.patch.object(qrbill, "frappe") as fake, \
-                mock.patch.object(qrbill, "_company_account", return_value=SimpleNamespace(iban=IBAN)), \
-                mock.patch.object(qrbill, "_address", side_effect=lambda name: list(addresses[name])):
+        with mock.patch.object(qrbill, "frappe") as fake, mock.patch.object(
+            qrbill, "_company_account", return_value=SimpleNamespace(iban=IBAN)
+        ), mock.patch.object(
+            qrbill, "_address", side_effect=lambda name: list(addresses[name])
+        ):
             fake.db.get_value.return_value = "Beispiel AG"
             return qrbill.sales_invoice_payload(inv).split("\r\n")[29]
 
@@ -275,7 +374,9 @@ class QrCode(unittest.TestCase):
             rows.append(bytes(row))
         buf = io.BytesIO()
         png.Writer(size, size, greyscale=True, bitdepth=8).write(buf, rows)
-        img = cv2.imdecode(np.frombuffer(buf.getvalue(), np.uint8), cv2.IMREAD_GRAYSCALE)
+        img = cv2.imdecode(
+            np.frombuffer(buf.getvalue(), np.uint8), cv2.IMREAD_GRAYSCALE
+        )
         decoded, _, _ = cv2.QRCodeDetector().detectAndDecode(img)
         self.assertEqual(decoded, text)
 
@@ -293,7 +394,12 @@ class CompanyAccount(unittest.TestCase):
     # Invented names: two CHF accounts, one EUR account; the company's default is the first CHF one.
     ROWS = [
         {"name": "BA-1", "iban": IBAN, "account": "1020 - Bank A", "currency": "CHF"},
-        {"name": "BA-2", "iban": QR_IBAN, "account": "1021 - Bank B", "currency": "CHF"},
+        {
+            "name": "BA-2",
+            "iban": QR_IBAN,
+            "account": "1021 - Bank B",
+            "currency": "CHF",
+        },
         {"name": "BA-3", "iban": IBAN, "account": "1022 - Bank C", "currency": "EUR"},
     ]
 
@@ -301,14 +407,19 @@ class CompanyAccount(unittest.TestCase):
         from types import SimpleNamespace
         from unittest import mock
 
-        rows = [SimpleNamespace(name=r["name"], iban=r["iban"], account=r["account"]) for r in self.ROWS]
+        rows = [
+            SimpleNamespace(name=r["name"], iban=r["iban"], account=r["account"])
+            for r in self.ROWS
+        ]
         currencies = {r["account"]: r["currency"] for r in self.ROWS}
 
         def get_value(doctype, name, field):
             return currencies[name] if doctype == "Account" else default
 
         # the translation call needs a site; the message itself is not under test
-        with mock.patch.object(qrbill, "frappe") as fake, mock.patch.object(qrbill, "_", new=lambda s: s):
+        with mock.patch.object(qrbill, "frappe") as fake, mock.patch.object(
+            qrbill, "_", new=lambda s: s
+        ):
             fake.get_all.return_value = rows
             fake.db.get_value.side_effect = get_value
             fake.throw.side_effect = ValueError
@@ -349,14 +460,27 @@ PAGE_HTML = """<!doctype html><html><head><meta charset="utf-8"><style>
 {tail}
 </body></html>"""
 WKHTML_OPTIONS = [
-    "--disable-smart-shrinking", "--print-media-type", "--disable-javascript",
-    "--page-size", "A4", "--margin-top", "15mm", "--margin-bottom", "1mm",
-    "--margin-left", "0", "--margin-right", "0", "--quiet",
+    "--disable-smart-shrinking",
+    "--print-media-type",
+    "--disable-javascript",
+    "--page-size",
+    "A4",
+    "--margin-top",
+    "15mm",
+    "--margin-bottom",
+    "1mm",
+    "--margin-left",
+    "0",
+    "--margin-right",
+    "0",
+    "--quiet",
 ]
 
 
 def page_html(rows, gap=None):
-    body = "".join(f'<div class="row">Invented item {i}</div>' for i in range(1, rows + 1))
+    body = "".join(
+        f'<div class="row">Invented item {i}</div>' for i in range(1, rows + 1)
+    )
     if gap is None:  # the first render: the body and the marker after it
         tail = '<div class="bi-marker">BI-QR-END</div>'
     else:  # the second: the body, the gap and the slip
@@ -364,30 +488,40 @@ def page_html(rows, gap=None):
     return PAGE_HTML.replace("{rows}", body).replace("{tail}", tail)
 
 
-TEMPLATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bi_sales_invoice_qr.html")
+TEMPLATE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "bi_sales_invoice_qr.html"
+)
 
 
 def printview_html(rows, gap=None):
     """The same page as frappe's printview.html wraps it: the body inside .print-format-gutter > .print-format,
-    which the format's CSS styles as well. The format's first <style> (the .print-format rule) is read from the template."""
+    which the format's CSS styles as well. The format's first <style> (the .print-format rule) is read from the template.
+    """
     with open(TEMPLATE, encoding="utf-8") as f:
         css = re.search(r"<style>(.*?)</style>", f.read(), re.S).group(1)
     html = page_html(rows, gap).replace("</style>", css + "</style>", 1)
-    return html.replace("<body>", '<body><div class="print-format-gutter"><div class="print-format">', 1).replace(
-        "</body>", "</div></div></body>", 1)
+    return html.replace(
+        "<body>", '<body><div class="print-format-gutter"><div class="print-format">', 1
+    ).replace("</body>", "</div></div></body>", 1)
 
 
-@unittest.skipUnless(shutil.which("wkhtmltopdf"), "needs wkhtmltopdf (the image has it)")
+@unittest.skipUnless(
+    shutil.which("wkhtmltopdf"), "needs wkhtmltopdf (the image has it)"
+)
 class Placement(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.dir, True)
 
     def render(self, html):
-        src, out = os.path.join(self.dir, "page.html"), os.path.join(self.dir, "page.pdf")
+        src, out = os.path.join(self.dir, "page.html"), os.path.join(
+            self.dir, "page.pdf"
+        )
         with open(src, "w", encoding="utf-8") as f:
             f.write(html)
-        subprocess.run(["wkhtmltopdf", *WKHTML_OPTIONS, src, out], check=True, capture_output=True)
+        subprocess.run(
+            ["wkhtmltopdf", *WKHTML_OPTIONS, src, out], check=True, capture_output=True
+        )
         with open(out, "rb") as f:
             return f.read()
 
@@ -404,7 +538,9 @@ class Placement(unittest.TestCase):
                 pages1, y1, pages2, y2 = self.place(rows)
                 pushed = y1 - qrbill.BOTTOM_MM < qrbill.SLIP_MM
                 self.assertEqual(pages2, pages1 + (1 if pushed else 0))
-                self.assertTrue(1 <= y2 <= 2.5, f"slip foot {y2:.2f} mm from the bottom")
+                self.assertTrue(
+                    1 <= y2 <= 2.5, f"slip foot {y2:.2f} mm from the bottom"
+                )
 
     def test_wrapper_margin_does_not_add_a_page(self):
         # The printview wrapper gets the format's .print-format margin as CSS: a margin-bottom after the slip
@@ -414,7 +550,9 @@ class Placement(unittest.TestCase):
                 pages1, y1, pages2, y2 = self.place(rows, printview_html)
                 pushed = y1 - qrbill.BOTTOM_MM < qrbill.SLIP_MM
                 self.assertEqual(pages2, pages1 + (1 if pushed else 0))
-                self.assertTrue(1 <= y2 <= 2.5, f"slip foot {y2:.2f} mm from the bottom")
+                self.assertTrue(
+                    1 <= y2 <= 2.5, f"slip foot {y2:.2f} mm from the bottom"
+                )
 
     def test_short_body_stays_on_one_page(self):
         pages1, _, pages2, _ = self.place(5)
@@ -431,7 +569,11 @@ class SlipSpacerRender(unittest.TestCase):
     def setUp(self):
         from types import SimpleNamespace
 
-        self.inv = SimpleNamespace(doctype="Sales Invoice", name="SINV-TEST", flags=SimpleNamespace(bi_qr_measure=False))
+        self.inv = SimpleNamespace(
+            doctype="Sales Invoice",
+            name="SINV-TEST",
+            flags=SimpleNamespace(bi_qr_measure=False),
+        )
 
     def test_measure_sets_the_flag_and_clears_it(self):
         from unittest import mock
@@ -442,8 +584,9 @@ class SlipSpacerRender(unittest.TestCase):
             seen.append(doc.flags.bi_qr_measure)
             return b"%PDF"
 
-        with mock.patch.object(qrbill.frappe, "get_print", side_effect=fake_print), \
-                mock.patch.object(qrbill, "body_end_mm", return_value=(1, 106.8)):
+        with mock.patch.object(
+            qrbill.frappe, "get_print", side_effect=fake_print
+        ), mock.patch.object(qrbill, "body_end_mm", return_value=(1, 106.8)):
             self.assertEqual(qrbill.sales_invoice_slip_spacer(self.inv), 0.8)
         self.assertEqual(seen, [True])
         self.assertFalse(self.inv.flags.bi_qr_measure)
@@ -459,7 +602,9 @@ class SlipSpacerRender(unittest.TestCase):
     def test_flag_is_cleared_when_the_render_fails(self):
         from unittest import mock
 
-        with mock.patch.object(qrbill.frappe, "get_print", side_effect=RuntimeError("render")):
+        with mock.patch.object(
+            qrbill.frappe, "get_print", side_effect=RuntimeError("render")
+        ):
             with self.assertRaises(RuntimeError):
                 qrbill.sales_invoice_slip_spacer(self.inv)
         self.assertFalse(self.inv.flags.bi_qr_measure)
@@ -475,7 +620,9 @@ class DataUri(unittest.TestCase):
             uri = qrbill.sales_invoice_qr_uri(object())
         prefix = "data:image/svg+xml;base64,"
         self.assertTrue(uri.startswith(prefix))
-        self.assertEqual(base64.b64decode(uri[len(prefix):]).decode("utf-8"), qrbill.svg(text))
+        self.assertEqual(
+            base64.b64decode(uri[len(prefix) :]).decode("utf-8"), qrbill.svg(text)
+        )
 
 
 if __name__ == "__main__":

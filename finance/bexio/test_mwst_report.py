@@ -15,7 +15,9 @@ from decimal import Decimal
 from unittest import mock
 
 import mwst_report as mr
-from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
+from private_guard import (  # every test below runs against a temp private folder, never the real one
+    setUpModule,
+)
 
 D = Decimal
 
@@ -47,14 +49,26 @@ def doc(day, net, taxes):
 
 class Periods(unittest.TestCase):
     def test_quarter(self):
-        self.assertEqual(mr.period_bounds("2026Q3"), (datetime.date(2026, 7, 1), datetime.date(2026, 9, 30)))
+        self.assertEqual(
+            mr.period_bounds("2026Q3"),
+            (datetime.date(2026, 7, 1), datetime.date(2026, 9, 30)),
+        )
 
     def test_fourth_quarter_ends_in_december(self):
-        self.assertEqual(mr.period_bounds("2026Q4"), (datetime.date(2026, 10, 1), datetime.date(2026, 12, 31)))
+        self.assertEqual(
+            mr.period_bounds("2026Q4"),
+            (datetime.date(2026, 10, 1), datetime.date(2026, 12, 31)),
+        )
 
     def test_half_years(self):
-        self.assertEqual(mr.period_bounds("2026H1"), (datetime.date(2026, 1, 1), datetime.date(2026, 6, 30)))
-        self.assertEqual(mr.period_bounds("2026H2"), (datetime.date(2026, 7, 1), datetime.date(2026, 12, 31)))
+        self.assertEqual(
+            mr.period_bounds("2026H1"),
+            (datetime.date(2026, 1, 1), datetime.date(2026, 6, 30)),
+        )
+        self.assertEqual(
+            mr.period_bounds("2026H2"),
+            (datetime.date(2026, 7, 1), datetime.date(2026, 12, 31)),
+        )
 
     def test_other_period_is_refused(self):
         with self.assertRaises(ValueError):
@@ -66,11 +80,15 @@ class Table(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        path = os.path.join(os.path.dirname(__file__), "..", "scripts", "swiss-setup.py")
+        path = os.path.join(
+            os.path.dirname(__file__), "..", "scripts", "swiss-setup.py"
+        )
         with open(path, encoding="utf-8") as f:
             tree = ast.parse(f.read())
         for node in tree.body:
-            if isinstance(node, ast.Assign) and any(getattr(t, "id", None) == "BEXIO_TAXES" for t in node.targets):
+            if isinstance(node, ast.Assign) and any(
+                getattr(t, "id", None) == "BEXIO_TAXES" for t in node.targets
+            ):
                 cls.taxes = ast.literal_eval(node.value)
 
     def test_all_42_codes_are_in_the_table(self):
@@ -78,12 +96,32 @@ class Table(unittest.TestCase):
         self.assertEqual(set(mr.TEMPLATES), {row[1] for row in self.taxes})
 
     def test_code_and_rate_match_the_setup(self):
-        for kind, bexio_id, code, _name, rate, _valid, _active, _account, _deduct in self.taxes:
+        for (
+            kind,
+            bexio_id,
+            code,
+            _name,
+            rate,
+            _valid,
+            _active,
+            _account,
+            _deduct,
+        ) in self.taxes:
             with self.subTest(bexio_id=bexio_id):
                 self.assertEqual(mr.TEMPLATES[bexio_id][:2], (code, rate))
 
     def test_kind_matches_the_setup(self):
-        for kind, bexio_id, _code, _name, _rate, _valid, _active, _account, deduct in self.taxes:
+        for (
+            kind,
+            bexio_id,
+            _code,
+            _name,
+            _rate,
+            _valid,
+            _active,
+            _account,
+            deduct,
+        ) in self.taxes:
             with self.subTest(bexio_id=bexio_id):
                 table_kind = mr.TEMPLATES[bexio_id][2]
                 if kind == "S":
@@ -95,8 +133,23 @@ class Table(unittest.TestCase):
 
     def test_form_rows_are_the_confirmed_ones(self):
         rows = {entry[3] for entry in mr.TEMPLATES.values() if entry[3]}
-        self.assertEqual(rows, {"302", "303", "312", "313", "342", "343", "400", "405", "415",
-                                "220", "221", "225"})
+        self.assertEqual(
+            rows,
+            {
+                "302",
+                "303",
+                "312",
+                "313",
+                "342",
+                "343",
+                "400",
+                "405",
+                "415",
+                "220",
+                "221",
+                "225",
+            },
+        )
 
 
 class Rows(unittest.TestCase):
@@ -113,10 +166,20 @@ class Rows(unittest.TestCase):
 
 class Sales(unittest.TestCase):
     def test_two_rates_add_up_to_owed_tax(self):
-        t = mr.plan([doc(datetime.date(2026, 8, 3), D("1000.00"), [
-            tax("UN81 8.1% Normalsatz", "81.00"),
-            tax("UR26 2.6% Reduzierter Satz", "26.00"),
-        ])], [], TEMPLATE_NAMES)
+        t = mr.plan(
+            [
+                doc(
+                    datetime.date(2026, 8, 3),
+                    D("1000.00"),
+                    [
+                        tax("UN81 8.1% Normalsatz", "81.00"),
+                        tax("UR26 2.6% Reduzierter Satz", "26.00"),
+                    ],
+                )
+            ],
+            [],
+            TEMPLATE_NAMES,
+        )
         rows, saldo = mr.form_totals(t)
         self.assertEqual(rows["200"][0], D("1000.00"))
         self.assertEqual(rows["303"], [D("1000.00"), D("81.00")])
@@ -125,52 +188,116 @@ class Sales(unittest.TestCase):
         self.assertEqual(saldo, D("107.00"))
 
     def test_exempt_export_net_fills_220_and_has_no_tax_row(self):
-        t = mr.plan([doc(datetime.date(2026, 8, 3), D("500.00"), [
-            tax("UEX 0% Export, steuerbefreit", "0"),
-        ])], [], TEMPLATE_NAMES)
+        t = mr.plan(
+            [
+                doc(
+                    datetime.date(2026, 8, 3),
+                    D("500.00"),
+                    [
+                        tax("UEX 0% Export, steuerbefreit", "0"),
+                    ],
+                )
+            ],
+            [],
+            TEMPLATE_NAMES,
+        )
         self.assertEqual(mr.form_totals(t)[0]["200"][0], D("500.00"))
         self.assertEqual(mr.form_totals(t)[0]["220"], [D("500.00"), D("0")])
         self.assertEqual(t.unchecked_tax, D("0"))
 
     def test_a_mixed_document_puts_its_zero_rate_net_whole_into_220(self):
         # the per-row net is not in the data: the document's net less the derived base of its rated row
-        t = mr.plan([doc(datetime.date(2026, 8, 3), D("1081.00"), [
-            tax("UN81 8.1% Normalsatz", "81.00"),
-            tax("UEX 0% Export, steuerbefreit", "0"),
-        ])], [], TEMPLATE_NAMES)
+        t = mr.plan(
+            [
+                doc(
+                    datetime.date(2026, 8, 3),
+                    D("1081.00"),
+                    [
+                        tax("UN81 8.1% Normalsatz", "81.00"),
+                        tax("UEX 0% Export, steuerbefreit", "0"),
+                    ],
+                )
+            ],
+            [],
+            TEMPLATE_NAMES,
+        )
         rows, _saldo = mr.form_totals(t)
         self.assertEqual(rows["303"], [D("1000.00"), D("81.00")])
         self.assertEqual(rows["220"], [D("81.00"), D("0")])
 
     def test_optiert_sale_is_owed_at_the_normal_rate(self):
-        t = mr.plan([doc(datetime.date(2026, 8, 3), D("100.00"), [
-            tax("UO81 8.1% optiert", "8.10"),
-        ])], [], TEMPLATE_NAMES)
+        t = mr.plan(
+            [
+                doc(
+                    datetime.date(2026, 8, 3),
+                    D("100.00"),
+                    [
+                        tax("UO81 8.1% optiert", "8.10"),
+                    ],
+                )
+            ],
+            [],
+            TEMPLATE_NAMES,
+        )
         self.assertEqual(mr.form_totals(t)[0]["303"], [D("100.00"), D("8.10")])
         self.assertEqual(mr.form_totals(t)[0]["399"][1], D("8.10"))
         self.assertEqual(t.unchecked_tax, D("0"))
 
     def test_tax_on_a_template_without_a_ziffer_is_named_not_put_in_a_ziffer(self):
-        t = mr.plan([], [doc(datetime.date(2026, 8, 3), D("100.00"), [
-            tax("Vorsteuer Import", "8.10", "Add"),
-        ])], {"Vorsteuer Import": "7"})
+        t = mr.plan(
+            [],
+            [
+                doc(
+                    datetime.date(2026, 8, 3),
+                    D("100.00"),
+                    [
+                        tax("Vorsteuer Import", "8.10", "Add"),
+                    ],
+                )
+            ],
+            {"Vorsteuer Import": "7"},
+        )
         self.assertEqual(t.unchecked_tax, D("8.10"))
         self.assertEqual(mr.form_totals(t)[0]["479"][1], D("0"))
 
     def test_credit_note_is_negative_and_reduces_the_row(self):
-        t = mr.plan([
-            doc(datetime.date(2026, 8, 3), D("1000.00"), [tax("UN81 8.1% Normalsatz", "81.00")]),
-            doc(datetime.date(2026, 8, 20), D("-200.00"), [tax("UN81 8.1% Normalsatz", "-16.20")]),
-        ], [], TEMPLATE_NAMES)
+        t = mr.plan(
+            [
+                doc(
+                    datetime.date(2026, 8, 3),
+                    D("1000.00"),
+                    [tax("UN81 8.1% Normalsatz", "81.00")],
+                ),
+                doc(
+                    datetime.date(2026, 8, 20),
+                    D("-200.00"),
+                    [tax("UN81 8.1% Normalsatz", "-16.20")],
+                ),
+            ],
+            [],
+            TEMPLATE_NAMES,
+        )
         self.assertEqual(mr.form_totals(t)[0]["303"], [D("800.00"), D("64.80")])
 
 
 class Purchases(unittest.TestCase):
     def test_material_and_investment_vorsteuer_and_the_total(self):
-        t = mr.plan([], [doc(datetime.date(2026, 8, 3), D("500"), [
-            tax("VM81 8.1% Normalsatz Material/DL", "40.50", "Add"),
-            tax("VB26 2.6% Reduzierter Satz Invest./Aufwand", "13.00", "Add"),
-        ])], TEMPLATE_NAMES)
+        t = mr.plan(
+            [],
+            [
+                doc(
+                    datetime.date(2026, 8, 3),
+                    D("500"),
+                    [
+                        tax("VM81 8.1% Normalsatz Material/DL", "40.50", "Add"),
+                        tax(
+                            "VB26 2.6% Reduzierter Satz Invest./Aufwand", "13.00", "Add"
+                        ),
+                    ],
+                )
+            ],
+            TEMPLATE_NAMES,
+        )
         rows, saldo = mr.form_totals(t)
         self.assertEqual(rows["400"][1], D("40.50"))
         self.assertEqual(rows["405"][1], D("13.00"))
@@ -180,74 +307,162 @@ class Purchases(unittest.TestCase):
     def test_a_reduction_row_sits_in_420_and_reduces_the_479_total(self):
         # Ziffer 420 is Vorsteuerkürzungen on the form, not the total; no reduction row is known today,
         # so the row is only ever filled here, from an invented Totals
-        t = mr.plan([], [doc(datetime.date(2026, 8, 3), D("500"), [
-            tax("VM81 8.1% Normalsatz Material/DL", "40.50", "Add"),
-        ])], TEMPLATE_NAMES)
+        t = mr.plan(
+            [],
+            [
+                doc(
+                    datetime.date(2026, 8, 3),
+                    D("500"),
+                    [
+                        tax("VM81 8.1% Normalsatz Material/DL", "40.50", "Add"),
+                    ],
+                )
+            ],
+            TEMPLATE_NAMES,
+        )
         t.add("420", None, D("5.00"))
         rows, saldo = mr.form_totals(t)
         self.assertEqual(rows["420"][1], D("5.00"))
         self.assertEqual(rows["479"][1], D("35.50"))
-        self.assertEqual(saldo, D("-35.50"))  # no owed tax: the input tax minus the reduction
+        self.assertEqual(
+            saldo, D("-35.50")
+        )  # no owed tax: the input tax minus the reduction
 
     def test_reverse_charge_is_vorsteuer_and_owed_in_the_same_amount(self):
-        t = mr.plan([], [doc(datetime.date(2026, 8, 3), D("1000"), [
-            tax("BZM81 8.1% Bezugsteuer Material/DL", "81.00", "Add"),
-            tax("BZM81 8.1% Bezugsteuer Material/DL", "81.00", "Deduct"),
-        ])], TEMPLATE_NAMES)
+        t = mr.plan(
+            [],
+            [
+                doc(
+                    datetime.date(2026, 8, 3),
+                    D("1000"),
+                    [
+                        tax("BZM81 8.1% Bezugsteuer Material/DL", "81.00", "Add"),
+                        tax("BZM81 8.1% Bezugsteuer Material/DL", "81.00", "Deduct"),
+                    ],
+                )
+            ],
+            TEMPLATE_NAMES,
+        )
         rows, saldo = mr.form_totals(t)
         self.assertEqual(rows["400"][1], D("81.00"))
         self.assertEqual(rows["383"][1], D("81.00"))
         self.assertEqual(saldo, D("0.00"))
 
     def test_bezugsteuer_before_2024_is_in_382(self):
-        t = mr.plan([], [doc(datetime.date(2023, 5, 2), D("1000"), [
-            tax("BZB81 8.1% Bezugsteuer Invest./Aufwand", "81.00", "Deduct"),
-        ])], TEMPLATE_NAMES)
+        t = mr.plan(
+            [],
+            [
+                doc(
+                    datetime.date(2023, 5, 2),
+                    D("1000"),
+                    [
+                        tax(
+                            "BZB81 8.1% Bezugsteuer Invest./Aufwand", "81.00", "Deduct"
+                        ),
+                    ],
+                )
+            ],
+            TEMPLATE_NAMES,
+        )
         self.assertEqual(mr.form_totals(t)[0]["382"][1], D("81.00"))
 
     def test_correction_goes_to_415_and_into_the_479_total(self):
-        t = mr.plan([], [doc(datetime.date(2026, 8, 3), D("0"), [
-            tax("VES 8.1% Vorsteuerkorrektur nachträglich", "-4.00", "Add"),
-        ])], TEMPLATE_NAMES)
+        t = mr.plan(
+            [],
+            [
+                doc(
+                    datetime.date(2026, 8, 3),
+                    D("0"),
+                    [
+                        tax("VES 8.1% Vorsteuerkorrektur nachträglich", "-4.00", "Add"),
+                    ],
+                )
+            ],
+            TEMPLATE_NAMES,
+        )
         rows, _saldo = mr.form_totals(t)
         self.assertEqual(rows["415"][1], D("-4.00"))
         self.assertEqual(rows["479"][1], D("-4.00"))
 
     def test_deduct_on_a_plain_purchase_is_unmapped(self):
-        t = mr.plan([], [doc(datetime.date(2026, 8, 3), D("100"), [
-            tax("VM81 8.1% Normalsatz Material/DL", "8.10", "Deduct"),
-        ])], TEMPLATE_NAMES)
+        t = mr.plan(
+            [],
+            [
+                doc(
+                    datetime.date(2026, 8, 3),
+                    D("100"),
+                    [
+                        tax("VM81 8.1% Normalsatz Material/DL", "8.10", "Deduct"),
+                    ],
+                )
+            ],
+            TEMPLATE_NAMES,
+        )
         self.assertEqual(t.unmapped, ["Deduct row on VM81"])
 
 
 class Unmapped_(unittest.TestCase):
     def test_template_without_bexio_id_is_not_guessed_from_the_rate(self):
         # ERPNext's own template for 8.1 % has no bexio_id, so it is not in the lookup
-        t = mr.plan([doc(datetime.date(2026, 8, 3), D("100"), [
-            tax("MWST 8.1% Standard", "8.10"),
-        ])], [], TEMPLATE_NAMES)
+        t = mr.plan(
+            [
+                doc(
+                    datetime.date(2026, 8, 3),
+                    D("100"),
+                    [
+                        tax("MWST 8.1% Standard", "8.10"),
+                    ],
+                )
+            ],
+            [],
+            TEMPLATE_NAMES,
+        )
         self.assertEqual(t.unmapped, ["MWST 8.1% Standard"])
         self.assertEqual(t.rows, {"200": [D("100"), D("0")]})
 
     def test_bexio_id_outside_the_table_is_unmapped(self):
-        t = mr.plan([doc(datetime.date(2026, 8, 3), D("100"), [tax("X", "1.00")])], [], {"X": "999"})
+        t = mr.plan(
+            [doc(datetime.date(2026, 8, 3), D("100"), [tax("X", "1.00")])],
+            [],
+            {"X": "999"},
+        )
         self.assertEqual(t.unmapped, ["X"])
 
 
 class Output(unittest.TestCase):
     def test_summary_names_no_document_and_no_template(self):
-        t = mr.plan([doc(datetime.date(2026, 8, 3), D("1000.00"), [
-            tax("UN81 8.1% Normalsatz", "81.00"),
-        ])], [], TEMPLATE_NAMES)
+        t = mr.plan(
+            [
+                doc(
+                    datetime.date(2026, 8, 3),
+                    D("1000.00"),
+                    [
+                        tax("UN81 8.1% Normalsatz", "81.00"),
+                    ],
+                )
+            ],
+            [],
+            TEMPLATE_NAMES,
+        )
         text = "\n".join(mr.summary_lines(t))
         self.assertIn("303", text)
         self.assertNotIn("UN81", text)
         self.assertNotIn("Beispiel", text)
 
     def test_csv_has_the_rows_and_the_codes(self):
-        t = mr.plan([doc(datetime.date(2026, 8, 3), D("1000.00"), [
-            tax("UN81 8.1% Normalsatz", "81.00"),
-        ])], [], TEMPLATE_NAMES)
+        t = mr.plan(
+            [
+                doc(
+                    datetime.date(2026, 8, 3),
+                    D("1000.00"),
+                    [
+                        tax("UN81 8.1% Normalsatz", "81.00"),
+                    ],
+                )
+            ],
+            [],
+            TEMPLATE_NAMES,
+        )
         folder = tempfile.mkdtemp()
         try:
             path = os.path.join(folder, "mwst.csv")
@@ -283,7 +498,11 @@ class FakeErp:
         self.docs = docs
 
     def list(self, doctype, filters=None, fields=("name",)):
-        return [r for r in self.rows.get(doctype, []) if all(_match(r, f) for f in filters or [])]
+        return [
+            r
+            for r in self.rows.get(doctype, [])
+            if all(_match(r, f) for f in filters or [])
+        ]
 
     def get(self, doctype, name):
         return self.docs[(doctype, name)]
@@ -291,25 +510,71 @@ class FakeErp:
 
 def invoice(name, doctype, day, net, taxes, grand):
     """An invoice as ERPNext has it: taxes is a list of (template name, tax) pairs."""
-    return {"name": name, "doctype": doctype, "posting_date": day, "base_net_total": net, "grand_total": grand,
-            "taxes": [tax(template, amount, "Add" if doctype == "Purchase Invoice" else None) for template, amount in taxes]}
+    return {
+        "name": name,
+        "doctype": doctype,
+        "posting_date": day,
+        "base_net_total": net,
+        "grand_total": grand,
+        "taxes": [
+            tax(template, amount, "Add" if doctype == "Purchase Invoice" else None)
+            for template, amount in taxes
+        ],
+    }
 
 
 def pay(day, references):
     """A Payment Entry of the period as payment_documents() takes it: references are (doctype, name, allocated)."""
-    return {"posting_date": day, "references": [
-        {"reference_doctype": d, "reference_name": n, "allocated_amount": a} for d, n, a in references]}
+    return {
+        "posting_date": day,
+        "references": [
+            {"reference_doctype": d, "reference_name": n, "allocated_amount": a}
+            for d, n, a in references
+        ],
+    }
 
 
 # Invented invoices: S1 at 8.1 % (net 1000, tax 81, grand 1081); S2 at 2.6 % (net 500, tax 13, grand 513);
 # R1 a credit note of S1's net, 8.1 % (net -200, tax -16.20, grand -216.20); P1 a purchase at 8.1 % (net 500,
 # tax 40.50, grand 540.50).
-S1 = invoice("S1", "Sales Invoice", datetime.date(2026, 7, 10), D("1000.00"), [("UN81 8.1% Normalsatz", "81.00")], D("1081.00"))
-S2 = invoice("S2", "Sales Invoice", datetime.date(2026, 7, 12), D("500.00"), [("UR26 2.6% Reduzierter Satz", "13.00")], D("513.00"))
-R1 = invoice("R1", "Sales Invoice", datetime.date(2026, 8, 20), D("-200.00"), [("UN81 8.1% Normalsatz", "-16.20")], D("-216.20"))
-P1 = invoice("P1", "Purchase Invoice", datetime.date(2026, 7, 5), D("500.00"), [("VM81 8.1% Normalsatz Material/DL", "40.50")], D("540.50"))
-INVOICES = {("Sales Invoice", "S1"): S1, ("Sales Invoice", "S2"): S2, ("Sales Invoice", "R1"): R1,
-            ("Purchase Invoice", "P1"): P1}
+S1 = invoice(
+    "S1",
+    "Sales Invoice",
+    datetime.date(2026, 7, 10),
+    D("1000.00"),
+    [("UN81 8.1% Normalsatz", "81.00")],
+    D("1081.00"),
+)
+S2 = invoice(
+    "S2",
+    "Sales Invoice",
+    datetime.date(2026, 7, 12),
+    D("500.00"),
+    [("UR26 2.6% Reduzierter Satz", "13.00")],
+    D("513.00"),
+)
+R1 = invoice(
+    "R1",
+    "Sales Invoice",
+    datetime.date(2026, 8, 20),
+    D("-200.00"),
+    [("UN81 8.1% Normalsatz", "-16.20")],
+    D("-216.20"),
+)
+P1 = invoice(
+    "P1",
+    "Purchase Invoice",
+    datetime.date(2026, 7, 5),
+    D("500.00"),
+    [("VM81 8.1% Normalsatz Material/DL", "40.50")],
+    D("540.50"),
+)
+INVOICES = {
+    ("Sales Invoice", "S1"): S1,
+    ("Sales Invoice", "S2"): S2,
+    ("Sales Invoice", "R1"): R1,
+    ("Purchase Invoice", "P1"): P1,
+}
 
 
 def paid(payments):
@@ -320,32 +585,49 @@ def paid(payments):
 
 class PaymentBasis(unittest.TestCase):
     def test_receipt_paying_two_rates_is_split_over_them(self):
-        rows, unallocated = paid([pay(datetime.date(2026, 8, 3), [
-            ("Sales Invoice", "S1", D("1081.00")),
-            ("Sales Invoice", "S2", D("513.00")),
-        ])])
+        rows, unallocated = paid(
+            [
+                pay(
+                    datetime.date(2026, 8, 3),
+                    [
+                        ("Sales Invoice", "S1", D("1081.00")),
+                        ("Sales Invoice", "S2", D("513.00")),
+                    ],
+                )
+            ]
+        )
         self.assertEqual(rows["200"][0], D("1500.00"))
         self.assertEqual(rows["303"], [D("1000.00"), D("81.00")])
         self.assertEqual(rows["313"], [D("500.00"), D("13.00")])
         self.assertEqual(unallocated, 0)
 
     def test_partial_payment_and_its_rest_fall_in_two_quarters(self):
-        q3, _ = paid([pay(datetime.date(2026, 9, 15), [("Sales Invoice", "S1", D("540.50"))])])
-        q4, _ = paid([pay(datetime.date(2026, 10, 5), [("Sales Invoice", "S1", D("540.50"))])])
+        q3, _ = paid(
+            [pay(datetime.date(2026, 9, 15), [("Sales Invoice", "S1", D("540.50"))])]
+        )
+        q4, _ = paid(
+            [pay(datetime.date(2026, 10, 5), [("Sales Invoice", "S1", D("540.50"))])]
+        )
         self.assertEqual(q3["303"], [D("500.00"), D("40.50")])
         self.assertEqual(q4["303"], [D("500.00"), D("40.50")])
 
     def test_refund_of_a_credit_note_is_negative_and_reduces_the_row(self):
-        rows, _ = paid([pay(datetime.date(2026, 8, 25), [("Sales Invoice", "R1", D("-216.20"))])])
+        rows, _ = paid(
+            [pay(datetime.date(2026, 8, 25), [("Sales Invoice", "R1", D("-216.20"))])]
+        )
         self.assertEqual(rows["303"], [D("-200.00"), D("-16.20")])
         self.assertEqual(rows["399"][1], D("-16.20"))
 
     def test_partial_refund_is_a_share_of_the_credit_note(self):
-        rows, _ = paid([pay(datetime.date(2026, 8, 25), [("Sales Invoice", "R1", D("-108.10"))])])
+        rows, _ = paid(
+            [pay(datetime.date(2026, 8, 25), [("Sales Invoice", "R1", D("-108.10"))])]
+        )
         self.assertEqual(rows["303"], [D("-100.00"), D("-8.10")])
 
     def test_purchase_invoice_paid_goes_to_400(self):
-        rows, _ = paid([pay(datetime.date(2026, 8, 3), [("Purchase Invoice", "P1", D("540.50"))])])
+        rows, _ = paid(
+            [pay(datetime.date(2026, 8, 3), [("Purchase Invoice", "P1", D("540.50"))])]
+        )
         self.assertEqual(rows["400"][1], D("40.50"))
         self.assertEqual(rows["479"][1], D("40.50"))
 
@@ -358,8 +640,10 @@ class PaymentBasis(unittest.TestCase):
     def test_zero_grand_total_is_refused_not_divided(self):
         broken = dict(S1, grand_total=D("0"))
         with self.assertRaises(ValueError):
-            mr.payment_documents([pay(datetime.date(2026, 8, 3), [("Sales Invoice", "S1", D("10"))])],
-                                 {("Sales Invoice", "S1"): broken})
+            mr.payment_documents(
+                [pay(datetime.date(2026, 8, 3), [("Sales Invoice", "S1", D("10"))])],
+                {("Sales Invoice", "S1"): broken},
+            )
 
 
 class PaymentPeriods(unittest.TestCase):
@@ -367,29 +651,73 @@ class PaymentPeriods(unittest.TestCase):
 
     def fake(self):
         payments = [
-            dict(name="PE-JUN", posting_date="2026-06-30", company=mr.COMPANY, docstatus=1),
-            dict(name="PE-JUL", posting_date="2026-07-01", company=mr.COMPANY, docstatus=1),
-            dict(name="PE-SEP", posting_date="2026-09-30", company=mr.COMPANY, docstatus=1),
-            dict(name="PE-OCT", posting_date="2026-10-01", company=mr.COMPANY, docstatus=1),
-            dict(name="PE-DRAFT", posting_date="2026-08-03", company=mr.COMPANY, docstatus=0),
+            dict(
+                name="PE-JUN",
+                posting_date="2026-06-30",
+                company=mr.COMPANY,
+                docstatus=1,
+            ),
+            dict(
+                name="PE-JUL",
+                posting_date="2026-07-01",
+                company=mr.COMPANY,
+                docstatus=1,
+            ),
+            dict(
+                name="PE-SEP",
+                posting_date="2026-09-30",
+                company=mr.COMPANY,
+                docstatus=1,
+            ),
+            dict(
+                name="PE-OCT",
+                posting_date="2026-10-01",
+                company=mr.COMPANY,
+                docstatus=1,
+            ),
+            dict(
+                name="PE-DRAFT",
+                posting_date="2026-08-03",
+                company=mr.COMPANY,
+                docstatus=0,
+            ),
         ]
-        docs = {("Payment Entry", p["name"]): {"posting_date": p["posting_date"], "references": [
-            {"reference_doctype": "Sales Invoice", "reference_name": "S1", "allocated_amount": D("100.00")}]}
-            for p in payments}
+        docs = {
+            ("Payment Entry", p["name"]): {
+                "posting_date": p["posting_date"],
+                "references": [
+                    {
+                        "reference_doctype": "Sales Invoice",
+                        "reference_name": "S1",
+                        "allocated_amount": D("100.00"),
+                    }
+                ],
+            }
+            for p in payments
+        }
         docs[("Sales Invoice", "S1")] = S1
         return FakeErp({"Payment Entry": payments}, docs)
 
     def test_quarter_takes_its_first_and_last_day_and_only_submitted_payments(self):
-        payments, invoices = mr.fetch_payments(self.fake(), datetime.date(2026, 7, 1), datetime.date(2026, 9, 30))
-        self.assertEqual(sorted(p["posting_date"] for p in payments),
-                         [datetime.date(2026, 7, 1), datetime.date(2026, 9, 30)])
+        payments, invoices = mr.fetch_payments(
+            self.fake(), datetime.date(2026, 7, 1), datetime.date(2026, 9, 30)
+        )
+        self.assertEqual(
+            sorted(p["posting_date"] for p in payments),
+            [datetime.date(2026, 7, 1), datetime.date(2026, 9, 30)],
+        )
         self.assertIn(("Sales Invoice", "S1"), invoices)
 
 
 class ReportFiles(unittest.TestCase):
     def test_posting_keeps_its_file_and_payment_gets_its_own(self):
-        self.assertEqual(os.path.basename(mr.default_report("2026Q3", "posting")), "mwst-2026Q3.csv")
-        self.assertEqual(os.path.basename(mr.default_report("2026Q3", "payment")), "mwst-2026Q3-payment.csv")
+        self.assertEqual(
+            os.path.basename(mr.default_report("2026Q3", "posting")), "mwst-2026Q3.csv"
+        )
+        self.assertEqual(
+            os.path.basename(mr.default_report("2026Q3", "payment")),
+            "mwst-2026Q3-payment.csv",
+        )
 
 
 class ReportRun(unittest.TestCase):
@@ -397,15 +725,41 @@ class ReportRun(unittest.TestCase):
 
     def fake(self):
         rows = {
-            "Sales Taxes and Charges Template": [{"name": "UN81 8.1% Normalsatz", "bexio_id": "28"}],
+            "Sales Taxes and Charges Template": [
+                {"name": "UN81 8.1% Normalsatz", "bexio_id": "28"}
+            ],
             "Purchase Taxes and Charges Template": [],
-            "Sales Invoice": [{"name": "S1", "company": mr.COMPANY, "docstatus": 1, "posting_date": "2026-07-10"}],
+            "Sales Invoice": [
+                {
+                    "name": "S1",
+                    "company": mr.COMPANY,
+                    "docstatus": 1,
+                    "posting_date": "2026-07-10",
+                }
+            ],
             "Purchase Invoice": [],
-            "Payment Entry": [{"name": "PE1", "company": mr.COMPANY, "docstatus": 1, "posting_date": "2026-08-03"}],
+            "Payment Entry": [
+                {
+                    "name": "PE1",
+                    "company": mr.COMPANY,
+                    "docstatus": 1,
+                    "posting_date": "2026-08-03",
+                }
+            ],
         }
-        docs = {("Sales Invoice", "S1"): S1,
-                ("Payment Entry", "PE1"): {"posting_date": "2026-08-03", "references": [
-                    {"reference_doctype": "Sales Invoice", "reference_name": "S1", "allocated_amount": D("1081.00")}]}}
+        docs = {
+            ("Sales Invoice", "S1"): S1,
+            ("Payment Entry", "PE1"): {
+                "posting_date": "2026-08-03",
+                "references": [
+                    {
+                        "reference_doctype": "Sales Invoice",
+                        "reference_name": "S1",
+                        "allocated_amount": D("1081.00"),
+                    }
+                ],
+            },
+        }
         return FakeErp(rows, docs)
 
     def run_main(self, extra):
@@ -413,7 +767,9 @@ class ReportRun(unittest.TestCase):
         try:
             path = os.path.join(folder, "mwst.csv")
             out = io.StringIO()
-            with mock.patch.object(mr.im.Erp, "from_file", return_value=self.fake()), contextlib.redirect_stdout(out):
+            with mock.patch.object(
+                mr.im.Erp, "from_file", return_value=self.fake()
+            ), contextlib.redirect_stdout(out):
                 code = mr.main(["--period", "2026Q3", "--report", path] + extra)
             with open(path, encoding="utf-8") as f:
                 report = f.read()
@@ -426,21 +782,39 @@ class ReportRun(unittest.TestCase):
         explicit = self.run_main(["--basis", "posting"])
         self.assertEqual(default, explicit)
         self.assertEqual(default[0], 0)
-        self.assertIn("MWST 2026Q3 (2026-07-01 to 2026-09-30): 1 sales and 0 purchase invoices", default[1])
+        self.assertIn(
+            "MWST 2026Q3 (2026-07-01 to 2026-09-30): 1 sales and 0 purchase invoices",
+            default[1],
+        )
 
     def test_payment_basis_counts_the_payment_in_its_quarter(self):
         code, out, report = self.run_main(["--basis", "payment"])
         self.assertEqual(code, 0)
-        self.assertIn("MWST 2026Q3 (2026-07-01 to 2026-09-30, payment basis): 1 payments, 0 of them pay no invoice", out)
+        self.assertIn(
+            "MWST 2026Q3 (2026-07-01 to 2026-09-30, payment basis): 1 payments, 0 of them pay no invoice",
+            out,
+        )
         self.assertIn("303,Normalsatz 8.1 %,1000.00,81.00", report)
 
     def test_fields_flag_writes_the_declaration_fields_of_the_payment_basis(self):
         folder = tempfile.mkdtemp()
         try:
             fields = os.path.join(folder, "fields.csv")
-            with mock.patch.object(mr.im.Erp, "from_file", return_value=self.fake()), contextlib.redirect_stdout(io.StringIO()):
-                code = mr.main(["--period", "2026Q3", "--basis", "payment", "--report", os.path.join(folder, "mwst.csv"),
-                                "--fields", fields])
+            with mock.patch.object(
+                mr.im.Erp, "from_file", return_value=self.fake()
+            ), contextlib.redirect_stdout(io.StringIO()):
+                code = mr.main(
+                    [
+                        "--period",
+                        "2026Q3",
+                        "--basis",
+                        "payment",
+                        "--report",
+                        os.path.join(folder, "mwst.csv"),
+                        "--fields",
+                        fields,
+                    ]
+                )
             with open(fields, encoding="utf-8") as f:
                 text = f.read()
         finally:
@@ -456,8 +830,22 @@ class ReportRun(unittest.TestCase):
 
 
 # Invented accounts and Journal Entries (vouchers J1 to ...): the VAT accounts and the ones the net sits on.
-ACCOUNTS = [{"name": "{} - BI".format(n), "account_number": n, "company": mr.COMPANY}
-            for n in ("1020", "1100", "1170", "1171", "1172", "2200", "2201", "2202", "2203", "3200", "6570")]
+ACCOUNTS = [
+    {"name": f"{n} - BI", "account_number": n, "company": mr.COMPANY}
+    for n in (
+        "1020",
+        "1100",
+        "1170",
+        "1171",
+        "1172",
+        "2200",
+        "2201",
+        "2202",
+        "2203",
+        "3200",
+        "6570",
+    )
+]
 
 
 def journal(entries, keys=None):
@@ -466,17 +854,38 @@ def journal(entries, keys=None):
     rows = []
     for voucher, day, lines in entries:
         for number, debit, credit in lines:
-            rows.append({"voucher_no": voucher, "posting_date": day, "account": "{} - BI".format(number),
-                         "debit": debit, "credit": credit, "company": mr.COMPANY, "voucher_type": "Journal Entry",
-                         "is_cancelled": 0})
-    entries = [{"name": voucher, "bexio_id": (keys or {}).get(voucher), "company": mr.COMPANY,
-                "docstatus": 1, "posting_date": day}
-               for voucher, day, _lines in entries if voucher in (keys or {})]
+            rows.append(
+                {
+                    "voucher_no": voucher,
+                    "posting_date": day,
+                    "account": f"{number} - BI",
+                    "debit": debit,
+                    "credit": credit,
+                    "company": mr.COMPANY,
+                    "voucher_type": "Journal Entry",
+                    "is_cancelled": 0,
+                }
+            )
+    entries = [
+        {
+            "name": voucher,
+            "bexio_id": (keys or {}).get(voucher),
+            "company": mr.COMPANY,
+            "docstatus": 1,
+            "posting_date": day,
+        }
+        for voucher, day, _lines in entries
+        if voucher in (keys or {})
+    ]
     erp = FakeErp({"Account": ACCOUNTS, "Journal Entry": entries, "GL Entry": rows}, {})
-    lines = mr.fetch_journal_lines(erp, datetime.date(2026, 7, 1), datetime.date(2026, 9, 30))
+    lines = mr.fetch_journal_lines(
+        erp, datetime.date(2026, 7, 1), datetime.date(2026, 9, 30)
+    )
     if keys:
         by_voucher = {line["voucher"]: line["key"] for line in lines}
-        assert by_voucher == keys, "fetch_journal_lines lost a bexio_id: {} vs {}".format(by_voucher, keys)
+        assert (
+            by_voucher == keys
+        ), f"fetch_journal_lines lost a bexio_id: {by_voucher} vs {keys}"
     return lines
 
 
@@ -489,160 +898,331 @@ def booked(entries, keys=None):
 
 class JournalEntries(unittest.TestCase):
     def test_card_expense_with_input_tax_on_1171_is_405(self):
-        t = booked([("E1", "2026-08-03", [("1171", "8.10", "0"), ("6570", "100.00", "0"), ("1020", "0", "108.10")])])
+        t = booked(
+            [
+                (
+                    "E1",
+                    "2026-08-03",
+                    [
+                        ("1171", "8.10", "0"),
+                        ("6570", "100.00", "0"),
+                        ("1020", "0", "108.10"),
+                    ],
+                )
+            ]
+        )
         self.assertEqual(t.tax_of("405"), D("8.10"))
         self.assertEqual(t.base_of("405"), D("0"))
         self.assertEqual(t.journal["405"], [D("0"), D("8.10")])
 
     def test_material_input_tax_on_1170_is_400(self):
-        t = booked([("E2", "2026-08-03", [("1170", "2.50", "0"), ("6570", "0", "0"), ("1020", "0", "2.50")])])
+        t = booked(
+            [
+                (
+                    "E2",
+                    "2026-08-03",
+                    [("1170", "2.50", "0"), ("6570", "0", "0"), ("1020", "0", "2.50")],
+                )
+            ]
+        )
         self.assertEqual(t.tax_of("400"), D("2.50"))
 
     def test_manual_sales_tax_base_is_entgelt_in_200_as_in_its_rate_row(self):
         # invented: 1000.00 of revenue at 8.1 % booked by hand; the report's 200 takes the base as the rate row does
-        t = booked([("M1", "2026-08-03", [("3200", "0", "1000.00"), ("2200", "0", "81.00"), ("1020", "1081.00", "0")])],
-                   {"M1": "manual-1"})
+        t = booked(
+            [
+                (
+                    "M1",
+                    "2026-08-03",
+                    [
+                        ("3200", "0", "1000.00"),
+                        ("2200", "0", "81.00"),
+                        ("1020", "1081.00", "0"),
+                    ],
+                )
+            ],
+            {"M1": "manual-1"},
+        )
         self.assertEqual(t.base_of("200"), D("1000.00"))
         self.assertEqual(t.base_of("303"), D("1000.00"))
         self.assertEqual(t.tax_of("303"), D("81.00"))
         self.assertEqual(mr.form_totals(t)[0]["200"][0], D("1000.00"))
 
     def test_move_from_2202_to_2200_is_not_counted_twice(self):
-        t = booked([("M1", "2026-08-03", [("2202", "81.00", "0"), ("2200", "0", "81.00")])])
+        t = booked(
+            [("M1", "2026-08-03", [("2202", "81.00", "0"), ("2200", "0", "81.00")])]
+        )
         self.assertEqual(t.tax_of("303"), D("0"))
         self.assertEqual(t.rate_unknown, D("0"))
 
     def test_move_from_1172_to_1171_is_not_counted(self):
-        t = booked([("M2", "2026-08-03", [("1171", "50.00", "0"), ("1172", "0", "50.00")])])
+        t = booked(
+            [("M2", "2026-08-03", [("1171", "50.00", "0"), ("1172", "0", "50.00")])]
+        )
         self.assertEqual(t.tax_of("405"), D("0"))
 
     def test_settlement_entry_is_excluded(self):
-        t = booked([("S1", "2026-09-30", [("2201", "500.00", "0"), ("1171", "0", "500.00")])])
+        t = booked(
+            [("S1", "2026-09-30", [("2201", "500.00", "0"), ("1171", "0", "500.00")])]
+        )
         self.assertEqual(t.tax_of("405"), D("0"))
         self.assertEqual(t.journal, {})
 
     def test_manual_sales_entry_with_net_and_tax_lands_in_303_at_its_rate(self):
-        t = booked([("SA1", "2026-08-10", [("1100", "108.10", "0"), ("3200", "0", "100.00"), ("2200", "0", "8.10")])])
+        t = booked(
+            [
+                (
+                    "SA1",
+                    "2026-08-10",
+                    [
+                        ("1100", "108.10", "0"),
+                        ("3200", "0", "100.00"),
+                        ("2200", "0", "8.10"),
+                    ],
+                )
+            ]
+        )
         self.assertEqual(t.tax_of("303"), D("8.10"))
         self.assertEqual(t.base_of("303"), D("100.00"))
 
     def test_manual_sales_entry_at_2_6_percent_lands_in_313(self):
-        t = booked([("SA2", "2026-08-10", [("1100", "102.60", "0"), ("3200", "0", "100.00"), ("2200", "0", "2.60")])])
+        t = booked(
+            [
+                (
+                    "SA2",
+                    "2026-08-10",
+                    [
+                        ("1100", "102.60", "0"),
+                        ("3200", "0", "100.00"),
+                        ("2200", "0", "2.60"),
+                    ],
+                )
+            ]
+        )
         self.assertEqual(t.tax_of("313"), D("2.60"))
 
     def test_reversal_of_sales_tax_is_negative_in_its_row(self):
-        t = booked([("SA3", "2026-08-10", [("2200", "8.10", "0"), ("3200", "100.00", "0"), ("1100", "0", "108.10")])])
+        t = booked(
+            [
+                (
+                    "SA3",
+                    "2026-08-10",
+                    [
+                        ("2200", "8.10", "0"),
+                        ("3200", "100.00", "0"),
+                        ("1100", "0", "108.10"),
+                    ],
+                )
+            ]
+        )
         self.assertEqual(t.tax_of("303"), D("-8.10"))
         self.assertEqual(t.base_of("303"), D("-100.00"))
 
     def test_sales_tax_with_no_base_row_is_counted_apart(self):
-        t = booked([("SA4", "2026-08-10", [("1100", "8.10", "0"), ("2200", "0", "8.10")])])
+        t = booked(
+            [("SA4", "2026-08-10", [("1100", "8.10", "0"), ("2200", "0", "8.10")])]
+        )
         self.assertEqual(t.tax_of("303"), D("0"))
         self.assertEqual(t.rate_unknown, D("8.10"))
 
     def test_sales_tax_at_a_rate_not_in_the_form_is_counted_apart(self):
-        t = booked([("SA5", "2026-08-10", [("1100", "103.00", "0"), ("3200", "0", "100.00"), ("2200", "0", "3.00")])])
+        t = booked(
+            [
+                (
+                    "SA5",
+                    "2026-08-10",
+                    [
+                        ("1100", "103.00", "0"),
+                        ("3200", "0", "100.00"),
+                        ("2200", "0", "3.00"),
+                    ],
+                )
+            ]
+        )
         self.assertEqual(t.rate_unknown, D("3.00"))
         self.assertEqual(t.rows, {})
 
     def test_vatfix_manual_sales_tax_rates_from_the_entry_groups_base_row(self):
         # import_manual_entries booked the VAT as its own row on the base account and import_manual_fix
         # moved it to 2200 in a voucher of its own: the rate is the tax over the group's base row
-        t = booked([("ME1", "2026-08-10", [("1020", "0", "648.60"), ("6570", "600.00", "0"), ("6570", "48.60", "0")]),
-                    ("VF1", "2026-08-12", [("2200", "48.60", "0"), ("6570", "0", "48.60")])],
-                   {"ME1": "manual-80", "VF1": "vatfix-manual-80"})
+        t = booked(
+            [
+                (
+                    "ME1",
+                    "2026-08-10",
+                    [
+                        ("1020", "0", "648.60"),
+                        ("6570", "600.00", "0"),
+                        ("6570", "48.60", "0"),
+                    ],
+                ),
+                ("VF1", "2026-08-12", [("2200", "48.60", "0"), ("6570", "0", "48.60")]),
+            ],
+            {"ME1": "manual-80", "VF1": "vatfix-manual-80"},
+        )
         self.assertEqual(t.tax_of("303"), D("-48.60"))
         self.assertEqual(t.base_of("303"), D("-600.00"))
         self.assertEqual(t.rate_unknown, D("0"))
 
     def test_vatfix_manual_sales_tax_at_7_7_rated_from_the_group(self):
-        t = booked([("ME2", "2026-08-10", [("1020", "0", "430.80"), ("6570", "0", "400.00"), ("6570", "0", "30.80")]),
-                    ("VF2", "2026-08-12", [("2200", "0", "30.80"), ("6570", "30.80", "0")])],
-                   {"ME2": "manual-81", "VF2": "vatfix-manual-81"})
+        t = booked(
+            [
+                (
+                    "ME2",
+                    "2026-08-10",
+                    [
+                        ("1020", "0", "430.80"),
+                        ("6570", "0", "400.00"),
+                        ("6570", "0", "30.80"),
+                    ],
+                ),
+                ("VF2", "2026-08-12", [("2200", "0", "30.80"), ("6570", "30.80", "0")]),
+            ],
+            {"ME2": "manual-81", "VF2": "vatfix-manual-81"},
+        )
         self.assertEqual(t.tax_of("302"), D("30.80"))
         self.assertEqual(t.base_of("302"), D("400.00"))
 
     def test_vatfix_manual_sales_tax_with_no_group_voucher_stays_counted_apart(self):
-        t = booked([("VF3", "2026-08-12", [("2200", "0", "30.80"), ("6570", "30.80", "0")])],
-                   {"VF3": "vatfix-manual-82"})
+        t = booked(
+            [("VF3", "2026-08-12", [("2200", "0", "30.80"), ("6570", "30.80", "0")])],
+            {"VF3": "vatfix-manual-82"},
+        )
         self.assertEqual(t.tax_of("302"), D("0"))
         self.assertEqual(t.rate_unknown, D("30.80"))
 
     def test_vatfix_manual_sales_tax_with_an_ambiguous_group_stays_counted_apart(self):
         # two base rows of the group rate the tax within the tolerance: no row is named
-        t = booked([("ME3", "2026-08-10", [("1020", "0", "430.80"), ("6570", "0", "400.00"),
-                                             ("6570", "0", "399.35"), ("6570", "0", "30.80")]),
-                    ("VF4", "2026-08-12", [("2200", "0", "30.80"), ("6570", "30.80", "0")])],
-                   {"ME3": "manual-83", "VF4": "vatfix-manual-83"})
+        t = booked(
+            [
+                (
+                    "ME3",
+                    "2026-08-10",
+                    [
+                        ("1020", "0", "430.80"),
+                        ("6570", "0", "400.00"),
+                        ("6570", "0", "399.35"),
+                        ("6570", "0", "30.80"),
+                    ],
+                ),
+                ("VF4", "2026-08-12", [("2200", "0", "30.80"), ("6570", "30.80", "0")]),
+            ],
+            {"ME3": "manual-83", "VF4": "vatfix-manual-83"},
+        )
         self.assertEqual(t.tax_of("302"), D("0"))
         self.assertEqual(t.rate_unknown, D("30.80"))
 
     def test_a_vatfix_manual_rate_from_the_group_does_not_touch_other_keys(self):
-        t = booked([("ME4", "2026-08-10", [("1020", "0", "430.80"), ("6570", "0", "400.00"), ("6570", "0", "30.80")]),
-                    ("VF5", "2026-08-12", [("2200", "0", "30.80"), ("6570", "30.80", "0")])],
-                   {"ME4": "manual-84", "VF5": "vatfix-manual-84"})
+        t = booked(
+            [
+                (
+                    "ME4",
+                    "2026-08-10",
+                    [
+                        ("1020", "0", "430.80"),
+                        ("6570", "0", "400.00"),
+                        ("6570", "0", "30.80"),
+                    ],
+                ),
+                ("VF5", "2026-08-12", [("2200", "0", "30.80"), ("6570", "30.80", "0")]),
+            ],
+            {"ME4": "manual-84", "VF5": "vatfix-manual-84"},
+        )
         self.assertEqual(t.skipped_moves, [])
         self.assertEqual(t.other_keys, [])
         self.assertEqual(t.skipped_mirrors, [])
 
     def test_bezugsteuer_on_a_manual_entry_is_owed_in_383_for_2026(self):
-        t = booked([("B1", "2026-08-03", [("1170", "81.00", "0"), ("2203", "0", "81.00")])],
-                   {"B1": "manual-70"})
+        t = booked(
+            [("B1", "2026-08-03", [("1170", "81.00", "0"), ("2203", "0", "81.00")])],
+            {"B1": "manual-70"},
+        )
         self.assertEqual(t.tax_of("383"), D("81.00"))
         self.assertEqual(t.tax_of("400"), D("81.00"))
 
     def test_a_2203_row_on_a_voucher_of_no_known_kind_is_listed_not_counted(self):
         # until its origin is named, a 2203 credit on an unkeyed voucher is no Ziffer
-        t = booked([("B2", "2026-08-03", [("1170", "81.00", "0"), ("2203", "0", "81.00")])])
+        t = booked(
+            [("B2", "2026-08-03", [("1170", "81.00", "0"), ("2203", "0", "81.00")])]
+        )
         self.assertEqual(t.tax_of("383"), D("0"))
         self.assertEqual(t.tax_of("400"), D("81.00"))
         self.assertEqual(t.other_keys, ["(no bexio_id)"])
 
-    def test_the_bezug_move_2202_to_2203_is_skipped_as_the_payment_entries_hold_it(self):
+    def test_the_bezug_move_2202_to_2203_is_skipped_as_the_payment_entries_hold_it(
+        self,
+    ):
         # the payment-day move of import_payments_out: the invoice's shared deduct row is the same tax
-        t = booked([("BM1", "2026-08-03", [("2202", "81.00", "0"), ("2203", "0", "81.00")])],
-                   {"BM1": "6576"})
+        t = booked(
+            [("BM1", "2026-08-03", [("2202", "81.00", "0"), ("2203", "0", "81.00")])],
+            {"BM1": "6576"},
+        )
         self.assertEqual(t.tax_of("383"), D("0"))
         self.assertEqual(t.skipped_moves, ["6576"])
         self.assertEqual(t.other_keys, [])
 
     def test_a_numeric_voucher_with_2203_and_no_2202_is_listed_not_counted(self):
-        t = booked([("BM2", "2026-08-03", [("2203", "0", "81.00"), ("1020", "81.00", "0")])],
-                   {"BM2": "6577"})
+        t = booked(
+            [("BM2", "2026-08-03", [("2203", "0", "81.00"), ("1020", "81.00", "0")])],
+            {"BM2": "6577"},
+        )
         self.assertEqual(t.tax_of("383"), D("0"))
         self.assertEqual(t.skipped_moves, [])
         self.assertEqual(t.other_keys, ["6577"])
 
     def test_vatfix_manual_2203_still_counts(self):
-        t = booked([("B3", "2026-08-03", [("1171", "8.10", "0"), ("2202", "8.10", "0"),
-                                            ("2203", "0", "8.10"), ("6570", "100.00", "0")])],
-                   {"B3": "vatfix-manual-71"})
+        t = booked(
+            [
+                (
+                    "B3",
+                    "2026-08-03",
+                    [
+                        ("1171", "8.10", "0"),
+                        ("2202", "8.10", "0"),
+                        ("2203", "0", "8.10"),
+                        ("6570", "100.00", "0"),
+                    ],
+                )
+            ],
+            {"B3": "vatfix-manual-71"},
+        )
         self.assertEqual(t.tax_of("383"), D("8.10"))
         self.assertEqual(t.tax_of("405"), D("8.10"))
         self.assertEqual(t.other_keys, [])
 
     def test_csv_shows_the_entries_under_the_ziffer(self):
-        t = booked([("E1", "2026-08-03", [("1171", "8.10", "0"), ("1020", "0", "8.10")])])
-        self.assertIn(["405", "journal entries (by account)", "0.00", "8.10"], list(mr.csv_rows(t)))
+        t = booked(
+            [("E1", "2026-08-03", [("1171", "8.10", "0"), ("1020", "0", "8.10")])]
+        )
+        self.assertIn(
+            ["405", "journal entries (by account)", "0.00", "8.10"],
+            list(mr.csv_rows(t)),
+        )
 
     def test_vatfix_bill_bezugsteuer_mirror_is_skipped(self):
-        t = booked([("V1", "2026-08-03", [("1170", "81.00", "0"), ("2203", "0", "81.00")])],
-                   {"V1": "vatfix-bill-9f61"})
+        t = booked(
+            [("V1", "2026-08-03", [("1170", "81.00", "0"), ("2203", "0", "81.00")])],
+            {"V1": "vatfix-bill-9f61"},
+        )
         self.assertEqual(t.tax_of("383"), D("0"))
         self.assertEqual(t.tax_of("400"), D("0"))
         self.assertEqual(t.skipped_mirrors, ["vatfix-bill-9f61"])
         self.assertEqual(t.other_keys, [])
 
     def test_vatfix_invoice_sales_mirror_is_skipped(self):
-        t = booked([("V2", "2026-08-03", [("2200", "0", "81.00"), ("3200", "0", "81.00")])],
-                   {"V2": "vatfix-invoice-417"})
+        t = booked(
+            [("V2", "2026-08-03", [("2200", "0", "81.00"), ("3200", "0", "81.00")])],
+            {"V2": "vatfix-invoice-417"},
+        )
         self.assertEqual(t.rows, {})
         self.assertEqual(t.skipped_mirrors, ["vatfix-invoice-417"])
 
     def test_vatfix_manual_correction_counts_like_a_manual_entry(self):
         # it corrects a manual entry on the entry's posting date, which both bases read: its VAT rows count
-        t = booked([("V3", "2026-08-03", [("1171", "8.10", "0"), ("6570", "0", "8.10")])],
-                   {"V3": "vatfix-manual-55"})
+        t = booked(
+            [("V3", "2026-08-03", [("1171", "8.10", "0"), ("6570", "0", "8.10")])],
+            {"V3": "vatfix-manual-55"},
+        )
         self.assertEqual(t.tax_of("405"), D("8.10"))
         self.assertEqual(t.skipped_mirrors, [])
         self.assertEqual(t.other_keys, [])
@@ -650,68 +1230,131 @@ class JournalEntries(unittest.TestCase):
     def test_manual_entry_counts_its_2203_next_to_a_2202_row(self):
         # a reverse-charge manual entry: the expense and its Vorsteuer on 1171, the Bezugsteuer on 2203
         # against the 2202 transit, the bank pays the gross
-        t = booked([("MA1", "2026-08-10", [("6570", "100.00", "0"), ("1171", "8.10", "0"),
-                                            ("2202", "8.10", "0"), ("2203", "0", "8.10"),
-                                            ("1020", "0", "116.20")])], {"MA1": "manual-55"})
+        t = booked(
+            [
+                (
+                    "MA1",
+                    "2026-08-10",
+                    [
+                        ("6570", "100.00", "0"),
+                        ("1171", "8.10", "0"),
+                        ("2202", "8.10", "0"),
+                        ("2203", "0", "8.10"),
+                        ("1020", "0", "116.20"),
+                    ],
+                )
+            ],
+            {"MA1": "manual-55"},
+        )
         self.assertEqual(t.tax_of("383"), D("8.10"))
         self.assertEqual(t.tax_of("405"), D("8.10"))
         self.assertEqual(t.skipped_mirrors, [])
         self.assertEqual(t.other_keys, [])
 
     def test_manual_entry_counts_its_input_tax_next_to_a_1172_transit(self):
-        t = booked([("MA2", "2026-08-10", [("1171", "8.10", "0"), ("1172", "0", "8.10"),
-                                            ("6570", "100.00", "0"), ("1020", "0", "108.10")])],
-                   {"MA2": "manual-56"})
+        t = booked(
+            [
+                (
+                    "MA2",
+                    "2026-08-10",
+                    [
+                        ("1171", "8.10", "0"),
+                        ("1172", "0", "8.10"),
+                        ("6570", "100.00", "0"),
+                        ("1020", "0", "108.10"),
+                    ],
+                )
+            ],
+            {"MA2": "manual-56"},
+        )
         self.assertEqual(t.tax_of("405"), D("8.10"))
 
     def test_manual_entry_counts_its_sales_tax_next_to_a_2202_transit(self):
-        t = booked([("MA3", "2026-08-10", [("1100", "108.10", "0"), ("3200", "0", "100.00"),
-                                            ("2202", "0", "8.10"), ("2200", "0", "8.10")])],
-                   {"MA3": "manual-57"})
+        t = booked(
+            [
+                (
+                    "MA3",
+                    "2026-08-10",
+                    [
+                        ("1100", "108.10", "0"),
+                        ("3200", "0", "100.00"),
+                        ("2202", "0", "8.10"),
+                        ("2200", "0", "8.10"),
+                    ],
+                )
+            ],
+            {"MA3": "manual-57"},
+        )
         self.assertEqual(t.tax_of("303"), D("8.10"))
         self.assertEqual(t.base_of("303"), D("100.00"))
 
     def test_a_move_keyed_by_journal_line_is_not_counted_and_not_listed(self):
-        t = booked([("M3", "2026-08-03", [("1171", "50.00", "0"), ("1172", "0", "50.00")])],
-                   {"M3": "90123"})
+        t = booked(
+            [("M3", "2026-08-03", [("1171", "50.00", "0"), ("1172", "0", "50.00")])],
+            {"M3": "90123"},
+        )
         self.assertEqual(t.tax_of("405"), D("0"))
         self.assertEqual(t.skipped_mirrors, [])
         self.assertEqual(t.other_keys, [])
 
     def test_a_direct_entry_keyed_by_journal_line_counts_as_today(self):
-        t = booked([("M4", "2026-08-03", [("1171", "8.10", "0"), ("6570", "100.00", "0"),
-                                           ("1020", "0", "108.10")])], {"M4": "90124"})
+        t = booked(
+            [
+                (
+                    "M4",
+                    "2026-08-03",
+                    [
+                        ("1171", "8.10", "0"),
+                        ("6570", "100.00", "0"),
+                        ("1020", "0", "108.10"),
+                    ],
+                )
+            ],
+            {"M4": "90124"},
+        )
         self.assertEqual(t.tax_of("405"), D("8.10"))
         self.assertEqual(t.other_keys, [])
 
     def test_settlement_is_skipped_whatever_its_key(self):
-        t = booked([("S2", "2026-09-30", [("2201", "500.00", "0"), ("1171", "0", "500.00")])],
-                   {"S2": "manual-58"})
+        t = booked(
+            [("S2", "2026-09-30", [("2201", "500.00", "0"), ("1171", "0", "500.00")])],
+            {"S2": "manual-58"},
+        )
         self.assertEqual(t.tax_of("405"), D("0"))
         self.assertEqual(t.journal, {})
         self.assertEqual(t.skipped_mirrors, [])
         self.assertEqual(t.other_keys, [])
 
     def test_an_unknown_key_falls_back_to_the_pair_rule_and_is_listed(self):
-        t = booked([("U1", "2026-08-03", [("1171", "50.00", "0"), ("1172", "0", "50.00")])],
-                   {"U1": "journal-1042"})
+        t = booked(
+            [("U1", "2026-08-03", [("1171", "50.00", "0"), ("1172", "0", "50.00")])],
+            {"U1": "journal-1042"},
+        )
         self.assertEqual(t.tax_of("405"), D("0"))
         self.assertEqual(t.other_keys, ["journal-1042"])
 
     def test_a_voucher_without_a_key_falls_back_to_the_pair_rule_and_is_listed(self):
-        t = booked([("U2", "2026-08-03", [("1171", "50.00", "0"), ("1172", "0", "50.00")])])
+        t = booked(
+            [("U2", "2026-08-03", [("1171", "50.00", "0"), ("1172", "0", "50.00")])]
+        )
         self.assertEqual(t.tax_of("405"), D("0"))
         self.assertEqual(t.other_keys, ["(no bexio_id)"])
 
     def test_a_voucher_off_the_vat_accounts_is_not_listed(self):
-        t = booked([("U3", "2026-08-03", [("6570", "50.00", "0"), ("1020", "0", "50.00")])],
-                   {"U3": "journal-1043"})
+        t = booked(
+            [("U3", "2026-08-03", [("6570", "50.00", "0"), ("1020", "0", "50.00")])],
+            {"U3": "journal-1043"},
+        )
         self.assertEqual(t.other_keys, [])
 
     def test_csv_lists_the_skipped_mirrors_and_the_other_keys(self):
-        t = booked([("V1", "2026-08-03", [("1170", "81.00", "0"), ("2203", "0", "81.00")]),
-                    ("U1", "2026-08-04", [("1171", "50.00", "0"), ("1172", "0", "50.00")])],
-                   {"V1": "vatfix-bill-9f61", "U1": "journal-1042"})
+        t = booked(
+            [
+                ("V1", "2026-08-03", [("1170", "81.00", "0"), ("2203", "0", "81.00")]),
+                ("U1", "2026-08-04", [("1171", "50.00", "0"), ("1172", "0", "50.00")]),
+            ],
+            {"V1": "vatfix-bill-9f61", "U1": "journal-1042"},
+        )
         folder = tempfile.mkdtemp()
         try:
             path = os.path.join(folder, "mwst.csv")
@@ -729,8 +1372,10 @@ class JournalEntries(unittest.TestCase):
         self.assertNotIn("(no bexio_id)", report)
 
     def test_csv_lists_the_skipped_moves(self):
-        t = booked([("BM3", "2026-08-03", [("2202", "81.00", "0"), ("2203", "0", "81.00")])],
-                   {"BM3": "6576"})
+        t = booked(
+            [("BM3", "2026-08-03", [("2202", "81.00", "0"), ("2203", "0", "81.00")])],
+            {"BM3": "6576"},
+        )
         folder = tempfile.mkdtemp()
         try:
             path = os.path.join(folder, "mwst.csv")
@@ -749,10 +1394,26 @@ class JournalRun(unittest.TestCase):
         erp = ReportRun.fake(self)
         erp.rows["Account"] = ACCOUNTS
         erp.rows["GL Entry"] = [
-            {"voucher_no": "E1", "posting_date": "2026-08-03", "account": "1171 - BI", "debit": "8.10", "credit": "0",
-             "company": mr.COMPANY, "voucher_type": "Journal Entry", "is_cancelled": 0},
-            {"voucher_no": "E1", "posting_date": "2026-08-03", "account": "1020 - BI", "debit": "0", "credit": "8.10",
-             "company": mr.COMPANY, "voucher_type": "Journal Entry", "is_cancelled": 0},
+            {
+                "voucher_no": "E1",
+                "posting_date": "2026-08-03",
+                "account": "1171 - BI",
+                "debit": "8.10",
+                "credit": "0",
+                "company": mr.COMPANY,
+                "voucher_type": "Journal Entry",
+                "is_cancelled": 0,
+            },
+            {
+                "voucher_no": "E1",
+                "posting_date": "2026-08-03",
+                "account": "1020 - BI",
+                "debit": "0",
+                "credit": "8.10",
+                "company": mr.COMPANY,
+                "voucher_type": "Journal Entry",
+                "is_cancelled": 0,
+            },
         ]
         return erp
 
@@ -760,14 +1421,22 @@ class JournalRun(unittest.TestCase):
         for basis in ("posting", "payment"):
             code, out, report = ReportRun.run_main(self, ["--basis", basis])
             self.assertEqual(code, 0)
-            self.assertIn("405,Vorsteuer Investitionen und übriger Betriebsaufwand,0.00,8.10", report)
+            self.assertIn(
+                "405,Vorsteuer Investitionen und übriger Betriebsaufwand,0.00,8.10",
+                report,
+            )
             self.assertIn("405,journal entries (by account),0.00,8.10", report)
 
 
 def gl(number, voucher_type, voucher_no, debit="0", credit="0"):
     """One GL entry as gl_entries() gives it. Invented figures."""
-    return {"number": number, "voucher_type": voucher_type, "voucher_no": voucher_no,
-            "debit": D(debit), "credit": D(credit)}
+    return {
+        "number": number,
+        "voucher_type": voucher_type,
+        "voucher_no": voucher_no,
+        "debit": D(debit),
+        "credit": D(credit),
+    }
 
 
 class GlChecks(unittest.TestCase):
@@ -816,22 +1485,45 @@ class GlChecks(unittest.TestCase):
         self.assertEqual(mr.settlement(gl_rows), (False, D("0"), D("0")))
 
     def test_the_reconcile_lines_name_the_settlement_and_its_difference(self):
-        t = mr.plan([doc(datetime.date(2026, 8, 3), D("1000.00"), [
-            tax("UN81 8.1% Normalsatz", "81.00"),
-        ])], [], TEMPLATE_NAMES)
+        t = mr.plan(
+            [
+                doc(
+                    datetime.date(2026, 8, 3),
+                    D("1000.00"),
+                    [
+                        tax("UN81 8.1% Normalsatz", "81.00"),
+                    ],
+                )
+            ],
+            [],
+            TEMPLATE_NAMES,
+        )
         gl_rows = [
             gl("2200", "Journal Entry", "JE-1", credit="81.00"),
             gl("2200", "Journal Entry", "JE-9", debit="81.00"),
             gl("2201", "Journal Entry", "JE-9", credit="81.00"),
         ]
         lines = mr.reconcile_lines(t, gl_rows)
-        self.assertIn("settlement: settled: yes; 2200 debit 81.00 vs owed 81.00: difference 0.00; "
-                      "1170+1171 credit 0.00 vs input tax 0.00: difference 0.00", lines)
+        self.assertIn(
+            "settlement: settled: yes; 2200 debit 81.00 vs owed 81.00: difference 0.00; "
+            "1170+1171 credit 0.00 vs input tax 0.00: difference 0.00",
+            lines,
+        )
 
     def test_an_unsettled_quarter_says_so(self):
-        t = mr.plan([doc(datetime.date(2026, 8, 3), D("1000.00"), [
-            tax("UN81 8.1% Normalsatz", "81.00"),
-        ])], [], TEMPLATE_NAMES)
+        t = mr.plan(
+            [
+                doc(
+                    datetime.date(2026, 8, 3),
+                    D("1000.00"),
+                    [
+                        tax("UN81 8.1% Normalsatz", "81.00"),
+                    ],
+                )
+            ],
+            [],
+            TEMPLATE_NAMES,
+        )
         self.assertIn("settlement: settled: no", mr.reconcile_lines(t, []))
 
 

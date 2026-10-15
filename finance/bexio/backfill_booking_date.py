@@ -51,19 +51,25 @@ def plan(records, rows, field="booking_date"):
     # the lines whose booking date is not their value date: the ones the two Desk columns show differently
     by_id = {str(r["id"]): r for r in records}
     counts["differs"] = sum(
-        1 for row in rows
-        if str(row["bexio_id"]) in by_id and booking_date(by_id[str(row["bexio_id"])]) != by_id[str(row["bexio_id"])]["value_date"])
+        1
+        for row in rows
+        if str(row["bexio_id"]) in by_id
+        and booking_date(by_id[str(row["bexio_id"])])
+        != by_id[str(row["bexio_id"])]["value_date"]
+    )
     return dates, counts
 
 
 def summary(counts, field="booking_date"):
-    return "\n".join([
-        "bank transactions with a bexio id: {}".format(counts["lines"]),
-        "{} already set: {}".format(field.replace("_", " "), counts["already_set"]),
-        "not in the export: {}".format(counts["not_in_export"]),
-        "to fill: {}".format(counts["to_fill"]),
-        "booking date differs from value date: {}".format(counts["differs"]),
-    ])
+    return "\n".join(
+        [
+            "bank transactions with a bexio id: {}".format(counts["lines"]),
+            "{} already set: {}".format(field.replace("_", " "), counts["already_set"]),
+            "not in the export: {}".format(counts["not_in_export"]),
+            "to fill: {}".format(counts["to_fill"]),
+            "booking date differs from value date: {}".format(counts["differs"]),
+        ]
+    )
 
 
 def write(erp, dates, field="booking_date"):
@@ -71,17 +77,40 @@ def write(erp, dates, field="booking_date"):
     names = sorted(dates)
     filled = 0
     for i in range(0, len(names), BATCH):
-        chunk = {n: dates[n] for n in names[i:i + BATCH]}
-        filled += erp.call("bi_finance.bank_list.set_booking_dates", dates=json.dumps(chunk), field=field)
+        chunk = {n: dates[n] for n in names[i : i + BATCH]}
+        filled += erp.call(
+            "bi_finance.bank_list.set_booking_dates",
+            dates=json.dumps(chunk),
+            field=field,
+        )
     return filled
 
 
 def main(argv):
-    parser = argparse.ArgumentParser(description="Fill the Booking Date of the imported Bank Transactions from bexio's book_date.")
-    parser.add_argument("--export", default=None, help="export directory (default: the newest under <private>/bexio-export/)")
-    parser.add_argument("--dry-run", action="store_true", help="read ERPNext, write nothing, print the counts")
-    parser.add_argument("--write", action="store_true", help="set the dates in ERPNext (after the dry run and the go)")
-    parser.add_argument("--field", choices=["booking_date", "value_date"], default="booking_date", help="the date to fill (default: booking_date)")
+    parser = argparse.ArgumentParser(
+        description="Fill the Booking Date of the imported Bank Transactions from bexio's book_date."
+    )
+    parser.add_argument(
+        "--export",
+        default=None,
+        help="export directory (default: the newest under <private>/bexio-export/)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="read ERPNext, write nothing, print the counts",
+    )
+    parser.add_argument(
+        "--write",
+        action="store_true",
+        help="set the dates in ERPNext (after the dry run and the go)",
+    )
+    parser.add_argument(
+        "--field",
+        choices=["booking_date", "value_date"],
+        default="booking_date",
+        help="the date to fill (default: booking_date)",
+    )
     parser.add_argument("--token-file", default=im.TOKEN_FILE)
     args = parser.parse_args(argv)
     if args.dry_run == args.write:
@@ -90,19 +119,25 @@ def main(argv):
     export_dir = args.export or im.newest_export()
     file = os.path.join(export_dir, "bank_transactions.json")
     if not os.path.exists(file):
-        print("bank transactions: not exported yet (no bank_transactions.json in the export)")
+        print(
+            "bank transactions: not exported yet (no bank_transactions.json in the export)"
+        )
         return 0
     with open(file, encoding="utf-8") as f:
         records = json.load(f)
     erp = im.Erp.from_file(args.token_file)
     try:
-        rows = erp.list("Bank Transaction", [["bexio_id", "is", "set"]], ["name", "bexio_id", args.field])
+        rows = erp.list(
+            "Bank Transaction",
+            [["bexio_id", "is", "set"]],
+            ["name", "bexio_id", args.field],
+        )
         dates, counts = plan(records, rows, args.field)
         print(summary(counts, args.field))
         if args.write:
-            print("filled: {}".format(write(erp, dates, args.field)))
+            print(f"filled: {write(erp, dates, args.field)}")
     except im.ErpError as err:
-        print("aborted: {}".format(err), file=sys.stderr)
+        print(f"aborted: {err}", file=sys.stderr)
         return 2
     return 0
 

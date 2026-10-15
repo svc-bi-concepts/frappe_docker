@@ -1,45 +1,45 @@
 [
- {
-  "docstatus": 0,
-  "doctype": "Custom Field",
-  "name": "Bank Transaction-booking_date",
-  "dt": "Bank Transaction",
-  "module": "BI Finance",
-  "fieldname": "booking_date",
-  "label": "Booking Date",
-  "fieldtype": "Date",
-  "insert_after": "date",
-  "in_list_view": 1,
-  "in_standard_filter": 1,
-  "is_system_generated": 0,
-  "description": "The day the bank booked the line. Date keeps each source's own date (bexio: value date)."
- },
- {
-  "docstatus": 0,
-  "doctype": "Custom Field",
-  "name": "Bank Transaction-value_date",
-  "dt": "Bank Transaction",
-  "module": "BI Finance",
-  "fieldname": "value_date",
-  "label": "Value Date",
-  "fieldtype": "Date",
-  "insert_after": "booking_date",
-  "in_list_view": 1,
-  "in_standard_filter": 1,
-  "is_system_generated": 0,
-  "description": "The day the line's funds moved (bank value date). Equal to Booking Date for Wise and PayPal, which give one date."
- },
- {
-  "docstatus": 0,
-  "doctype": "Custom Field",
-  "name": "Bank Transaction-end_to_end_id",
-  "dt": "Bank Transaction",
-  "module": "BI Finance",
-  "fieldname": "end_to_end_id",
-  "label": "End to End Id",
-  "fieldtype": "Data",
-  "insert_after": "value_date",
-  "is_system_generated": 0,
-  "description": "The payment's EndToEndId from a camt file (the payment run's reference). Bank Matching finds the Payment Entry by it first."
- }
+  {
+    "docstatus": 0,
+    "doctype": "Custom Field",
+    "name": "Bank Transaction-booking_date",
+    "dt": "Bank Transaction",
+    "module": "BI Finance",
+    "fieldname": "booking_date",
+    "label": "Booking Date",
+    "fieldtype": "Date",
+    "insert_after": "date",
+    "in_list_view": 1,
+    "in_standard_filter": 1,
+    "is_system_generated": 0,
+    "description": "The day the bank booked the line. Date keeps each source's own date (bexio: value date)."
+  },
+  {
+    "docstatus": 0,
+    "doctype": "Custom Field",
+    "name": "Bank Transaction-value_date",
+    "dt": "Bank Transaction",
+    "module": "BI Finance",
+    "fieldname": "value_date",
+    "label": "Value Date",
+    "fieldtype": "Date",
+    "insert_after": "booking_date",
+    "in_list_view": 1,
+    "in_standard_filter": 1,
+    "is_system_generated": 0,
+    "description": "The day the line's funds moved (bank value date). Equal to Booking Date for Wise and PayPal, which give one date."
+  },
+  {
+    "docstatus": 0,
+    "doctype": "Custom Field",
+    "name": "Bank Transaction-end_to_end_id",
+    "dt": "Bank Transaction",
+    "module": "BI Finance",
+    "fieldname": "end_to_end_id",
+    "label": "End to End Id",
+    "fieldtype": "Data",
+    "insert_after": "value_date",
+    "is_system_generated": 0,
+    "description": "The payment's EndToEndId from a camt file (the payment run's reference). Bank Matching finds the Payment Entry by it first."
+  }
 ]

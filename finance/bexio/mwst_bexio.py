@@ -45,10 +45,10 @@ import os
 import sys
 from decimal import ROUND_HALF_UP, Decimal
 
-import import_master as im
 import import_manual_entries as ime
-import import_purchase as ip
+import import_master as im
 import import_payments_out as ipo
+import import_purchase as ip
 import mwst_report as mr
 
 CENT = Decimal("0.01")
@@ -82,14 +82,17 @@ def cent_bound(rate):
     """How far mwst_report's base may be off the true net of one row: the report derives the
     base from its tax, whose own bound (TAX_BOUND) the division amplifies by 100/rate, plus
     the row's own cent and the share slack."""
-    return TAX_BOUND * HUNDRED / Decimal(str(rate)) + Decimal("0.005") + DERIVED_BASE_SLACK
+    return (
+        TAX_BOUND * HUNDRED / Decimal(str(rate)) + Decimal("0.005") + DERIVED_BASE_SLACK
+    )
 
 
 class Quarters:
     """Per quarter the form rows, the journal part of each row, and the Entgelt tolerance.
 
     rows holds mwst_report's Totals per quarter, so both sides' CSVs hold the same shape;
-    tol sums the per-row bounds of the document part, for the comparison of the bases."""
+    tol sums the per-row bounds of the document part, for the comparison of the bases.
+    """
 
     def __init__(self):
         self.rows = {}
@@ -124,7 +127,11 @@ def chf(value, rate):
 
 def numbers_of(accounts):
     """bexio account id -> account number, for the receivable account this reads."""
-    return {a["id"]: str(a["account_no"]) for a in accounts if str(a["account_no"]) == "1100"}
+    return {
+        a["id"]: str(a["account_no"])
+        for a in accounts
+        if str(a["account_no"]) == "1100"
+    }
 
 
 def booked_chf_of_invoices(journal, numbers):
@@ -133,7 +140,10 @@ def booked_chf_of_invoices(journal, numbers):
     the invoice currency, and the CHF bexio booked is the one ERPNext holds."""
     out = collections.defaultdict(lambda: ZERO)
     for line in journal:
-        if line.get("ref_class") != "KbInvoice" or numbers.get(line["debit_account_id"]) != "1100":
+        if (
+            line.get("ref_class") != "KbInvoice"
+            or numbers.get(line["debit_account_id"]) != "1100"
+        ):
             continue
         if line.get("ref_id") is not None:
             out[line["ref_id"]] += Decimal(str(line["base_currency_amount"]))
@@ -154,8 +164,12 @@ def invoice_codes(invoice, taxes, chf_booked=None, unknown=None):
     total_ccy = Decimal(str(invoice["total"]))
     if invoice.get("currency_id") != BASE_CURRENCY_ID:
         if chf_booked is None or not total_ccy:
-            raise ValueError("invoice {} in a foreign currency without its booked CHF total".format(invoice["id"]))
-        rate = (chf_booked / total_ccy)
+            raise ValueError(
+                "invoice {} in a foreign currency without its booked CHF total".format(
+                    invoice["id"]
+                )
+            )
+        rate = chf_booked / total_ccy
     total_net = chf(Decimal(str(invoice["total_net"])), rate)
     sums = collections.defaultdict(lambda: ZERO)
     for position in invoice.get("positions") or []:
@@ -192,19 +206,28 @@ def invoice_codes(invoice, taxes, chf_booked=None, unknown=None):
         largest = max(tax_ids, key=lambda t: codes[t][0])
         computed = ZERO
         for tax_id in tax_ids:
-            codes[tax_id][1] = given if len(tax_ids) == 1 else money(given * codes[tax_id][0] / net_total)
+            codes[tax_id][1] = (
+                given
+                if len(tax_ids) == 1
+                else money(given * codes[tax_id][0] / net_total)
+            )
             computed += codes[tax_id][1]
         if computed != given:
             codes[largest][1] += given - computed
     untaxed = total_net - sum(net for net, _tax in codes.values())
-    return ({tax_id: (net, tax) for tax_id, (net, tax) in codes.items()}, money(untaxed), total_net)
+    return (
+        {tax_id: (net, tax) for tax_id, (net, tax) in codes.items()},
+        money(untaxed),
+        total_net,
+    )
 
 
 def receipt_shares(rows, total):
     """What each payment row of one invoice settles, in date order: the rows take the total
     until it is paid, a credit-voucher offset gives back what was paid, with the sign, and a
     payment past the total settles nothing (an advance, bexio moves no VAT for it). A cash
-    discount settles no VAT either. Yields (day, share, kind), kind 'payment' or 'credit'."""
+    discount settles no VAT either. Yields (day, share, kind), kind 'payment' or 'credit'.
+    """
     allocated = ZERO
     for row in sorted(rows, key=lambda r: (r["date"], r["id"])):
         if row.get("is_cash_discount"):
@@ -225,7 +248,7 @@ def receipt_shares(rows, total):
 
 def quarter_of_day(day):
     """'2026-08-14' -> '2026Q3'."""
-    return "{}Q{}".format(day[:4], (int(day[5:7]) - 1) // 3 + 1)
+    return f"{day[:4]}Q{(int(day[5:7]) - 1) // 3 + 1}"
 
 
 def add_sales(quarters, invoices, invoice_payments, taxes, chf_booked):
@@ -235,7 +258,9 @@ def add_sales(quarters, invoices, invoice_payments, taxes, chf_booked):
     report's plan() does."""
     for entry in invoice_payments:
         invoice = invoices.get(entry["parent_id"])
-        rows = [row for row in entry.get("rows") or [] if not row.get("is_cash_discount")]
+        rows = [
+            row for row in entry.get("rows") or [] if not row.get("is_cash_discount")
+        ]
         if invoice is None:
             quarters.counts["receipts without their invoice"] += len(rows)
             continue
@@ -243,8 +268,12 @@ def add_sales(quarters, invoices, invoice_payments, taxes, chf_booked):
         if not total:
             quarters.counts["invoices without a total"] += 1
             continue
-        codes, untaxed, total_net = invoice_codes(invoice, taxes, chf_booked.get(entry["parent_id"]),
-                                                  quarters.unknown_list("sales positions"))
+        codes, untaxed, total_net = invoice_codes(
+            invoice,
+            taxes,
+            chf_booked.get(entry["parent_id"]),
+            quarters.unknown_list("sales positions"),
+        )
         for day, share, kind in receipt_shares(entry["rows"], total):
             totals = quarters.of(quarter_of_day(day))
             quarters.counts["receipts counted"] += 1
@@ -266,8 +295,14 @@ def add_sales(quarters, invoices, invoice_payments, taxes, chf_booked):
                     # the report books no tax row for a rate the invoice does not carry, so its
                     # net is in Ziffer 200 only, as here
                     continue
-                quarters.add_document(quarter_of_day(day), form_row, mr.share_of(net, share),
-                                      mr.share_of(tax, share), rate_pct, share)
+                quarters.add_document(
+                    quarter_of_day(day),
+                    form_row,
+                    mr.share_of(net, share),
+                    mr.share_of(tax, share),
+                    rate_pct,
+                    share,
+                )
 
 
 def bill_codes(bill, taxes, unknown=None):
@@ -289,7 +324,11 @@ def bill_codes(bill, taxes, unknown=None):
         net = chf(line["net"], rate)
         codes[tax_id][0] += net
         if rate_pct:
-            given = line["given"] if line["given"] is not None else ip._tax_of(line["net"], rate_pct)
+            given = (
+                line["given"]
+                if line["given"] is not None
+                else ip._tax_of(line["net"], rate_pct)
+            )
             codes[tax_id][1] += chf(given, rate)
     return {tax_id: (money(net), money(tax)) for tax_id, (net, tax) in codes.items()}
 
@@ -298,7 +337,8 @@ def add_purchase(quarters, bills, journal, accounts, taxes):
     """The bill-payment side: import_payments_out's pairing of the journal's payment groups
     with the bills, and each pair adds the whole bill's net and tax per code in the quarter
     of the payment. A reverse-charge bill's tax also goes into the Bezugsteuer row of the
-    payment day, as bexio moves it 2202 -> 2203 there and the report's Deduct row does."""
+    payment day, as bexio moves it 2202 -> 2203 there and the report's Deduct row does.
+    """
     numbers = {a["id"]: str(a["account_no"]) for a in accounts}
     booked = ipo.bill_bookings(journal, numbers)
     settled = []
@@ -337,17 +377,25 @@ def add_purchase(quarters, bills, journal, accounts, taxes):
                 # the report's Deduct row carries a base too, derived from the tax; bexio's is
                 # the bill's net, so the comparison holds it against the same tolerance
                 quarters.add_document(quarter, form_row, net, tax, rate_pct)
-                quarters.add_document(quarter, mr.owed_row(datetime.date.fromisoformat(item["day"])),
-                                      net, tax, rate_pct)
+                quarters.add_document(
+                    quarter,
+                    mr.owed_row(datetime.date.fromisoformat(item["day"])),
+                    net,
+                    tax,
+                    rate_pct,
+                )
             else:
                 # a code at 0 % has no base on the report's side either (its derived base is None)
-                quarters.add_document(quarter, form_row, net if rate_pct else None, tax, rate_pct)
+                quarters.add_document(
+                    quarter, form_row, net if rate_pct else None, tax, rate_pct
+                )
 
 
 def vat_side(line, roots, kind):
     """The side the VAT of a manual-entry line is booked on, as import_manual_entries decides
     it: the side of the income or expense account of the line, else the VAT account's own. A
-    reverse-charge line's VAT is the Vorsteuer of its kind, so its fallback is that side."""
+    reverse-charge line's VAT is the Vorsteuer of its kind, so its fallback is that side.
+    """
     debit_root = roots.get(line.get("debit_account_id"))
     credit_root = roots.get(line.get("credit_account_id"))
     if debit_root in PROFIT_AND_LOSS and credit_root not in PROFIT_AND_LOSS:
@@ -385,15 +433,24 @@ def add_manual(quarters, manual_entries, accounts, taxes):
                 # both in the direction of the expense or income side of the line
                 tax = money(money(amount * Decimal(str(rate_pct)) / HUNDRED) * factor)
                 sign = ONE if side == "debit" else -ONE
-                quarters.add_journal(quarter, form_row, chf(amount, factor) * sign, tax * sign)
-                quarters.add_journal(quarter, mr.owed_row(datetime.date.fromisoformat(day)), None, tax * sign)
+                quarters.add_journal(
+                    quarter, form_row, chf(amount, factor) * sign, tax * sign
+                )
+                quarters.add_journal(
+                    quarter,
+                    mr.owed_row(datetime.date.fromisoformat(day)),
+                    None,
+                    tax * sign,
+                )
                 quarters.counts["manual reverse-charge lines"] += 1
                 continue
             net = money(amount / (ONE + Decimal(str(rate_pct)) / HUNDRED))
             tax = money(amount * factor) - money(net * factor)
             if not tax:
                 continue
-            quarters.add_journal(quarter, form_row, money(net * factor) * sign, tax * sign)
+            quarters.add_journal(
+                quarter, form_row, money(net * factor) * sign, tax * sign
+            )
             quarters.counts["manual lines with VAT"] += 1
 
 
@@ -408,7 +465,7 @@ def quarters_of(days):
     start, end = quarter_of(min(days)), quarter_of(max(days))
     out, year, q = [], start[0], start[1]
     while (year, q) <= end:
-        out.append("{}Q{}".format(year, q))
+        out.append(f"{year}Q{q}")
         q += 1
         if q == 5:
             year, q = year + 1, 1
@@ -420,14 +477,23 @@ def years_without_receipt_moves(journal, accounts):
     declared on the invoice basis or had no taxed sales, and its quarters are compared on the
     posting basis instead, to confirm with Benchi."""
     numbers = {a["id"]: str(a["account_no"]) for a in accounts}
-    years_with = {line["date"][:4] for line in journal
-                  if (numbers.get(line["debit_account_id"]), numbers.get(line["credit_account_id"])) == ("2202", "2200")}
+    years_with = {
+        line["date"][:4]
+        for line in journal
+        if (
+            numbers.get(line["debit_account_id"]),
+            numbers.get(line["credit_account_id"]),
+        )
+        == ("2202", "2200")
+    }
     years = {line["date"][:4] for line in journal}
     return sorted(years - years_with)
 
 
-TOTAL_ROWS = {"399": ("302", "303", "312", "313", "342", "343", "382", "383"),
-              "479": ("400", "405", "410", "415", "420")}
+TOTAL_ROWS = {
+    "399": ("302", "303", "312", "313", "342", "343", "382", "383"),
+    "479": ("400", "405", "410", "415", "420"),
+}
 
 
 def write_csv(path, quarters, order):
@@ -437,8 +503,19 @@ def write_csv(path, quarters, order):
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["quarter", "ziffer", "label", "entgelt_chf", "steuer_chf",
-                         "journal_entgelt_chf", "journal_steuer_chf", "entgelt_tol_chf", "steuer_tol_chf"])
+        writer.writerow(
+            [
+                "quarter",
+                "ziffer",
+                "label",
+                "entgelt_chf",
+                "steuer_chf",
+                "journal_entgelt_chf",
+                "journal_steuer_chf",
+                "entgelt_tol_chf",
+                "steuer_tol_chf",
+            ]
+        )
         for quarter in order:
             totals = quarters.rows.get(quarter)
             if totals is None:
@@ -449,41 +526,70 @@ def write_csv(path, quarters, order):
                 jbase, jtax = totals.journal.get(row, [ZERO, ZERO])
                 tol = quarters.tol.get((quarter, row), ZERO)
                 stol = quarters.tax_tol.get((quarter, row), ZERO)
-                for part in TOTAL_ROWS.get(row, ()):  # a total's journal tax and tolerance are its parts' sums
+                for part in TOTAL_ROWS.get(
+                    row, ()
+                ):  # a total's journal tax and tolerance are its parts' sums
                     _pbase, ptax = totals.journal.get(part, [ZERO, ZERO])
                     jtax += ptax
                     tol += quarters.tol.get((quarter, part), ZERO)
                     stol += quarters.tax_tol.get((quarter, part), ZERO)
                 if not (base or tax or jbase or jtax):
                     continue
-                writer.writerow([quarter, row, mr.LABELS.get(row, row), "{:.2f}".format(base),
-                                 "{:.2f}".format(tax), "{:.2f}".format(jbase), "{:.2f}".format(jtax),
-                                 "{:.2f}".format(tol), "{:.2f}".format(stol)])
+                writer.writerow(
+                    [
+                        quarter,
+                        row,
+                        mr.LABELS.get(row, row),
+                        f"{base:.2f}",
+                        f"{tax:.2f}",
+                        f"{jbase:.2f}",
+                        f"{jtax:.2f}",
+                        f"{tol:.2f}",
+                        f"{stol:.2f}",
+                    ]
+                )
 
 
 def summary_lines(quarters):
     """The stdout: counts only, no amounts."""
     return [
-        "quarters with rows: {}".format(len(quarters.rows)),
+        f"quarters with rows: {len(quarters.rows)}",
         "receipts: {} counted, {} credit-voucher offsets, {} without their invoice".format(
-            quarters.counts["receipts counted"], quarters.counts["credit-voucher offsets counted"],
-            quarters.counts["receipts without their invoice"]),
+            quarters.counts["receipts counted"],
+            quarters.counts["credit-voucher offsets counted"],
+            quarters.counts["receipts without their invoice"],
+        ),
         "bill payments: {} counted, {} without their bill, {} not settled, {} bills without a payment".format(
-            quarters.counts["bill payments counted"], quarters.counts["bill payments without their bill"],
-            quarters.counts["bill payments not settled"], quarters.counts["bills without a payment"]),
+            quarters.counts["bill payments counted"],
+            quarters.counts["bill payments without their bill"],
+            quarters.counts["bill payments not settled"],
+            quarters.counts["bills without a payment"],
+        ),
         "manual lines: {} with VAT, {} reverse-charge, {} on an unknown code".format(
-            quarters.counts["manual lines with VAT"], quarters.counts["manual reverse-charge lines"],
-            quarters.counts["manual lines on an unknown code"]),
+            quarters.counts["manual lines with VAT"],
+            quarters.counts["manual reverse-charge lines"],
+            quarters.counts["manual lines on an unknown code"],
+        ),
         "unknown codes: {} sales positions, {} bill lines, {} bills whose lines do not map".format(
-            len(quarters.unknown["sales positions"]), len(quarters.unknown["bill lines"]),
-            quarters.counts["bills whose lines do not map"]),
+            len(quarters.unknown["sales positions"]),
+            len(quarters.unknown["bill lines"]),
+            quarters.counts["bills whose lines do not map"],
+        ),
     ]
 
 
 def load_export(export_dir):
     """The export files this reads, by name."""
     out = {}
-    for name in ("invoices", "invoice_payments", "bills", "journal", "manual_entries", "taxes", "accounts"):
+    for name in (
+        "invoices",
+        "invoice_payments",
+        "bills",
+        "journal",
+        "manual_entries",
+        "taxes",
+        "accounts",
+    ):
         with open(os.path.join(export_dir, name + ".json"), encoding="utf-8") as f:
             out[name] = json.load(f)
     return out
@@ -503,12 +609,21 @@ def build(data):
 
 def main(argv):
     parser = argparse.ArgumentParser(
-        description="bexio's MWST figures per quarter from the export, payment basis (read only).")
-    parser.add_argument("--export", default=im.newest_export(),
-                        help="the export directory (default the newest under <private>/bexio-export)")
-    parser.add_argument("--report", default=os.path.join(im.PRIVATE, "bexio-mwst-ziffern.csv"))
-    parser.add_argument("--years", action="store_true",
-                        help="list the years without a 2202 -> 2200 move and stop")
+        description="bexio's MWST figures per quarter from the export, payment basis (read only)."
+    )
+    parser.add_argument(
+        "--export",
+        default=im.newest_export(),
+        help="the export directory (default the newest under <private>/bexio-export)",
+    )
+    parser.add_argument(
+        "--report", default=os.path.join(im.PRIVATE, "bexio-mwst-ziffern.csv")
+    )
+    parser.add_argument(
+        "--years",
+        action="store_true",
+        help="list the years without a 2202 -> 2200 move and stop",
+    )
     args = parser.parse_args(argv)
     data = load_export(args.export)
     if args.years:
@@ -518,8 +633,12 @@ def main(argv):
     quarters = build(data)
     for line in summary_lines(quarters):
         print(line)
-    write_csv(args.report, quarters, quarters_of([line["date"][:10] for line in data["journal"]]))
-    print("written: {}".format(args.report))
+    write_csv(
+        args.report,
+        quarters,
+        quarters_of([line["date"][:10] for line in data["journal"]]),
+    )
+    print(f"written: {args.report}")
     return 0
 
 

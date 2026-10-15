@@ -48,7 +48,19 @@ ROWS = [
     ("910", "Spenden (offen)", "Steuer"),
 ]
 
-OPEN_ROWS = ("220", "221", "225", "230", "235", "410", "415", "420", "510", "900", "910")
+OPEN_ROWS = (
+    "220",
+    "221",
+    "225",
+    "230",
+    "235",
+    "410",
+    "415",
+    "420",
+    "510",
+    "900",
+    "910",
+)
 
 
 def quarters_of(year, quarter=None):
@@ -57,8 +69,8 @@ def quarters_of(year, quarter=None):
     year = int(year)
     if quarter:
         part = str(quarter).strip().upper()
-        return ["{}{}".format(year, part)] if part in ("Q1", "Q2", "Q3", "Q4") else []
-    return ["{}Q{}".format(year, n) for n in (1, 2, 3, 4)]
+        return [f"{year}{part}"] if part in ("Q1", "Q2", "Q3", "Q4") else []
+    return [f"{year}Q{n}" for n in (1, 2, 3, 4)]
 
 
 def figures_of(totals):
@@ -67,7 +79,10 @@ def figures_of(totals):
     rows, saldo = mwst_payment.form_totals(totals)
     out = {}
     for ziffer, acc in rows.items():
-        out[ziffer] = [acc[0].quantize(CENT, rounding=ROUND_HALF_UP), acc[1].quantize(CENT, rounding=ROUND_HALF_UP)]
+        out[ziffer] = [
+            acc[0].quantize(CENT, rounding=ROUND_HALF_UP),
+            acc[1].quantize(CENT, rounding=ROUND_HALF_UP),
+        ]
     out["500"] = [ZERO, saldo.quantize(CENT, rounding=ROUND_HALF_UP)]
     return out
 
@@ -98,30 +113,46 @@ def ziffern_rows(quarters, figures_by_quarter, bexio_by_quarter):
         for quarter in quarters:
             erp = _figure(figures_by_quarter.get(quarter, {}).get(ziffer), kind)
             acc = bexio_by_quarter.get(quarter, {}).get(ziffer)
-            bex = _figure(None if acc is None else [_decimal(value) for value in acc], kind)
+            bex = _figure(
+                None if acc is None else [_decimal(value) for value in acc], kind
+            )
             # a Ziffer the module did not fill is a true zero (it adds up the whole quarter); bexio without
             # its own row stays blank, so the column says 'no declaration' and not 'nothing declared'
             shown = ZERO if erp is None else erp
-            row["{} erpnext".format(quarter)] = shown
-            row["{} bexio".format(quarter)] = bex
-            row["{} differenz".format(quarter)] = None if bex is None else shown - bex
+            row[f"{quarter} erpnext"] = shown
+            row[f"{quarter} bexio"] = bex
+            row[f"{quarter} differenz"] = None if bex is None else shown - bex
         rows.append(row)
     return rows
 
 
 def belege_rows(totals, ziffer):
     """The drill-down of one Ziffer: (doctype, name, posting date, base, tax) per voucher, the kind's
-    figure being which of the two the caller shows. The Ziffer's own name rides along for the view."""
-    return [{"doctype": doctype, "name": name, "posting_date": day,
-             "base": base.quantize(CENT, rounding=ROUND_HALF_UP), "tax": tax.quantize(CENT, rounding=ROUND_HALF_UP)}
-            for doctype, name, day, base, tax in mwst_payment.voucher_rows(totals, ziffer)]
+    figure being which of the two the caller shows. The Ziffer's own name rides along for the view.
+    """
+    return [
+        {
+            "doctype": doctype,
+            "name": name,
+            "posting_date": day,
+            "base": base.quantize(CENT, rounding=ROUND_HALF_UP),
+            "tax": tax.quantize(CENT, rounding=ROUND_HALF_UP),
+        }
+        for doctype, name, day, base, tax in mwst_payment.voucher_rows(totals, ziffer)
+    ]
 
 
 def message(quarters, with_bexio):
     """The report's basis line: which quarters are shown, on which basis, and what stays open.
     Counts and names, no amounts (the repo is public)."""
-    lines = ["Basis: vereinnahmte Entgelte, ESTV Ziffern ({}).".format(", ".join(quarters) if quarters else "kein Quartal")]
+    lines = [
+        "Basis: vereinnahmte Entgelte, ESTV Ziffern ({}).".format(
+            ", ".join(quarters) if quarters else "kein Quartal"
+        )
+    ]
     if with_bexio:
-        lines.append("bexio: Ziffern aus dem Export, bis 2026Q3; ohne eigene Zeile bleibt die Spalte leer.")
+        lines.append(
+            "bexio: Ziffern aus dem Export, bis 2026Q3; ohne eigene Zeile bleibt die Spalte leer."
+        )
     lines.append("Ohne Figur, bis eine sie rechnet: {}.".format(", ".join(OPEN_ROWS)))
     return " ".join(lines)

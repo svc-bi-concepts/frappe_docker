@@ -23,7 +23,9 @@ import unittest
 from bi_finance import hooks
 from bi_finance.test_layout import PACKAGE, modules, scrub
 
-SIDEBAR = os.path.join(PACKAGE, scrub(modules()[0]), "sidebar", "treasury", "treasury.json")
+SIDEBAR = os.path.join(
+    PACKAGE, scrub(modules()[0]), "sidebar", "treasury", "treasury.json"
+)
 DOCK = os.path.join(PACKAGE, "dock", "bi_finance", "bi_finance.json")
 
 # what the computed sidebar shows today: none of it may disappear
@@ -56,7 +58,10 @@ ERPNEXT = {
     "Bank Account": "DocType",
 }
 
-FOREIGN = {**CLAIMED, **ERPNEXT}  # rows another app ships: their names are not this app's to ship
+FOREIGN = {
+    **CLAIMED,
+    **ERPNEXT,
+}  # rows another app ships: their names are not this app's to ship
 
 
 def load():
@@ -66,7 +71,9 @@ def load():
 
 def own_names(folder):
     home = os.path.join(PACKAGE, scrub(modules()[0]), folder)
-    return {name for name in os.listdir(home) if os.path.isdir(os.path.join(home, name))}
+    return {
+        name for name in os.listdir(home) if os.path.isdir(os.path.join(home, name))
+    }
 
 
 class Sidebar(unittest.TestCase):
@@ -108,7 +115,9 @@ class Sidebar(unittest.TestCase):
             else:
                 self.assertIn(scrub(link["link_to"]), own, link["label"])
 
-    def test_ownership_is_claimed_on_the_app_s_own_rows_and_the_two_erpnextswiss_documents(self):
+    def test_ownership_is_claimed_on_the_app_s_own_rows_and_the_two_erpnextswiss_documents(
+        self,
+    ):
         own = own_names("doctype") | own_names("report")
         for link in self.links:
             claimed = bool(link.get("is_default_module"))
@@ -117,7 +126,9 @@ class Sidebar(unittest.TestCase):
             )
             self.assertEqual(claimed, should, link["label"])
 
-    def test_the_dock_mounts_the_rail_entry_on_erpnext_and_opens_the_module_sidebar(self):
+    def test_the_dock_mounts_the_rail_entry_on_erpnext_and_opens_the_module_sidebar(
+        self,
+    ):
         # BI Finance is part of ERPNext: its one rail entry sits on ERPNext's rail (frappe's companion mount),
         # and the entry opens the Sidebar above
         with open(DOCK, encoding="utf-8") as f:
@@ -128,7 +139,10 @@ class Sidebar(unittest.TestCase):
         self.assertEqual(dock["mount_on"], "erpnext")
         self.assertEqual(dock["standard"], 1)
         self.assertEqual(
-            [(item["link_type"], item["link_to"], item["title"]) for item in dock["items"]],
+            [
+                (item["link_type"], item["link_to"], item["title"])
+                for item in dock["items"]
+            ],
             [("Sidebar", "Treasury", "Treasury")],
         )
         self.assertEqual(self.doc["name"], dock["items"][0]["link_to"])
@@ -136,7 +150,9 @@ class Sidebar(unittest.TestCase):
     def test_bi_finance_has_no_apps_screen_tile_and_no_logo(self):
         # a companion of ERPNext takes no tile on the apps screen or the switcher
         self.assertFalse(hasattr(hooks, "add_to_apps_screen"))
-        self.assertFalse(os.path.exists(os.path.join(PACKAGE, "public", "images", "bi_finance.svg")))
+        self.assertFalse(
+            os.path.exists(os.path.join(PACKAGE, "public", "images", "bi_finance.svg"))
+        )
 
     def test_the_workspace_row_names_the_shipped_workspace(self):
         workspaces = own_names("workspace")
@@ -149,15 +165,29 @@ class Sidebar(unittest.TestCase):
         items = self.doc["items"]
         self.assertEqual(items[0]["label"], "Home")
         self.assertEqual(items[0]["link_type"], "Workspace")
-        first_section = next(i for i, item in enumerate(items) if item["type"] == "Section Break")
+        first_section = next(
+            i for i, item in enumerate(items) if item["type"] == "Section Break"
+        )
         daily = [item["label"] for item in items[1:first_section]]
-        self.assertEqual(daily, ["Bank Transaction", "Bank Statement Upload", "Payment Proposal", "VAT Declaration"])
+        self.assertEqual(
+            daily,
+            [
+                "Bank Transaction",
+                "Bank Statement Upload",
+                "Payment Proposal",
+                "VAT Declaration",
+            ],
+        )
         for item in items[1:first_section]:
             self.assertEqual(item["child"], 0, item["label"])
             self.assertTrue(item.get("icon"), item["label"])
         sections = [item["label"] for item in items if item["type"] == "Section Break"]
         self.assertEqual(sections, ["Reports", "Banking", "Setup"])
-        opened = {item["label"]: item["keep_closed"] for item in items if item["type"] == "Section Break"}
+        opened = {
+            item["label"]: item["keep_closed"]
+            for item in items
+            if item["type"] == "Section Break"
+        }
         self.assertEqual(opened, {"Reports": 0, "Banking": 1, "Setup": 1})
         for item in items:
             if item["type"] == "Section Break":

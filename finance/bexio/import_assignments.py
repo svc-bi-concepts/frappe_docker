@@ -45,7 +45,7 @@ import os
 import sys
 
 from import_employees import PAYROLL_DIR, load_payroll, month_end, month_start
-from import_master import COMPANY, Erp, ErpError, PRIVATE, TOKEN_FILE, differs
+from import_master import COMPANY, PRIVATE, TOKEN_FILE, Erp, ErpError, differs
 
 FIGURES_CSV = os.path.join(PRIVATE, "payroll", "paystub-figures.csv")
 PROBLEMS_TXT = os.path.join(PRIVATE, "payroll", "assignment-problems.txt")
@@ -56,8 +56,32 @@ STRUCTURE_PREFIX = "Swiss Monthly"
 STATUS_ACTIVE = "Active"
 # Employee's swiss_qst_canton Select options (fixtures/custom_field.json)
 CANTONS = {
-    "AG", "AI", "AR", "BE", "BL", "BS", "FR", "GE", "GL", "GR", "JU", "LU", "NE", "NW", "OW", "SG", "SH", "SZ",
-    "SO", "TG", "TI", "UR", "VD", "VS", "ZG", "ZH",
+    "AG",
+    "AI",
+    "AR",
+    "BE",
+    "BL",
+    "BS",
+    "FR",
+    "GE",
+    "GL",
+    "GR",
+    "JU",
+    "LU",
+    "NE",
+    "NW",
+    "OW",
+    "SG",
+    "SH",
+    "SZ",
+    "SO",
+    "TG",
+    "TI",
+    "UR",
+    "VD",
+    "VS",
+    "ZG",
+    "ZH",
 }
 
 # the monthly salary: 1001 up to 2025, 1000 from 2025 on (parse_paystubs.SALARY_TYPES); a paystub prints one of them
@@ -66,16 +90,38 @@ GROSS_TYPE = "5000"
 BVG_TYPE = "5050"
 QST_TYPE = "5060"
 # paystub wage type -> Payroll Swiss Settings' employee rate (percent)
-PAYSTUB_RATES = [("5010", "swiss_ahv_ee"), ("5020", "swiss_alv_ee"), ("5040", "swiss_nbu_ee")]
+PAYSTUB_RATES = [
+    ("5010", "swiss_ahv_ee"),
+    ("5020", "swiss_alv_ee"),
+    ("5040", "swiss_nbu_ee"),
+]
 # not on a paystub (KTG is printed on none of them): reported per field, to be filled from the insurer's sheet
-INSURER_FIELDS = ["swiss_ahv_ag", "swiss_alv_ag", "swiss_uvg_ag", "swiss_ktg_ee", "swiss_ktg_ag", "swiss_fak_ag"]
+INSURER_FIELDS = [
+    "swiss_ahv_ag",
+    "swiss_alv_ag",
+    "swiss_uvg_ag",
+    "swiss_ktg_ee",
+    "swiss_ktg_ag",
+    "swiss_fak_ag",
+]
 # the BVG band rates (age 25 to 64) of Payroll Swiss Settings: (from age, to age, field), the formula's bands
-BVG_BANDS = [(25, 35, "swiss_bvg_ee_25"), (35, 45, "swiss_bvg_ee_35"), (45, 55, "swiss_bvg_ee_45"), (55, 65, "swiss_bvg_ee_55")]
-BVG_FIELDS = [field for _low, _high, field in BVG_BANDS] + ["swiss_bvg_ag_25", "swiss_bvg_ag_35", "swiss_bvg_ag_45", "swiss_bvg_ag_55"]
+BVG_BANDS = [
+    (25, 35, "swiss_bvg_ee_25"),
+    (35, 45, "swiss_bvg_ee_35"),
+    (45, 55, "swiss_bvg_ee_45"),
+    (55, 65, "swiss_bvg_ee_55"),
+]
+BVG_FIELDS = [field for _low, _high, field in BVG_BANDS] + [
+    "swiss_bvg_ag_25",
+    "swiss_bvg_ag_35",
+    "swiss_bvg_ag_45",
+    "swiss_bvg_ag_55",
+]
 RATE_TOLERANCE = 0.005  # percent: the printed rates have two decimals at most
 
 
 # ---- the figures ----
+
 
 def _number(text):
     return float(text) if text else None
@@ -87,8 +133,12 @@ def read_figures(path=FIGURES_CSV):
     with open(path, newline="", encoding="utf-8") as f:
         for raw in csv.DictReader(f):
             row = {
-                "year": int(raw["year"]), "month": int(raw["month"]), "wage_type": raw["wage_type"],
-                "base": _number(raw["base"]), "rate": _number(raw["rate"]), "amount": _number(raw["amount"]),
+                "year": int(raw["year"]),
+                "month": int(raw["month"]),
+                "wage_type": raw["wage_type"],
+                "base": _number(raw["base"]),
+                "rate": _number(raw["rate"]),
+                "amount": _number(raw["amount"]),
             }
             rows.setdefault(raw["employee_id"], []).append(row)
     return rows
@@ -100,7 +150,14 @@ def months(rows):
 
 def line(rows, month, wage_type):
     """The figures line of one wage type in one paystub month (one per type), or None."""
-    return next((row for row in rows if (row["year"], row["month"]) == month and row["wage_type"] == wage_type), None)
+    return next(
+        (
+            row
+            for row in rows
+            if (row["year"], row["month"]) == month and row["wage_type"] == wage_type
+        ),
+        None,
+    )
 
 
 def latest_line(rows, wage_type):
@@ -110,6 +167,7 @@ def latest_line(rows, wage_type):
 
 
 # ---- the rules ----
+
 
 def age_on(born, on):
     """Whole years from the date of birth to the date (both datetime.date)."""
@@ -132,18 +190,26 @@ def insured_salary(monthly, rate, coordination):
 def qst_codes(tariffs, canton, gross, rate, on):
     """The tariff codes of the canton that hold the gross's bracket on the date at the rate, sorted. Mirrors
     quellensteuer.find_tariff: the rows valid on the date and holding the gross, the latest valid_from per code.
-    tariffs: the QST Tariff rows of the canton as the API gives them (dates as ISO text)."""
+    tariffs: the QST Tariff rows of the canton as the API gives them (dates as ISO text).
+    """
     latest = {}
     for row in tariffs:
-        if row["canton"] != canton or row["valid_from"] > on or not row["income_from"] <= gross < row["income_from"] + row["step"]:
+        if (
+            row["canton"] != canton
+            or row["valid_from"] > on
+            or not row["income_from"] <= gross < row["income_from"] + row["step"]
+        ):
             continue
         best = latest.get(row["tariff_code"])
         if best is None or row["valid_from"] > best["valid_from"]:
             latest[row["tariff_code"]] = row
-    return sorted(code for code, row in latest.items() if abs(row["rate"] - rate) < RATE_TOLERANCE)
+    return sorted(
+        code for code, row in latest.items() if abs(row["rate"] - rate) < RATE_TOLERANCE
+    )
 
 
 # ---- the plan ----
+
 
 class Plan:
     """What the figures give, per record, and the counts for the report. Nothing is written here."""
@@ -151,8 +217,12 @@ class Plan:
     def __init__(self):
         self.entries = []
         self.counts = collections.Counter()
-        self.problems = []  # (position, text): stderr gets the position, the file the name too
-        self.calibrations = []  # (employee name, paystub month, insured salary): the BVG calibration file
+        self.problems = (
+            []
+        )  # (position, text): stderr gets the position, the file the name too
+        self.calibrations = (
+            []
+        )  # (employee name, paystub month, insured salary): the BVG calibration file
 
     def add(self, position, name, text):
         """A problem of a record (position, name), or of the settings when position is None."""
@@ -161,10 +231,12 @@ class Plan:
 
     @staticmethod
     def where(position):
-        return "settings" if position is None else "record {}".format(position)
+        return "settings" if position is None else f"record {position}"
 
 
-def build_plan(employees, figures, erp_employees, settings, structure, tariffs_for, existing):
+def build_plan(
+    employees, figures, erp_employees, settings, structure, tariffs_for, existing
+):
     """The entries of the run: per record, the Employee, the assignment, the Employee fields and the problems.
 
     employees: the export's records; figures: read_figures(); erp_employees: {bexio id: Employee row} from ERPNext;
@@ -181,57 +253,106 @@ def build_plan(employees, figures, erp_employees, settings, structure, tariffs_f
             plan.counts["no paystubs"] += 1
             continue
         if erp_row is None:
-            plan.add(position, "", "no Employee for the bexio id: run import_employees.py first")
+            plan.add(
+                position,
+                "",
+                "no Employee for the bexio id: run import_employees.py first",
+            )
             continue
         name = erp_row["name"]
         latest = max(months(rows))
-        entry = {"position": position, "bexio_id": bexio_id, "name": name, "fields": {}, "assignment": None}
+        entry = {
+            "position": position,
+            "bexio_id": bexio_id,
+            "name": name,
+            "fields": {},
+            "assignment": None,
+        }
         plan.entries.append(entry)
         plan.counts["records with paystubs"] += 1
         if erp_row["status"] == STATUS_ACTIVE:
-            _assignment(plan, entry, rows, latest, emp, settings, coordination, structure, existing)
+            _assignment(
+                plan,
+                entry,
+                rows,
+                latest,
+                emp,
+                settings,
+                coordination,
+                structure,
+                existing,
+            )
         else:
             plan.counts["left, no assignment"] += 1
         _quellensteuer(plan, entry, rows, latest, emp, tariffs_for)
     return plan
 
 
-def _assignment(plan, entry, rows, latest, emp, settings, coordination, structure, existing):
+def _assignment(
+    plan, entry, rows, latest, emp, settings, coordination, structure, existing
+):
     from_date = month_start(latest)
     if (entry["name"], from_date) in existing:
         if existing[(entry["name"], from_date)] == 0:
-            plan.add(entry["position"], entry["name"], "assignment exists as a draft: submit it by hand")
+            plan.add(
+                entry["position"],
+                entry["name"],
+                "assignment exists as a draft: submit it by hand",
+            )
         else:
             plan.counts["assignments already made"] += 1
         return
     salaries = [line(rows, latest, wage_type) for wage_type in SALARY_TYPES]
     salary = next((row for row in salaries if row is not None), None)
     if salary is None or salary["amount"] is None:
-        plan.add(entry["position"], entry["name"], "no monthly salary (1000/1001) in the latest paystub month")
+        plan.add(
+            entry["position"],
+            entry["name"],
+            "no monthly salary (1000/1001) in the latest paystub month",
+        )
         return
     assignment = {
-        "employee": entry["name"], "salary_structure": structure, "from_date": from_date,
-        "base": salary["amount"], "company": COMPANY,
+        "employee": entry["name"],
+        "salary_structure": structure,
+        "from_date": from_date,
+        "base": salary["amount"],
+        "company": COMPANY,
     }
     bvg = line(rows, latest, BVG_TYPE)
     insured = None
     if bvg is not None:
         born = datetime.date.fromisoformat(emp["date_of_birth"])
-        field = bvg_band_field(age_on(born, datetime.date.fromisoformat(month_end(latest))))
+        field = bvg_band_field(
+            age_on(born, datetime.date.fromisoformat(month_end(latest)))
+        )
         rate = settings.get(field) if field else None
         if field is None:
-            plan.add(entry["position"], entry["name"], "BVG insured salary unresolved: no BVG band at this age")
+            plan.add(
+                entry["position"],
+                entry["name"],
+                "BVG insured salary unresolved: no BVG band at this age",
+            )
         elif not rate or not coordination:
-            plan.add(entry["position"], entry["name"], "BVG insured salary unresolved: no band rate or coordination in the settings")
+            plan.add(
+                entry["position"],
+                entry["name"],
+                "BVG insured salary unresolved: no band rate or coordination in the settings",
+            )
         else:
             value = insured_salary(abs(bvg["amount"]), rate, coordination)
             if value < (settings.get("swiss_bvg_threshold") or 0):
                 # the BVG formulas give 0 below the entry threshold, so this value would not reproduce the paystub
-                plan.add(entry["position"], entry["name"], "BVG insured salary unresolved: below the entry threshold")
+                plan.add(
+                    entry["position"],
+                    entry["name"],
+                    "BVG insured salary unresolved: below the entry threshold",
+                )
             else:
                 insured = value
                 assignment["swiss_bvg_insured_salary"] = insured
-                plan.calibrations.append((entry["name"], "{:04d}-{:02d}".format(*latest), insured))
+                plan.calibrations.append(
+                    (entry["name"], "{:04d}-{:02d}".format(*latest), insured)
+                )
     if insured is not None:
         plan.counts["BVG insured salary calibrated"] += 1
     entry["assignment"] = assignment
@@ -254,7 +375,11 @@ def _quellensteuer(plan, entry, rows, latest, emp, tariffs_for):
         return
     canton = (emp.get("address") or {}).get("canton") or ""
     if canton not in CANTONS:
-        plan.add(entry["position"], entry["name"], "Quellensteuer canton unresolved: the bexio address has none")
+        plan.add(
+            entry["position"],
+            entry["name"],
+            "Quellensteuer canton unresolved: the bexio address has none",
+        )
         return
     entry["fields"]["swiss_qst_canton"] = canton
     plan.counts["employees with QST"] += 1
@@ -262,15 +387,23 @@ def _quellensteuer(plan, entry, rows, latest, emp, tariffs_for):
     qst = line(rows, month, QST_TYPE)
     gross = line(rows, month, GROSS_TYPE)
     if qst is None or gross is None or qst["rate"] is None or gross["amount"] is None:
-        plan.add(entry["position"], entry["name"], "Quellensteuer code unresolved: the 5060 line prints no rate or no gross")
+        plan.add(
+            entry["position"],
+            entry["name"],
+            "Quellensteuer code unresolved: the 5060 line prints no rate or no gross",
+        )
         return
-    codes = qst_codes(tariffs_for(canton), canton, gross["amount"], qst["rate"], month_end(month))
+    codes = qst_codes(
+        tariffs_for(canton), canton, gross["amount"], qst["rate"], month_end(month)
+    )
     if len(codes) == 1:
         entry["fields"]["swiss_qst_code"] = codes[0]
         plan.counts["codes resolved"] += 1
     else:
         reason = "no tariff code" if not codes else f"{len(codes)} candidate codes"
-        plan.add(entry["position"], entry["name"], f"Quellensteuer code unresolved: {reason}")
+        plan.add(
+            entry["position"], entry["name"], f"Quellensteuer code unresolved: {reason}"
+        )
 
 
 def rate_report(plan, figures, settings, active):
@@ -279,8 +412,16 @@ def rate_report(plan, figures, settings, active):
     paystub does not decide the setting."""
     fills = {}
     for wage_type, field in PAYSTUB_RATES:
-        found = [(bexio_id, latest_line(figures[bexio_id], wage_type)) for bexio_id in sorted(active) if bexio_id in figures]
-        found = [(bexio_id, row) for bexio_id, row in found if row is not None and row["rate"] is not None]
+        found = [
+            (bexio_id, latest_line(figures[bexio_id], wage_type))
+            for bexio_id in sorted(active)
+            if bexio_id in figures
+        ]
+        found = [
+            (bexio_id, row)
+            for bexio_id, row in found
+            if row is not None and row["rate"] is not None
+        ]
         if not found:
             plan.add(None, "", f"rate {field}: not on any active employee's paystub")
             continue
@@ -288,9 +429,16 @@ def rate_report(plan, figures, settings, active):
         for bexio_id, row in found:
             by_rate[row["rate"]].append(bexio_id)
         if len(by_rate) != 1:
-            detail = "; ".join("{} for {}".format(rate, ", ".join(ids)) for rate, ids in sorted(by_rate.items()))
-            plan.add(None, "", f"rate {field}: the active employees' latest paystubs print {len(by_rate)} rates, "
-                               f"not filled: {detail}")
+            detail = "; ".join(
+                "{} for {}".format(rate, ", ".join(ids))
+                for rate, ids in sorted(by_rate.items())
+            )
+            plan.add(
+                None,
+                "",
+                f"rate {field}: the active employees' latest paystubs print {len(by_rate)} rates, "
+                f"not filled: {detail}",
+            )
             continue
         rate = next(iter(by_rate))
         have = settings.get(field)
@@ -298,7 +446,11 @@ def rate_report(plan, figures, settings, active):
             fills[field] = rate
             plan.counts["rates to fill"] += 1
         elif abs(have - rate) >= RATE_TOLERANCE:
-            plan.add(None, "", f"rate {field}: the setting differs from the paystubs, not changed")
+            plan.add(
+                None,
+                "",
+                f"rate {field}: the setting differs from the paystubs, not changed",
+            )
         else:
             plan.counts["rates equal"] += 1
     plan.counts["rates needing insurer sheet"] = len(INSURER_FIELDS)
@@ -307,6 +459,7 @@ def rate_report(plan, figures, settings, active):
 
 
 # ---- the writes ----
+
 
 class Writer:
     """The writes of --apply. Each one is refused by the API or counted; nothing is written in a dry run."""
@@ -328,21 +481,36 @@ class Writer:
         return self.counts
 
     def employee_fields(self, entry, erp_employees):
-        current = {k: v for k, v in erp_employees[entry["bexio_id"]].items() if k in entry["fields"]}
+        current = {
+            k: v
+            for k, v in erp_employees[entry["bexio_id"]].items()
+            if k in entry["fields"]
+        }
         if not differs(current, entry["fields"]):
             self.counts["Employee fields unchanged"] += 1
             return
-        self._write(entry, lambda: self.erp.update("Employee", entry["name"], entry["fields"]), "Employee fields set")
+        self._write(
+            entry,
+            lambda: self.erp.update("Employee", entry["name"], entry["fields"]),
+            "Employee fields set",
+        )
 
     def assignment(self, entry):
         def write():
             doc = self.erp.insert("Salary Structure Assignment", entry["assignment"])
             self.erp.call("frappe.client.submit", doc=doc)
+
         self._write(entry, write, "assignments made")
 
     def settings(self, fills):
         def write():
-            self.erp.call("frappe.client.set_value", doctype=SETTINGS, name=SETTINGS, fieldname=fills)
+            self.erp.call(
+                "frappe.client.set_value",
+                doctype=SETTINGS,
+                name=SETTINGS,
+                fieldname=fills,
+            )
+
         if self.dry_run:
             self.counts["settings fields to fill"] += len(fills)
             return
@@ -360,27 +528,41 @@ class Writer:
             write()
             self.counts[what] += 1
         except ErpError as err:
-            self.failures.append(f"record {entry['position']}: write refused ({type(err).__name__})")
+            self.failures.append(
+                f"record {entry['position']}: write refused ({type(err).__name__})"
+            )
 
 
 # ---- the ERPNext side ----
 
+
 def erp_employees_by_bexio_id(erp):
-    rows = erp.list("Employee", filters=[["bexio_id", "is", "set"]],
-                    fields=["name", "bexio_id", "status", "swiss_qst_canton", "swiss_qst_code"])
+    rows = erp.list(
+        "Employee",
+        filters=[["bexio_id", "is", "set"]],
+        fields=["name", "bexio_id", "status", "swiss_qst_canton", "swiss_qst_code"],
+    )
     return {row["bexio_id"]: row for row in rows}
 
 
 def structure_name(erp):
-    rows = erp.list("Salary Structure", filters=[["company", "=", COMPANY], ["docstatus", "=", 1]])
+    rows = erp.list(
+        "Salary Structure", filters=[["company", "=", COMPANY], ["docstatus", "=", 1]]
+    )
     names = [row["name"] for row in rows if row["name"].startswith(STRUCTURE_PREFIX)]
     if len(names) != 1:
-        raise ErpError("structure", "found {} submitted {} structures".format(len(names), STRUCTURE_PREFIX))
+        raise ErpError(
+            "structure", f"found {len(names)} submitted {STRUCTURE_PREFIX} structures"
+        )
     return names[0]
 
 
 def existing_assignments(erp):
-    rows = erp.list("Salary Structure Assignment", filters=[["docstatus", "<", 2]], fields=["employee", "from_date", "docstatus"])
+    rows = erp.list(
+        "Salary Structure Assignment",
+        filters=[["docstatus", "<", 2]],
+        fields=["employee", "from_date", "docstatus"],
+    )
     return {(row["employee"], row["from_date"]): row["docstatus"] for row in rows}
 
 
@@ -389,9 +571,20 @@ def tariff_reader(erp):
 
     def tariffs_for(canton):
         if canton not in cache:
-            cache[canton] = erp.list("QST Tariff", filters=[["canton", "=", canton]], fields=[
-                "canton", "tariff_code", "valid_from", "income_from", "step", "rate"])
+            cache[canton] = erp.list(
+                "QST Tariff",
+                filters=[["canton", "=", canton]],
+                fields=[
+                    "canton",
+                    "tariff_code",
+                    "valid_from",
+                    "income_from",
+                    "step",
+                    "rate",
+                ],
+            )
         return cache[canton]
+
     return tariffs_for
 
 
@@ -403,9 +596,9 @@ def write_private(path, lines):
 
 
 def write_problems(path, plan):
-    lines = ["# assignment problems: {}".format(len(plan.problems))]
+    lines = [f"# assignment problems: {len(plan.problems)}"]
     for position, name, text in plan.problems:
-        lines.append("{}  {}  {}".format(Plan.where(position), name, text).rstrip())
+        lines.append(f"{Plan.where(position)}  {name}  {text}".rstrip())
     write_private(path, lines)
 
 
@@ -415,30 +608,48 @@ def write_calibration(path, plan):
     after --apply) leaves the file of the run that did."""
     if not plan.calibrations:
         return
-    lines = ["# BVG insured salary calibrated from the paystub 5050 at the settings' band rate: {}".format(
-        len(plan.calibrations)), "# employee  paystub month  insured salary"]
+    lines = [
+        "# BVG insured salary calibrated from the paystub 5050 at the settings' band rate: {}".format(
+            len(plan.calibrations)
+        ),
+        "# employee  paystub month  insured salary",
+    ]
     for name, month, insured in plan.calibrations:
-        lines.append("{}  {}  {}".format(name, month, insured))
+        lines.append(f"{name}  {month}  {insured}")
     write_private(path, lines)
 
 
 def report(plan, writer, fills, dry_run):
     for label, count in sorted(plan.counts.items()):
-        print("{}: {}".format(label, count))
+        print(f"{label}: {count}")
     for label, count in sorted(writer.counts.items()):
-        print("{}: {}".format(label, count))
-    print("settings to fill: {}".format(len(fills)))
+        print(f"{label}: {count}")
+    print(f"settings to fill: {len(fills)}")
     print("insurer sheet fields: " + ", ".join(INSURER_FIELDS))
     print("dry run: nothing was written" if dry_run else "written to ERPNext")
-    print("problems list: {}".format(PROBLEMS_TXT))
-    print("BVG calibration list: {}".format(CALIBRATION_TXT))
+    print(f"problems list: {PROBLEMS_TXT}")
+    print(f"BVG calibration list: {CALIBRATION_TXT}")
 
 
 def main(argv):
-    parser = argparse.ArgumentParser(description="Set the payroll assignments, Quellensteuer fields and rates in ERPNext.")
-    parser.add_argument("--dry-run", action="store_true", help="read ERPNext, write nothing but the problems list (default)")
-    parser.add_argument("--apply", action="store_true", help="create the assignments, set the Employee fields and the settings")
-    parser.add_argument("--token-file", default=TOKEN_FILE, help="API keys file (default: the master importer's)")
+    parser = argparse.ArgumentParser(
+        description="Set the payroll assignments, Quellensteuer fields and rates in ERPNext."
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="read ERPNext, write nothing but the problems list (default)",
+    )
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="create the assignments, set the Employee fields and the settings",
+    )
+    parser.add_argument(
+        "--token-file",
+        default=TOKEN_FILE,
+        help="API keys file (default: the master importer's)",
+    )
     args = parser.parse_args(argv)
     if args.dry_run and args.apply:
         parser.error("--dry-run and --apply are mutually exclusive")
@@ -453,10 +664,22 @@ def main(argv):
         settings = erp.call("frappe.client.get", doctype=SETTINGS, name=SETTINGS)
         existing = existing_assignments(erp)
     except ErpError as err:
-        print("aborted: {}".format(err), file=sys.stderr)
+        print(f"aborted: {err}", file=sys.stderr)
         return 2
-    plan = build_plan(employees, figures, erp_employees, settings, structure, tariff_reader(erp), existing)
-    active = {bexio_id for bexio_id, row in erp_employees.items() if row["status"] == STATUS_ACTIVE}
+    plan = build_plan(
+        employees,
+        figures,
+        erp_employees,
+        settings,
+        structure,
+        tariff_reader(erp),
+        existing,
+    )
+    active = {
+        bexio_id
+        for bexio_id, row in erp_employees.items()
+        if row["status"] == STATUS_ACTIVE
+    }
     fills = rate_report(plan, figures, settings, active)
     writer = Writer(erp, dry_run)
     writer.run(plan, fills, erp_employees)
@@ -464,7 +687,7 @@ def main(argv):
     write_calibration(CALIBRATION_TXT, plan)
     report(plan, writer, fills, dry_run)
     for position, _name, text in plan.problems:
-        print("  problem: {}: {}".format(Plan.where(position), text), file=sys.stderr)
+        print(f"  problem: {Plan.where(position)}: {text}", file=sys.stderr)
     for text in writer.failures:
         print("  problem: " + text, file=sys.stderr)
     return 1 if writer.failures else 0

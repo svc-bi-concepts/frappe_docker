@@ -13,7 +13,9 @@ from unittest import mock
 
 import import_master as im
 import load_mwst_bexio as loader
-from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
+from private_guard import (  # every test below runs against a temp private folder, never the real one
+    setUpModule,
+)
 
 CSV = """quarter,ziffer,label,entgelt_chf,steuer_chf,journal_entgelt_chf,journal_steuer_chf,entgelt_tol_chf,steuer_tol_chf
 2026Q1,302,Normalsatz 7.7 %,1000.00,70.00,0.00,0.00,0.10,0.05
@@ -68,7 +70,9 @@ class ReadTest(unittest.TestCase):
             os.unlink(path)
 
     def test_a_row_outside_the_form_stops_the_load(self):
-        path = write_csv("quarter,ziffer,entgelt_chf,steuer_chf\n2026Q5,302,1.00,0.00\n")
+        path = write_csv(
+            "quarter,ziffer,entgelt_chf,steuer_chf\n2026Q5,302,1.00,0.00\n"
+        )
         try:
             with self.assertRaises(ValueError):
                 loader.read_rows(path)
@@ -93,14 +97,21 @@ class LoadTest(unittest.TestCase):
     def test_a_rerun_changes_nothing(self):
         loader.load(self.erp, ROWS, "bexio export 2026-10-10", dry_run=False)
         counts = loader.load(self.erp, ROWS, "bexio export 2026-10-10", dry_run=False)
-        self.assertEqual((counts["created"], counts["updated"], counts["unchanged"]), (0, 0, 3))
+        self.assertEqual(
+            (counts["created"], counts["updated"], counts["unchanged"]), (0, 0, 3)
+        )
 
     def test_a_changed_figure_updates_its_row(self):
         loader.load(self.erp, ROWS, "bexio export 2026-10-10", dry_run=False)
         changed = [("2026Q1", "302", Decimal("1000.50"), Decimal("70.00"))]
-        counts = loader.load(self.erp, changed, "bexio export 2026-10-10", dry_run=False)
+        counts = loader.load(
+            self.erp, changed, "bexio export 2026-10-10", dry_run=False
+        )
         self.assertEqual((counts["updated"], counts["unchanged"]), (1, 0))
-        self.assertEqual(self.erp.store["MWST bexio Ziffer"]["MWST-BEXIO-2026Q1-302"]["base"], 1000.50)
+        self.assertEqual(
+            self.erp.store["MWST bexio Ziffer"]["MWST-BEXIO-2026Q1-302"]["base"],
+            1000.50,
+        )
 
     def test_the_site_is_listed_once_not_once_per_row(self):
         with mock.patch.object(self.erp, "list", wraps=self.erp.list) as listed:
@@ -115,7 +126,9 @@ class LoadTest(unittest.TestCase):
     def test_a_failed_row_is_counted_not_raised(self):
         loader.load(self.erp, ROWS, "bexio export 2026-10-10", dry_run=False)
         with mock.patch.object(im, "differs", side_effect=im.ErpError(500, "update")):
-            counts = loader.load(self.erp, ROWS, "bexio export 2026-10-10", dry_run=False)
+            counts = loader.load(
+                self.erp, ROWS, "bexio export 2026-10-10", dry_run=False
+            )
         self.assertEqual(counts["failed"], 3)
         self.assertEqual(counts["created"], 0)
 

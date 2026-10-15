@@ -105,8 +105,12 @@ class CopyStack(unittest.TestCase):
         r = self.run_script(["up", "t1"], STUB_MEM="2000000")
         self.assertEqual(r.returncode, 1)
         self.assertIn("needs 2560 MiB", r.stderr)
-        self.assertFalse([c for c in self.calls() if " up " in c], "compose up must not run")
-        self.assertFalse([c for c in self.calls() if c.startswith("exec")], "no backup or restore")
+        self.assertFalse(
+            [c for c in self.calls() if " up " in c], "compose up must not run"
+        )
+        self.assertFalse(
+            [c for c in self.calls() if c.startswith("exec")], "no backup or restore"
+        )
 
     def test_memory_that_cannot_be_read_is_refused(self):
         r = self.run_script(["up", "t1"], STUB_MEM="none")
@@ -118,10 +122,16 @@ class CopyStack(unittest.TestCase):
         r = self.run_script(["refresh"])
         self.assertEqual(r.returncode, 1)
         self.assertIn("is not running", r.stderr)
-        self.assertFalse([c for c in self.calls() if c.startswith("exec") or " exec " in c])
+        self.assertFalse(
+            [c for c in self.calls() if c.startswith("exec") or " exec " in c]
+        )
 
     def test_usage_is_a_usage_error_without_a_tag_or_with_an_unknown_flag(self):
-        for args in (["up", "--jobs"], ["up", "t1", "--bogus"], ["up", "t1", "--jobs", "extra"]):
+        for args in (
+            ["up", "--jobs"],
+            ["up", "t1", "--bogus"],
+            ["up", "t1", "--jobs", "extra"],
+        ):
             with self.subTest(args=args):
                 r = self.run_script(args)
                 self.assertEqual(r.returncode, 2)
@@ -139,7 +149,16 @@ class CopyStack(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(
             up_services(self.calls()),
-            [["db", "redis-cache", "configurator", "create-site", "backend", "frontend"]],
+            [
+                [
+                    "db",
+                    "redis-cache",
+                    "configurator",
+                    "create-site",
+                    "backend",
+                    "frontend",
+                ]
+            ],
         )
 
     def test_jobs_flag_starts_the_job_services_after_safety(self):
@@ -147,22 +166,46 @@ class CopyStack(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         calls = self.calls()
         services = up_services(calls)
-        self.assertEqual(services[-1], ["redis-queue", "queue-short", "queue-long", "scheduler"])
+        self.assertEqual(
+            services[-1], ["redis-queue", "queue-short", "queue-long", "scheduler"]
+        )
         self.assertEqual(len(services), 2)
-        jobs = [i for i, c in enumerate(calls) if c.endswith("up -d redis-queue queue-short queue-long scheduler")]
-        safety_end = [i for i, c in enumerate(calls) if '"Website Settings", "app_name"' in c]
-        self.assertTrue(jobs and safety_end and jobs[0] > safety_end[0], "the scheduler must start after pause_scheduler is set")
+        jobs = [
+            i
+            for i, c in enumerate(calls)
+            if c.endswith("up -d redis-queue queue-short queue-long scheduler")
+        ]
+        safety_end = [
+            i for i, c in enumerate(calls) if '"Website Settings", "app_name"' in c
+        ]
+        self.assertTrue(
+            jobs and safety_end and jobs[0] > safety_end[0],
+            "the scheduler must start after pause_scheduler is set",
+        )
 
     def test_websocket_flag_adds_websocket_and_nothing_else(self):
         r = self.run_script(["up", "t1", "--websocket"])
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(
             up_services(self.calls()),
-            [["db", "redis-cache", "configurator", "create-site", "backend", "frontend", "websocket"]],
+            [
+                [
+                    "db",
+                    "redis-cache",
+                    "configurator",
+                    "create-site",
+                    "backend",
+                    "frontend",
+                    "websocket",
+                ]
+            ],
         )
 
     def test_both_flags_in_either_order(self):
-        for args in (["up", "t1", "--jobs", "--websocket"], ["up", "t1", "--websocket", "--jobs"]):
+        for args in (
+            ["up", "t1", "--jobs", "--websocket"],
+            ["up", "t1", "--websocket", "--jobs"],
+        ):
             with self.subTest(args=args):
                 if os.path.exists(self.log):
                     os.remove(self.log)
@@ -170,7 +213,10 @@ class CopyStack(unittest.TestCase):
                 self.assertEqual(r.returncode, 0, r.stderr)
                 services = up_services(self.calls())
                 self.assertIn("websocket", services[0])
-                self.assertEqual(services[-1], ["redis-queue", "queue-short", "queue-long", "scheduler"])
+                self.assertEqual(
+                    services[-1],
+                    ["redis-queue", "queue-short", "queue-long", "scheduler"],
+                )
 
     def test_up_backs_up_live_restores_then_applies_safety_in_order(self):
         r = self.run_script(["up", "t1"])
@@ -202,12 +248,20 @@ class CopyStack(unittest.TestCase):
         self.assertEqual(len(host_calls), 1)
         self.assertIn("set-config host_name http://frontend:8080", host_calls[0])
         self.assertNotRegex(host_calls[0], r"tailnet|8462|8815")
-        self.assertTrue(all("frappe-finance-copy" in c for c in calls if " up -d " in c))
-        self.assertFalse(any("-p frappe-finance " in c for c in calls), "the live project is never named")
+        self.assertTrue(
+            all("frappe-finance-copy" in c for c in calls if " up -d " in c)
+        )
+        self.assertFalse(
+            any("-p frappe-finance " in c for c in calls),
+            "the live project is never named",
+        )
 
         pw = os.path.join(self.private, ".erpnext-admin-copy")
         self.assertEqual(oct(os.stat(pw).st_mode & 0o777), "0o600")
-        self.assertEqual(oct(os.stat(os.path.join(self.private, "copy-restore")).st_mode & 0o777), "0o700")
+        self.assertEqual(
+            oct(os.stat(os.path.join(self.private, "copy-restore")).st_mode & 0o777),
+            "0o700",
+        )
 
     def test_refresh_takes_the_live_backup_only_once_the_copy_runs(self):
         r = self.run_script(["refresh"], STUB_COPY_UP="1")
@@ -236,7 +290,9 @@ class CopyCompose(unittest.TestCase):
     def test_no_service_restarts_by_itself(self):
         live_restarts = services_with(os.path.join(ROOT, "pwd.yml"), "restart")
         copy_restarts = services_with(os.path.join(ROOT, "finance-copy.yml"), "restart")
-        unless = [name for name, value in live_restarts.items() if value == "unless-stopped"]
+        unless = [
+            name for name, value in live_restarts.items() if value == "unless-stopped"
+        ]
         self.assertTrue(unless, "pwd.yml has unless-stopped services to override")
         for name in unless:
             with self.subTest(service=name):

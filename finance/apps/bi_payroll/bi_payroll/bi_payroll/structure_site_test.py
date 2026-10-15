@@ -5,11 +5,13 @@ Needs a site with bi_payroll installed (frappe), so it is not a test_*.py: the o
 """
 
 import frappe
-from frappe.tests import IntegrationTestCase
-
 from bi_payroll.swiss_payroll import (
-    STRUCTURE_DEDUCTIONS, STRUCTURE_EARNINGS, STRUCTURE_EMPLOYER_CONTRIBUTIONS, structure_rows,
+    STRUCTURE_DEDUCTIONS,
+    STRUCTURE_EARNINGS,
+    STRUCTURE_EMPLOYER_CONTRIBUTIONS,
+    structure_rows,
 )
+from frappe.tests import IntegrationTestCase
 
 
 def structure_row(component):
@@ -22,10 +24,15 @@ class TestStructure(IntegrationTestCase):
         row = structure_row("Basic Salary")
         self.assertEqual(row["formula"], "base")
         self.assertEqual(row["amount_based_on_formula"], 1)
-        self.assertEqual(row["formula"], frappe.db.get_value("Salary Component", "Basic Salary", "formula"))
+        self.assertEqual(
+            row["formula"],
+            frappe.db.get_value("Salary Component", "Basic Salary", "formula"),
+        )
 
     def test_every_row_of_the_structure_has_a_formula(self):
-        for component in STRUCTURE_EARNINGS + STRUCTURE_DEDUCTIONS + STRUCTURE_EMPLOYER_CONTRIBUTIONS:
+        for component in (
+            STRUCTURE_EARNINGS + STRUCTURE_DEDUCTIONS + STRUCTURE_EMPLOYER_CONTRIBUTIONS
+        ):
             with self.subTest(component=component):
                 self.assertTrue(structure_row(component)["formula"])
 

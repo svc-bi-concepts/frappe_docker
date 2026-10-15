@@ -27,13 +27,27 @@ ASSIGNMENT = {"swiss_bvg_insured_salary": 62460}
 # Invented rates copied onto the slip (the settings' placeholders, not the real ones) and a slip
 # whose rows the formulas give: AHV 424, ALV 88, BVG 300, NBU 40, KTG 35, QST 700 -> net 6413.
 RATES = {
-    "swiss_ahv_ee": 5.3, "swiss_ahv_ag": 5.3,
-    "swiss_alv_ee": 1.1, "swiss_alv_ag": 1.1, "swiss_alv_ceiling": 148200,
-    "swiss_bvg_threshold": 22680, "swiss_bvg_coordination": 26460,
-    "swiss_bvg_ee_25": 8.0, "swiss_bvg_ee_35": 9.0, "swiss_bvg_ee_45": 10.0, "swiss_bvg_ee_55": 12.0,
-    "swiss_bvg_ag_25": 16.0, "swiss_bvg_ag_35": 18.0, "swiss_bvg_ag_45": 20.0, "swiss_bvg_ag_55": 24.0,
-    "swiss_uvg_max": 132300, "swiss_uvg_ag": 0.3,
-    "swiss_nbu_ee": 0.5, "swiss_ktg_ee": 0.4375, "swiss_ktg_ag": 0.4375, "swiss_fak_ag": 0.75,
+    "swiss_ahv_ee": 5.3,
+    "swiss_ahv_ag": 5.3,
+    "swiss_alv_ee": 1.1,
+    "swiss_alv_ag": 1.1,
+    "swiss_alv_ceiling": 148200,
+    "swiss_bvg_threshold": 22680,
+    "swiss_bvg_coordination": 26460,
+    "swiss_bvg_ee_25": 8.0,
+    "swiss_bvg_ee_35": 9.0,
+    "swiss_bvg_ee_45": 10.0,
+    "swiss_bvg_ee_55": 12.0,
+    "swiss_bvg_ag_25": 16.0,
+    "swiss_bvg_ag_35": 18.0,
+    "swiss_bvg_ag_45": 20.0,
+    "swiss_bvg_ag_55": 24.0,
+    "swiss_uvg_max": 132300,
+    "swiss_uvg_ag": 0.3,
+    "swiss_nbu_ee": 0.5,
+    "swiss_ktg_ee": 0.4375,
+    "swiss_ktg_ag": 0.4375,
+    "swiss_fak_ag": 0.75,
 }
 
 
@@ -137,7 +151,15 @@ class HeaderTest(unittest.TestCase):
 class DeductionRowsTest(unittest.TestCase):
     def test_rows_carry_label_base_rate_amount(self):
         rows = by_label(prepared()["deductions"])
-        self.assertEqual(rows["AHV/IV/EO"], {"label": "AHV/IV/EO", "base": "8'000.00", "rate": "5.3 %", "amount": "424.00"})
+        self.assertEqual(
+            rows["AHV/IV/EO"],
+            {
+                "label": "AHV/IV/EO",
+                "base": "8'000.00",
+                "rate": "5.3 %",
+                "amount": "424.00",
+            },
+        )
         self.assertEqual(rows["ALV"]["base"], "8'000.00")
         self.assertEqual(rows["NBU"]["base"], "8'000.00")
         self.assertEqual(rows["KTG"]["rate"], "0.44 %")
@@ -145,7 +167,10 @@ class DeductionRowsTest(unittest.TestCase):
     def test_bvg_base_is_the_monthly_coordinated_salary_at_the_age_group_s_rate(self):
         # (62'460 - 26'460) / 12 = 3'000 a month, age 46 -> the 45 group's rate.
         rows = by_label(prepared()["deductions"])
-        self.assertEqual(rows["BVG"], {"label": "BVG", "base": "3'000.00", "rate": "10 %", "amount": "300.00"})
+        self.assertEqual(
+            rows["BVG"],
+            {"label": "BVG", "base": "3'000.00", "rate": "10 %", "amount": "300.00"},
+        )
         self.assertEqual(by_label(prepared()["employer_shares"])["BVG"]["rate"], "20 %")
 
     def test_alv_base_stops_at_the_monthly_ceiling(self):
@@ -158,10 +183,24 @@ class DeductionRowsTest(unittest.TestCase):
 
     def test_quellensteuer_names_canton_and_code_and_has_no_rate(self):
         rows = by_label(prepared()["deductions"])
-        self.assertEqual(rows["Quellensteuer (ZH, C2)"], {"label": "Quellensteuer (ZH, C2)", "base": "8'000.00", "rate": "", "amount": "700.00"})
+        self.assertEqual(
+            rows["Quellensteuer (ZH, C2)"],
+            {
+                "label": "Quellensteuer (ZH, C2)",
+                "base": "8'000.00",
+                "rate": "",
+                "amount": "700.00",
+            },
+        )
 
     def test_quellensteuer_without_canton_or_code_prints_plain(self):
-        d = prepare(slip(), employee={k: v for k, v in EMPLOYEE.items() if not k.startswith("swiss_qst")}, assignment=dict(ASSIGNMENT))
+        d = prepare(
+            slip(),
+            employee={
+                k: v for k, v in EMPLOYEE.items() if not k.startswith("swiss_qst")
+            },
+            assignment=dict(ASSIGNMENT),
+        )
         self.assertIn("Quellensteuer", by_label(d["deductions"]))
 
     def test_a_worker_under_25_has_no_bvg_rate(self):
@@ -172,16 +211,22 @@ class DeductionRowsTest(unittest.TestCase):
 
     def test_the_other_rates_print_without_a_birth_date_or_under_25(self):
         # only BVG depends on the age group: AHV, ALV, NBU, KTG and the employer rates apply at any age
-        for employee in ({**EMPLOYEE, "date_of_birth": "2005-05-14"},
-                         {k: v for k, v in EMPLOYEE.items() if k != "date_of_birth"}):
+        for employee in (
+            {**EMPLOYEE, "date_of_birth": "2005-05-14"},
+            {k: v for k, v in EMPLOYEE.items() if k != "date_of_birth"},
+        ):
             d = prepared(employee=employee)
             rows = by_label(d["deductions"])
-            self.assertEqual((rows["AHV/IV/EO"]["rate"], rows["ALV"]["rate"]), ("5.3 %", "1.1 %"))
+            self.assertEqual(
+                (rows["AHV/IV/EO"]["rate"], rows["ALV"]["rate"]), ("5.3 %", "1.1 %")
+            )
             self.assertEqual(rows["NBU"]["rate"], "0.5 %")
             self.assertEqual(by_label(d["employer_shares"])["FAK"]["rate"], "0.75 %")
 
     def test_an_employee_without_birth_date_has_no_bvg_rate_or_base(self):
-        d = prepared(employee={k: v for k, v in EMPLOYEE.items() if k != "date_of_birth"})
+        d = prepared(
+            employee={k: v for k, v in EMPLOYEE.items() if k != "date_of_birth"}
+        )
         row = by_label(d["deductions"])["BVG"]
         self.assertEqual((row["rate"], row["base"]), ("", "0.00"))
 
@@ -190,7 +235,10 @@ class DeductionRowsTest(unittest.TestCase):
         self.assertEqual(by_label(d["deductions"])["BVG"]["base"], "0.00")
 
     def test_an_unknown_deduction_prints_with_amount_only(self):
-        d = prepared(deductions=slip()["deductions"] + [line("Gewinnbeteiligung Employee", 100.0)])
+        d = prepared(
+            deductions=slip()["deductions"]
+            + [line("Gewinnbeteiligung Employee", 100.0)]
+        )
         row = by_label(d["deductions"])["Gewinnbeteiligung Employee"]
         self.assertEqual((row["base"], row["rate"], row["amount"]), ("", "", "100.00"))
         # and it stays out of the employer's block
@@ -221,15 +269,22 @@ class EmployerBlockTest(unittest.TestCase):
 
 class EarningsAndTotalsTest(unittest.TestCase):
     def test_earnings_print_with_german_labels(self):
-        self.assertEqual(prepared()["earnings"], [{"label": "Grundlohn", "amount": "8'000.00"}])
+        self.assertEqual(
+            prepared()["earnings"], [{"label": "Grundlohn", "amount": "8'000.00"}]
+        )
 
     def test_an_unknown_earning_prints_with_its_own_name(self):
-        d = prepared(earnings=[line("Basic Salary", 8000.0), line("Gewinnbeteiligung", 500.0)])
+        d = prepared(
+            earnings=[line("Basic Salary", 8000.0), line("Gewinnbeteiligung", 500.0)]
+        )
         self.assertIn({"label": "Gewinnbeteiligung", "amount": "500.00"}, d["earnings"])
 
     def test_the_commission_earning_prints_german(self):
         # the Commission component of erp-ca04 sits in the gross
-        d = prepared(earnings=[line("Basic Salary", 8000.0), line("Commission", 500.0)], gross_pay=8500.0)
+        d = prepared(
+            earnings=[line("Basic Salary", 8000.0), line("Commission", 500.0)],
+            gross_pay=8500.0,
+        )
         self.assertIn({"label": "Provision", "amount": "500.00"}, d["earnings"])
 
     def test_gross_total_deduction_and_net(self):
@@ -271,8 +326,18 @@ class TemplateTest(unittest.TestCase):
 
     def test_renders_the_header_and_the_blocks(self):
         html = self.render()
-        for text in ("Lohnabrechnung", "Nina Muster", "•••••••••7897", "Verdienste", "Abzüge",
-                     "Arbeitgeberbeiträge", "Jahr bis heute", "6'415.00", "64'130.00", "2957"):
+        for text in (
+            "Lohnabrechnung",
+            "Nina Muster",
+            "•••••••••7897",
+            "Verdienste",
+            "Abzüge",
+            "Arbeitgeberbeiträge",
+            "Jahr bis heute",
+            "6'415.00",
+            "64'130.00",
+            "2957",
+        ):
             self.assertIn(text, html)
 
     def test_the_employee_s_block_holds_no_employer_row(self):

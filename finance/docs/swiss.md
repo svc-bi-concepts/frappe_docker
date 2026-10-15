@@ -46,19 +46,19 @@ Pinned in `finance/apps.json`:
 
 ## Scope against our list
 
-| Need | erpnextswiss v16 | Evidence |
-| --- | --- | --- |
-| QR-bill on sales invoices | Yes, with a caveat | Print format `qr_sales_invoice`, and `templates/qrr_invoice`. The QR image is rendered by an external server (see Risks). |
-| MWST declaration, effective method | Partly | `doctype/vat_declaration` with `vat_type` `effective` or `flat`, and effective-method rates on the net amount (not tested here). The VAT accounts per quarter agree with bexio, and the form's rows per rate compare with bexio's per quarter on the payment basis with explained differences only (see below). The XML for the ESTV upload (eCH-0217 2.0.0) and a payment-basis fill of the draft are built (see "The VAT Declaration" below); the filing is Benchi's. |
-| MWST figures per period (`mwst_report.py`) | Partly | `--basis posting` (default) counts invoices by posting date. `--basis payment` (vereinnahmte Entgelte) counts each Payment Entry by its posting date, and splits it over the invoices it pays by allocated / grand total: their net and each tax row times that share, so a receipt is split over the rates of its invoices; a payment with no invoice reference splits no tax. Journal Entries' VAT rows are read on both bases by posting date (see "What the figures read" below). |
-| MWST declaration, received | Partly | Report `kontrolle_mwst` and the Swiss MWST page (`kt_swiss_route_schweizer_mwst`). Not tested here. |
-| Swiss chart of accounts | Yes | `erpnextswiss/coa_import/accounts_template.csv`, 180 rows. Root groups follow the KMU numbering: 1 Aktiven, 2 Passiven, 3 Betriebsertrag, 4 Aufwand Material/Waren/Dienstleistungen, 5 Personalaufwand, 6 Sonstiger Betriebsaufwand, 7 Nebenerfolg, 9 Abschluss. Not tested against our data. |
-| camt.053 import | Yes | Bank import page, CAMT.053 format; a profile for Aargauische Kantonalbank. |
-| camt.054 import | Yes | Bank import page, `read_camt054` in `bankimport.py`. |
-| pain.001 payments | Yes | `payment_proposal` pain-001 templates; EBICS connection doctype. |
-| ESR/QR reference matching | Yes | `scripts/esr_qr_tools.py`; ESR/QR fields on Payment Entry and Purchase Invoice. |
-| Incoming QR and ZUGFeRD invoices | Yes | `zugferd/`, `qr_reader.py`, `factur-x`. |
-| Missing or not checked | - | QR-bill layout against the current Swiss standard (not checked); EBICS against a real bank (not possible here); MWST received path (not tested); data migration from `swiss_accounting_software` (the README says not to uninstall it until the flows are validated). |
+| Need                                       | erpnextswiss v16   | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------------------------------------------ | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| QR-bill on sales invoices                  | Yes, with a caveat | Print format `qr_sales_invoice`, and `templates/qrr_invoice`. The QR image is rendered by an external server (see Risks).                                                                                                                                                                                                                                                                                                                                                             |
+| MWST declaration, effective method         | Partly             | `doctype/vat_declaration` with `vat_type` `effective` or `flat`, and effective-method rates on the net amount (not tested here). The VAT accounts per quarter agree with bexio, and the form's rows per rate compare with bexio's per quarter on the payment basis with explained differences only (see below). The XML for the ESTV upload (eCH-0217 2.0.0) and a payment-basis fill of the draft are built (see "The VAT Declaration" below); the filing is Benchi's.               |
+| MWST figures per period (`mwst_report.py`) | Partly             | `--basis posting` (default) counts invoices by posting date. `--basis payment` (vereinnahmte Entgelte) counts each Payment Entry by its posting date, and splits it over the invoices it pays by allocated / grand total: their net and each tax row times that share, so a receipt is split over the rates of its invoices; a payment with no invoice reference splits no tax. Journal Entries' VAT rows are read on both bases by posting date (see "What the figures read" below). |
+| MWST declaration, received                 | Partly             | Report `kontrolle_mwst` and the Swiss MWST page (`kt_swiss_route_schweizer_mwst`). Not tested here.                                                                                                                                                                                                                                                                                                                                                                                   |
+| Swiss chart of accounts                    | Yes                | `erpnextswiss/coa_import/accounts_template.csv`, 180 rows. Root groups follow the KMU numbering: 1 Aktiven, 2 Passiven, 3 Betriebsertrag, 4 Aufwand Material/Waren/Dienstleistungen, 5 Personalaufwand, 6 Sonstiger Betriebsaufwand, 7 Nebenerfolg, 9 Abschluss. Not tested against our data.                                                                                                                                                                                         |
+| camt.053 import                            | Yes                | Bank import page, CAMT.053 format; a profile for Aargauische Kantonalbank.                                                                                                                                                                                                                                                                                                                                                                                                            |
+| camt.054 import                            | Yes                | Bank import page, `read_camt054` in `bankimport.py`.                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| pain.001 payments                          | Yes                | `payment_proposal` pain-001 templates; EBICS connection doctype.                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ESR/QR reference matching                  | Yes                | `scripts/esr_qr_tools.py`; ESR/QR fields on Payment Entry and Purchase Invoice.                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Incoming QR and ZUGFeRD invoices           | Yes                | `zugferd/`, `qr_reader.py`, `factur-x`.                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Missing or not checked                     | -                  | QR-bill layout against the current Swiss standard (not checked); EBICS against a real bank (not possible here); MWST received path (not tested); data migration from `swiss_accounting_software` (the README says not to uninstall it until the flows are validated).                                                                                                                                                                                                                 |
 
 ## VAT per quarter against bexio
 
@@ -82,8 +82,7 @@ vatfix-manual lines that book manual VAT on 1171 and 2203. The other lines of th
 accounts are ERPNext-only: the invoices with their invoice-date reversals, and the
 vatfix-invoice and vatfix-bill mirrors on 2200, 1170 and 1171. They must net to zero
 per quarter and account, which the check prints as its own measure. Result for 27
-quarters (2020 Q2 to 2026 Q4): 338 comparisons; net 0 differences; flow 0; ERPNext-only
-0. The gross, which is information, differs in 5 quarters (2023 Q4, 2024 Q2, 2025 Q1,
+quarters (2020 Q2 to 2026 Q4): 338 comparisons; net 0 differences; flow 0; ERPNext-only 0. The gross, which is information, differs in 5 quarters (2023 Q4, 2024 Q2, 2025 Q1,
 2026 Q1, 2026 Q2), all on 1171; see the paragraph on the gross below.
 
 bexio settles in three steps, and the two GL checks of `mwst_report.py` measure its
@@ -174,8 +173,7 @@ private/mwst-residuals-2026-10-11.txt:
   document parts agree and the journal parts differ, because the two sides read
   different sources for the manual entries. 2021 Q1: one bexio entry is booked
   under the 0 % VSF code, so bexio's figures hold no VAT for it, while the live
-  entry counts its 1171 row in 405; the quarter's settlement voucher (1171 against
-  2201) is skipped on the report's side and absent on bexio's, so the two
+  entry counts its 1171 row in 405; the quarter's settlement voucher (1171 against 2201) is skipped on the report's side and absent on bexio's, so the two
   omissions net in the row. 2021 Q4: one entry has no tax code on bexio's side
   and counts its 1171 row live. 2024 Q2: six entries were reversed in the books
   after the export — the export holds the original, the live group nets the
@@ -324,7 +322,7 @@ cancelled entries and other companies.
   dates (erpnextswiss's `Q3 / 2026 - abbr` default is replaced; a title typed by hand stays). The fill returns
   the draft's name with its fields.
 - **The dry run.** `python3 finance/bexio/mwst_report.py --period 2026Q3 --basis payment
-  --fields <private>/fields-2026Q3.csv` writes the fields the fill would set, to a
+--fields <private>/fields-2026Q3.csv` writes the fields the fill would set, to a
   private file, and writes nothing to ERPNext.
 - **The XML.** `create_transfer_file` writes eCH-0217 version 2.0.0
   (`estv_vat_xml.py`), the only version the ESTV portal takes now; erpnextswiss renders
@@ -341,8 +339,8 @@ cancelled entries and other companies.
      the period's draft (or updates its one draft) and opens it. The new form is not saved. It refuses a
      quarter that has a submitted declaration.
      Fallback, if the button is not there: in the backend container, `bench --site frontend execute
-     bi_finance.vat_declaration.fill_payment_basis --kwargs '{"company": "<Company>",
-     "period": "2027Q1", "dry_run": 0}'`, which makes or updates the draft; with `"dry_run": 1` it only
+bi_finance.vat_declaration.fill_payment_basis --kwargs '{"company": "<Company>",
+"period": "2027Q1", "dry_run": 0}'`, which makes or updates the draft; with `"dry_run": 1` it only
      prints the fields.
   3. Check the draft's figures against bexio's declaration.
   4. Download its XML from the form, and upload that file to the ESTV ePortal.
@@ -474,7 +472,7 @@ Build result: see the bead note.
    wrapper, so the 1 mm follows the slip. The slip's bottom sits 0.4 to 0.65 mm above the
    content edge, so for some body heights the margin overflows and wkhtmltopdf adds a blank
    last page. **Fix:** the template override `.print-format-gutter .print-format
-   { margin-bottom: 0; }` (bead erp-hp26; test `test_wrapper_margin_does_not_add_a_page`),
+{ margin-bottom: 0; }` (bead erp-hp26; test `test_wrapper_margin_does_not_add_a_page`),
    which Frappe does not read as a page option. The page keeps its 1 mm margin.
    **Live on bi6 (2026-10-10, erp-6ycq):** the site runs `v16.50.0-swiss-bi6` (backup
    `20261010_023805-frontend`, taken before the swap). Samples from invented drafts, deleted
@@ -508,11 +506,11 @@ The pin is the head of upstream's `v16` branch today (`git ls-remote`, 2026-10-1
 so there is no fixed commit to bump to. Found on the images `bi9` and `bi10` (the
 live site ran `bi10` then) and on the HRMS copy image `hrms1`.
 
-| # | Where (erpnextswiss 1.34.1) | Finding | Effect on us |
-| --- | --- | --- | --- |
-| 1 | `erpnextswiss/scripts/item_tools.py` line 43 | Stray comma after a SQL string: `SyntaxError: invalid syntax`. | None at runtime. The module is a maintenance script, not hooked, and nothing we use imports or calls it. Its two `@frappe.whitelist()` functions (`get_next_item_code`, `get_voucher_value`) cannot be called while it does not compile; no app in the image references them. It breaks erpnextswiss's own test discovery and `test_item_cleanup_native`. |
-| 2 | `tests/test_ebics_automation` | 6 of 33 tests error, `ImportError: not properly registered`. | None. EBICS stays disabled (Risks 6). erpnextswiss's own tests are not part of our gate. |
-| 3 | `tests/test_workspace_routes_native` | 2 of 7 tests error: `Schweizer Buchhaltung is an archive of the previous navigation and can no longer be edited`. | None. The archived workspace is not used. Since erp-ydgw the image ships neither the workspace nor the sidebar archive row, and bi_finance's patch `erpnextswiss_desk_records` deleted the site's rows, so the archive is gone there; whether these two tests then pass is not read yet (check on the next image). |
+| #   | Where (erpnextswiss 1.34.1)                  | Finding                                                                                                           | Effect on us                                                                                                                                                                                                                                                                                                                                              |
+| --- | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `erpnextswiss/scripts/item_tools.py` line 43 | Stray comma after a SQL string: `SyntaxError: invalid syntax`.                                                    | None at runtime. The module is a maintenance script, not hooked, and nothing we use imports or calls it. Its two `@frappe.whitelist()` functions (`get_next_item_code`, `get_voucher_value`) cannot be called while it does not compile; no app in the image references them. It breaks erpnextswiss's own test discovery and `test_item_cleanup_native`. |
+| 2   | `tests/test_ebics_automation`                | 6 of 33 tests error, `ImportError: not properly registered`.                                                      | None. EBICS stays disabled (Risks 6). erpnextswiss's own tests are not part of our gate.                                                                                                                                                                                                                                                                  |
+| 3   | `tests/test_workspace_routes_native`         | 2 of 7 tests error: `Schweizer Buchhaltung is an archive of the previous navigation and can no longer be edited`. | None. The archived workspace is not used. Since erp-ydgw the image ships neither the workspace nor the sidebar archive row, and bi_finance's patch `erpnextswiss_desk_records` deleted the site's rows, so the archive is gone there; whether these two tests then pass is not read yet (check on the next image).                                        |
 
 **Confirmed (read-only):** item 1 on `bi9`, `bi10` and `hrms1` with `py_compile`
 (all three fail the same way). Items 2 and 3 were run on `hrms1` only, on a throwaway

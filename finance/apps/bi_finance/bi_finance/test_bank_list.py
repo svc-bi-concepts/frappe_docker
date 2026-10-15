@@ -14,7 +14,6 @@ from decimal import Decimal
 from unittest import mock
 
 import frappe
-
 from bi_finance import bank_feed, bank_list, camt_import, hooks
 
 PACKAGE = os.path.dirname(os.path.abspath(__file__))
@@ -22,11 +21,36 @@ FIXTURES = os.path.join(PACKAGE, "fixtures")
 # The module folder: the Treasury files Frappe syncs (see test_layout.py).
 HERE = os.path.join(PACKAGE, "bi_finance")
 APPS = os.path.dirname(os.path.dirname(os.path.dirname(frappe.__file__)))
-BANK_TRANSACTION = os.path.join(APPS, "erpnext", "erpnext", "accounts", "doctype", "bank_transaction", "bank_transaction.json")
-BANK_RECONCILIATION_TOOL = os.path.join(APPS, "erpnext", "erpnext", "accounts", "doctype", "bank_reconciliation_tool", "bank_reconciliation_tool.json")
+BANK_TRANSACTION = os.path.join(
+    APPS,
+    "erpnext",
+    "erpnext",
+    "accounts",
+    "doctype",
+    "bank_transaction",
+    "bank_transaction.json",
+)
+BANK_RECONCILIATION_TOOL = os.path.join(
+    APPS,
+    "erpnext",
+    "erpnext",
+    "accounts",
+    "doctype",
+    "bank_reconciliation_tool",
+    "bank_reconciliation_tool.json",
+)
 
 # the list's columns, in the order Benchi reads them
-COLUMNS = ["booking_date", "value_date", "bank_account", "description", "deposit", "withdrawal", "status", "unallocated_amount"]
+COLUMNS = [
+    "booking_date",
+    "value_date",
+    "bank_account",
+    "description",
+    "deposit",
+    "withdrawal",
+    "status",
+    "unallocated_amount",
+]
 
 
 def load(path):
@@ -48,9 +72,27 @@ class Fixtures(unittest.TestCase):
         # the meta fields every exported document carries, next to the doctype's own
         meta = {"doctype", "name", "docstatus"}
         doctypes = {
-            "custom_field.json": os.path.join(os.path.dirname(frappe.__file__), "custom", "doctype", "custom_field", "custom_field.json"),
-            "property_setter.json": os.path.join(os.path.dirname(frappe.__file__), "custom", "doctype", "property_setter", "property_setter.json"),
-            "list_view_settings.json": os.path.join(os.path.dirname(frappe.__file__), "desk", "doctype", "list_view_settings", "list_view_settings.json"),
+            "custom_field.json": os.path.join(
+                os.path.dirname(frappe.__file__),
+                "custom",
+                "doctype",
+                "custom_field",
+                "custom_field.json",
+            ),
+            "property_setter.json": os.path.join(
+                os.path.dirname(frappe.__file__),
+                "custom",
+                "doctype",
+                "property_setter",
+                "property_setter.json",
+            ),
+            "list_view_settings.json": os.path.join(
+                os.path.dirname(frappe.__file__),
+                "desk",
+                "doctype",
+                "list_view_settings",
+                "list_view_settings.json",
+            ),
         }
         for name, path in doctypes.items():
             fields = {f["fieldname"] for f in load(path)["fields"]} | meta
@@ -59,16 +101,27 @@ class Fixtures(unittest.TestCase):
 
     def test_the_hook_declares_the_fixture_files(self):
         jsons = [f for f in os.listdir(FIXTURES) if f.endswith(".json")]
-        self.assertEqual(sorted(jsons), ["custom_field.json", "list_view_settings.json", "property_setter.json"])
+        self.assertEqual(
+            sorted(jsons),
+            ["custom_field.json", "list_view_settings.json", "property_setter.json"],
+        )
         # the eCH-0217 example the VAT Declaration page offers for download (erp-fzae)
-        self.assertEqual([f for f in os.listdir(FIXTURES) if not f.endswith(".json")],
-                         ["eCH-0217_V2.0.0_example_effectiveReportingMethod.xml"])
-        self.assertEqual(sorted(f["dt"] for f in hooks.fixtures),
-                         ["Custom Field", "List View Settings", "Property Setter"])
+        self.assertEqual(
+            [f for f in os.listdir(FIXTURES) if not f.endswith(".json")],
+            ["eCH-0217_V2.0.0_example_effectiveReportingMethod.xml"],
+        )
+        self.assertEqual(
+            sorted(f["dt"] for f in hooks.fixtures),
+            ["Custom Field", "List View Settings", "Property Setter"],
+        )
 
-    def test_the_custom_fields_are_booking_date_value_date_and_end_to_end_id_on_bank_transaction(self):
+    def test_the_custom_fields_are_booking_date_value_date_and_end_to_end_id_on_bank_transaction(
+        self,
+    ):
         fields = {f["fieldname"]: f for f in fixture("custom_field.json")}
-        self.assertEqual(sorted(fields), ["booking_date", "end_to_end_id", "value_date"])
+        self.assertEqual(
+            sorted(fields), ["booking_date", "end_to_end_id", "value_date"]
+        )
         field = fields["booking_date"]
         self.assertEqual(field["doctype"], "Custom Field")
         self.assertEqual(field["name"], "Bank Transaction-booking_date")
@@ -79,7 +132,9 @@ class Fixtures(unittest.TestCase):
         # the standard filter Benchi asked for
         self.assertEqual(field["in_standard_filter"], 1)
 
-    def test_the_value_date_is_a_date_column_after_booking_date_in_the_list_and_the_filters(self):
+    def test_the_value_date_is_a_date_column_after_booking_date_in_the_list_and_the_filters(
+        self,
+    ):
         field = {f["fieldname"]: f for f in fixture("custom_field.json")}["value_date"]
         self.assertEqual(field["doctype"], "Custom Field")
         self.assertEqual(field["name"], "Bank Transaction-value_date")
@@ -91,7 +146,11 @@ class Fixtures(unittest.TestCase):
         self.assertEqual((field["in_list_view"], field["in_standard_filter"]), (1, 1))
 
     def test_the_list_sorts_by_booking_date_newest_first(self):
-        settings = {p["property"]: p for p in fixture("property_setter.json") if p["doc_type"] == "Bank Transaction"}
+        settings = {
+            p["property"]: p
+            for p in fixture("property_setter.json")
+            if p["doc_type"] == "Bank Transaction"
+        }
         self.assertEqual(sorted(settings), ["sort_field", "sort_order"])
         self.assertEqual(settings["sort_field"]["value"], "booking_date")
         self.assertEqual(settings["sort_order"]["value"], "DESC")
@@ -111,21 +170,40 @@ class Fixtures(unittest.TestCase):
         self.assertTrue(set(COLUMNS) <= fields, set(COLUMNS) - fields)
 
     def test_the_standard_filters_are_bank_account_status_and_both_dates(self):
-        standard = {name for name, f in bank_transaction_fields().items() if f.get("in_standard_filter")}
+        standard = {
+            name
+            for name, f in bank_transaction_fields().items()
+            if f.get("in_standard_filter")
+        }
         self.assertTrue({"bank_account", "status"} <= standard)
         # end_to_end_id is a lookup for Bank Matching, not a filter: it has no in_standard_filter key
-        self.assertEqual({f["fieldname"] for f in fixture("custom_field.json") if f.get("in_standard_filter")}, {"booking_date", "value_date"})
+        self.assertEqual(
+            {
+                f["fieldname"]
+                for f in fixture("custom_field.json")
+                if f.get("in_standard_filter")
+            },
+            {"booking_date", "value_date"},
+        )
 
 
 class Feeds(unittest.TestCase):
     def test_a_feed_row_is_booked_on_its_own_date(self):
-        row = {"transaction_id": "wise:7:1", "date": "2026-03-04", "deposit": 40.0, "withdrawal": 0.0,
-               "currency": "CHF", "description": "Invoice 77", "reference_number": "77"}
+        row = {
+            "transaction_id": "wise:7:1",
+            "date": "2026-03-04",
+            "deposit": 40.0,
+            "withdrawal": 0.0,
+            "currency": "CHF",
+            "description": "Invoice 77",
+            "reference_number": "77",
+        }
         db = mock.Mock()
         db.get_value.return_value = "Testfirma AG"
         db.exists.return_value = False
-        with mock.patch.object(bank_feed.frappe, "db", db), \
-                mock.patch.object(bank_feed.frappe, "get_doc", return_value=mock.Mock()) as get_doc:
+        with mock.patch.object(bank_feed.frappe, "db", db), mock.patch.object(
+            bank_feed.frappe, "get_doc", return_value=mock.Mock()
+        ) as get_doc:
             self.assertEqual(bank_feed.write("Wise CHF Test", [row]), 1)
         values = get_doc.call_args.args[0]
         self.assertEqual(values["booking_date"], "2026-03-04")
@@ -133,11 +211,23 @@ class Feeds(unittest.TestCase):
         self.assertEqual(values["date"], "2026-03-04")
 
     def test_a_camt_line_is_booked_on_its_booking_date(self):
-        tx = {"rule": "new", "reference": "camt-ref-1", "booking_date": "2026-03-05", "value_date": "2026-03-04",
-              "deposit": Decimal("0"), "withdrawal": Decimal("12.50"), "reference_number": "", "description": "Test",
-              "bank_party_name": "", "bank_party_iban": "", "end_to_end_id": None}
+        tx = {
+            "rule": "new",
+            "reference": "camt-ref-1",
+            "booking_date": "2026-03-05",
+            "value_date": "2026-03-04",
+            "deposit": Decimal("0"),
+            "withdrawal": Decimal("12.50"),
+            "reference_number": "",
+            "description": "Test",
+            "bank_party_name": "",
+            "bank_party_iban": "",
+            "end_to_end_id": None,
+        }
         account = {"name": "UBS Test", "company": "Testfirma AG", "currency": "CHF"}
-        with mock.patch.object(camt_import.frappe, "get_doc", return_value=mock.Mock()) as get_doc:
+        with mock.patch.object(
+            camt_import.frappe, "get_doc", return_value=mock.Mock()
+        ) as get_doc:
             self.assertEqual(camt_import._write(account, [tx]), 1)
         values = get_doc.call_args.args[0]
         self.assertEqual(values["booking_date"], "2026-03-05")
@@ -146,11 +236,23 @@ class Feeds(unittest.TestCase):
         self.assertEqual(values["value_date"], "2026-03-04")
 
     def test_a_camt_line_without_a_value_date_takes_its_booking_date(self):
-        tx = {"rule": "new", "reference": "camt-ref-2", "booking_date": "2026-03-05", "value_date": None,
-              "deposit": Decimal("0"), "withdrawal": Decimal("3.00"), "reference_number": "", "description": "Test",
-              "bank_party_name": "", "bank_party_iban": "", "end_to_end_id": None}
+        tx = {
+            "rule": "new",
+            "reference": "camt-ref-2",
+            "booking_date": "2026-03-05",
+            "value_date": None,
+            "deposit": Decimal("0"),
+            "withdrawal": Decimal("3.00"),
+            "reference_number": "",
+            "description": "Test",
+            "bank_party_name": "",
+            "bank_party_iban": "",
+            "end_to_end_id": None,
+        }
         account = {"name": "UBS Test", "company": "Testfirma AG", "currency": "CHF"}
-        with mock.patch.object(camt_import.frappe, "get_doc", return_value=mock.Mock()) as get_doc:
+        with mock.patch.object(
+            camt_import.frappe, "get_doc", return_value=mock.Mock()
+        ) as get_doc:
             self.assertEqual(camt_import._write(account, [tx]), 1)
         self.assertEqual(get_doc.call_args.args[0]["value_date"], "2026-03-05")
 
@@ -160,7 +262,10 @@ class BankDates(unittest.TestCase):
 
     def setUp(self):
         self.db = mock.Mock()
-        self.patches = [mock.patch.object(bank_list.frappe, "db", self.db), mock.patch.object(bank_list.frappe, "only_for")]
+        self.patches = [
+            mock.patch.object(bank_list.frappe, "db", self.db),
+            mock.patch.object(bank_list.frappe, "only_for"),
+        ]
         for patch in self.patches:
             patch.start()
 
@@ -171,16 +276,29 @@ class BankDates(unittest.TestCase):
     def test_the_booking_date_is_the_default_field(self):
         self.db.get_value.return_value = None
         self.assertEqual(bank_list.set_booking_dates({"BT-1": "2026-03-31"}), 1)
-        self.db.set_value.assert_called_once_with("Bank Transaction", "BT-1", "booking_date", mock.ANY, update_modified=False)
+        self.db.set_value.assert_called_once_with(
+            "Bank Transaction", "BT-1", "booking_date", mock.ANY, update_modified=False
+        )
 
     def test_a_value_date_fills_only_the_lines_whose_value_date_is_empty(self):
-        self.db.get_value.side_effect = lambda doctype, name, field: "2026-03-30" if name == "BT-1" else None
-        self.assertEqual(bank_list.set_booking_dates({"BT-1": "2026-03-30", "BT-2": "2026-04-02"}, field="value_date"), 1)
+        self.db.get_value.side_effect = lambda doctype, name, field: (
+            "2026-03-30" if name == "BT-1" else None
+        )
+        self.assertEqual(
+            bank_list.set_booking_dates(
+                {"BT-1": "2026-03-30", "BT-2": "2026-04-02"}, field="value_date"
+            ),
+            1,
+        )
         self.db.get_value.assert_any_call("Bank Transaction", "BT-1", "value_date")
-        self.db.set_value.assert_called_once_with("Bank Transaction", "BT-2", "value_date", mock.ANY, update_modified=False)
+        self.db.set_value.assert_called_once_with(
+            "Bank Transaction", "BT-2", "value_date", mock.ANY, update_modified=False
+        )
 
     def test_another_field_of_the_line_is_refused(self):
-        with mock.patch.object(bank_list.frappe, "throw", side_effect=ValueError("refused")):
+        with mock.patch.object(
+            bank_list.frappe, "throw", side_effect=ValueError("refused")
+        ):
             with self.assertRaises(ValueError):
                 bank_list.set_booking_dates({"BT-1": "2026-03-30"}, field="docstatus")
         self.db.set_value.assert_not_called()
@@ -200,15 +318,32 @@ class Treasury(unittest.TestCase):
         for label, (kind, target) in expected.items():
             row = self.rows[label]
             self.assertEqual(row["type"], kind, label)
-            self.assertEqual(row["link_to"] if kind == "DocType" else row["url"], target, label)
+            self.assertEqual(
+                row["link_to"] if kind == "DocType" else row["url"], target, label
+            )
 
     def test_no_shortcut_opens_the_react_banking_page(self):
         for row in self.ws["shortcuts"]:
-            self.assertNotIn("banking", (row.get("url", "") + " " + row.get("link_to", "")).lower(), row["label"])
+            self.assertNotIn(
+                "banking",
+                (row.get("url", "") + " " + row.get("link_to", "")).lower(),
+                row["label"],
+            )
 
     def test_the_bank_doctypes_exist(self):
-        self.assertTrue(os.path.isfile(BANK_RECONCILIATION_TOOL), BANK_RECONCILIATION_TOOL)
-        self.assertTrue(os.path.isfile(os.path.join(HERE, "doctype", "bank_statement_upload", "bank_statement_upload.json")))
+        self.assertTrue(
+            os.path.isfile(BANK_RECONCILIATION_TOOL), BANK_RECONCILIATION_TOOL
+        )
+        self.assertTrue(
+            os.path.isfile(
+                os.path.join(
+                    HERE,
+                    "doctype",
+                    "bank_statement_upload",
+                    "bank_statement_upload.json",
+                )
+            )
+        )
 
 
 if __name__ == "__main__":

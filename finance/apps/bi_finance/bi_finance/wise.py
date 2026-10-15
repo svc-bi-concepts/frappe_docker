@@ -12,10 +12,9 @@ import collections
 import datetime
 
 import frappe
+from bi_finance import bank_feed, bank_match_job, wise_client
 from erpnext.setup.utils import get_exchange_rate
 from frappe import _
-
-from bi_finance import bank_feed, bank_match_job, wise_client
 
 BANK = "WISE PAYMENTS LIMITED"
 
@@ -30,7 +29,9 @@ def _settings():
     settings = frappe.get_single("Wise Settings")
     token = settings.get_password("api_token", raise_exception=False)
     if not token or not settings.profile_id:
-        frappe.throw(_("Enter the API token and the profile id in Wise Settings first."))
+        frappe.throw(
+            _("Enter the API token and the profile id in Wise Settings first.")
+        )
     return settings, token
 
 
@@ -61,7 +62,11 @@ def sync_now(dry_run=True, start=None, end=None):
     """
     dry_run = frappe.parse_json(dry_run) if isinstance(dry_run, str) else bool(dry_run)
     report = run(dry_run=dry_run, start=_moment(start), end=_moment(end, last=True))
-    frappe.msgprint(_("{0} account(s) {1}.").format(len(report["accounts"]), _("planned") if dry_run else _("synced")))
+    frappe.msgprint(
+        _("{0} account(s) {1}.").format(
+            len(report["accounts"]), _("planned") if dry_run else _("synced")
+        )
+    )
     frappe.msgprint("<br>".join(_summary_lines(report)))
     return report
 
@@ -112,7 +117,14 @@ def run(dry_run, start=None, end=None):
         currency_rows = [row for row in rows if row["currency"] == currency]
         if currency != "CHF":
             # the rate of every day this account's amounts fall on, so the conversion below needs no lookup per day
-            rates.update(bank_feed.load_rates(currency, _first_day(start, currency_rows, bank_account), now.date(), dry_run))
+            rates.update(
+                bank_feed.load_rates(
+                    currency,
+                    _first_day(start, currency_rows, bank_account),
+                    now.date(),
+                    dry_run,
+                )
+            )
         create, summary = bank_feed.plan(bank_account, currency_rows)
         if not dry_run and create:
             # an account is opened only for a movement it takes: a currency Wise holds at zero gets none
@@ -121,7 +133,18 @@ def run(dry_run, start=None, end=None):
             frappe.db.commit()
             # the matching job after the write: the lines it is certain of reconcile now (bank_match_job)
             bank_match_job.match_after_import(bank_account)
-        accounts.append(_account_report(currency, bank_account, currency_rows, create, summary, balances.get(currency), now, rates))
+        accounts.append(
+            _account_report(
+                currency,
+                bank_account,
+                currency_rows,
+                create,
+                summary,
+                balances.get(currency),
+                now,
+                rates,
+            )
+        )
     if not dry_run:
         # one field, not settings.save(): a save would write back the token and switches as read at the start of the run
         frappe.db.set_single_value("Wise Settings", "last_sync", now)
@@ -133,15 +156,27 @@ def run(dry_run, start=None, end=None):
         "skipped": dict(skipped),
         "payouts_without_balance_fee": no_fee_option,
         # the fees read from the quotes: how many, and how many are zero (a zero fee books no line)
-        "payout_fees": {"read": len(fees), "zero": sum(1 for fee in fees.values() if not fee)},
+        "payout_fees": {
+            "read": len(fees),
+            "zero": sum(1 for fee in fees.values() if not fee),
+        },
         "payout_recipients": recipients,
         "fetched": {
             "activities": len(activity_items),
-            "activity_types": dict(collections.Counter(item.get("type") for item in activity_items)),
+            "activity_types": dict(
+                collections.Counter(item.get("type") for item in activity_items)
+            ),
             "transfers": len(transfer_items),
-            "transfer_statuses": dict(collections.Counter(item.get("status") for item in transfer_items)),
+            "transfer_statuses": dict(
+                collections.Counter(item.get("status") for item in transfer_items)
+            ),
             "transfer_routes": dict(
-                collections.Counter("{}>{}".format(item.get("sourceCurrency"), item.get("targetCurrency")) for item in transfer_items)
+                collections.Counter(
+                    "{}>{}".format(
+                        item.get("sourceCurrency"), item.get("targetCurrency")
+                    )
+                    for item in transfer_items
+                )
             ),
         },
     }
@@ -166,9 +201,13 @@ def _fees(token, profile, transfer_items):
     fees = {}
     no_fee_option = 0
     for item in transfer_items:
-        if item.get("status") != wise_client.COMPLETED_TRANSFER or not item.get("quoteUuid"):
+        if item.get("status") != wise_client.COMPLETED_TRANSFER or not item.get(
+            "quoteUuid"
+        ):
             continue
-        fee = wise_client.quote_fee(wise_client.quote(token, profile, item["quoteUuid"]))
+        fee = wise_client.quote_fee(
+            wise_client.quote(token, profile, item["quoteUuid"])
+        )
         if fee is None:
             no_fee_option += 1
         else:
@@ -189,11 +228,15 @@ def _account_report(currency, bank_account, rows, create, summary, balance, now,
     erp_by_day = _gl_net_by_day(bank_account)
     erp_net = round(sum(erp_by_day.values()), 2)
     erp_chf, erp_gap = _chf_sum(erp_by_day, currency, rates)
-    bank_transaction_net = round(sum(_bank_transaction_net_by_day(bank_account).values()), 2)
+    bank_transaction_net = round(
+        sum(_bank_transaction_net_by_day(bank_account).values()), 2
+    )
     rate = _rate(currency, str(now.date()), rates)
     period_net = round(sum(row["deposit"] - row["withdrawal"] for row in rows), 2)
     first_day = min((row["date"] for row in rows if row["date"]), default=None)
-    ledger_before = round(sum(net for day, net in erp_by_day.items() if first_day and day < first_day), 2)
+    ledger_before = round(
+        sum(net for day, net in erp_by_day.items() if first_day and day < first_day), 2
+    )
     wise_start = round(balance - period_net, 2) if balance is not None else None
     created_ids = {id(row) for row in create}
     report = {
@@ -205,7 +248,9 @@ def _account_report(currency, bank_account, rows, create, summary, balance, now,
         "create_by_kind": _by_kind(create),
         # the rows that were not created: already fed, or matched to a bexio line (the FEE rows show whether a fee matched)
         "parsed_by_kind": _by_kind(rows),
-        "matched_by_kind": _by_kind([row for row in rows if id(row) not in created_ids]),
+        "matched_by_kind": _by_kind(
+            [row for row in rows if id(row) not in created_ids]
+        ),
         "by_month": _by_month_check(rows, erp_by_day),
         # per month, how the run's rows and the account's bexio lines pair: the counts and the window each match used
         "match_by_month": _match_by_month(bank_account, rows),
@@ -219,10 +264,13 @@ def _account_report(currency, bank_account, rows, create, summary, balance, now,
         "no_rate_days": create_gap + erp_gap + (0 if rate else 1),
         "period_net": period_net,
         "wise_balance": balance,
-        "wise_balance_chf": round(balance * rate, 2) if balance is not None and rate else None,
+        "wise_balance_chf": (
+            round(balance * rate, 2) if balance is not None and rate else None
+        ),
         "wise_start": wise_start,
         "ledger_before_first_day": ledger_before,
-        "start_agrees": wise_start is not None and abs(wise_start - ledger_before) < 0.005,
+        "start_agrees": wise_start is not None
+        and abs(wise_start - ledger_before) < 0.005,
         "agrees": balance is not None and abs(balance - erp_net) < 0.005,
         "difference": round(balance - erp_net, 2) if balance is not None else None,
     }
@@ -244,8 +292,12 @@ def _summary_lines(report):
     """One line per currency for the message: the counts, the amounts in the currency and in CHF, the check."""
     lines = []
     for a in report["accounts"]:
-        months = ", ".join("{} {}".format(month, n) for month, n in sorted(a["create_by_month"].items()))
-        kinds = ", ".join("{} {}".format(kind, n) for kind, n in sorted(a["create_by_kind"].items()))
+        months = ", ".join(
+            f"{month} {n}" for month, n in sorted(a["create_by_month"].items())
+        )
+        kinds = ", ".join(
+            f"{kind} {n}" for kind, n in sorted(a["create_by_kind"].items())
+        )
         lines.append(
             "{}: {} to create ({} CHF) [{}] [{}]; Wise {} ({} CHF); ERPNext {} ({} CHF); agrees: {}; {} already fed, {} already imported".format(
                 a["currency"],
@@ -265,7 +317,11 @@ def _summary_lines(report):
     total = report["total"]
     lines.append(
         "Total CHF: create {}, Wise {}, ERPNext {}; days without a rate: {}; skipped {}".format(
-            total["create_chf"], total["wise_balance_chf"], total["erp_net_chf"], total["no_rate_days"], report["skipped"]
+            total["create_chf"],
+            total["wise_balance_chf"],
+            total["erp_net_chf"],
+            total["no_rate_days"],
+            report["skipped"],
         )
     )
     return lines
@@ -293,7 +349,9 @@ def _create_chf(create, currency, rates):
     for row in create:
         if row["chf"] is not None:
             given += row["chf"] if row["deposit"] >= row["withdrawal"] else -row["chf"]
-    total, no_rate = _chf_sum(_net_by_day([row for row in create if row["chf"] is None]), currency, rates)
+    total, no_rate = _chf_sum(
+        _net_by_day([row for row in create if row["chf"] is None]), currency, rates
+    )
     return round(given + total, 2), no_rate
 
 
@@ -335,7 +393,11 @@ def _by_month_check(rows, erp_by_day):
     for day, net in erp_by_day.items():
         ledger[day[:7]] += net
     return {
-        month: {"feed": round(feed[month], 2), "ledger": round(ledger[month], 2), "difference": round(ledger[month] - feed[month], 2)}
+        month: {
+            "feed": round(feed[month], 2),
+            "ledger": round(ledger[month], 2),
+            "difference": round(ledger[month] - feed[month], 2),
+        }
         for month in sorted(set(feed) | set(ledger))
     }
 
@@ -350,9 +412,13 @@ def ensure_bank_account(currency):
     name = _bank_account_name(currency)
     if frappe.db.exists("Bank Account", name):
         return name
-    chf = frappe.db.get_value("Bank Account", "Wise CHF - " + BANK, ["account", "company"], as_dict=True)
+    chf = frappe.db.get_value(
+        "Bank Account", "Wise CHF - " + BANK, ["account", "company"], as_dict=True
+    )
     parent = frappe.db.get_value("Account", chf["account"], "parent_account")
-    return bank_feed.open_bank_account("Wise", BANK, currency, parent, chf["company"], ACCOUNT_NUMBERS)
+    return bank_feed.open_bank_account(
+        "Wise", BANK, currency, parent, chf["company"], ACCOUNT_NUMBERS
+    )
 
 
 def _bank_account_name(currency):
@@ -364,7 +430,9 @@ def _start(settings, now):
         # last_sync is stored as a string too: the sync after the first live one failed on "str - timedelta"
         return frappe.utils.get_datetime(settings.last_sync) - OVERLAP
     # a Date single comes back as its stored string, not a date: the first sync failed on it
-    return datetime.datetime.combine(frappe.utils.getdate(settings.backfill_from), datetime.time.min)
+    return datetime.datetime.combine(
+        frappe.utils.getdate(settings.backfill_from), datetime.time.min
+    )
 
 
 def _amount(balance):
@@ -373,9 +441,12 @@ def _amount(balance):
 
 def _first_day(start, rows, bank_account):
     """The earliest day an amount of this account falls on: the sync start, a feed row, or a Bank Transaction there."""
-    days = [start.date()] + [datetime.date.fromisoformat(row["date"]) for row in rows if row["date"]]
+    days = [start.date()] + [
+        datetime.date.fromisoformat(row["date"]) for row in rows if row["date"]
+    ]
     earliest = frappe.db.sql(
-        "select min(date) from `tabBank Transaction` where bank_account = %s and docstatus < 2", bank_account
+        "select min(date) from `tabBank Transaction` where bank_account = %s and docstatus < 2",
+        bank_account,
     )[0][0]
     if earliest:
         days.append(earliest)
@@ -434,8 +505,14 @@ def unmatched_by_month(existing, rows):
     fed = {row["transaction_id"] for row in rows}
     carried = {t["transaction_id"] for t in existing if t["transaction_id"] in fed}
     lines = [t for t in existing if not t["transaction_id"]]
-    _, _, unmatched = bank_feed.match_new([row for row in rows if row["transaction_id"] not in carried], lines)
-    counts = collections.Counter(str(t["date"])[:7] for t in existing if t["transaction_id"] and t["transaction_id"] not in fed)
+    _, _, unmatched = bank_feed.match_new(
+        [row for row in rows if row["transaction_id"] not in carried], lines
+    )
+    counts = collections.Counter(
+        str(t["date"])[:7]
+        for t in existing
+        if t["transaction_id"] and t["transaction_id"] not in fed
+    )
     counts.update(str(line["date"])[:7] for line in unmatched)
     return dict(sorted(counts.items()))
 
@@ -470,26 +547,42 @@ def match_report(existing, rows):
     def bucket(month):
         return report.setdefault(
             month,
-            {"rows": 0, "matched": 0, "by_gap": {}, "by_tolerance": 0, "create": 0,
-             "matched_net": 0.0, "create_net": 0.0, "lines": 0, "unmatched_lines": 0, "unmatched_net": 0.0},
+            {
+                "rows": 0,
+                "matched": 0,
+                "by_gap": {},
+                "by_tolerance": 0,
+                "create": 0,
+                "matched_net": 0.0,
+                "create_net": 0.0,
+                "lines": 0,
+                "unmatched_lines": 0,
+                "unmatched_net": 0.0,
+            },
         )
 
     gaps = collections.defaultdict(collections.Counter)
     for row, line, gap, tolerance in matched:
         month = str(row["date"])[:7]
         bucket(month)["matched"] += 1
-        bucket(month)["matched_net"] = round(bucket(month)["matched_net"] + bank_feed._net(row), 2)
+        bucket(month)["matched_net"] = round(
+            bucket(month)["matched_net"] + bank_feed._net(row), 2
+        )
         gaps[month][str(gap)] += 1
         if tolerance:
             bucket(month)["by_tolerance"] += 1
     for row in create:
         month = str(row["date"])[:7]
         bucket(month)["create"] += 1
-        bucket(month)["create_net"] = round(bucket(month)["create_net"] + bank_feed._net(row), 2)
+        bucket(month)["create_net"] = round(
+            bucket(month)["create_net"] + bank_feed._net(row), 2
+        )
     for line in unmatched:
         month = str(line["date"])[:7]
         bucket(month)["unmatched_lines"] += 1
-        bucket(month)["unmatched_net"] = round(bucket(month)["unmatched_net"] + bank_feed._net(line), 2)
+        bucket(month)["unmatched_net"] = round(
+            bucket(month)["unmatched_net"] + bank_feed._net(line), 2
+        )
     for row in rows:
         bucket(str(row["date"])[:7])["rows"] += 1
     for line in lines:

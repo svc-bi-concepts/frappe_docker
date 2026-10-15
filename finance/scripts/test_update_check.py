@@ -24,14 +24,25 @@ APPS = """[
 """
 COMPOSE = "services:\n  frontend:\n    image: frappe-finance-custom:v16.9.0-swiss-bi3\n  backend:\n    image: frappe-finance-custom:v16.9.0-swiss-bi3\n"
 
+
 def v(minor, patch):
     """An invented v16 tag, built from its numbers, so the test source has no two-digit decimal
-    pair: private/check-real-amounts.sh matches those as amounts against private/ and refuses."""
-    return "v16.{}.{}".format(minor, patch)
+    pair: private/check-real-amounts.sh matches those as amounts against private/ and refuses.
+    """
+    return f"v16.{minor}.{patch}"
 
 
 # Patch 10 must beat patch 9 (numeric, not text); the prerelease is not a release.
-TAGS = {v(9, 0), v(9, 1), v(9, 9), v(9, 10), v(10, 0), v(10, 2) + "-rc.1", v(8, 0), v(8, 4)}
+TAGS = {
+    v(9, 0),
+    v(9, 1),
+    v(9, 9),
+    v(9, 10),
+    v(10, 0),
+    v(10, 2) + "-rc.1",
+    v(8, 0),
+    v(8, 4),
+}
 
 
 def fake_tags(url):
@@ -44,7 +55,13 @@ def fake_branch(url, branch):
 
 def run(root, argv=(), remote_tags=fake_tags, remote_branch=fake_branch):
     buf = io.StringIO()
-    code = update_check.main(list(argv), root=root, remote_tags=remote_tags, remote_branch=remote_branch, out=buf)
+    code = update_check.main(
+        list(argv),
+        root=root,
+        remote_tags=remote_tags,
+        remote_branch=remote_branch,
+        out=buf,
+    )
     return code, buf.getvalue()
 
 
@@ -76,17 +93,21 @@ class Parsing(unittest.TestCase):
 class Lines(unittest.TestCase):
     def test_newest_patch_of_the_pinned_minor_is_numeric(self):
         line = update_check.tagged_line("frappe", v(9, 0), TAGS, minor=False)
-        self.assertEqual(line, "frappe        pinned {}  newest patch {}  update".format(v(9, 0), v(9, 10)))
+        self.assertEqual(
+            line, f"frappe        pinned {v(9, 0)}  newest patch {v(9, 10)}  update"
+        )
 
     def test_current_when_nothing_newer_in_the_minor(self):
         line = update_check.tagged_line("erpnext", "v16.8.4", TAGS, minor=False)
-        self.assertEqual(line, "erpnext       pinned v16.8.4  newest patch v16.8.4  current")
+        self.assertEqual(
+            line, "erpnext       pinned v16.8.4  newest patch v16.8.4  current"
+        )
 
     def test_a_newer_minor_is_shown_only_with_the_flag(self):
         plain = update_check.tagged_line("hrms", v(9, 0), TAGS, minor=False)
         self.assertNotIn("minor", plain)
         flagged = update_check.tagged_line("hrms", v(9, 0), TAGS, minor=True)
-        self.assertIn("newest minor {}  minor: ask ledgerdemain".format(v(10, 0)), flagged)
+        self.assertIn(f"newest minor {v(10, 0)}  minor: ask ledgerdemain", flagged)
 
     def test_no_minor_note_when_the_newest_minor_is_the_pinned_one(self):
         line = update_check.tagged_line("hrms", v(10, 0), TAGS, minor=True)
@@ -123,12 +144,17 @@ class Main(unittest.TestCase):
 
     def test_erpnextswiss_update_is_its_newest_commit_on_v16(self):
         _, text = run(self.root)
-        self.assertIn("pinned branch v16 at aaaaaaa  newest on v16 bbbbbbb  update", text)
+        self.assertIn(
+            "pinned branch v16 at aaaaaaa  newest on v16 bbbbbbb  update", text
+        )
 
     def test_unreachable_upstream_is_unknown_and_still_exit_0(self):
         def down(url):
             raise subprocess.CalledProcessError(128, "git")
-        code, text = run(self.root, remote_tags=down, remote_branch=lambda url, branch: None)
+
+        code, text = run(
+            self.root, remote_tags=down, remote_branch=lambda url, branch: None
+        )
         self.assertEqual(code, 0)
         self.assertIn("unknown: upstream not reached", text)
 

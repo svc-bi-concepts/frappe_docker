@@ -19,7 +19,9 @@ sys.modules.setdefault("frappe", types.ModuleType("frappe"))
 sys.modules.setdefault("frappe.utils", types.ModuleType("frappe.utils"))
 sys.modules["frappe.utils"].get_bench_path = lambda: ""
 
-spec = importlib.util.spec_from_file_location("swiss_setup", os.path.join(HERE, "swiss-setup.py"))
+spec = importlib.util.spec_from_file_location(
+    "swiss_setup", os.path.join(HERE, "swiss-setup.py")
+)
 ss = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ss)
 
@@ -41,8 +43,13 @@ class BexioTable(unittest.TestCase):
         self.assertEqual(len(titles), len(set(titles)))
 
     def test_title_names_code_and_rate(self):
-        self.assertEqual(ss.tax_title("UN81", 8.1, "Normalsatz"), "UN81 8.1% Normalsatz")
-        self.assertEqual(ss.tax_title("UEX", 0, "Export, steuerbefreit"), "UEX 0% Export, steuerbefreit")
+        self.assertEqual(
+            ss.tax_title("UN81", 8.1, "Normalsatz"), "UN81 8.1% Normalsatz"
+        )
+        self.assertEqual(
+            ss.tax_title("UEX", 0, "Export, steuerbefreit"),
+            "UEX 0% Export, steuerbefreit",
+        )
 
     def test_accounts_are_kmu_accounts(self):
         for row in ss.BEXIO_TAXES:
@@ -66,7 +73,9 @@ class BexioTable(unittest.TestCase):
     def test_defaults_are_the_8_1_codes(self):
         by_id = {row[1]: row for row in ss.BEXIO_TAXES}
         self.assertEqual(by_id[ss.DEFAULT_SALES][2:5], ("UN81", "Normalsatz", 8.1))
-        self.assertEqual(by_id[ss.DEFAULT_PURCHASE][2:5], ("VM81", "Normalsatz Material/DL", 8.1))
+        self.assertEqual(
+            by_id[ss.DEFAULT_PURCHASE][2:5], ("VM81", "Normalsatz Material/DL", 8.1)
+        )
 
 
 class TaxRows(unittest.TestCase):
@@ -74,13 +83,26 @@ class TaxRows(unittest.TestCase):
         ss.account = lambda number: "%s - Konto - bic" % number
 
     def test_reverse_charge_nets_to_zero(self):
-        rows = ss.tax_rows("Purchase Taxes and Charges Template", "P", "1171", "2203", 8.1)
-        self.assertEqual([(r["account_head"], r["add_deduct_tax"], r["rate"]) for r in rows],
-                         [("1171 - Konto - bic", "Add", 8.1), ("2203 - Konto - bic", "Deduct", 8.1)])
+        rows = ss.tax_rows(
+            "Purchase Taxes and Charges Template", "P", "1171", "2203", 8.1
+        )
+        self.assertEqual(
+            [(r["account_head"], r["add_deduct_tax"], r["rate"]) for r in rows],
+            [("1171 - Konto - bic", "Add", 8.1), ("2203 - Konto - bic", "Deduct", 8.1)],
+        )
 
     def test_sales_row(self):
         rows = ss.tax_rows("Sales Taxes and Charges Template", "S", "2200", None, 8.1)
-        self.assertEqual(rows, [{"charge_type": "On Net Total", "account_head": "2200 - Konto - bic", "rate": 8.1}])
+        self.assertEqual(
+            rows,
+            [
+                {
+                    "charge_type": "On Net Total",
+                    "account_head": "2200 - Konto - bic",
+                    "rate": 8.1,
+                }
+            ],
+        )
 
 
 class Differences(unittest.TestCase):
@@ -92,8 +114,11 @@ class Differences(unittest.TestCase):
     numbers = {"127": "2200"}
 
     def erp(self):
-        return {"28": ("UN81", 8.1, "2200", False), "3": ("UEX", 0.0, "2200", False),
-                "18": ("US37", 3.7, "2200", True)}
+        return {
+            "28": ("UN81", 8.1, "2200", False),
+            "3": ("UEX", 0.0, "2200", False),
+            "18": ("US37", 3.7, "2200", True),
+        }
 
     def test_match_gives_no_difference(self):
         self.assertEqual(ss.vat_differences(self.taxes, self.numbers, self.erp()), [])

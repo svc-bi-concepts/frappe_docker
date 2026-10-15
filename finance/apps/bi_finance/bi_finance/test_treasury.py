@@ -15,7 +15,6 @@ import unittest
 from unittest import mock
 
 import frappe
-
 from bi_finance import hooks
 from bi_finance.bi_finance.report.cash_conversion_cycle import cash_conversion_cycle
 from bi_finance.bi_finance.report.cash_position import cash_position
@@ -25,7 +24,16 @@ from bi_finance.patches import number_card_names
 HERE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bi_finance")
 FRAPPE_DOCTYPES = os.path.join(os.path.dirname(frappe.__file__), "desk", "doctype")
 # Meta fields every exported document carries, next to the doctype's own fields.
-META = {"doctype", "name", "owner", "creation", "modified", "modified_by", "docstatus", "idx"}
+META = {
+    "doctype",
+    "name",
+    "owner",
+    "creation",
+    "modified",
+    "modified_by",
+    "docstatus",
+    "idx",
+}
 
 
 def names(kind):
@@ -38,7 +46,9 @@ def load(*parts):
 
 
 def doctype_fields(doctype):
-    path = os.path.join(FRAPPE_DOCTYPES, frappe.scrub(doctype), frappe.scrub(doctype) + ".json")
+    path = os.path.join(
+        FRAPPE_DOCTYPES, frappe.scrub(doctype), frappe.scrub(doctype) + ".json"
+    )
     with open(path, encoding="utf-8") as f:
         return {field["fieldname"] for field in json.load(f)["fields"]} | META
 
@@ -59,7 +69,12 @@ class Layout(unittest.TestCase):
             ("dashboard_chart", "cash_conversion_trend"),
             ("workspace", "treasury"),
         ]:
-            self.assertTrue(os.path.isfile(os.path.join(HERE, folder, filename, filename + ".json")), filename)
+            self.assertTrue(
+                os.path.isfile(
+                    os.path.join(HERE, folder, filename, filename + ".json")
+                ),
+                filename,
+            )
 
     def test_the_hook_declares_the_two_doctypes_the_module_folders_hold(self):
         self.assertEqual(hooks.importable_doctypes, ["Number Card", "Dashboard Chart"])
@@ -69,7 +84,9 @@ class Layout(unittest.TestCase):
         # parentheses, and the sync takes the folder as it finds it (it loads <folder>/<folder>.json).
         for name in names("number_card"):
             doc = load("number_card", name, name + ".json")
-            self.assertEqual(re.sub(r"[^a-z0-9]+", "_", doc["name"].lower()).strip("_"), name)
+            self.assertEqual(
+                re.sub(r"[^a-z0-9]+", "_", doc["name"].lower()).strip("_"), name
+            )
 
 
 class Workspace(unittest.TestCase):
@@ -86,7 +103,9 @@ class Workspace(unittest.TestCase):
 
     def test_content_shows_every_card_and_chart_once(self):
         blocks = json.loads(self.ws["content"])
-        cards = [b["data"]["number_card_name"] for b in blocks if b["type"] == "number_card"]
+        cards = [
+            b["data"]["number_card_name"] for b in blocks if b["type"] == "number_card"
+        ]
         charts = [b["data"]["chart_name"] for b in blocks if b["type"] == "chart"]
         self.assertEqual(sorted(cards), sorted(self.cards))
         self.assertEqual(sorted(charts), sorted(self.charts))
@@ -94,14 +113,20 @@ class Workspace(unittest.TestCase):
 
     def test_child_rows_match_the_content(self):
         blocks = json.loads(self.ws["content"])
-        cards = [b["data"]["number_card_name"] for b in blocks if b["type"] == "number_card"]
+        cards = [
+            b["data"]["number_card_name"] for b in blocks if b["type"] == "number_card"
+        ]
         charts = [b["data"]["chart_name"] for b in blocks if b["type"] == "chart"]
-        self.assertEqual([r["number_card_name"] for r in self.ws["number_cards"]], cards)
+        self.assertEqual(
+            [r["number_card_name"] for r in self.ws["number_cards"]], cards
+        )
         self.assertEqual([r["chart_name"] for r in self.ws["charts"]], charts)
 
     def test_the_shortcuts_match_the_content_in_order(self):
         blocks = json.loads(self.ws["content"])
-        shortcuts = [b["data"]["shortcut_name"] for b in blocks if b["type"] == "shortcut"]
+        shortcuts = [
+            b["data"]["shortcut_name"] for b in blocks if b["type"] == "shortcut"
+        ]
         self.assertEqual(shortcuts, [r["label"] for r in self.ws["shortcuts"]])
         self.assertEqual(len(shortcuts), len(set(shortcuts)))
 
@@ -111,14 +136,26 @@ class Workspace(unittest.TestCase):
             self.assertEqual(row["label"], row["number_card_name"])
 
     def test_the_report_shortcuts_are_reports_of_this_app(self):
-        cash = [r for r in self.ws["shortcuts"] if r["label"] in ("Cash Flow Forecast", "MWST pro Quartal")]
-        self.assertEqual(sorted(r["label"] for r in cash), ["Cash Flow Forecast", "MWST pro Quartal"])
+        cash = [
+            r
+            for r in self.ws["shortcuts"]
+            if r["label"] in ("Cash Flow Forecast", "MWST pro Quartal")
+        ]
+        self.assertEqual(
+            sorted(r["label"] for r in cash), ["Cash Flow Forecast", "MWST pro Quartal"]
+        )
         for row in cash:
             self.assertEqual(row["type"], "Report")
             self.assertEqual(row["link_to"], row["label"])
             folder = row["link_to"].lower().replace(" ", "_")
-            self.assertTrue(os.path.isfile(os.path.join(HERE, "report", folder, folder + ".json")), folder)
-            self.assertTrue(set(row) <= doctype_fields("Workspace Shortcut"), set(row) - doctype_fields("Workspace Shortcut"))
+            self.assertTrue(
+                os.path.isfile(os.path.join(HERE, "report", folder, folder + ".json")),
+                folder,
+            )
+            self.assertTrue(
+                set(row) <= doctype_fields("Workspace Shortcut"),
+                set(row) - doctype_fields("Workspace Shortcut"),
+            )
 
     def test_every_card_and_chart_is_a_file_of_this_app(self):
         for row in self.ws["number_cards"]:
@@ -127,7 +164,10 @@ class Workspace(unittest.TestCase):
             self.assertIn(row["chart_name"], self.charts)
 
     def test_workspace_fields_exist_in_the_doctype(self):
-        self.assertTrue(set(self.ws) <= doctype_fields("Workspace"), set(self.ws) - doctype_fields("Workspace"))
+        self.assertTrue(
+            set(self.ws) <= doctype_fields("Workspace"),
+            set(self.ws) - doctype_fields("Workspace"),
+        )
 
 
 class Cards(unittest.TestCase):
@@ -145,7 +185,9 @@ class Cards(unittest.TestCase):
         with mock.patch.object(cash_conversion_cycle, "_", lambda text: text):
             columns = {c["fieldname"] for c in cash_conversion_cycle.columns()}
         cards = cards_of("Cash Conversion Cycle")
-        self.assertEqual(sorted(doc["report_field"] for doc in cards), ["ccc_12", "ccc_12_change"])
+        self.assertEqual(
+            sorted(doc["report_field"] for doc in cards), ["ccc_12", "ccc_12_change"]
+        )
         for doc in cards:
             self.assertEqual(doc["type"], "Report")
             self.assertIn(doc["report_field"], columns)
@@ -178,13 +220,25 @@ class Cards(unittest.TestCase):
 
     def test_the_charts_fields_exist_in_the_doctype_and_they_use_their_report(self):
         fields = doctype_fields("Dashboard Chart")
-        for name, report in [("cash_position_history", "Cash Position"), ("cash_conversion_trend", "Cash Conversion Cycle")]:
+        for name, report in [
+            ("cash_position_history", "Cash Position"),
+            ("cash_conversion_trend", "Cash Conversion Cycle"),
+        ]:
             chart = load("dashboard_chart", name, name + ".json")
             self.assertTrue(set(chart) <= fields, set(chart) - fields)
-            self.assertEqual((chart["chart_type"], chart["report_name"]), ("Report", report))
-        self.assertEqual(load("dashboard_chart", "cash_position_history", "cash_position_history.json")["use_report_chart"], 1)
+            self.assertEqual(
+                (chart["chart_type"], chart["report_name"]), ("Report", report)
+            )
+        self.assertEqual(
+            load(
+                "dashboard_chart", "cash_position_history", "cash_position_history.json"
+            )["use_report_chart"],
+            1,
+        )
 
-    def test_the_charts_are_report_charts_without_timespan_dropdowns_and_with_empty_filters(self):
+    def test_the_charts_are_report_charts_without_timespan_dropdowns_and_with_empty_filters(
+        self,
+    ):
         # use_report_chart draws the report's own 24-month chart; timeseries 0 keeps the dashboard widget from drawing
         # timespan and interval dropdowns a Report chart ignores (their headers read "undefined"); without filters_json
         # {} the widget throws at chart_widget.js:901
@@ -204,7 +258,10 @@ class RetiredCards(unittest.TestCase):
 
     def test_the_patch_deletes_the_seven_old_names_and_no_current_card(self):
         # the old names are the cards before erp-hs4n; a current card must never be deleted by mistake
-        current = {load("number_card", name, name + ".json")["name"] for name in names("number_card")}
+        current = {
+            load("number_card", name, name + ".json")["name"]
+            for name in names("number_card")
+        }
         with mock.patch.object(frappe, "delete_doc") as delete_doc:
             number_card_names.execute()
         deleted = [c.args[1] for c in delete_doc.call_args_list]

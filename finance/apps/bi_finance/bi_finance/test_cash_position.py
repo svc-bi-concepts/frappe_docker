@@ -26,10 +26,14 @@ class MonthEnds(unittest.TestCase):
         )
 
     def test_leap_february(self):
-        self.assertEqual(cp.month_ends(D(2020, 2, 1), D(2020, 2, 29))[-1], D(2020, 2, 29))
+        self.assertEqual(
+            cp.month_ends(D(2020, 2, 1), D(2020, 2, 29))[-1], D(2020, 2, 29)
+        )
 
     def test_last_day_is_included(self):
-        self.assertEqual(cp.month_ends(D(2019, 12, 1), D(2019, 12, 31)), [D(2019, 12, 31)])
+        self.assertEqual(
+            cp.month_ends(D(2019, 12, 1), D(2019, 12, 31)), [D(2019, 12, 31)]
+        )
 
     def test_nothing_before_the_first_month_ends(self):
         self.assertEqual(cp.month_ends(D(2019, 1, 1), D(2019, 1, 30)), [])
@@ -56,7 +60,10 @@ class Build(unittest.TestCase):
             CHF_ACCOUNT: [(D(2019, 1, 15), 1000.0), (D(2019, 2, 10), -250.25)],
             USD_ACCOUNT: [(D(2019, 1, 20), 100.0), (D(2019, 3, 5), 50.0)],
         }
-        self.rates = {"CHF": [(datetime.date.min, 1.0)], "USD": [(D(2019, 1, 1), 0.9), (D(2019, 2, 1), 0.8)]}
+        self.rates = {
+            "CHF": [(datetime.date.min, 1.0)],
+            "USD": [(D(2019, 1, 1), 0.9), (D(2019, 2, 1), 0.8)],
+        }
 
     def test_balances_and_chf_at_the_as_of_date(self):
         rows, _chart, total, missing = cp.build(
@@ -65,7 +72,9 @@ class Build(unittest.TestCase):
         by_account = {row["account"]: row for row in rows}
         self.assertEqual(by_account[CHF_ACCOUNT]["balance"], 749.75)
         self.assertEqual(by_account[CHF_ACCOUNT]["balance_chf"], 749.75)
-        self.assertIsNone(by_account[CHF_ACCOUNT]["rate_date"])  # CHF is the base: no rate date
+        self.assertIsNone(
+            by_account[CHF_ACCOUNT]["rate_date"]
+        )  # CHF is the base: no rate date
         self.assertEqual(by_account[USD_ACCOUNT]["balance"], 100.0)
         self.assertEqual(by_account[USD_ACCOUNT]["rate"], 0.8)
         self.assertEqual(by_account[USD_ACCOUNT]["rate_date"], D(2019, 2, 1))
@@ -77,38 +86,56 @@ class Build(unittest.TestCase):
         rows, _chart, total, _messages = cp.build(
             self.accounts, self.movements, self.rates, D(2019, 1, 31), [D(2019, 1, 31)]
         )
-        self.assertEqual(total, round(1000.0 * 1.0 + 100.0 * 0.9, 2))  # USD rate of 2019-01-01, the 2019-02 rate is not yet in force
+        self.assertEqual(
+            total, round(1000.0 * 1.0 + 100.0 * 0.9, 2)
+        )  # USD rate of 2019-01-01, the 2019-02 rate is not yet in force
 
     def test_missing_rate_leaves_the_account_out_and_says_so(self):
         rates = {"CHF": self.rates["CHF"]}
-        rows, _chart, total, missing = cp.build(self.accounts, self.movements, rates, D(2019, 2, 28), [])
+        rows, _chart, total, missing = cp.build(
+            self.accounts, self.movements, rates, D(2019, 2, 28), []
+        )
         by_account = {row["account"]: row for row in rows}
         self.assertIsNone(by_account[USD_ACCOUNT]["balance_chf"])
-        self.assertEqual(by_account[USD_ACCOUNT]["balance"], 100.0)  # the original currency still shows
+        self.assertEqual(
+            by_account[USD_ACCOUNT]["balance"], 100.0
+        )  # the original currency still shows
         self.assertEqual(total, 749.75)
         self.assertEqual(missing, [(USD_ACCOUNT, "USD")])
 
     def test_chart_has_month_end_points_and_a_total_per_month(self):
         months = cp.month_ends(D(2019, 1, 1), D(2019, 3, 31))
-        _rows, chart, _total, _messages = cp.build(self.accounts, self.movements, self.rates, D(2019, 3, 31), months)
+        _rows, chart, _total, _messages = cp.build(
+            self.accounts, self.movements, self.rates, D(2019, 3, 31), months
+        )
         self.assertEqual(chart["data"]["labels"], ["Jan 19", "Feb 19", "Mar 19"])
         datasets = {d["name"]: d["values"] for d in chart["data"]["datasets"]}
         self.assertEqual(datasets[CHF_ACCOUNT], [1000.0, 749.75, 749.75])
-        self.assertEqual(datasets[USD_ACCOUNT], [90.0, 80.0, 120.0])  # 150 at the March rate of 0.8
+        self.assertEqual(
+            datasets[USD_ACCOUNT], [90.0, 80.0, 120.0]
+        )  # 150 at the March rate of 0.8
         self.assertEqual(datasets["Total CHF"], [1090.0, 829.75, 869.75])
 
     def test_chart_gap_for_a_month_without_a_rate(self):
         rates = {"CHF": self.rates["CHF"], "USD": [(D(2019, 2, 1), 0.8)]}
         _rows, chart, _total, _messages = cp.build(
-            self.accounts, self.movements, rates, D(2019, 2, 28), cp.month_ends(D(2019, 1, 1), D(2019, 2, 28))
+            self.accounts,
+            self.movements,
+            rates,
+            D(2019, 2, 28),
+            cp.month_ends(D(2019, 1, 1), D(2019, 2, 28)),
         )
         datasets = {d["name"]: d["values"] for d in chart["data"]["datasets"]}
         self.assertIsNone(datasets[USD_ACCOUNT][0])  # no rate on 2019-01-31
         self.assertEqual(datasets["Total CHF"][0], 1000.0)
 
-    def test_chart_shows_the_last_12_month_ends_and_the_table_the_balance_at_the_as_of_date(self):
+    def test_chart_shows_the_last_12_month_ends_and_the_table_the_balance_at_the_as_of_date(
+        self,
+    ):
         months = cp.month_ends(D(2019, 1, 1), D(2021, 6, 30))  # 30 month ends
-        rows, chart, total, _messages = cp.build(self.accounts, self.movements, self.rates, D(2021, 6, 30), months)
+        rows, chart, total, _messages = cp.build(
+            self.accounts, self.movements, self.rates, D(2021, 6, 30), months
+        )
         labels = chart["data"]["labels"]
         self.assertEqual(len(labels), cp.CHART_MONTHS)
         self.assertEqual((labels[0], labels[-1]), ("Jul 20", "Jun 21"))
@@ -116,14 +143,20 @@ class Build(unittest.TestCase):
         self.assertEqual(len(datasets["Total CHF"]), cp.CHART_MONTHS)
         # the table and the total are the balance at the as-of date, not the chart's first point
         chf_balance = round(sum(amount for _, amount in self.movements[CHF_ACCOUNT]), 2)
-        usd_balance_chf = round(sum(amount for _, amount in self.movements[USD_ACCOUNT]) * 0.8, 2)
+        usd_balance_chf = round(
+            sum(amount for _, amount in self.movements[USD_ACCOUNT]) * 0.8, 2
+        )
         self.assertEqual(total, round(chf_balance + usd_balance_chf, 2))
         self.assertEqual(rows[0]["balance"], chf_balance)
 
     def test_no_accounts_is_an_empty_table_with_a_zero_total(self):
-        rows, chart, total, missing = cp.build([], {}, {}, D(2019, 2, 28), [D(2019, 1, 31)])
+        rows, chart, total, missing = cp.build(
+            [], {}, {}, D(2019, 2, 28), [D(2019, 1, 31)]
+        )
         self.assertEqual((rows, total, missing), ([], 0.0, []))
-        self.assertEqual(chart["data"]["datasets"], [{"name": "Total CHF", "values": [0.0]}])
+        self.assertEqual(
+            chart["data"]["datasets"], [{"name": "Total CHF", "values": [0.0]}]
+        )
 
 
 if __name__ == "__main__":

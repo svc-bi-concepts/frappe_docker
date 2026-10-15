@@ -3,7 +3,7 @@
 # av runs a Blessed Script as /dev/fd/N, and the mini's Python 3.9 reads a
 # /dev/fd script from where its zip check left the shared offset: a script
 # of more than a few bytes then runs empty and exits 0 (IT, 2026-10-14).
-exec /usr/bin/python3 -I - "$@" <<'__BEXIO_LOGIN_HELPER_PY__'
+exec / usr / bin / python3 - I - "$@" << "__BEXIO_LOGIN_HELPER_PY__"
 """Tailnet login page for the bexio login: log in from the MacBook, no launcher command on the mini.
 
 The helper runs on the Mac mini as a LaunchAgent in Benchi's user session. Its first
@@ -44,13 +44,21 @@ import sys
 import time
 import urllib.parse
 
-BEXIO_DIR = os.environ.get("BEXIO_DIR") or "/Users/bsaladin/ws_yardr_finance/frappe_docker/finance/bexio"
+BEXIO_DIR = (
+    os.environ.get("BEXIO_DIR")
+    or "/Users/bsaladin/ws_yardr_finance/frappe_docker/finance/bexio"
+)
 sys.path.insert(0, BEXIO_DIR)
 
 import launcher  # noqa: E402
-oauth = launcher.load("oauth.py")  # oauth.py is a bash launcher too; its python body is what runs here
 
-DEFAULT_PORT = 8814  # loopback only; tailscale serve forwards the tailnet https port to it
+oauth = launcher.load(
+    "oauth.py"
+)  # oauth.py is a bash launcher too; its python body is what runs here
+
+DEFAULT_PORT = (
+    8814  # loopback only; tailscale serve forwards the tailnet https port to it
+)
 
 
 class _Handler(http.server.BaseHTTPRequestHandler):
@@ -78,7 +86,9 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         state = secrets.token_urlsafe(32)
         self.server.pending.clear()  # one login at a time: a new one replaces the waiting one
         self.server.pending[state] = {"verifier": verifier, "started": time.monotonic()}
-        url = oauth.authorize_url(state, oauth._challenge(verifier), self.server.redirect_uri)
+        url = oauth.authorize_url(
+            state, oauth._challenge(verifier), self.server.redirect_uri
+        )
         self.send_response(302)
         self.send_header("Location", url)
         self.send_header("Cache-Control", "no-store")
@@ -89,29 +99,39 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         # A wrong state finds nothing, so it leaves the real login waiting for its own callback.
         login = self.server.pending.pop(params.get("state", [""])[0], None)
         if login is None or time.monotonic() - login["started"] > oauth.LOGIN_TIMEOUT:
-            self._page(400, "This login has expired or was already used. Open /login again.")
+            self._page(
+                400, "This login has expired or was already used. Open /login again."
+            )
             return
         if "error" in params:
-            self._page(400, "bexio did not grant the login. Open /login again to retry.")
+            self._page(
+                400, "bexio did not grant the login. Open /login again to retry."
+            )
             return
         code = params.get("code", [""])[0]
         if not code:
             self._page(400, "bexio sent no code. Open /login again to retry.")
             return
         try:
-            body = oauth.exchange_code(code, login["verifier"], self.server.redirect_uri)
+            body = oauth.exchange_code(
+                code, login["verifier"], self.server.redirect_uri
+            )
             refresh = body.get("refresh_token")
             if not refresh:
-                raise oauth.OAuthError("bexio sent no refresh token; the login needs offline_access in its scopes")
+                raise oauth.OAuthError(
+                    "bexio sent no refresh token; the login needs offline_access in its scopes"
+                )
             oauth.save_refresh_token(refresh, oauth.REFRESH_KEY)
         except (oauth.OAuthError, oauth.VaultError, ValueError) as err:
             # The messages carry bexio's error code or av's exit status, never a token.
-            self._page(502, "login failed: {}".format(err))
+            self._page(502, f"login failed: {err}")
             return
-        self._page(200, "logged in, scopes: {}".format(body.get("scope") or oauth.SCOPE))
+        self._page(
+            200, "logged in, scopes: {}".format(body.get("scope") or oauth.SCOPE)
+        )
 
     def _page(self, status, message):
-        body = "<!doctype html><meta charset=utf-8><title>bexio login</title><p>{}</p>".format(html.escape(message)).encode("utf-8")
+        body = f"<!doctype html><meta charset=utf-8><title>bexio login</title><p>{html.escape(message)}</p>".encode()
         self.send_response(status)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
@@ -137,26 +157,46 @@ def make_server(redirect_uri, tailnet_user, port=DEFAULT_PORT):
     """The login server on 127.0.0.1:port (0 for any free port). Its callback is redirect_uri."""
     if not tailnet_user:
         # An empty owner would match a request that carries no identity header at all.
-        raise ValueError("tailnet_user must name the one tailnet login allowed to log in")
+        raise ValueError(
+            "tailnet_user must name the one tailnet login allowed to log in"
+        )
     return _Server((oauth.CALLBACK_HOST, port), redirect_uri, tailnet_user)
 
 
 def main(argv):
-    parser = argparse.ArgumentParser(description="Serve the bexio login page on 127.0.0.1 for tailscale serve.")
-    parser.add_argument("--redirect-uri", required=True,
-                        help="the tailnet callback registered at bexio, e.g. https://<mac>.<tailnet>.ts.net:<port>/callback")
-    parser.add_argument("--tailnet-user", required=True,
-                        help="the tailnet login allowed to log in, as tailscale shows it (the only identity the page accepts)")
-    parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="loopback port (default %(default)s)")
+    parser = argparse.ArgumentParser(
+        description="Serve the bexio login page on 127.0.0.1 for tailscale serve."
+    )
+    parser.add_argument(
+        "--redirect-uri",
+        required=True,
+        help="the tailnet callback registered at bexio, e.g. https://<mac>.<tailnet>.ts.net:<port>/callback",
+    )
+    parser.add_argument(
+        "--tailnet-user",
+        required=True,
+        help="the tailnet login allowed to log in, as tailscale shows it (the only identity the page accepts)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=DEFAULT_PORT,
+        help="loopback port (default %(default)s)",
+    )
     args = parser.parse_args(argv)
     oauth._client_credentials()  # stops here when the client id or secret is not injected (run it through its av launcher)
     try:
         server = make_server(args.redirect_uri, args.tailnet_user, args.port)
     except OSError as err:
         # Another process holds the port: fail here, never serve on whatever answers there.
-        sys.exit("bexio login page: cannot bind 127.0.0.1:{} ({}); another process holds it, "
-                 "stop it or pass --port".format(args.port, err.strerror or err))
-    print("bexio login page on 127.0.0.1:{}, callback {}".format(server.server_port, args.redirect_uri), flush=True)
+        sys.exit(
+            "bexio login page: cannot bind 127.0.0.1:{} ({}); another process holds it, "
+            "stop it or pass --port".format(args.port, err.strerror or err)
+        )
+    print(
+        f"bexio login page on 127.0.0.1:{server.server_port}, callback {args.redirect_uri}",
+        flush=True,
+    )
     try:
         server.serve_forever()
     except KeyboardInterrupt:

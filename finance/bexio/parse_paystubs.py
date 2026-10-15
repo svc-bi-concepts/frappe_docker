@@ -39,7 +39,12 @@ REPORT = os.path.join(PRIVATE, "payroll", "paystub-figures-report.txt")
 PDFTOTEXT = "/opt/homebrew/bin/pdftotext"
 
 CHECK_TOLERANCE = 0.05  # 5 rappen: bexio rounds every printed line to the cent
-TOTAL_TYPES = {"5000": "gross", "5900": "total deductions", "6500": "net", "6600": "paid out"}
+TOTAL_TYPES = {
+    "5000": "gross",
+    "5900": "total deductions",
+    "6500": "net",
+    "6600": "paid out",
+}
 # Lines whose absence the report lists per file: the monthly salary (1000 or 1001), and the totals.
 # 5010/5020 are on nearly every slip but a correction slip can lack them; 5040/5050/5060 apply per
 # employee only (pension plan, withholding tax), so their absence is no problem.
@@ -47,11 +52,22 @@ EXPECTED_TYPES = ("5000", "5010", "5020", "5900", "6500")
 SALARY_TYPES = ("1000", "1001")
 
 COLUMN_HEADER = re.compile(r"^(?:Lohnart|Wage type)\b.*CHF$")
-SECTION_HEADER = re.compile(r"^(?:Lohn und Zulagen|Abzüge|Sonstige Zulagen und Abzüge)\s*$")
+SECTION_HEADER = re.compile(
+    r"^(?:Lohn und Zulagen|Abzüge|Sonstige Zulagen und Abzüge)\s*$"
+)
 WAGE_LINE = re.compile(r"^(\d{4}(?:\.\d)?)\s+(\S.*?)\s{2,}(\S.*?)$")
 NUMBER = re.compile(r"-?\d[\d']*(?:\.\d+)?%?")
 
-CSV_COLUMNS = ["employee_id", "year", "month", "wage_type", "label", "base", "rate", "amount"]
+CSV_COLUMNS = [
+    "employee_id",
+    "year",
+    "month",
+    "wage_type",
+    "label",
+    "base",
+    "rate",
+    "amount",
+]
 
 
 def to_number(token):
@@ -115,7 +131,11 @@ def check_file(rows):
             gross = amount
         elif wage_type == "6500":
             net = amount
-        elif wage_type.startswith("5") and wage_type not in ("5000", "5900") and amount is not None:
+        elif (
+            wage_type.startswith("5")
+            and wage_type not in ("5000", "5900")
+            and amount is not None
+        ):
             deductions += amount
     if gross is None or net is None:
         return "not_checkable"
@@ -124,9 +144,13 @@ def check_file(rows):
 
 def pdftotext_text(pdftotext, path):
     """The -layout text of one PDF, on stdout (a scratch, never a file in a worktree)."""
-    result = subprocess.run([pdftotext, "-layout", path, "-"], capture_output=True, text=True)
+    result = subprocess.run(
+        [pdftotext, "-layout", path, "-"], capture_output=True, text=True
+    )
     if result.returncode != 0:
-        raise RuntimeError(f"pdftotext failed on {os.path.basename(path)}: {result.stderr.strip()}")
+        raise RuntimeError(
+            f"pdftotext failed on {os.path.basename(path)}: {result.stderr.strip()}"
+        )
     return result.stdout
 
 
@@ -162,21 +186,25 @@ def parse_records(records, paystubs_dir, pdftotext=PDFTOTEXT):
         result = check_file(parsed)
         if result == "fail":
             counts["check_failed"] += 1
-            problems.append("the deductions do not sum to gross minus net within 5 rappen")
+            problems.append(
+                "the deductions do not sum to gross minus net within 5 rappen"
+            )
         elif result == "not_checkable":
             problems.append("gross or net not printed: not checked")
         per_file[name] = {"types": types, "problems": problems, "check": result}
         for wage_type, label, base, rate, amount in parsed:
-            rows.append({
-                "employee_id": record["employee_id"],
-                "year": record["year"],
-                "month": record["month"],
-                "wage_type": wage_type,
-                "label": label,
-                "base": base,
-                "rate": rate,
-                "amount": amount,
-            })
+            rows.append(
+                {
+                    "employee_id": record["employee_id"],
+                    "year": record["year"],
+                    "month": record["month"],
+                    "wage_type": wage_type,
+                    "label": label,
+                    "base": base,
+                    "rate": rate,
+                    "amount": amount,
+                }
+            )
     counts["rows"] = len(rows)
     return rows, per_file, counts, per_type
 
@@ -203,18 +231,39 @@ def write_csv(path, rows):
         writer = csv.writer(f, lineterminator="\n")
         writer.writerow(CSV_COLUMNS)
         for row in rows:
-            writer.writerow([row["employee_id"], row["year"], row["month"], row["wage_type"], row["label"]]
-                            + [_csv_figure(row[column], column) for column in ("base", "rate", "amount")])
+            writer.writerow(
+                [
+                    row["employee_id"],
+                    row["year"],
+                    row["month"],
+                    row["wage_type"],
+                    row["label"],
+                ]
+                + [
+                    _csv_figure(row[column], column)
+                    for column in ("base", "rate", "amount")
+                ]
+            )
+
     _write_private(path, write)
 
 
 def write_report(path, per_file, counts, per_type):
     def write(f):
-        f.write("bexio paystub figures report: stdout carries the counts, this file the per-file facts.\n")
-        f.write(f"files: {counts['files']}  parsed: {counts['parsed']}  pdftotext empty: {counts['empty_text']}"
-                f"  rows: {counts['rows']}  checks failed: {counts['check_failed']}\n")
-        f.write("lines per wage type: "
-                + ", ".join(f"{wage_type} {per_type[wage_type]}" for wage_type in sorted(per_type)) + "\n")
+        f.write(
+            "bexio paystub figures report: stdout carries the counts, this file the per-file facts.\n"
+        )
+        f.write(
+            f"files: {counts['files']}  parsed: {counts['parsed']}  pdftotext empty: {counts['empty_text']}"
+            f"  rows: {counts['rows']}  checks failed: {counts['check_failed']}\n"
+        )
+        f.write(
+            "lines per wage type: "
+            + ", ".join(
+                f"{wage_type} {per_type[wage_type]}" for wage_type in sorted(per_type)
+            )
+            + "\n"
+        )
         flagged = [name for name, facts in per_file.items() if facts["problems"]]
         f.write(f"files without problems: {len(per_file) - len(flagged)}\n\n")
         for name in flagged:
@@ -223,13 +272,17 @@ def write_report(path, per_file, counts, per_type):
             for problem in facts["problems"]:
                 f.write(f"    {problem}\n")
             f.write(f"    check: {facts['check']}\n")
+
     _write_private(path, write)
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--check", action="store_true",
-                        help="exit 2 when a file's deductions do not sum to gross minus net within 5 rappen")
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="exit 2 when a file's deductions do not sum to gross minus net within 5 rappen",
+    )
     parser.add_argument("--paystubs-json", default=PAYSTUBS_JSON)
     parser.add_argument("--paystubs-dir", default=PAYSTUBS_DIR)
     parser.add_argument("--out", default=OUT_CSV)
@@ -239,7 +292,9 @@ def main(argv=None):
 
     with open(args.paystubs_json, encoding="utf-8") as f:
         records = json.load(f)
-    rows, per_file, counts, per_type = parse_records(records, args.paystubs_dir, args.pdftotext)
+    rows, per_file, counts, per_type = parse_records(
+        records, args.paystubs_dir, args.pdftotext
+    )
     write_csv(args.out, rows)
     write_report(args.report, per_file, counts, per_type)
 
@@ -247,8 +302,12 @@ def main(argv=None):
     print(f"parsed: {counts['parsed']}")
     print(f"pdftotext empty (scanned PDFs): {counts['empty_text']}")
     print(f"wage-type rows: {counts['rows']}")
-    print("lines per wage type: "
-          + ", ".join(f"{wage_type} {per_type[wage_type]}" for wage_type in sorted(per_type)))
+    print(
+        "lines per wage type: "
+        + ", ".join(
+            f"{wage_type} {per_type[wage_type]}" for wage_type in sorted(per_type)
+        )
+    )
     print(f"files without a monthly salary line (1000/1001): {counts['no_salary']}")
     print(f"checks failed: {counts['check_failed']}")
     print(f"csv: {args.out} (600)")

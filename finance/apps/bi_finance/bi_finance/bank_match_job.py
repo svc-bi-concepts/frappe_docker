@@ -16,20 +16,27 @@ reviews and submits. A second live run finds no certain line left and books noth
 import json
 
 import frappe
-from frappe.utils import add_days, get_first_day, getdate, nowdate
-
 from bi_finance import bank_match
 from erpnext.accounts.doctype.bank_reconciliation_tool.bank_reconciliation_tool import (
     create_bank_entry_and_reconcile,
     reconcile_vouchers,
 )
+from frappe.utils import add_days, get_first_day, getdate, nowdate
 
 # ERPNext's Rounding Loss Allowance: a balance at or below it counts as zero. Nothing to set on the revaluation (it is
 # required, not defaulted), so 0 books no rounding line; ledgerdemain may change it here.
 REVALUATION_ROUNDING_LOSS_ALLOWANCE = 0.0
 
 LINE_FIELDS = [
-    "name", "date", "deposit", "withdrawal", "description", "reference_number", "transaction_id", "end_to_end_id", "currency",
+    "name",
+    "date",
+    "deposit",
+    "withdrawal",
+    "description",
+    "reference_number",
+    "transaction_id",
+    "end_to_end_id",
+    "currency",
     "company",
 ]
 
@@ -40,7 +47,9 @@ SETTINGS = "Bank Matching Settings"
 
 def run(bank_account, dry_run=True, from_date=None, to_date=None):
     """Decide the account's unreconciled lines; book them unless dry_run. Returns {decisions, summary, booked, errors}."""
-    gl_account, company = frappe.db.get_value("Bank Account", bank_account, ["account", "company"])
+    gl_account, company = frappe.db.get_value(
+        "Bank Account", bank_account, ["account", "company"]
+    )
     currency = frappe.db.get_value("Account", gl_account, "account_currency")
 
     filters = {"bank_account": bank_account, "docstatus": 1, "status": "Unreconciled"}
@@ -50,15 +59,25 @@ def run(bank_account, dry_run=True, from_date=None, to_date=None):
         filters["date"] = [">=", from_date]
     elif to_date:
         filters["date"] = ["<=", to_date]
-    lines = frappe.get_all("Bank Transaction", filters=filters, fields=LINE_FIELDS, order_by="date asc")
+    lines = frappe.get_all(
+        "Bank Transaction", filters=filters, fields=LINE_FIELDS, order_by="date asc"
+    )
     for line in lines:
         line["currency"] = currency
         line["bank_account"] = bank_account
 
     decisions = bank_match.decide(
-        lines, _open_documents(company, currency), _open_payments(company, currency, gl_account), _rules(company)
+        lines,
+        _open_documents(company, currency),
+        _open_payments(company, currency, gl_account),
+        _rules(company),
     )
-    report = {"decisions": decisions, "summary": bank_match.summary(decisions), "booked": 0, "errors": []}
+    report = {
+        "decisions": decisions,
+        "summary": bank_match.summary(decisions),
+        "booked": 0,
+        "errors": [],
+    }
     if dry_run:
         return report
 
@@ -97,22 +116,51 @@ def match_after_import(bank_account):
     except Exception:
         frappe.log_error(title="bank_match after import")
         return {"failed": True}
-    return {"booked": report["booked"], "errors": len(report["errors"]), "summary": report["summary"]}
+    return {
+        "booked": report["booked"],
+        "errors": len(report["errors"]),
+        "summary": report["summary"],
+    }
 
 
 def _open_documents(company, currency):
     docs = []
-    for doctype, party_field, direction in (("Sales Invoice", "customer_name", "in"), ("Purchase Invoice", "supplier_name", "out")):
+    for doctype, party_field, direction in (
+        ("Sales Invoice", "customer_name", "in"),
+        ("Purchase Invoice", "supplier_name", "out"),
+    ):
         for inv in frappe.get_all(
             doctype,
-            filters={"company": company, "docstatus": 1, "outstanding_amount": [">", 0], "currency": currency},
-            fields=["name", party_field, "posting_date", "outstanding_amount", "currency"],
+            filters={
+                "company": company,
+                "docstatus": 1,
+                "outstanding_amount": [">", 0],
+                "currency": currency,
+            },
+            fields=[
+                "name",
+                party_field,
+                "posting_date",
+                "outstanding_amount",
+                "currency",
+            ],
         ):
-            docs.append({
-                "doctype": doctype, "name": inv.name, "party_name": inv.get(party_field), "direction": direction,
-                "amount": float(inv.outstanding_amount), "currency": inv.currency, "date": str(inv.posting_date),
-                "reference": bank_match.sales_invoice_reference(inv.name) if doctype == "Sales Invoice" else None,
-            })
+            docs.append(
+                {
+                    "doctype": doctype,
+                    "name": inv.name,
+                    "party_name": inv.get(party_field),
+                    "direction": direction,
+                    "amount": float(inv.outstanding_amount),
+                    "currency": inv.currency,
+                    "date": str(inv.posting_date),
+                    "reference": (
+                        bank_match.sales_invoice_reference(inv.name)
+                        if doctype == "Sales Invoice"
+                        else None
+                    ),
+                }
+            )
     return docs
 
 
@@ -121,9 +169,24 @@ def _open_payments(company, currency, gl_account):
     payments = []
     for pe in frappe.get_all(
         "Payment Entry",
-        filters={"company": company, "docstatus": 1, "unallocated_amount": [">", 0], "clearance_date": ["is", "not set"]},
-        fields=["name", "payment_type", "reference_no", "unallocated_amount", "posting_date", "party_name",
-                "paid_from", "paid_to", "paid_from_account_currency", "paid_to_account_currency"],
+        filters={
+            "company": company,
+            "docstatus": 1,
+            "unallocated_amount": [">", 0],
+            "clearance_date": ["is", "not set"],
+        },
+        fields=[
+            "name",
+            "payment_type",
+            "reference_no",
+            "unallocated_amount",
+            "posting_date",
+            "party_name",
+            "paid_from",
+            "paid_to",
+            "paid_from_account_currency",
+            "paid_to_account_currency",
+        ],
     ):
         if pe.payment_type == "Pay" and pe.paid_from == gl_account:
             direction, pe_currency = "out", pe.paid_from_account_currency
@@ -133,24 +196,43 @@ def _open_payments(company, currency, gl_account):
             continue
         if pe_currency != currency:
             continue
-        payments.append({
-            "doctype": "Payment Entry", "name": pe.name, "party_name": pe.party_name, "direction": direction,
-            "reference": bank_match.key(pe.reference_no), "amount": float(pe.unallocated_amount), "currency": pe_currency,
-            "date": str(pe.posting_date),
-        })
+        payments.append(
+            {
+                "doctype": "Payment Entry",
+                "name": pe.name,
+                "party_name": pe.party_name,
+                "direction": direction,
+                "reference": bank_match.key(pe.reference_no),
+                "amount": float(pe.unallocated_amount),
+                "currency": pe_currency,
+                "date": str(pe.posting_date),
+            }
+        )
     return payments
 
 
 def _rules(company):
     rules = []
-    for name in frappe.get_all("Bank Transaction Rule", filters={"company": company}, pluck="name"):
+    for name in frappe.get_all(
+        "Bank Transaction Rule", filters={"company": company}, pluck="name"
+    ):
         doc = frappe.get_doc("Bank Transaction Rule", name)
-        rules.append({
-            "name": doc.name, "priority": doc.priority, "company": doc.company, "transaction_type": doc.transaction_type,
-            "min_amount": doc.min_amount, "max_amount": doc.max_amount, "classify_as": doc.classify_as,
-            "bank_entry_type": doc.bank_entry_type, "account": doc.account,
-            "description_rules": [{"check": r.check, "value": r.value} for r in doc.description_rules],
-        })
+        rules.append(
+            {
+                "name": doc.name,
+                "priority": doc.priority,
+                "company": doc.company,
+                "transaction_type": doc.transaction_type,
+                "min_amount": doc.min_amount,
+                "max_amount": doc.max_amount,
+                "classify_as": doc.classify_as,
+                "bank_entry_type": doc.bank_entry_type,
+                "account": doc.account,
+                "description_rules": [
+                    {"check": r.check, "value": r.value} for r in doc.description_rules
+                ],
+            }
+        )
     return rules
 
 
@@ -169,29 +251,33 @@ def _payment_entry_for(doctype, name, line, amount, gl_account):
     """A submitted Payment Entry against one invoice or bill, dated on the line, as payment_run makes its own."""
     invoice = frappe.get_doc(doctype, name)
     receivable = doctype == "Sales Invoice"
-    entry = frappe.get_doc({
-        "doctype": "Payment Entry",
-        "payment_type": "Receive" if receivable else "Pay",
-        "company": line["company"],
-        "party_type": "Customer" if receivable else "Supplier",
-        "party": invoice.customer if receivable else invoice.supplier,
-        "posting_date": getdate(line["date"]),
-        "paid_from": invoice.debit_to if receivable else gl_account,
-        "paid_to": gl_account if receivable else invoice.credit_to,
-        "paid_amount": amount,
-        "received_amount": amount,
-        "reference_no": line["reference_number"] or invoice.name,
-        "reference_date": getdate(line["date"]),
-        "remarks": "Bank line {0}, matched by bank_match".format(line["name"]),
-        "references": [{
-            "reference_doctype": doctype,
-            "reference_name": invoice.name,
-            "due_date": invoice.due_date,
-            "total_amount": invoice.grand_total,
-            "outstanding_amount": invoice.outstanding_amount,
-            "allocated_amount": amount,
-        }],
-    })
+    entry = frappe.get_doc(
+        {
+            "doctype": "Payment Entry",
+            "payment_type": "Receive" if receivable else "Pay",
+            "company": line["company"],
+            "party_type": "Customer" if receivable else "Supplier",
+            "party": invoice.customer if receivable else invoice.supplier,
+            "posting_date": getdate(line["date"]),
+            "paid_from": invoice.debit_to if receivable else gl_account,
+            "paid_to": gl_account if receivable else invoice.credit_to,
+            "paid_amount": amount,
+            "received_amount": amount,
+            "reference_no": line["reference_number"] or invoice.name,
+            "reference_date": getdate(line["date"]),
+            "remarks": "Bank line {}, matched by bank_match".format(line["name"]),
+            "references": [
+                {
+                    "reference_doctype": doctype,
+                    "reference_name": invoice.name,
+                    "due_date": invoice.due_date,
+                    "total_amount": invoice.grand_total,
+                    "outstanding_amount": invoice.outstanding_amount,
+                    "allocated_amount": amount,
+                }
+            ],
+        }
+    )
     entry.insert()
     entry.submit()
     return entry
@@ -203,8 +289,16 @@ def _book_rule(line, rule_name, gl_account):
     deposit = float(line["deposit"] or 0) > 0
     # the bank's side and the rule's side, equal and opposite
     entries = [
-        {"account": gl_account, "debit": amount if deposit else 0, "credit": 0 if deposit else amount},
-        {"account": rule.account, "debit": 0 if deposit else amount, "credit": amount if deposit else 0},
+        {
+            "account": gl_account,
+            "debit": amount if deposit else 0,
+            "credit": 0 if deposit else amount,
+        },
+        {
+            "account": rule.account,
+            "debit": 0 if deposit else amount,
+            "credit": amount if deposit else 0,
+        },
     ]
     create_bank_entry_and_reconcile(
         line["name"],
@@ -212,12 +306,17 @@ def _book_rule(line, rule_name, gl_account):
         posting_date=getdate(line["date"]),
         cheque_no="",
         entries=entries,
-        user_remark="Bank line {0}, rule {1}".format(line["name"], rule.name),
+        user_remark="Bank line {}, rule {}".format(line["name"], rule.name),
     )
 
 
 def _reconcile(bank_transaction, doctype, name, amount):
-    reconcile_vouchers(bank_transaction, json.dumps([{"payment_doctype": doctype, "payment_name": name, "amount": amount}]))
+    reconcile_vouchers(
+        bank_transaction,
+        json.dumps(
+            [{"payment_doctype": doctype, "payment_name": name, "amount": amount}]
+        ),
+    )
 
 
 def monthly_revaluation():
@@ -231,19 +330,25 @@ def revaluation_preview(company, posting_date):
     """What revaluation_draft would book at posting_date: each account with its gain or loss. Reads only, saves nothing."""
     doc = _revaluation(company, posting_date)
     return [
-        {"account": acc.get("account"), "account_currency": acc.get("account_currency"), "gain_loss": acc.get("gain_loss")}
+        {
+            "account": acc.get("account"),
+            "account_currency": acc.get("account_currency"),
+            "gain_loss": acc.get("gain_loss"),
+        }
         for acc in doc.get_accounts_data()
         if acc.get("gain_loss")
     ]
 
 
 def _revaluation(company, posting_date):
-    return frappe.get_doc({
-        "doctype": "Exchange Rate Revaluation",
-        "company": company,
-        "posting_date": posting_date,
-        "rounding_loss_allowance": REVALUATION_ROUNDING_LOSS_ALLOWANCE,
-    })
+    return frappe.get_doc(
+        {
+            "doctype": "Exchange Rate Revaluation",
+            "company": company,
+            "posting_date": posting_date,
+            "rounding_loss_allowance": REVALUATION_ROUNDING_LOSS_ALLOWANCE,
+        }
+    )
 
 
 def revaluation_draft(company, posting_date):
@@ -256,7 +361,10 @@ def revaluation_draft(company, posting_date):
     The 31.12 revaluation must use the ESTV year-end rate (Jahresendkurs): it is entered as a Currency Exchange row
     dated 31.12 before the January run, since the Currency Exchange rows are the only rate source here.
     """
-    existing = frappe.db.get_value("Exchange Rate Revaluation", {"company": company, "posting_date": posting_date, "docstatus": ["<", 2]})
+    existing = frappe.db.get_value(
+        "Exchange Rate Revaluation",
+        {"company": company, "posting_date": posting_date, "docstatus": ["<", 2]},
+    )
     if existing:
         return existing
     doc = _revaluation(company, posting_date)

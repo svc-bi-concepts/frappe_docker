@@ -12,27 +12,47 @@ import datetime
 from decimal import Decimal
 
 import frappe
-from erpnextswiss.erpnextswiss.doctype.vat_declaration.vat_declaration import VATDeclaration as SwissVATDeclaration
+from bi_finance import __version__, estv_vat_xml, mwst_payment
+from erpnextswiss.erpnextswiss.doctype.vat_declaration.vat_declaration import (
+    VATDeclaration as SwissVATDeclaration,
+)
 from frappe import _
 from frappe.utils import getdate
-
-from bi_finance import __version__, estv_vat_xml, mwst_payment
 
 
 class VATDeclaration(SwissVATDeclaration):
     def create_transfer_file(self):
         # the flat rate method has its own form rows, which this file does not make; erpnextswiss reads anything else as effective
         if self.vat_type == "flat":
-            frappe.throw(_("The flat rate method has no XML here. Set the VAT type to effective."))
+            frappe.throw(
+                _(
+                    "The flat rate method has no XML here. Set the VAT type to effective."
+                )
+            )
         try:
-            uid = estv_vat_xml.uid_of(frappe.get_value("Company", self.company, "tax_id"))
+            uid = estv_vat_xml.uid_of(
+                frappe.get_value("Company", self.company, "tax_id")
+            )
         except ValueError:
-            frappe.throw(_("Tax ID/UID missing or invalid. Please configure for company {0}.").format(self.company))
-        figures = {ziffer: getattr(self, field) or 0 for ziffer, field in mwst_payment.FIELD_BY_ZIFFER.items()}
+            frappe.throw(
+                _(
+                    "Tax ID/UID missing or invalid. Please configure for company {0}."
+                ).format(self.company)
+            )
+        figures = {
+            ziffer: getattr(self, field) or 0
+            for ziffer, field in mwst_payment.FIELD_BY_ZIFFER.items()
+        }
         content = estv_vat_xml.declaration_xml(
-            figures, uid=uid, company=self.company, title=self.title,
-            start_date=getdate(self.start_date), end_date=getdate(self.end_date),
-            generated=datetime.datetime.now(datetime.timezone.utc), product_version=__version__)
+            figures,
+            uid=uid,
+            company=self.company,
+            title=self.title,
+            start_date=getdate(self.start_date),
+            end_date=getdate(self.end_date),
+            generated=datetime.datetime.now(datetime.timezone.utc),
+            product_version=__version__,
+        )
         return {"content": content}
 
 
@@ -46,11 +66,14 @@ def fill_payment_basis(company, period, dry_run=0):
     220, 221, 225, 230 and 235 from the sales templates (mwst_payment.py), and 289 and 299 from them and the draft's 280
     and 205, which it leaves as they are; the form would set 289 and 299 only on save in its own page (erpnextswiss's
     vat_declaration.js), so a draft written here would read 0 until Recalculate. A quarter whose 200 less the deductions
-    is off the rate bases beyond rounding is refused, so a draft the ESTV would not take is never written."""
+    is off the rate bases beyond rounding is refused, so a draft the ESTV would not take is never written.
+    """
     frappe.has_permission("VAT Declaration", "write", throw=True)
     start, end = mwst_payment.period_bounds(period)
     try:
-        fields = mwst_payment.declaration_fields(_payment_totals(company, start, end), _draft_kept(company, start, end))
+        fields = mwst_payment.declaration_fields(
+            _payment_totals(company, start, end), _draft_kept(company, start, end)
+        )
     except ValueError as err:
         frappe.throw(_("The declaration of {0} is not filled: {1}").format(period, err))
     shown = {name: str(value) for name, value in fields.items()}
@@ -60,20 +83,44 @@ def fill_payment_basis(company, period, dry_run=0):
     try:
         estv_vat_xml.uid_of(frappe.get_value("Company", company, "tax_id"))
     except ValueError:
-        frappe.throw(_("Tax ID/UID missing or invalid. Please configure for company {0}.").format(company))
+        frappe.throw(
+            _(
+                "Tax ID/UID missing or invalid. Please configure for company {0}."
+            ).format(company)
+        )
 
-    drafts = frappe.get_all("VAT Declaration", filters={"company": company, "start_date": start, "end_date": end,
-                                                        "docstatus": ["in", [0, 1]]},
-                            fields=["name", "docstatus"])
+    drafts = frappe.get_all(
+        "VAT Declaration",
+        filters={
+            "company": company,
+            "start_date": start,
+            "end_date": end,
+            "docstatus": ["in", [0, 1]],
+        },
+        fields=["name", "docstatus"],
+    )
     if any(d.docstatus == 1 for d in drafts):
-        frappe.throw(_("A submitted VAT Declaration exists for {0}; it is not changed.").format(period))
+        frappe.throw(
+            _("A submitted VAT Declaration exists for {0}; it is not changed.").format(
+                period
+            )
+        )
     if len(drafts) > 1:
-        frappe.throw(_("{0} drafts exist for {1}; keep one.").format(len(drafts), period))
+        frappe.throw(
+            _("{0} drafts exist for {1}; keep one.").format(len(drafts), period)
+        )
     if drafts:
         doc = frappe.get_doc("VAT Declaration", drafts[0].name)
     else:
         doc = frappe.new_doc("VAT Declaration")
-        doc.update({"title": "MWST {}".format(period), "company": company, "start_date": start, "end_date": end})
+        doc.update(
+            {
+                "title": f"MWST {period}",
+                "company": company,
+                "start_date": start,
+                "end_date": end,
+            }
+        )
     doc.vat_type = "effective"
     doc.update({name: float(value) for name, value in fields.items()})
     doc.save()
@@ -83,35 +130,66 @@ def fill_payment_basis(company, period, dry_run=0):
 
 def _draft_kept(company, start, end):
     """The draft's 280 and 205 (misc, non_taxable_revenue), which the fill keeps and 289 and 299 read. None without
-    exactly one draft of the period, as there is nothing to keep then (a second one stops the write)."""
-    drafts = frappe.get_all("VAT Declaration", filters={"company": company, "start_date": start, "end_date": end,
-                                                        "docstatus": ["in", [0, 1]]},
-                            fields=["misc", "non_taxable_revenue"])
+    exactly one draft of the period, as there is nothing to keep then (a second one stops the write).
+    """
+    drafts = frappe.get_all(
+        "VAT Declaration",
+        filters={
+            "company": company,
+            "start_date": start,
+            "end_date": end,
+            "docstatus": ["in", [0, 1]],
+        },
+        fields=["misc", "non_taxable_revenue"],
+    )
     if len(drafts) != 1:
         return None
-    return {"misc": Decimal(str(drafts[0].misc or 0)),
-            "non_taxable_revenue": Decimal(str(drafts[0].non_taxable_revenue or 0))}
+    return {
+        "misc": Decimal(str(drafts[0].misc or 0)),
+        "non_taxable_revenue": Decimal(str(drafts[0].non_taxable_revenue or 0)),
+    }
 
 
 def _payment_totals(company, start, end):
     """The payment basis of the period, read from frappe.db: the rows mwst_report.py reads over the REST API."""
     templates = {}
-    for doctype in ("Sales Taxes and Charges Template", "Purchase Taxes and Charges Template"):
-        for t in frappe.get_all(doctype, filters={"bexio_id": ["is", "set"]}, fields=["name", "bexio_id"]):
+    for doctype in (
+        "Sales Taxes and Charges Template",
+        "Purchase Taxes and Charges Template",
+    ):
+        for t in frappe.get_all(
+            doctype, filters={"bexio_id": ["is", "set"]}, fields=["name", "bexio_id"]
+        ):
             templates[t.name] = str(t.bexio_id)
 
     payments, invoices = [], {}
-    for p in frappe.get_all("Payment Entry", filters={"company": company, "docstatus": 1,
-                                                      "posting_date": ["between", [start, end]]},
-                            fields=["name", "posting_date"]):
-        references = [{"reference_doctype": r.reference_doctype, "reference_name": r.reference_name,
-                       "allocated_amount": r.allocated_amount}
-                      for r in frappe.get_doc("Payment Entry", p.name).references]
+    for p in frappe.get_all(
+        "Payment Entry",
+        filters={
+            "company": company,
+            "docstatus": 1,
+            "posting_date": ["between", [start, end]],
+        },
+        fields=["name", "posting_date"],
+    ):
+        references = [
+            {
+                "reference_doctype": r.reference_doctype,
+                "reference_name": r.reference_name,
+                "allocated_amount": r.allocated_amount,
+            }
+            for r in frappe.get_doc("Payment Entry", p.name).references
+        ]
         for ref in references:
             key = (ref["reference_doctype"], ref["reference_name"])
-            if ref["reference_doctype"] in mwst_payment.INVOICE_DOCTYPES and key not in invoices:
+            if (
+                ref["reference_doctype"] in mwst_payment.INVOICE_DOCTYPES
+                and key not in invoices
+            ):
                 invoices[key] = frappe.get_doc(*key).as_dict()
-        payments.append({"name": p.name, "posting_date": p.posting_date, "references": references})
+        payments.append(
+            {"name": p.name, "posting_date": p.posting_date, "references": references}
+        )
 
     sales, purchases, _unallocated = mwst_payment.payment_documents(payments, invoices)
     totals = mwst_payment.plan(sales, purchases, templates)
@@ -121,21 +199,42 @@ def _payment_totals(company, start, end):
 
 def _journal_lines(company, start, end):
     """The GL rows of the period's Journal Entries with their voucher's bexio key, as journal_totals() takes them."""
-    numbers = {a.name: a.account_number
-               for a in frappe.get_all("Account", filters={"company": company}, fields=["name", "account_number"])}
-    keys = {e.name: (e.bexio_id or None)
-            for e in frappe.get_all("Journal Entry", filters={"company": company, "docstatus": 1,
-                                                              "posting_date": ["between", [start, end]]},
-                                    fields=["name", "bexio_id"])}
+    numbers = {
+        a.name: a.account_number
+        for a in frappe.get_all(
+            "Account", filters={"company": company}, fields=["name", "account_number"]
+        )
+    }
+    keys = {
+        e.name: (e.bexio_id or None)
+        for e in frappe.get_all(
+            "Journal Entry",
+            filters={
+                "company": company,
+                "docstatus": 1,
+                "posting_date": ["between", [start, end]],
+            },
+            fields=["name", "bexio_id"],
+        )
+    }
     lines = []
-    for e in frappe.get_all("GL Entry", filters={"company": company, "voucher_type": "Journal Entry",
-                                                 "is_cancelled": 0, "posting_date": ["between", [start, end]]},
-                            fields=["voucher_no", "posting_date", "account", "debit", "credit"]):
-        lines.append({
-            "voucher": e.voucher_no,
-            "posting_date": e.posting_date,
-            "account": numbers.get(e.account),
-            "amount": Decimal(str(e.debit)) - Decimal(str(e.credit)),
-            "key": keys.get(e.voucher_no),
-        })
+    for e in frappe.get_all(
+        "GL Entry",
+        filters={
+            "company": company,
+            "voucher_type": "Journal Entry",
+            "is_cancelled": 0,
+            "posting_date": ["between", [start, end]],
+        },
+        fields=["voucher_no", "posting_date", "account", "debit", "credit"],
+    ):
+        lines.append(
+            {
+                "voucher": e.voucher_no,
+                "posting_date": e.posting_date,
+                "account": numbers.get(e.account),
+                "amount": Decimal(str(e.debit)) - Decimal(str(e.credit)),
+                "key": keys.get(e.voucher_no),
+            }
+        )
     return lines

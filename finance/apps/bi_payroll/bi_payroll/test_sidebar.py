@@ -49,7 +49,9 @@ def own_names(folder):
     home = os.path.join(MODULE, folder)
     if not os.path.isdir(home):
         return set()
-    return {name for name in os.listdir(home) if os.path.isdir(os.path.join(home, name))}
+    return {
+        name for name in os.listdir(home) if os.path.isdir(os.path.join(home, name))
+    }
 
 
 class Sidebar(unittest.TestCase):
@@ -67,25 +69,40 @@ class Sidebar(unittest.TestCase):
 
     def test_home_is_the_hrms_payroll_workspace(self):
         home = self.doc["items"][0]
-        self.assertEqual((home["type"], home["link_type"], home["link_to"], home["label"]),
-                         ("Link", "Workspace", "Payroll", "Home"))
+        self.assertEqual(
+            (home["type"], home["link_type"], home["link_to"], home["label"]),
+            ("Link", "Workspace", "Payroll", "Home"),
+        )
         self.assertEqual(home["icon"], "house")
         self.assertEqual(home["indent"], 0)
         self.assertFalse(home.get("is_default_module"))
         # the workspace is hrms's: this app ships none
         self.assertNotIn("payroll", own_names("workspace"))
 
-    def test_the_daily_documents_sit_at_the_top_level_with_icons_and_stay_unclaimed(self):
-        top = [item for item in self.links if item["indent"] == 0 and item["link_type"] == "DocType"
-               and item["label"] in ("Payroll Entry", "Salary Slip")]
-        self.assertEqual([item["label"] for item in top], ["Payroll Entry", "Salary Slip"])
+    def test_the_daily_documents_sit_at_the_top_level_with_icons_and_stay_unclaimed(
+        self,
+    ):
+        top = [
+            item
+            for item in self.links
+            if item["indent"] == 0
+            and item["link_type"] == "DocType"
+            and item["label"] in ("Payroll Entry", "Salary Slip")
+        ]
+        self.assertEqual(
+            [item["label"] for item in top], ["Payroll Entry", "Salary Slip"]
+        )
         for item in top:
             self.assertTrue(item.get("icon"), item["label"])
             self.assertFalse(item.get("is_default_module"), item["label"])
 
     def test_the_sections_are_reports_then_setup_and_open_or_close_as_asked(self):
-        sections = [item for item in self.doc["items"] if item["type"] == "Section Break"]
-        self.assertEqual([item["label"] for item in sections], [name for name, _ in SECTIONS])
+        sections = [
+            item for item in self.doc["items"] if item["type"] == "Section Break"
+        ]
+        self.assertEqual(
+            [item["label"] for item in sections], [name for name, _ in SECTIONS]
+        )
         for item, (name, closed) in zip(sections, SECTIONS):
             self.assertEqual(item["indent"], 1, name)
             self.assertEqual(item["keep_closed"], closed, name)
@@ -95,12 +112,24 @@ class Sidebar(unittest.TestCase):
         reports = order.index(("Reports", "Section Break"))
         year_end = order.index(("Year end", "Section Break"))
         setup = order.index(("Setup", "Section Break"))
-        self.assertEqual([label for label, kind in order[reports + 1:year_end] if kind == "Link"],
-                         ["Payroll Hand-over", "Salary Register"])
-        self.assertEqual([label for label, kind in order[year_end + 1:setup] if kind == "Link"],
-                         ["Salary Certificate"])
-        self.assertEqual([label for label, kind in order[setup + 1:] if kind == "Link"],
-                         ["Payroll Swiss Settings", "QST Tariff Code", "QST Tariff", "Salary Structure", "Salary Component"])
+        self.assertEqual(
+            [label for label, kind in order[reports + 1 : year_end] if kind == "Link"],
+            ["Payroll Hand-over", "Salary Register"],
+        )
+        self.assertEqual(
+            [label for label, kind in order[year_end + 1 : setup] if kind == "Link"],
+            ["Salary Certificate"],
+        )
+        self.assertEqual(
+            [label for label, kind in order[setup + 1 :] if kind == "Link"],
+            [
+                "Payroll Swiss Settings",
+                "QST Tariff Code",
+                "QST Tariff",
+                "Salary Structure",
+                "Salary Component",
+            ],
+        )
 
     def test_the_salary_certificate_is_claimed_under_year_end(self):
         by_label = {link["label"]: link for link in self.links}
@@ -110,7 +139,9 @@ class Sidebar(unittest.TestCase):
             self.assertEqual(by_label[label]["indent"], 0)
             self.assertTrue(by_label[label].get("is_default_module"), label)
 
-    def test_every_doctype_and_report_row_names_something_that_ships_or_is_hrms_or_erpnextswiss(self):
+    def test_every_doctype_and_report_row_names_something_that_ships_or_is_hrms_or_erpnextswiss(
+        self,
+    ):
         own = own_names("doctype") | own_names("report")
         for link in self.links:
             if link["link_type"] not in ("DocType", "Report"):
@@ -119,12 +150,16 @@ class Sidebar(unittest.TestCase):
                 self.assertEqual(HRMS[link["label"]], link["link_type"], link["label"])
                 self.assertNotIn(scrub(link["link_to"]), own, link["label"])
             elif link["label"] in ERPNEXTSWISS:
-                self.assertEqual(ERPNEXTSWISS[link["label"]], link["link_type"], link["label"])
+                self.assertEqual(
+                    ERPNEXTSWISS[link["label"]], link["link_type"], link["label"]
+                )
                 self.assertNotIn(scrub(link["link_to"]), own, link["label"])
             else:
                 self.assertIn(scrub(link["link_to"]), own, link["label"])
 
-    def test_ownership_is_claimed_only_on_the_app_s_own_rows_and_the_erpnextswiss_document(self):
+    def test_ownership_is_claimed_only_on_the_app_s_own_rows_and_the_erpnextswiss_document(
+        self,
+    ):
         own = own_names("doctype") | own_names("report")
         for link in self.links:
             claimed = bool(link.get("is_default_module"))
@@ -154,7 +189,10 @@ class Dock(unittest.TestCase):
 
     def test_the_dock_rail_opens_the_module_sidebar_that_ships(self):
         items = self.dock["items"]
-        self.assertEqual([(item["link_type"], item["link_to"]) for item in items], [("Sidebar", "Swiss Payroll")])
+        self.assertEqual(
+            [(item["link_type"], item["link_to"]) for item in items],
+            [("Sidebar", "Swiss Payroll")],
+        )
         self.assertEqual(items[0]["title"], "Swiss Payroll")
         self.assertEqual(self.doc["name"], items[0]["link_to"])
 

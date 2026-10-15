@@ -109,7 +109,11 @@ def weighted_days(payments):
     total = sum(amount for _, _, amount in payments)
     if total <= 0:
         return None
-    return round(sum(amount * (paid - invoiced).days for paid, invoiced, amount in payments) / total, 1)
+    return round(
+        sum(amount * (paid - invoiced).days for paid, invoiced, amount in payments)
+        / total,
+        1,
+    )
 
 
 def paid_by_month(payments, first, count):
@@ -184,8 +188,15 @@ def build(months, flows, balances, customers, suppliers):
         rows.append(row)
 
     for i, row in enumerate(rows):
-        row.update(dso_12=None, dpo_12=None, dio_12=None, ccc_12=None, ccc_12_change=None,
-                   paid_days_customers_12=None, paid_days_suppliers_12=None)
+        row.update(
+            dso_12=None,
+            dpo_12=None,
+            dio_12=None,
+            ccc_12=None,
+            ccc_12_change=None,
+            paid_days_customers_12=None,
+            paid_days_suppliers_12=None,
+        )
         if i < ROLLING - 1:
             continue
         window = range(i - ROLLING + 1, i + 1)
@@ -197,12 +208,22 @@ def build(months, flows, balances, customers, suppliers):
         row["dpo_12"] = ratio(row["payables"], purchases, window_days)
         row["dio_12"] = dio_days(row["inventory"], cogs, window_days)
         row["ccc_12"] = cash_conversion(row["dso_12"], row["dio_12"], row["dpo_12"])
-        row["paid_days_customers_12"] = weighted_days([p for j in window for p in paid_customers[j]])
-        row["paid_days_suppliers_12"] = weighted_days([p for j in window for p in paid_suppliers[j]])
+        row["paid_days_customers_12"] = weighted_days(
+            [p for j in window for p in paid_customers[j]]
+        )
+        row["paid_days_suppliers_12"] = weighted_days(
+            [p for j in window for p in paid_suppliers[j]]
+        )
     for i, row in enumerate(rows):
         # The change is against the rolling value twelve months back, so it starts 24 months in.
-        if i >= 2 * ROLLING - 1 and row["ccc_12"] is not None and rows[i - ROLLING]["ccc_12"] is not None:
+        if (
+            i >= 2 * ROLLING - 1
+            and row["ccc_12"] is not None
+            and rows[i - ROLLING]["ccc_12"] is not None
+        ):
             row["ccc_12_change"] = round(row["ccc_12"] - rows[i - ROLLING]["ccc_12"], 1)
 
-    first = next((i for i, row in enumerate(rows) if any(row[k] for k in MOVED)), len(rows))
+    first = next(
+        (i for i, row in enumerate(rows) if any(row[k] for k in MOVED)), len(rows)
+    )
     return list(reversed(rows[first:]))

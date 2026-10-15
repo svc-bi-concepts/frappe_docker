@@ -3,7 +3,7 @@
 # av runs a Blessed Script as /dev/fd/N, and the mini's Python 3.9 reads a
 # /dev/fd script from where its zip check left the shared offset: a script
 # of more than a few bytes then runs empty and exits 0 (IT, 2026-10-14).
-exec /usr/bin/python3 -I - "$@" <<'__BEXIO_INVENTORY_PY__'
+exec / usr / bin / python3 - I - "$@" << "__BEXIO_INVENTORY_PY__"
 """Read-only inventory of a bexio account, written as Markdown.
 
 For each entity it records the record count, the date range, the counts of
@@ -34,7 +34,10 @@ import os
 import re
 import sys
 
-BEXIO_DIR = os.environ.get("BEXIO_DIR") or "/Users/bsaladin/ws_yardr_finance/frappe_docker/finance/bexio"
+BEXIO_DIR = (
+    os.environ.get("BEXIO_DIR")
+    or "/Users/bsaladin/ws_yardr_finance/frappe_docker/finance/bexio"
+)
 sys.path.insert(0, BEXIO_DIR)
 
 from client import BexioError, Client  # noqa: E402
@@ -60,57 +63,186 @@ def pages(path, size_param, rows_key=None):
 # a tuple (the range covers all of them). `safe` lists string fields that are
 # business data and may show in the masked sample; every other string is masked.
 ENTITIES = [
-    {"section": "Contacts", "label": "contacts", "endpoints": [offset("/2.0/contact")],
-     "date_key": "updated_at", "group_by": "contact_type_id", "safe": ["contact_type_id"]},
-    {"section": "Contacts", "label": "contact groups", "endpoints": [offset("/2.0/contact_group")],
-     "safe": ["name"]},
-    {"section": "Contacts", "label": "contact sectors",
-     "endpoints": [offset("/2.0/contact_sector"), offset("/2.0/contact_sectors"), offset("/3.0/contact_sectors")],
-     "safe": ["name"]},
-    {"section": "Contacts", "label": "contact relations", "endpoints": [offset("/2.0/contact_relation")],
-     "date_key": "updated_at"},
-    {"section": "Articles", "label": "articles", "endpoints": [offset("/2.0/article")],
-     "date_key": "updated_at", "safe": ["intern_code", "intern_name", "unit_id", "article_type_id"]},
-    {"section": "Chart of accounts", "label": "accounts (chart of accounts)", "endpoints": [offset("/2.0/accounts")],
-     "group_by": "account_type", "safe": ["name", "account_no", "account_type"]},
-    {"section": "Chart of accounts", "label": "account groups", "endpoints": [offset("/2.0/account_groups")],
-     "safe": ["name", "account_no"]},
-    {"section": "Taxes", "label": "taxes (all VAT codes, incl. historic rates)", "endpoints": [offset("/3.0/taxes")],
-     "date_key": ("start_year", "end_year"), "group_by": "type", "safe": ["name", "code", "display_name", "type"]},
-    {"section": "Currencies", "label": "currencies", "endpoints": [offset("/3.0/currencies")], "safe": ["name", "id"]},
-    {"section": "Fiscal years", "label": "business years", "endpoints": [offset("/3.0/accounting/business_years")],
-     "date_key": ("start", "end"), "group_by": "status", "safe": ["status"]},
-    {"section": "Journal", "label": "manual entries", "endpoints": [offset("/3.0/accounting/manual_entries")],
-     "date_key": "date", "group_by": "type", "safe": ["type", "booking_type"]},
-    {"section": "Journal", "label": "journal lines", "endpoints": [offset("/3.0/accounting/journal")],
-     "date_key": "date"},
-    {"section": "Sales", "label": "invoices (kb_invoice)", "endpoints": [offset("/2.0/kb_invoice")],
-     "date_key": "is_valid_from", "group_by": "kb_item_status_id", "safe": ["document_nr", "kb_item_status_id"]},
-    {"section": "Sales", "label": "credit notes", "endpoints": [
-        offset("/2.0/kb_credit_voucher"), pages("/4.0/sales/credit-notes", "page_size"),
-        pages("/4.0/sales/credit_notes", "page_size")],
-     "safe": ["document_nr"]},
-    {"section": "Sales", "label": "orders (kb_order)", "endpoints": [offset("/2.0/kb_order")],
-     "date_key": "is_valid_from", "group_by": "kb_item_status_id", "safe": ["document_nr", "kb_item_status_id"]},
-    {"section": "Sales", "label": "offers (kb_offer)", "endpoints": [offset("/2.0/kb_offer")],
-     "date_key": "is_valid_from", "group_by": "kb_item_status_id", "safe": ["document_nr", "kb_item_status_id"]},
-    {"section": "Purchase", "label": "bills (purchase)", "endpoints": [pages("/4.0/purchase/bills", "page_size", "data")],
-     "date_key": "bill_date", "group_by": "status", "safe": ["document_no", "status", "reference_type"]},
-    {"section": "Purchase", "label": "expenses", "endpoints": [pages("/4.0/expenses", "page_size", "data")],
-     "date_key": "paid_on", "group_by": "status", "safe": ["document_no", "status"]},
-    {"section": "Payments", "label": "payments (incoming and outgoing)",
-     "endpoints": [pages("/4.0/banking/payments", "per-page", "results")],
-     "date_key": "execution_date", "group_by": "type", "safe": ["type", "status", "currency", "document_no"]},
-    {"section": "Banking", "label": "bank accounts", "endpoints": [offset("/3.0/banking/accounts")],
-     "group_by": "type", "safe": ["type", "currency_id", "name"]},
-    {"section": "Banking", "label": "banking transactions", "endpoints": [offset("/3.0/banking/transactions")],
-     "date_key": "book_date", "group_by": "type", "safe": ["type", "status", "currency_id"]},
-    {"section": "Projects", "label": "projects", "endpoints": [offset("/3.0/projects"), offset("/2.0/pr_project")],
-     "safe": ["status"]},
-    {"section": "Projects", "label": "timesheets", "endpoints": [offset("/2.0/timesheet")], "safe": []},
-    {"section": "Files", "label": "files and attachments", "endpoints": [offset("/3.0/files")],
-     "date_key": "created_at", "group_by": "processing_status", "sum_key": "size_in_bytes",
-     "safe": ["extension", "mime_type", "processing_status", "source_type"]},
+    {
+        "section": "Contacts",
+        "label": "contacts",
+        "endpoints": [offset("/2.0/contact")],
+        "date_key": "updated_at",
+        "group_by": "contact_type_id",
+        "safe": ["contact_type_id"],
+    },
+    {
+        "section": "Contacts",
+        "label": "contact groups",
+        "endpoints": [offset("/2.0/contact_group")],
+        "safe": ["name"],
+    },
+    {
+        "section": "Contacts",
+        "label": "contact sectors",
+        "endpoints": [
+            offset("/2.0/contact_sector"),
+            offset("/2.0/contact_sectors"),
+            offset("/3.0/contact_sectors"),
+        ],
+        "safe": ["name"],
+    },
+    {
+        "section": "Contacts",
+        "label": "contact relations",
+        "endpoints": [offset("/2.0/contact_relation")],
+        "date_key": "updated_at",
+    },
+    {
+        "section": "Articles",
+        "label": "articles",
+        "endpoints": [offset("/2.0/article")],
+        "date_key": "updated_at",
+        "safe": ["intern_code", "intern_name", "unit_id", "article_type_id"],
+    },
+    {
+        "section": "Chart of accounts",
+        "label": "accounts (chart of accounts)",
+        "endpoints": [offset("/2.0/accounts")],
+        "group_by": "account_type",
+        "safe": ["name", "account_no", "account_type"],
+    },
+    {
+        "section": "Chart of accounts",
+        "label": "account groups",
+        "endpoints": [offset("/2.0/account_groups")],
+        "safe": ["name", "account_no"],
+    },
+    {
+        "section": "Taxes",
+        "label": "taxes (all VAT codes, incl. historic rates)",
+        "endpoints": [offset("/3.0/taxes")],
+        "date_key": ("start_year", "end_year"),
+        "group_by": "type",
+        "safe": ["name", "code", "display_name", "type"],
+    },
+    {
+        "section": "Currencies",
+        "label": "currencies",
+        "endpoints": [offset("/3.0/currencies")],
+        "safe": ["name", "id"],
+    },
+    {
+        "section": "Fiscal years",
+        "label": "business years",
+        "endpoints": [offset("/3.0/accounting/business_years")],
+        "date_key": ("start", "end"),
+        "group_by": "status",
+        "safe": ["status"],
+    },
+    {
+        "section": "Journal",
+        "label": "manual entries",
+        "endpoints": [offset("/3.0/accounting/manual_entries")],
+        "date_key": "date",
+        "group_by": "type",
+        "safe": ["type", "booking_type"],
+    },
+    {
+        "section": "Journal",
+        "label": "journal lines",
+        "endpoints": [offset("/3.0/accounting/journal")],
+        "date_key": "date",
+    },
+    {
+        "section": "Sales",
+        "label": "invoices (kb_invoice)",
+        "endpoints": [offset("/2.0/kb_invoice")],
+        "date_key": "is_valid_from",
+        "group_by": "kb_item_status_id",
+        "safe": ["document_nr", "kb_item_status_id"],
+    },
+    {
+        "section": "Sales",
+        "label": "credit notes",
+        "endpoints": [
+            offset("/2.0/kb_credit_voucher"),
+            pages("/4.0/sales/credit-notes", "page_size"),
+            pages("/4.0/sales/credit_notes", "page_size"),
+        ],
+        "safe": ["document_nr"],
+    },
+    {
+        "section": "Sales",
+        "label": "orders (kb_order)",
+        "endpoints": [offset("/2.0/kb_order")],
+        "date_key": "is_valid_from",
+        "group_by": "kb_item_status_id",
+        "safe": ["document_nr", "kb_item_status_id"],
+    },
+    {
+        "section": "Sales",
+        "label": "offers (kb_offer)",
+        "endpoints": [offset("/2.0/kb_offer")],
+        "date_key": "is_valid_from",
+        "group_by": "kb_item_status_id",
+        "safe": ["document_nr", "kb_item_status_id"],
+    },
+    {
+        "section": "Purchase",
+        "label": "bills (purchase)",
+        "endpoints": [pages("/4.0/purchase/bills", "page_size", "data")],
+        "date_key": "bill_date",
+        "group_by": "status",
+        "safe": ["document_no", "status", "reference_type"],
+    },
+    {
+        "section": "Purchase",
+        "label": "expenses",
+        "endpoints": [pages("/4.0/expenses", "page_size", "data")],
+        "date_key": "paid_on",
+        "group_by": "status",
+        "safe": ["document_no", "status"],
+    },
+    {
+        "section": "Payments",
+        "label": "payments (incoming and outgoing)",
+        "endpoints": [pages("/4.0/banking/payments", "per-page", "results")],
+        "date_key": "execution_date",
+        "group_by": "type",
+        "safe": ["type", "status", "currency", "document_no"],
+    },
+    {
+        "section": "Banking",
+        "label": "bank accounts",
+        "endpoints": [offset("/3.0/banking/accounts")],
+        "group_by": "type",
+        "safe": ["type", "currency_id", "name"],
+    },
+    {
+        "section": "Banking",
+        "label": "banking transactions",
+        "endpoints": [offset("/3.0/banking/transactions")],
+        "date_key": "book_date",
+        "group_by": "type",
+        "safe": ["type", "status", "currency_id"],
+    },
+    {
+        "section": "Projects",
+        "label": "projects",
+        "endpoints": [offset("/3.0/projects"), offset("/2.0/pr_project")],
+        "safe": ["status"],
+    },
+    {
+        "section": "Projects",
+        "label": "timesheets",
+        "endpoints": [offset("/2.0/timesheet")],
+        "safe": [],
+    },
+    {
+        "section": "Files",
+        "label": "files and attachments",
+        "endpoints": [offset("/3.0/files")],
+        "date_key": "created_at",
+        "group_by": "processing_status",
+        "sum_key": "size_in_bytes",
+        "safe": ["extension", "mime_type", "processing_status", "source_type"],
+    },
 ]
 
 
@@ -122,7 +254,11 @@ def fetch(client, spec):
             if kind == "offset":
                 rows = list(client.paginate(path, extra))
             else:
-                rows = list(client.paginate_pages(path, extra["size_param"], extra.get("rows_key")))
+                rows = list(
+                    client.paginate_pages(
+                        path, extra["size_param"], extra.get("rows_key")
+                    )
+                )
             return rows, path
         except BexioError as err:
             last = err
@@ -152,11 +288,15 @@ def mask(value, key, safe):
     if isinstance(value, list):
         return [mask(v, key, safe) for v in value]
     if isinstance(value, str):
-        if value == "" or DATE_RE.match(value) or ("currency" in (key or "") and CURRENCY_RE.match(value)):
+        if (
+            value == ""
+            or DATE_RE.match(value)
+            or ("currency" in (key or "") and CURRENCY_RE.match(value))
+        ):
             return value
         if key in safe or key in ("uuid", "url"):
             return value if key != "url" else "<url>"
-        return "<masked len={}>".format(len(value))
+        return f"<masked len={len(value)}>"
     return value
 
 
@@ -176,10 +316,22 @@ def section_entity(client, spec, out):
     try:
         rows, path = fetch(client, spec)
     except BexioError as err:
-        status = {403: "no access (token scope)", 404: "not found on any probed path"}.get(
-            err.status, "error HTTP {}".format(err.status))
-        out.append({"section": spec["section"], "label": spec["label"], "status": status,
-                    "count": "-", "range": "-", "groups": "-", "path": "-", "sample": None})
+        status = {
+            403: "no access (token scope)",
+            404: "not found on any probed path",
+        }.get(err.status, f"error HTTP {err.status}")
+        out.append(
+            {
+                "section": spec["section"],
+                "label": spec["label"],
+                "status": status,
+                "count": "-",
+                "range": "-",
+                "groups": "-",
+                "path": "-",
+                "sample": None,
+            }
+        )
         return
     dates = date_range(rows, spec["date_key"]) if spec.get("date_key") else None
     groups = None
@@ -188,39 +340,79 @@ def section_entity(client, spec, out):
         for row in rows:
             key = row.get(spec["group_by"])
             counts[key] = counts.get(key, 0) + 1
-        groups = ", ".join("{}: {}".format(k, v) for k, v in sorted(counts.items(), key=lambda kv: str(kv[0])))
+        groups = ", ".join(
+            f"{k}: {v}" for k, v in sorted(counts.items(), key=lambda kv: str(kv[0]))
+        )
     count = str(len(rows))
     if spec.get("sum_key"):
         total = sum(row.get(spec["sum_key"]) or 0 for row in rows)
-        count += " ({:.1f} MB)".format(total / 1048576.0)
-    out.append({"section": spec["section"], "label": spec["label"], "status": "ok", "count": count,
-                "range": "{} to {}".format(*dates) if dates else "-", "groups": groups or "-",
-                "path": path, "sample": sample_of(rows, spec)})
+        count += f" ({total / 1048576.0:.1f} MB)"
+    out.append(
+        {
+            "section": spec["section"],
+            "label": spec["label"],
+            "status": "ok",
+            "count": count,
+            "range": "{} to {}".format(*dates) if dates else "-",
+            "groups": groups or "-",
+            "path": path,
+            "sample": sample_of(rows, spec),
+        }
+    )
 
 
 def chart_of_accounts(client):
     rows = list(client.paginate("/2.0/accounts"))
     rows.sort(key=lambda r: str(r.get("account_no")))
-    lines = ["| account_no | name | account_type | tax_id | active |", "|---|---|---|---|---|"]
+    lines = [
+        "| account_no | name | account_type | tax_id | active |",
+        "|---|---|---|---|---|",
+    ]
     for r in rows:
-        lines.append("| {} | {} | {} | {} | {} |".format(
-            md_value(r.get("account_no")), md_value(r.get("name")), md_value(r.get("account_type")),
-            md_value(r.get("tax_id")), md_value(r.get("is_active"))))
+        lines.append(
+            "| {} | {} | {} | {} | {} |".format(
+                md_value(r.get("account_no")),
+                md_value(r.get("name")),
+                md_value(r.get("account_type")),
+                md_value(r.get("tax_id")),
+                md_value(r.get("is_active")),
+            )
+        )
     return lines, len(rows)
 
 
 def vat_codes(client):
     rows = list(client.paginate("/3.0/taxes"))
     rows.sort(key=lambda r: (str(r.get("type")), str(r.get("code"))))
-    lines = ["| id | code | name | value | net_tax_value | type | start | end | active | account_id |",
-             "|---|---|---|---|---|---|---|---|---|---|"]
+    lines = [
+        "| id | code | name | value | net_tax_value | type | start | end | active | account_id |",
+        "|---|---|---|---|---|---|---|---|---|---|",
+    ]
     for r in rows:
-        start = "{}-{:02d}".format(r.get("start_year"), r.get("start_month") or 1) if r.get("start_year") else "-"
-        end = "{}-{:02d}".format(r.get("end_year"), r.get("end_month") or 12) if r.get("end_year") else "-"
-        lines.append("| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |".format(
-            md_value(r.get("id")), md_value(r.get("code")), md_value(r.get("name")), md_value(r.get("value")),
-            md_value(r.get("net_tax_value")), md_value(r.get("type")), start, end,
-            md_value(r.get("is_active")), md_value(r.get("account_id"))))
+        start = (
+            "{}-{:02d}".format(r.get("start_year"), r.get("start_month") or 1)
+            if r.get("start_year")
+            else "-"
+        )
+        end = (
+            "{}-{:02d}".format(r.get("end_year"), r.get("end_month") or 12)
+            if r.get("end_year")
+            else "-"
+        )
+        lines.append(
+            "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |".format(
+                md_value(r.get("id")),
+                md_value(r.get("code")),
+                md_value(r.get("name")),
+                md_value(r.get("value")),
+                md_value(r.get("net_tax_value")),
+                md_value(r.get("type")),
+                start,
+                end,
+                md_value(r.get("is_active")),
+                md_value(r.get("account_id")),
+            )
+        )
     return lines, len(rows)
 
 
@@ -231,15 +423,26 @@ def print_report():
     for spec in ENTITIES:
         section_entity(client, spec, results)
 
-    print("# bexio inventory (read-only), run {}".format(today))
+    print(f"# bexio inventory (read-only), run {today}")
     print()
-    print("| section | entity | status | count | date range | groups | endpoint | sample (masked) |")
+    print(
+        "| section | entity | status | count | date range | groups | endpoint | sample (masked) |"
+    )
     print("|---|---|---|---|---|---|---|---|")
     for r in results:
         sample = "yes" if r["sample"] else "-"
-        print("| {} | {} | {} | {} | {} | {} | {} | {} |".format(
-            r["section"], r["label"], r["status"], r["count"], r["range"], md_value(r["groups"]),
-            r["path"], sample))
+        print(
+            "| {} | {} | {} | {} | {} | {} | {} | {} |".format(
+                r["section"],
+                r["label"],
+                r["status"],
+                r["count"],
+                r["range"],
+                md_value(r["groups"]),
+                r["path"],
+                sample,
+            )
+        )
     print()
     print("## Masked samples")
     for r in results:
@@ -252,16 +455,16 @@ def print_report():
 
     lines, n = chart_of_accounts(client)
     print()
-    print("## Chart of accounts ({} accounts)".format(n))
+    print(f"## Chart of accounts ({n} accounts)")
     print("\n".join(lines))
 
     lines, n = vat_codes(client)
     print()
-    print("## VAT codes ({} rows, incl. historic)".format(n))
+    print(f"## VAT codes ({n} rows, incl. historic)")
     print("\n".join(lines))
 
     print()
-    print("Requests issued: {}".format(client.requests))
+    print(f"Requests issued: {client.requests}")
 
 
 def main():
@@ -274,7 +477,7 @@ def main():
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:
         f.write(report.getvalue())
-    print("inventory written to {}".format(path), file=sys.stderr)
+    print(f"inventory written to {path}", file=sys.stderr)
 
 
 if __name__ == "__main__":

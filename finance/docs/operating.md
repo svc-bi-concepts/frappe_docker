@@ -17,7 +17,7 @@ document that explains the step is in brackets. Conventions for labels and butto
    After each Wise sync and camt import the matching job reconciles the lines it is certain of (the
    creditor reference of an open Sales Invoice, a payment run's EndToEndId, one open invoice or bill of
    the named party within 5 days, a Bank Transaction Rule) and leaves the rest here. It runs only when
-   **Bank Matching Settings** has *enabled* on; rule bookings need *rules_enabled* too (both start off).
+   **Bank Matching Settings** has _enabled_ on; rule bookings need _rules_enabled_ too (both start off).
    A payment run of several invoices to one supplier writes their numbers joined into one EndToEndId, so
    that line is not matched by it and stays for the Bank Reconciliation Tool. The month-end Exchange Rate
    Revaluation arrives as a draft on the 1st (only when an account has a gain or loss): review and submit
@@ -106,6 +106,7 @@ Abschlussbuchungen, when bexio's business year is closed:**
 
    (`--year 2026` keeps the payroll export on 2026 when the closing export is run in 2027; the run needs both
    logins, the read-only one and the export one — see `finance/bexio/README.md`).
+
 2. Take a backup with the files, the way `finance/docs/archiving.md` says:
    `docker compose -p frappe-finance exec -T backend bench --site frontend backup --with-files`. The
    timestamp prefix of the new set in `sites/frontend/private/backups` is the `BACKUP_ID`.
@@ -160,9 +161,10 @@ mode denies a builder's docker writes. Notes give counts and totals only, never 
        sh finance/scripts/update-check.sh --minor
 
    `update`: go on with step 3 for that app. `current`: nothing for that app this month. `minor: ask
-   ledgerdemain`: a minor move, not this procedure; it is a decision bead. erpnextswiss: a newer commit on v16 is
+ledgerdemain`: a minor move, not this procedure; it is a decision bead. erpnextswiss: a newer commit on v16 is
    only reported; moving its pin is ledgerdemain's call, after its patches are checked against the new commit
    (`finance/docs/erpnextswiss-patches.md`). If no app says `update`, the month ends here.
+
 3. **Bump** (builder). `FRAPPE_TAG` in `build-image.sh` and the erpnext and hrms `branch` in both app lists go to the
    newest patch tag `v16.<minor>.<patch>`. The image tag is `v16.<minor>.<patch>-swiss-bi<N>`, N one above the live
    one in `finance-local.yml`.
@@ -190,6 +192,7 @@ mode denies a builder's docker writes. Notes give counts and totals only, never 
    It sets the tag in `finance-local.yml`, brings the stack up, restarts `frontend` and `websocket`, and waits for
    ping 200. On 200 it removes the previous image and the new image's `-base` layer. On no ping it rolls back by
    itself and keeps the previous image. It does not migrate: step 9 does.
+
 9. **Migrate** (yardmaster; the bi_finance `after_migrate` hook runs with it):
 
        docker compose -p frappe-finance exec -T backend bench --site frontend migrate
@@ -208,6 +211,7 @@ mode denies a builder's docker writes. Notes give counts and totals only, never 
     - the Treasury workspace and ERPNext › Swiss Payroll open in the Desk.
 
     Then delete the `private/d4-*` files that served these checks; the totals go in the note.
+
 12. **Rollback.**
     - A ping that fails in step 8: `switch-image.sh` rolls back by itself to the previous tag, which it kept. Ping
       again; the stack is back on the old tag.

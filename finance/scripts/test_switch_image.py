@@ -32,13 +32,18 @@ class Functions(unittest.TestCase):
         self.assertEqual(switch_image.current_tag(COMPOSE), "t-old")
 
     def test_current_tag_refuses_a_mix(self):
-        mixed = COMPOSE.replace("scheduler:\n    image: frappe-finance-custom:t-old", "scheduler:\n    image: frappe-finance-custom:t-other")
+        mixed = COMPOSE.replace(
+            "scheduler:\n    image: frappe-finance-custom:t-old",
+            "scheduler:\n    image: frappe-finance-custom:t-other",
+        )
         with self.assertRaises(ValueError):
             switch_image.current_tag(mixed)
 
     def test_current_tag_refuses_no_tag(self):
         with self.assertRaises(ValueError):
-            switch_image.current_tag("services:\n  frontend:\n    image: other/thing:1\n")
+            switch_image.current_tag(
+                "services:\n  frontend:\n    image: other/thing:1\n"
+            )
 
     def test_set_tag_moves_every_service_and_keeps_other_lines(self):
         moved = switch_image.set_tag(COMPOSE, "t-new")
@@ -106,8 +111,11 @@ class SwitchShell(unittest.TestCase):
             "SWITCH_PING_WAIT": "0",
         }
         run = subprocess.run(
-            ["sh", os.path.join(self.tmp, "finance", "scripts", "switch-image.sh")] + args,
-            capture_output=True, text=True, env=env,
+            ["sh", os.path.join(self.tmp, "finance", "scripts", "switch-image.sh")]
+            + args,
+            capture_output=True,
+            text=True,
+            env=env,
         )
         calls = ""
         if os.path.exists(self.log):
@@ -120,9 +128,13 @@ class SwitchShell(unittest.TestCase):
     def test_success_switches_and_removes_old_and_new_base(self):
         run, calls, compose = self.run_switch(
             ["t-new"],
-            existing=["frappe-finance-custom:t-old", "frappe-finance-custom:t-old-base",
-                      "frappe-finance-custom:t-new", "frappe-finance-custom:t-new-base",
-                      "frappe-finance-custom:t-new-finance"],
+            existing=[
+                "frappe-finance-custom:t-old",
+                "frappe-finance-custom:t-old-base",
+                "frappe-finance-custom:t-new",
+                "frappe-finance-custom:t-new-base",
+                "frappe-finance-custom:t-new-finance",
+            ],
             ping="200",
         )
         self.assertEqual(run.returncode, 0, run.stderr)

@@ -15,7 +15,9 @@ D = datetime.date
 
 
 def account(name, root, kind, number=""):
-    return SimpleNamespace(name=name, root_type=root, account_type=kind, account_number=number)
+    return SimpleNamespace(
+        name=name, root_type=root, account_type=kind, account_number=number
+    )
 
 
 def flat(value, count):
@@ -39,12 +41,19 @@ class Months(unittest.TestCase):
 
     def test_postings_before_the_history_are_the_opening_total(self):
         before, per_month = cc.month_totals(
-            [(D(2018, 12, 31), 500.0), (D(2019, 1, 10), 100.0), (D(2019, 2, 3), -40.0), (D(2030, 1, 1), 9.0)],
+            [
+                (D(2018, 12, 31), 500.0),
+                (D(2019, 1, 10), 100.0),
+                (D(2019, 2, 3), -40.0),
+                (D(2030, 1, 1), 9.0),
+            ],
             D(2019, 1, 1),
             2,
         )
         self.assertEqual(before, 500.0)
-        self.assertEqual(per_month, [100.0, -40.0])  # the posting after the last month is left out
+        self.assertEqual(
+            per_month, [100.0, -40.0]
+        )  # the posting after the last month is left out
 
     def test_running_balance_starts_from_the_opening_total(self):
         self.assertEqual(cc.running(500.0, [100.0, -40.0, 0.0]), [600.0, 560.0, 560.0])
@@ -69,24 +78,39 @@ class Groups(unittest.TestCase):
         self.groups = cc.membership(self.accounts, {"2002 - Lohn"})
 
     def test_revenue_is_the_income_accounts(self):
-        self.assertEqual([n for n, g in self.groups.items() if "revenue" in g], ["3200 - Ertrag"])
+        self.assertEqual(
+            [n for n, g in self.groups.items() if "revenue" in g], ["3200 - Ertrag"]
+        )
 
     def test_receivables_and_payables_leave_out_the_payroll_payable(self):
-        self.assertEqual([n for n, g in self.groups.items() if "receivables" in g], ["1100 - Debitoren"])
-        self.assertEqual([n for n, g in self.groups.items() if "payables" in g], ["2000 - Kreditoren"])
+        self.assertEqual(
+            [n for n, g in self.groups.items() if "receivables" in g],
+            ["1100 - Debitoren"],
+        )
+        self.assertEqual(
+            [n for n, g in self.groups.items() if "payables" in g],
+            ["2000 - Kreditoren"],
+        )
 
     def test_cost_of_goods_sold_is_also_purchases(self):
         self.assertEqual(self.groups["4200 - Handelswaren"], ["cogs", "purchases"])
 
-    def test_purchases_are_the_4xxx_and_6xxx_expenses_without_depreciation_round_off_or_the_69x_result(self):
+    def test_purchases_are_the_4xxx_and_6xxx_expenses_without_depreciation_round_off_or_the_69x_result(
+        self,
+    ):
         purchases = sorted(n for n, g in self.groups.items() if "purchases" in g)
-        self.assertEqual(purchases, ["4200 - Handelswaren", "4400 - Fremdleistungen", "6000 - Miete"])
+        self.assertEqual(
+            purchases, ["4200 - Handelswaren", "4400 - Fremdleistungen", "6000 - Miete"]
+        )
 
     def test_personnel_costs_are_not_purchases(self):
         self.assertNotIn("purchases", self.groups.get("5000 - Lohnaufwand", []))
 
     def test_stock_is_the_stock_accounts(self):
-        self.assertEqual([n for n, g in self.groups.items() if "inventory" in g], ["1200 - Handelswaren"])
+        self.assertEqual(
+            [n for n, g in self.groups.items() if "inventory" in g],
+            ["1200 - Handelswaren"],
+        )
 
 
 class Ratios(unittest.TestCase):
@@ -113,7 +137,10 @@ class Ratios(unittest.TestCase):
 
 class DaysToPay(unittest.TestCase):
     def test_weighted_by_amount(self):
-        payments = [(D(2025, 3, 10), D(2025, 2, 8), 100.0), (D(2025, 3, 30), D(2025, 2, 8), 300.0)]
+        payments = [
+            (D(2025, 3, 10), D(2025, 2, 8), 100.0),
+            (D(2025, 3, 30), D(2025, 2, 8), 300.0),
+        ]
         # 30 days on 100, 50 days on 300: (3000 + 15000) / 400 = 45
         self.assertEqual(cc.weighted_days(payments), 45.0)
 
@@ -144,7 +171,17 @@ class Build(unittest.TestCase):
 
     def build(self, customers=(), suppliers=()):
         # oldest first here, so the indices of the tests read by month; build itself lists the newest first
-        return list(reversed(cc.build(self.months, self.flows, self.balances, list(customers), list(suppliers))))
+        return list(
+            reversed(
+                cc.build(
+                    self.months,
+                    self.flows,
+                    self.balances,
+                    list(customers),
+                    list(suppliers),
+                )
+            )
+        )
 
     def test_one_row_per_month_since_the_first_month(self):
         rows = self.build()
@@ -191,18 +228,27 @@ class Build(unittest.TestCase):
         self.assertIsNone(rows[22]["ccc_12_change"])
         self.assertIsNone(rows[12]["ccc_12_change"])
         # the same flat business a year on: the change is only the leap day in the window
-        self.assertEqual(rows[23]["ccc_12_change"], round(rows[23]["ccc_12"] - rows[11]["ccc_12"], 1))
+        self.assertEqual(
+            rows[23]["ccc_12_change"], round(rows[23]["ccc_12"] - rows[11]["ccc_12"], 1)
+        )
         self.assertLess(abs(rows[23]["ccc_12_change"]), 1.0)
 
     def test_days_to_pay_by_the_month_of_the_payment(self):
-        customers = [(D(2019, 2, 10), D(2019, 1, 11), 100.0), (D(2019, 2, 20), D(2019, 1, 1), 300.0)]
+        customers = [
+            (D(2019, 2, 10), D(2019, 1, 11), 100.0),
+            (D(2019, 2, 20), D(2019, 1, 1), 300.0),
+        ]
         rows = self.build(customers=customers)
         self.assertIsNone(rows[0]["paid_days_customers"])
         # 30 days on 100, 50 days on 300: 45 days, paid in February
         self.assertEqual(rows[1]["paid_days_customers"], 45.0)
         self.assertEqual(rows[1]["paid_days_customers_12"], None)  # no full year yet
-        self.assertEqual(rows[12]["paid_days_customers_12"], 45.0)  # January 2020: the window still holds February 2019
-        self.assertEqual(rows[11]["paid_days_customers_12"], 45.0)  # the first full window, January to December 2019
+        self.assertEqual(
+            rows[12]["paid_days_customers_12"], 45.0
+        )  # January 2020: the window still holds February 2019
+        self.assertEqual(
+            rows[11]["paid_days_customers_12"], 45.0
+        )  # the first full window, January to December 2019
 
     def test_days_to_pay_of_suppliers_are_their_own(self):
         suppliers = [(D(2019, 3, 5), D(2019, 2, 3), 200.0)]
@@ -215,7 +261,9 @@ class Build(unittest.TestCase):
         self.assertEqual(rows[0]["month"], D(2020, 12, 31))
         self.assertEqual(rows[-1]["month"], D(2019, 1, 31))
 
-    def test_months_before_the_books_start_are_left_out_and_the_rolling_values_still_count_them(self):
+    def test_months_before_the_books_start_are_left_out_and_the_rolling_values_still_count_them(
+        self,
+    ):
         # Jan to Mar 2019 have no postings at all: the table starts in April, and a window still covers those months
         for key in ("revenue", "purchases", "cogs"):
             self.flows[key][:3] = [0.0] * 3
@@ -253,11 +301,16 @@ class Chart(unittest.TestCase):
         self.assertEqual(len(shown), cc.CHART_MONTHS)
         self.assertEqual(cc.month_label(shown[0]["month"]), "Jul 20")
         self.assertEqual(cc.month_label(shown[-1]["month"]), "Jun 21")
-        self.assertEqual(rows[0]["month"], D(2021, 6, 30))  # the table itself keeps all of them
+        self.assertEqual(
+            rows[0]["month"], D(2021, 6, 30)
+        )  # the table itself keeps all of them
 
     def test_every_label_fits_its_slot_at_the_narrowest_chart_we_target(self):
         # frappe-charts cuts a label longer than width / points x 0.6 / 7 characters: 900 px is a laptop with the sidebar open
-        self.assertGreaterEqual(900 / cc.CHART_MONTHS * 0.6 / 7, max(len(cc.month_label(D(2026, m, 28))) for m in range(1, 13)))
+        self.assertGreaterEqual(
+            900 / cc.CHART_MONTHS * 0.6 / 7,
+            max(len(cc.month_label(D(2026, m, 28))) for m in range(1, 13)),
+        )
 
     def test_a_short_history_is_shown_whole(self):
         months = cc.month_ends(D(2019, 1, 1), D(2019, 6, 30))

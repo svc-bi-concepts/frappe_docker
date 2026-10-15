@@ -3,7 +3,7 @@
 # av runs a Blessed Script as /dev/fd/N, and the mini's Python 3.9 reads a
 # /dev/fd script from where its zip check left the shared offset: a script
 # of more than a few bytes then runs empty and exits 0 (IT, 2026-10-14).
-exec /usr/bin/python3 -I - "$@" <<'__SP_READ_PY__'
+exec / usr / bin / python3 - I - "$@" << "__SP_READ_PY__"
 """Read-only SharePoint reader for the documents payroll needs.
 
 Talks to Microsoft Graph using a client-credentials token
@@ -65,7 +65,9 @@ def token_hits(sheet, folder, name):
     that glues the insurer to the token, so neither the old word-edge rule alone nor names only
     find it).
     """
-    return bool(TOKEN[sheet].search(name) or any(TOKEN[sheet].search(part) for part in folder))
+    return bool(
+        TOKEN[sheet].search(name) or any(TOKEN[sheet].search(part) for part in folder)
+    )
 
 
 class SharePointError(Exception):
@@ -110,9 +112,11 @@ def http(method, url, headers, data, hops=3):
             if hops <= 0 or not location.startswith("https://"):
                 raise SharePointError("GET redirected somewhere it will not follow")
             return http("GET", location, {}, None, hops - 1)
-        raise SharePointError("%s refused with HTTP %d (%s)" % (method, err.code, refusal_code(err)))
+        raise SharePointError(
+            "%s refused with HTTP %d (%s)" % (method, err.code, refusal_code(err))
+        )
     except urllib.error.URLError as err:
-        raise SharePointError("%s failed: %s" % (method, err.reason))
+        raise SharePointError(f"{method} failed: {err.reason}")
 
 
 def load_config(path=CONFIG):
@@ -143,7 +147,10 @@ def sign_rs256(data, key_pem):
     try:
         proc = subprocess.run(
             ["/usr/bin/openssl", "dgst", "-sha256", "-sign", "/dev/fd/%d" % r],
-            input=data, stdout=subprocess.PIPE, stderr=subprocess.PIPE, pass_fds=(r,))
+            input=data,
+            capture_output=True,
+            pass_fds=(r,),
+        )
     finally:
         os.close(r)
     if proc.returncode:
@@ -154,8 +161,17 @@ def sign_rs256(data, key_pem):
 class Graph:
     """Reads Graph as the yardr-finance app. Every request goes through _send."""
 
-    def __init__(self, tenant, client_id, thumbprint, drive, key_pem, transport=http, now=time.time):
-        self.token_url = "%s/%s/oauth2/v2.0/token" % (LOGIN, tenant)
+    def __init__(
+        self,
+        tenant,
+        client_id,
+        thumbprint,
+        drive,
+        key_pem,
+        transport=http,
+        now=time.time,
+    ):
+        self.token_url = f"{LOGIN}/{tenant}/oauth2/v2.0/token"
         self.client_id = client_id
         self.drive = drive
         try:
@@ -180,31 +196,47 @@ class Graph:
         """The JWT that proves the app holds the certificate's key."""
         now = int(self.now())
         header = {"alg": "RS256", "typ": "JWT", "x5t": b64url(self.thumbprint)}
-        claims = {"aud": self.token_url, "iss": self.client_id, "sub": self.client_id,
-                  "jti": str(uuid.uuid4()), "nbf": now, "exp": now + 300}
-        signing = "%s.%s" % (b64url(compact(header)), b64url(compact(claims)))
-        return "%s.%s" % (signing, b64url(sign_rs256(signing.encode(), self.key_pem)))
+        claims = {
+            "aud": self.token_url,
+            "iss": self.client_id,
+            "sub": self.client_id,
+            "jti": str(uuid.uuid4()),
+            "nbf": now,
+            "exp": now + 300,
+        }
+        signing = f"{b64url(compact(header))}.{b64url(compact(claims))}"
+        return "{}.{}".format(
+            signing, b64url(sign_rs256(signing.encode(), self.key_pem))
+        )
 
     def access_token(self):
         if self.token is None:
-            form = urllib.parse.urlencode({
-                "client_id": self.client_id,
-                "scope": SCOPE,
-                "grant_type": "client_credentials",
-                "client_assertion_type": ASSERTION_TYPE,
-                "client_assertion": self.client_assertion(),
-            }).encode()
-            body = self._send("POST", self.token_url,
-                              {"Content-Type": "application/x-www-form-urlencoded"}, form)
+            form = urllib.parse.urlencode(
+                {
+                    "client_id": self.client_id,
+                    "scope": SCOPE,
+                    "grant_type": "client_credentials",
+                    "client_assertion_type": ASSERTION_TYPE,
+                    "client_assertion": self.client_assertion(),
+                }
+            ).encode()
+            body = self._send(
+                "POST",
+                self.token_url,
+                {"Content-Type": "application/x-www-form-urlencoded"},
+                form,
+            )
             self.token = json.loads(body.decode())["access_token"]
         return self.token
 
     def get(self, url):
-        return self._send("GET", url, {"Authorization": "Bearer " + self.access_token()})
+        return self._send(
+            "GET", url, {"Authorization": "Bearer " + self.access_token()}
+        )
 
     def children(self, item_id):
         """Every child of a folder item, following Graph's paging."""
-        url = "%s/drives/%s/items/%s/children" % (GRAPH, self.drive, item_id)
+        url = f"{GRAPH}/drives/{self.drive}/items/{item_id}/children"
         items = []
         while url:
             page = json.loads(self.get(url).decode())
@@ -216,13 +248,12 @@ class Graph:
         """(folder path, file item) for every file under a folder, depth first."""
         for item in self.children(item_id):
             if "folder" in item:
-                for found in self.walk(item["id"], path + (item["name"],)):
-                    yield found
+                yield from self.walk(item["id"], path + (item["name"],))
             elif "file" in item:
                 yield path, item
 
     def download(self, item_id):
-        return self.get("%s/drives/%s/items/%s/content" % (GRAPH, self.drive, item_id))
+        return self.get(f"{GRAPH}/drives/{self.drive}/items/{item_id}/content")
 
 
 def pick_sheets(files):
@@ -235,14 +266,25 @@ def pick_sheets(files):
     """
     chosen, problems = {}, {}
     for sheet in SHEETS:
-        matches = [(folder, item) for folder, item in files if token_hits(sheet, folder, item["name"])]
+        matches = [
+            (folder, item)
+            for folder, item in files
+            if token_hits(sheet, folder, item["name"])
+        ]
         if sheet == "KTG":
-            matches = [(folder, item) for folder, item in matches if "vertrag" in item["name"].lower()]
+            matches = [
+                (folder, item)
+                for folder, item in matches
+                if "vertrag" in item["name"].lower()
+            ]
         if len(matches) == 1:
             chosen[sheet] = matches[0]
         else:
             names = ", ".join(item["name"] for _, item in matches) or "none"
-            problems[sheet] = "%d files match, want exactly 1 (%s)" % (len(matches), names)
+            problems[sheet] = "%d files match, want exactly 1 (%s)" % (
+                len(matches),
+                names,
+            )
     return chosen, problems
 
 
@@ -266,7 +308,9 @@ def list_folder(graph, folder_id, out=sys.stdout):
     """Names and sizes of every file under a folder, recursively."""
     count = 0
     for folder, item in graph.walk(folder_id):
-        out.write("%10d  %s\n" % (item.get("size", 0), "/".join(folder + (item["name"],))))
+        out.write(
+            "%10d  %s\n" % (item.get("size", 0), "/".join(folder + (item["name"],)))
+        )
         count += 1
     out.write("%d files\n" % count)
 
@@ -296,9 +340,13 @@ def fetch(graph, roots, out_dir=OUT, out=sys.stdout):
         path, item = plan[sheet]
         body = graph.download(item["id"])
         if len(body) != item.get("size", len(body)):
-            raise SharePointError("%s: downloaded size differs from the listing" % sheet)
+            raise SharePointError(
+                "%s: downloaded size differs from the listing" % sheet
+            )
         save(path, body)
-        out.write("%-4s %10d  %s\n" % (sheet, len(body), os.path.relpath(path, out_dir)))
+        out.write(
+            "%-4s %10d  %s\n" % (sheet, len(body), os.path.relpath(path, out_dir))
+        )
     out.write("%d of %d sheets saved under %s\n" % (len(plan), len(SHEETS), out_dir))
 
 
@@ -318,35 +366,61 @@ def fetch_paths(graph, roots, wanted, out_dir=OUT, out=sys.stdout):
     files = {}
     for name, folder_id in roots:
         for folder, item in graph.walk(folder_id):
-            files.setdefault("/".join((name,) + folder + (item["name"],)), ((name,) + folder, item))
+            files.setdefault(
+                "/".join((name,) + folder + (item["name"],)), ((name,) + folder, item)
+            )
     missing = [path for path in wanted if path not in files]
     if missing:
-        raise SharePointError("%d of %d paths are not under the roots; nothing downloaded" % (len(missing), len(wanted)))
-    plan = [(target(out_dir, files[path][0], files[path][1]["name"]), files[path][1]) for path in wanted]
+        raise SharePointError(
+            "%d of %d paths are not under the roots; nothing downloaded"
+            % (len(missing), len(wanted))
+        )
+    plan = [
+        (target(out_dir, files[path][0], files[path][1]["name"]), files[path][1])
+        for path in wanted
+    ]
     for path, item in plan:
         body = graph.download(item["id"])
         if len(body) != item.get("size", len(body)):
-            raise SharePointError("%s: downloaded size differs from the listing" % item["name"])
+            raise SharePointError(
+                "%s: downloaded size differs from the listing" % item["name"]
+            )
         save(path, body)
         out.write("%10d  %s\n" % (len(body), os.path.relpath(path, out_dir)))
     out.write("%d of %d paths saved under %s\n" % (len(plan), len(wanted), out_dir))
 
 
 def main(argv, out=sys.stdout):
-    if len(argv) < 2 or argv[1] not in ("list", "fetch", "fetch-paths") or (argv[1] == "list" and len(argv) != 3) \
-            or (argv[1] == "fetch-paths" and len(argv) != 3):
-        sys.stderr.write("usage: sp_read.py list <folder> | fetch | fetch-paths <list file>\n")
+    if (
+        len(argv) < 2
+        or argv[1] not in ("list", "fetch", "fetch-paths")
+        or (argv[1] == "list" and len(argv) != 3)
+        or (argv[1] == "fetch-paths" and len(argv) != 3)
+    ):
+        sys.stderr.write(
+            "usage: sp_read.py list <folder> | fetch | fetch-paths <list file>\n"
+        )
         return 2
     try:
         cfg = load_config()
         key = os.environ.get("FINANCE_SP_CERT_KEY")
         if not key:
-            raise SharePointError("FINANCE_SP_CERT_KEY is not set: run this through Automic Vault")
-        graph = Graph(cfg["tenant_id"], cfg["client_id"], cfg["thumbprint"], cfg["drive_id"], key)
+            raise SharePointError(
+                "FINANCE_SP_CERT_KEY is not set: run this through Automic Vault"
+            )
+        graph = Graph(
+            cfg["tenant_id"], cfg["client_id"], cfg["thumbprint"], cfg["drive_id"], key
+        )
         if argv[1] == "list":
             list_folder(graph, cfg["folders"][argv[2]], out)
         elif argv[1] == "fetch-paths":
-            fetch_paths(graph, [("Finance", cfg["folders"]["Finance"])], read_paths(argv[2]), OUT, out)
+            fetch_paths(
+                graph,
+                [("Finance", cfg["folders"]["Finance"])],
+                read_paths(argv[2]),
+                OUT,
+                out,
+            )
         else:
             fetch(graph, [(name, cfg["folders"][name]) for name in SEARCHED], OUT, out)
     except SharePointError as err:

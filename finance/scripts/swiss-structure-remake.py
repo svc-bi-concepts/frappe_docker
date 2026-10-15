@@ -31,6 +31,7 @@ public. The script prints counts, yes/no and document states, never employee
 names, salaries or rates. Employee records are referenced by their position in
 the run only.
 """
+
 import frappe
 from frappe.utils import get_first_day, get_last_day, getdate
 
@@ -40,7 +41,13 @@ OLD_NAME = "Swiss Monthly BI Concepts"
 # the assignment fields the remake carries over; payroll_payable_account is
 # deliberately not among them: HRMS fills it on validate from the Company's
 # default, which is the point of decision (b) on erp-zg4p (2026-10-11).
-CARRIED_FIELDS = ["employee", "company", "from_date", "base", "swiss_bvg_insured_salary"]
+CARRIED_FIELDS = [
+    "employee",
+    "company",
+    "from_date",
+    "base",
+    "swiss_bvg_insured_salary",
+]
 
 
 def say(msg):
@@ -141,7 +148,9 @@ def move_assignments(old_name, new_name):
         else:
             moved += 1
             say(f"remake: record {position}: assignment moved to {new_name}")
-    say(f"remake: assignments moved {moved}, restored {restored}, already on the new structure {already}")
+    say(
+        f"remake: assignments moved {moved}, restored {restored}, already on the new structure {already}"
+    )
     return moved + restored
 
 
@@ -150,9 +159,13 @@ def cancel_old(old_name):
     state = frappe.db.get_value("Salary Structure", old_name, "docstatus")
     if state is None or state == 2:
         return
-    blocking = frappe.db.count("Salary Structure Assignment", {"salary_structure": old_name, "docstatus": 1})
+    blocking = frappe.db.count(
+        "Salary Structure Assignment", {"salary_structure": old_name, "docstatus": 1}
+    )
     if blocking:
-        say(f"remake: {old_name} stays: {blocking} submitted assignment(s) still name it (HRMS refuses)")
+        say(
+            f"remake: {old_name} stays: {blocking} submitted assignment(s) still name it (HRMS refuses)"
+        )
         return
     frappe.get_doc("Salary Structure", old_name).cancel()
     frappe.db.commit()
@@ -175,12 +188,16 @@ def payroll_preview():
         # a Payroll Entry carries the Company's default payable, and HRMS's
         # employee list matches the assignments' payroll_payable_account on it:
         # this is why a null payable makes the entry find nobody (decision b)
-        payroll_payable_account=frappe.db.get_value("Company", COMPANY, "default_payroll_payable_account"),
+        payroll_payable_account=frappe.db.get_value(
+            "Company", COMPANY, "default_payroll_payable_account"
+        ),
         start_date=start,
         end_date=end,
     )
     employees = get_employee_list(filters)
-    say(f"remake: payroll preview finds {len(employees)} employee(s) for {start} to {end}")
+    say(
+        f"remake: payroll preview finds {len(employees)} employee(s) for {start} to {end}"
+    )
     return len(employees)
 
 
@@ -192,16 +209,27 @@ def read_back(new_name):
         f" earnings {len(doc.earnings)}, deductions {len(doc.deductions)},"
         f" employer_contributions {len(doc.employer_contributions)}"
     )
-    say(f"read-back: employer_contributions rows > 0: {'yes' if len(doc.employer_contributions) > 0 else 'NO'}")
-    active = frappe.db.count("Employee", {"status": "Active", "company": COMPANY})
-    on_new = frappe.db.count("Salary Structure Assignment", {"salary_structure": new_name, "docstatus": 1})
-    say(f"read-back: submitted assignments on the new structure {on_new} of {active} Active employee(s)")
-    null_payable = frappe.db.count(
-        "Salary Structure Assignment", {"docstatus": 1, "payroll_payable_account": ["is", "not set"]}
+    say(
+        f"read-back: employer_contributions rows > 0: {'yes' if len(doc.employer_contributions) > 0 else 'NO'}"
     )
-    say(f"read-back: submitted assignments with payroll_payable_account null: {null_payable} (must be 0)")
+    active = frappe.db.count("Employee", {"status": "Active", "company": COMPANY})
+    on_new = frappe.db.count(
+        "Salary Structure Assignment", {"salary_structure": new_name, "docstatus": 1}
+    )
+    say(
+        f"read-back: submitted assignments on the new structure {on_new} of {active} Active employee(s)"
+    )
+    null_payable = frappe.db.count(
+        "Salary Structure Assignment",
+        {"docstatus": 1, "payroll_payable_account": ["is", "not set"]},
+    )
+    say(
+        f"read-back: submitted assignments with payroll_payable_account null: {null_payable} (must be 0)"
+    )
     old_state = frappe.db.get_value("Salary Structure", OLD_NAME, "docstatus")
-    say(f"read-back: {OLD_NAME} docstatus {old_state if old_state is not None else 'absent'}")
+    say(
+        f"read-back: {OLD_NAME} docstatus {old_state if old_state is not None else 'absent'}"
+    )
     payroll_preview()
 
 

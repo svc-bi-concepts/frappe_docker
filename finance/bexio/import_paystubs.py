@@ -46,7 +46,9 @@ PROBLEMS = ("no content", "size differs", "duplicate")
 def file_key(record):
     """The File.bexio_id of a paystub: its employee's bexio id, the year and the month. Starts with paystub-, so it
     collides with no invoice id, no kind-prefixed document key and no file uuid."""
-    return "{}{}-{}-{:02d}".format(KEY_PREFIX, record["employee_id"], record["year"], record["month"])
+    return "{}{}-{}-{:02d}".format(
+        KEY_PREFIX, record["employee_id"], record["year"], record["month"]
+    )
 
 
 def file_name(record):
@@ -67,13 +69,21 @@ class Lookups:
 
     def __init__(self, employees, keys):
         self.employees = employees  # bexio id -> Employee name
-        self.keys = keys            # File.bexio_id values that start with KEY_PREFIX
+        self.keys = keys  # File.bexio_id values that start with KEY_PREFIX
 
     @classmethod
     def from_erp(cls, erp):
-        employees = {r["bexio_id"]: r["name"] for r in erp.list("Employee", [["bexio_id", "is", "set"]], ["name", "bexio_id"])}
-        keys = {f["bexio_id"] for f in erp.list("File", [["bexio_id", "is", "set"]], ["bexio_id"])
-                if f["bexio_id"].startswith(KEY_PREFIX)}
+        employees = {
+            r["bexio_id"]: r["name"]
+            for r in erp.list(
+                "Employee", [["bexio_id", "is", "set"]], ["name", "bexio_id"]
+            )
+        }
+        keys = {
+            f["bexio_id"]
+            for f in erp.list("File", [["bexio_id", "is", "set"]], ["bexio_id"])
+            if f["bexio_id"].startswith(KEY_PREFIX)
+        }
         return cls(employees, keys)
 
 
@@ -104,9 +114,20 @@ def plan(records, lookups, paystubs_dir):
             else:
                 outcome = ATTACH
         seen.add(key)
-        rows.append({"position": position, "key": key, "name": file_name(record), "file": record["file"],
-                     "employee_id": str(record["employee_id"]), "employee": employee,
-                     "year": record["year"], "month": record["month"], "bytes": record["bytes"], "outcome": outcome})
+        rows.append(
+            {
+                "position": position,
+                "key": key,
+                "name": file_name(record),
+                "file": record["file"],
+                "employee_id": str(record["employee_id"]),
+                "employee": employee,
+                "year": record["year"],
+                "month": record["month"],
+                "bytes": record["bytes"],
+                "outcome": outcome,
+            }
+        )
     return rows
 
 
@@ -123,7 +144,9 @@ def apply(rows, paystubs_dir, erp):
         if row["outcome"] != ATTACH:
             continue
         with open(os.path.join(paystubs_dir, row["file"]), "rb") as f:
-            imf.upload(erp, row["employee"], row["key"], row["name"], f.read(), doctype=DOCTYPE)
+            imf.upload(
+                erp, row["employee"], row["key"], row["name"], f.read(), doctype=DOCTYPE
+            )
         uploaded += 1
     return uploaded
 
@@ -141,13 +164,18 @@ def report(rows, applied=False):
     counts = {}
     for r in rows:
         counts[r["outcome"]] = counts.get(r["outcome"], 0) + 1
-    lines = ["paystubs: {} record(s)".format(len(rows)),
-             "employees: {} in the export, {} found in ERPNext, {} missing".format(len(ids), len(found), len(ids) - len(found))]
+    lines = [
+        f"paystubs: {len(rows)} record(s)",
+        f"employees: {len(ids)} in the export, {len(found)} found in ERPNext, {len(ids) - len(found)} missing",
+    ]
     for outcome in (ATTACH, ATTACHED, NO_EMPLOYEE) + PROBLEMS:
         if counts.get(outcome):
-            lines.append("  {:<14}{:>6}".format(outcome, counts[outcome]))
-    lines.append("applied: the PDFs marked attach are uploaded as private Files on their Employees" if applied
-                 else "dry run: nothing was written")
+            lines.append(f"  {outcome:<14}{counts[outcome]:>6}")
+    lines.append(
+        "applied: the PDFs marked attach are uploaded as private Files on their Employees"
+        if applied
+        else "dry run: nothing was written"
+    )
     return "\n".join(lines)
 
 
@@ -156,10 +184,22 @@ def problem_line(row):
 
 
 def main(argv):
-    parser = argparse.ArgumentParser(description="Attach the bexio paystub PDFs to their Employees (a dry run by default).")
-    parser.add_argument("--paystubs-json", default=PAYSTUBS_JSON, help="the export's paystubs.json")
-    parser.add_argument("--dry-run", action="store_true", help="read ERPNext, write nothing, print the counts (the default)")
-    parser.add_argument("--apply", action="store_true", help="upload the PDFs that would be attached, as private Files")
+    parser = argparse.ArgumentParser(
+        description="Attach the bexio paystub PDFs to their Employees (a dry run by default)."
+    )
+    parser.add_argument(
+        "--paystubs-json", default=PAYSTUBS_JSON, help="the export's paystubs.json"
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="read ERPNext, write nothing, print the counts (the default)",
+    )
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="upload the PDFs that would be attached, as private Files",
+    )
     parser.add_argument("--token-file", default=im.TOKEN_FILE)
     args = parser.parse_args(argv)
     if args.apply and args.dry_run:
@@ -167,22 +207,30 @@ def main(argv):
     paystubs_dir = os.path.join(os.path.dirname(args.paystubs_json), "paystubs")
     records = load_records(args.paystubs_json)
     if records is None:
-        print("aborted: no {} (run export.py --payroll first)".format(args.paystubs_json), file=sys.stderr)
+        print(
+            f"aborted: no {args.paystubs_json} (run export.py --payroll first)",
+            file=sys.stderr,
+        )
         return 2
     try:
         erp = im.Erp.from_file(args.token_file)
         rows, _ = run(records, erp, paystubs_dir)
         if args.apply:
-            print("uploaded {} paystub PDF(s)".format(apply(rows, paystubs_dir, erp)))
+            print(f"uploaded {apply(rows, paystubs_dir, erp)} paystub PDF(s)")
             rows, _ = run(records, erp, paystubs_dir)
     except im.ErpError as err:
-        print("aborted: {}".format(err), file=sys.stderr)
+        print(f"aborted: {err}", file=sys.stderr)
         return 2
     print(report(rows, applied=args.apply))
     listed = [r for r in rows if r["outcome"] in (NO_EMPLOYEE,) + PROBLEMS]
     if listed:
-        ip.write_private(os.path.join(im.PRIVATE, PROBLEMS_FILE), [problem_line(r) for r in listed])
-        print("{} line(s) listed in {}".format(len(listed), os.path.join(im.PRIVATE, PROBLEMS_FILE)), file=sys.stderr)
+        ip.write_private(
+            os.path.join(im.PRIVATE, PROBLEMS_FILE), [problem_line(r) for r in listed]
+        )
+        print(
+            f"{len(listed)} line(s) listed in {os.path.join(im.PRIVATE, PROBLEMS_FILE)}",
+            file=sys.stderr,
+        )
     return 1 if any(r["outcome"] in PROBLEMS for r in rows) else 0
 
 

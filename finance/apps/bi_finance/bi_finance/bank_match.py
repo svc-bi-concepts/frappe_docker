@@ -45,12 +45,18 @@ def key(text):
 
 def words(text):
     """The name words of a text: letters of three or more, without the legal forms and articles."""
-    return {word for word in re.findall(r"[^\W\d_]{3,}", (text or "").lower()) if word not in PARTY_GENERIC}
+    return {
+        word
+        for word in re.findall(r"[^\W\d_]{3,}", (text or "").lower())
+        if word not in PARTY_GENERIC
+    }
 
 
 def signed(line):
     """A line's amount, the deposit less the withdrawal, to the cent."""
-    return round(float(line.get("deposit") or 0) - float(line.get("withdrawal") or 0), 2)
+    return round(
+        float(line.get("deposit") or 0) - float(line.get("withdrawal") or 0), 2
+    )
 
 
 def _day(value):
@@ -83,7 +89,13 @@ def by_reference(line, docs):
     reference = key(line.get("reference_number"))
     if not reference:
         return []
-    return [doc for doc in docs if doc["doctype"] == "Sales Invoice" and doc.get("reference") == reference and fits(line, doc)]
+    return [
+        doc
+        for doc in docs
+        if doc["doctype"] == "Sales Invoice"
+        and doc.get("reference") == reference
+        and fits(line, doc)
+    ]
 
 
 def by_payment_reference(line, payments):
@@ -91,11 +103,19 @@ def by_payment_reference(line, payments):
     reference, so it is tried first; only when no Payment Entry of that id fits does the line's reference number or
     transaction id count."""
     end_to_end = {key(line.get("end_to_end_id"))} - {""}
-    found = [payment for payment in payments if payment.get("reference") in end_to_end and fits(line, payment)]
+    found = [
+        payment
+        for payment in payments
+        if payment.get("reference") in end_to_end and fits(line, payment)
+    ]
     if found:
         return found
     names = {key(line.get("reference_number")), key(line.get("transaction_id"))} - {""}
-    return [payment for payment in payments if payment.get("reference") in names and fits(line, payment)]
+    return [
+        payment
+        for payment in payments
+        if payment.get("reference") in names and fits(line, payment)
+    ]
 
 
 def by_party(line, docs):
@@ -124,7 +144,9 @@ def rule_matches(line, rule):
     """
     if rule.get("company") != line.get("company"):
         return False
-    deposit, withdrawal = float(line.get("deposit") or 0), float(line.get("withdrawal") or 0)
+    deposit, withdrawal = float(line.get("deposit") or 0), float(
+        line.get("withdrawal") or 0
+    )
     if rule.get("transaction_type") == "Withdrawal" and withdrawal == 0:
         return False
     if rule.get("transaction_type") == "Deposit" and deposit == 0:
@@ -152,11 +174,19 @@ def rule_matches(line, rule):
 def rule_for(line, rules):
     """The first rule by priority that takes the line: (rule, None) to book it, (None, reason) when the first match is
     one this job does not book, (None, None) when no rule takes it."""
-    for rule in sorted(rules, key=lambda r: (r.get("priority") is None, r.get("priority") or 0)):
+    for rule in sorted(
+        rules, key=lambda r: (r.get("priority") is None, r.get("priority") or 0)
+    ):
         if not rule_matches(line, rule):
             continue
-        if rule.get("classify_as") != "Bank Entry" or rule.get("bank_entry_type") not in (None, "", "Single Account") or not rule.get("account"):
-            return None, "rule {} is not a single-account Bank Entry".format(rule.get("name"))
+        if (
+            rule.get("classify_as") != "Bank Entry"
+            or rule.get("bank_entry_type") not in (None, "", "Single Account")
+            or not rule.get("account")
+        ):
+            return None, "rule {} is not a single-account Bank Entry".format(
+                rule.get("name")
+            )
         return rule, None
     return None, None
 
@@ -172,13 +202,17 @@ def decide(lines, docs, payments, rules):
     named = {}
     for line in lines:
         found = [("reference", doc) for doc in by_reference(line, docs)]
-        found += [("payment_reference", doc) for doc in by_payment_reference(line, payments)]
+        found += [
+            ("payment_reference", doc) for doc in by_payment_reference(line, payments)
+        ]
         if not found:
             found = [("party", doc) for doc in by_party(line, docs)]
         named[line["name"]] = found
 
     # both sides: a document that any line names as a candidate is certain for none of the lines that name it
-    claims = collections.Counter((doc["doctype"], doc["name"]) for found in named.values() for _, doc in found)
+    claims = collections.Counter(
+        (doc["doctype"], doc["name"]) for found in named.values() for _, doc in found
+    )
 
     decisions = []
     for line in lines:
@@ -205,7 +239,11 @@ def decide(lines, docs, payments, rules):
 
 def _decision(line, state, pass_name=None, target=None, reason=None):
     return {
-        "line": line["name"], "state": state, "pass": pass_name, "target": target, "reason": reason,
+        "line": line["name"],
+        "state": state,
+        "pass": pass_name,
+        "target": target,
+        "reason": reason,
         "date": str(line["date"])[:10],
     }
 
@@ -213,14 +251,31 @@ def _decision(line, state, pass_name=None, target=None, reason=None):
 def summary(decisions):
     """Counts only, for a note: per pass and state, and per pass and month. Names stay out of it."""
     by_state = collections.Counter((d["state"], d["pass"] or "-") for d in decisions)
-    by_month = collections.Counter((str(d["date"])[:7], d["pass"] or "-") for d in decisions if d["state"] == "match")
-    uncertain = collections.Counter(d["reason"] for d in decisions if d["state"] == "uncertain")
+    by_month = collections.Counter(
+        (str(d["date"])[:7], d["pass"] or "-")
+        for d in decisions
+        if d["state"] == "match"
+    )
+    uncertain = collections.Counter(
+        d["reason"] for d in decisions if d["state"] == "uncertain"
+    )
     return {
         "lines": len(decisions),
         "match": sum(n for (state, _), n in by_state.items() if state == "match"),
-        "uncertain": sum(n for (state, _), n in by_state.items() if state == "uncertain"),
+        "uncertain": sum(
+            n for (state, _), n in by_state.items() if state == "uncertain"
+        ),
         "none": sum(n for (state, _), n in by_state.items() if state == "none"),
-        "by_pass": {name: sum(n for (state, p), n in by_state.items() if state == "match" and p == name) for name in PASSES},
-        "by_month": {"{} {}".format(month, name): n for (month, name), n in sorted(by_month.items())},
+        "by_pass": {
+            name: sum(
+                n
+                for (state, p), n in by_state.items()
+                if state == "match" and p == name
+            )
+            for name in PASSES
+        },
+        "by_month": {
+            f"{month} {name}": n for (month, name), n in sorted(by_month.items())
+        },
         "uncertain_reasons": dict(sorted(uncertain.items())),
     }

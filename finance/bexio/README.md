@@ -400,10 +400,10 @@ decides which lines these are, so the module reuses `posting_plan.classify` and 
   claim (posting plan rule 5), and a line an earlier VAT Journal Entry already books (`bexio-vat-on-payment*-ids.txt`).
 - an account without an ERPNext Account by its bexio id is listed, and `--write` does not write the plan.
 
-    python3 finance/bexio/import_payroll.py --dry-run [--export DIR]
-    python3 finance/bexio/import_payroll.py --write FILE [--export DIR]
-    finance/scripts/bexio-drafts.sh FILE submit
-    python3 finance/bexio/import_payroll.py --check [--export DIR]
+  python3 finance/bexio/import_payroll.py --dry-run [--export DIR]
+  python3 finance/bexio/import_payroll.py --write FILE [--export DIR]
+  finance/scripts/bexio-drafts.sh FILE submit
+  python3 finance/bexio/import_payroll.py --check [--export DIR]
 
 `--check` reads ERPNext after the loader run and writes nothing to it: the submitted entries keyed `journal-%`
 against the lines, the GL per account and year against bexio's lines, the posted ids to `<private>/bexio-payroll-ids.txt`
@@ -517,9 +517,9 @@ is listed, not guessed.
   party, which a manual entry does not carry, so it is listed and not written.
 - `--extra FILE` adds entries the export does not hold (a correction), as a private list in bexio's shape.
 
-    python3 finance/bexio/import_manual_entries.py --dry-run [--export DIR] [--extra FILE]
-    python3 finance/bexio/import_manual_entries.py --write FILE [--export DIR] [--extra FILE]
-    finance/scripts/bexio-drafts.sh FILE submit
+  python3 finance/bexio/import_manual_entries.py --dry-run [--export DIR] [--extra FILE]
+  python3 finance/bexio/import_manual_entries.py --write FILE [--export DIR] [--extra FILE]
+  finance/scripts/bexio-drafts.sh FILE submit
 
 The dry run also compares the mapping with bexio's journal, per entry and account, for 1170, 1171, 2200 and every
 profit-and-loss account. The lines of an entry are its row lines and its VAT lines (bexio numbers a row's VAT line

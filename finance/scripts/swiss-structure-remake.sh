@@ -16,4 +16,4 @@ cd "$(dirname "$0")/../.."
 docker compose -p "$PROJECT" -f pwd.yml -f finance-local.yml exec -T \
   backend \
   sh -c 'cd /home/frappe/frappe-bench/sites && exec ../env/bin/python -' \
-  < finance/scripts/swiss-structure-remake.py
+  <finance/scripts/swiss-structure-remake.py

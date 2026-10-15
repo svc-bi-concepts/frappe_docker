@@ -49,10 +49,9 @@ import collections
 import datetime
 
 import frappe
+from bi_finance import cash_forecast as cf
 from frappe import _
 from frappe.utils import cint, escape_html, flt, fmt_money, getdate, nowdate
-
-from bi_finance import cash_forecast as cf
 
 LOOKBACK_DAYS = 365
 
@@ -86,7 +85,8 @@ def basis_label(basis):
 def open_documents(company, as_of, doctype):
     """{name: (party, amount owed in the company currency, due date)} of the doctype's invoices unpaid on as_of.
     Read from the Payment Ledger, so a past date gives the invoices open then. An invoice's own row is positive
-    and its payments and returns negative, for both doctypes, so the sum is what it still owes."""
+    and its payments and returns negative, for both doctypes, so the sum is what it still owes.
+    """
     rows = frappe.db.sql(
         """select ple.against_voucher_no, max(ple.party), sum(ple.amount)
         from `tabPayment Ledger Entry` ple
@@ -96,23 +96,25 @@ def open_documents(company, as_of, doctype):
         (company, doctype, as_of),
     )
     invoices = _invoice_dates(doctype, [name for name, _party, _amount in rows])
-    return {
-        name: (party, flt(amount), invoices[name])
-        for name, party, amount in rows
-    }
+    return {name: (party, flt(amount), invoices[name]) for name, party, amount in rows}
 
 
 def _invoice_dates(doctype, names):
     """{name: due date, or the posting date when the invoice has none}."""
     if not names:
         return {}
-    found = frappe.get_all(doctype, filters={"name": ["in", names]}, fields=["name", "due_date", "posting_date"])
+    found = frappe.get_all(
+        doctype,
+        filters={"name": ["in", names]},
+        fields=["name", "due_date", "posting_date"],
+    )
     return {invoice.name: invoice.due_date or invoice.posting_date for invoice in found}
 
 
 def sales_paid_in_windows(company, as_of):
     """(invoice date, payment date, amount) of the Sales Invoices paid by a Payment Entry in the last run-rate windows,
-    in the company currency. The receipts the Payment Ledger shows against the invoices, as paid_history reads them."""
+    in the company currency. The receipts the Payment Ledger shows against the invoices, as paid_history reads them.
+    """
     since = as_of - datetime.timedelta(days=cf.RUN_RATE_LOOKBACK_DAYS)
     rows = frappe.db.sql(
         """select inv.posting_date, ple.posting_date, -sum(ple.amount)
@@ -138,7 +140,9 @@ def purchase_paid_in_windows(company, as_of):
         group by ple.against_voucher_no, pi.supplier, pi.posting_date, ple.posting_date""",
         (company, since, as_of),
     )
-    return [(supplier, issued, paid, flt(amount)) for supplier, issued, paid, amount in rows]
+    return [
+        (supplier, issued, paid, flt(amount)) for supplier, issued, paid, amount in rows
+    ]
 
 
 def paid_history(company, as_of, doctype, open_names):
@@ -149,7 +153,13 @@ def paid_history(company, as_of, doctype, open_names):
         where ple.company = %s and ple.against_voucher_type = %s and ple.voucher_type != %s and ple.delinked = 0
           and ple.posting_date between %s and %s
         group by ple.against_voucher_no""",
-        (company, doctype, doctype, as_of - datetime.timedelta(days=LOOKBACK_DAYS), as_of),
+        (
+            company,
+            doctype,
+            doctype,
+            as_of - datetime.timedelta(days=LOOKBACK_DAYS),
+            as_of,
+        ),
     )
     rows = [(name, party, paid) for name, party, paid in rows if name not in open_names]
     dates = _invoice_dates(doctype, [name for name, _party, _paid in rows])
@@ -165,29 +175,51 @@ def bills_in_window(company, as_of):
     bills = frappe.get_all(
         "Purchase Invoice",
         filters={
-            "company": company, "docstatus": 1, "is_return": 0,
-            "posting_date": ["between", [as_of - datetime.timedelta(days=LOOKBACK_DAYS), as_of]],
+            "company": company,
+            "docstatus": 1,
+            "is_return": 0,
+            "posting_date": [
+                "between",
+                [as_of - datetime.timedelta(days=LOOKBACK_DAYS), as_of],
+            ],
         },
         fields=["name", "supplier", "posting_date", "base_grand_total"],
     )
-    return [(bill.supplier, bill.posting_date, flt(bill.base_grand_total), bill.name) for bill in bills]
+    return [
+        (bill.supplier, bill.posting_date, flt(bill.base_grand_total), bill.name)
+        for bill in bills
+    ]
 
 
 def bank_outflows(company, as_of, bills):
     """(group key, date, amount, bank transaction name) of the outgoing bank lines of the last year that no bill,
     payroll or VAT payment covers, a Counter of the lines each rule left out, and the names of the kept lines a Journal
-    Entry reconciles to (the contra account source counts those, see recurring_sources). bills: bills_in_window."""
+    Entry reconciles to (the contra account source counts those, see recurring_sources). bills: bills_in_window.
+    """
     left_out = collections.Counter()
-    accounts = frappe.get_all("Bank Account", filters={"company": company}, pluck="name")
-    lines = frappe.get_all(
-        "Bank Transaction",
-        filters={
-            "docstatus": 1, "bank_account": ["in", accounts], "withdrawal": [">", 0],
-            "date": ["between", [as_of - datetime.timedelta(days=LOOKBACK_DAYS), as_of]],
-        },
-        fields=["name", "date", "withdrawal", "description"],
-    ) if accounts else []
-    payroll_or_vat_paid, bill_paid, transfer_paid, journal_paid = reconciled_bank_lines([line.name for line in lines])
+    accounts = frappe.get_all(
+        "Bank Account", filters={"company": company}, pluck="name"
+    )
+    lines = (
+        frappe.get_all(
+            "Bank Transaction",
+            filters={
+                "docstatus": 1,
+                "bank_account": ["in", accounts],
+                "withdrawal": [">", 0],
+                "date": [
+                    "between",
+                    [as_of - datetime.timedelta(days=LOOKBACK_DAYS), as_of],
+                ],
+            },
+            fields=["name", "date", "withdrawal", "description"],
+        )
+        if accounts
+        else []
+    )
+    payroll_or_vat_paid, bill_paid, transfer_paid, journal_paid = reconciled_bank_lines(
+        [line.name for line in lines]
+    )
     bill_days = [(day, amount) for _supplier, day, amount, _name in bills]
     kept = []
     journal = set()
@@ -207,7 +239,9 @@ def bank_outflows(company, as_of, bills):
         elif cf.paid_by_a_bill(line.date, amount, bill_days):
             left_out["amount of a bill"] += 1
         else:
-            kept.append((cf.description_key(line.description), line.date, amount, line.name))
+            kept.append(
+                (cf.description_key(line.description), line.date, amount, line.name)
+            )
             if line.name in journal_paid:
                 journal.add(line.name)
     return kept, left_out, journal
@@ -263,7 +297,12 @@ def reconciled_bank_lines(names):
         (names,),
     )
     transfer = {row[0] for row in transfer_je} | {row[0] for row in transfer_pe}
-    return {row[0] for row in payroll_or_vat}, {row[0] for row in bill}, transfer, {row[0] for row in journal}
+    return (
+        {row[0] for row in payroll_or_vat},
+        {row[0] for row in bill},
+        transfer,
+        {row[0] for row in journal},
+    )
 
 
 def personnel_postings(company, as_of):
@@ -286,7 +325,8 @@ def hrms_slips(company, as_of):
     mean stays the basis. Keyed on the slips, not on the Payroll Entry: an entry can sit in draft while its
     slips are submitted. Read by posting date, like every other source: a slip is the basis exactly when its
     accrual reaches the GL (the accrual Journal Entry carries the slip's posting date), so a run's month is not
-    counted twice — by the end date the slip would stay unseen while the GL already carries its accrual."""
+    counted twice — by the end date the slip would stay unseen while the GL already carries its accrual.
+    """
     if not frappe.db.exists("DocType", "Salary Slip"):
         return []
     rows = frappe.db.sql(
@@ -365,7 +405,10 @@ def journal_outflows(company, as_of):
               and bank.credit > 0 and ba.account_type in ('Bank', 'Cash') and bank.posting_date between %s and %s)""",
         (company, since, as_of, company, since, as_of),
     )
-    return [(number, account_type, name, day, flt(amount), entry) for number, account_type, name, day, amount, entry in rows]
+    return [
+        (number, account_type, name, day, flt(amount), entry)
+        for number, account_type, name, day, amount, entry in rows
+    ]
 
 
 def billed_journal_entries(company, entries):
@@ -387,17 +430,29 @@ def contra_sources(company, as_of):
     """The recurring costs of the Journal Entries by their contra account, as recurring_costs finds them: only a regular
     series gets a line. The key of each is the account number ("supplier" in recurring_costs' dict); "label" is the
     account's name in the chart as the site shows it. Also the Counter of the rows each rule left out
-    (cf.journal_occurrences), and the Counter of the entries on accounts with no regular series, by account number."""
+    (cf.journal_occurrences), and the Counter of the entries on accounts with no regular series, by account number.
+    """
     rows = journal_outflows(company, as_of)
-    names = {number: name for number, _account_type, name, _day, _amount, _entry in rows}
+    names = {
+        number: name for number, _account_type, name, _day, _amount, _entry in rows
+    }
     billed = billed_journal_entries(company, list({row[5] for row in rows}))
     occurrences, left_out = cf.journal_occurrences(
-        [(number, account_type, day, amount, entry) for number, account_type, _name, day, amount, entry in rows], billed)
+        [
+            (number, account_type, day, amount, entry)
+            for number, account_type, _name, day, amount, entry in rows
+        ],
+        billed,
+    )
     items = cf.recurring_costs(occurrences, as_of, strict=True)
     for item in items:
         item["label"] = names[item["supplier"]]
     modelled = {item["supplier"] for item in items}
-    not_modelled = collections.Counter(number for number, _day, _amount, _entry in occurrences if number not in modelled)
+    not_modelled = collections.Counter(
+        number
+        for number, _day, _amount, _entry in occurrences
+        if number not in modelled
+    )
     return items, left_out, not_modelled
 
 
@@ -408,7 +463,8 @@ def recurring_sources(company, as_of):
     it. "left_out" counts the bank lines each rule left out; "kept" is the number of bank lines that remain;
     "counted_by_contra" is the number of bank lines in the bank groups that a Journal Entry reconciles to, and
     "bank_lines_in_groups" the lines in the bank groups; "contra_left_out" counts the journal entry lines left out and
-    "contra_not_modelled" the entries on accounts with no regular series (contra_sources)."""
+    "contra_not_modelled" the entries on accounts with no regular series (contra_sources).
+    """
     bills = bills_in_window(company, as_of)
     bank, left_out, journal = bank_outflows(company, as_of, bills)
     groups = cf.recurring_costs(bank, as_of, strict=True)
@@ -423,7 +479,9 @@ def recurring_sources(company, as_of):
         "contra_left_out": contra_left_out,
         "contra_not_modelled": contra_not_modelled,
         "kept": len(bank),
-        "counted_by_contra": sum(1 for key, _day, _amount, name in bank if name in journal and key in grouped),
+        "counted_by_contra": sum(
+            1 for key, _day, _amount, name in bank if name in journal and key in grouped
+        ),
         "bank_lines_in_groups": sum(item["count"] for item in groups),
         "bank_groups_counted_by_contra": len(counted & grouped),
     }
@@ -431,10 +489,16 @@ def recurring_sources(company, as_of):
 
 def insurer_suppliers(company):
     """The suppliers with a purchase bill that has an item booked to an insurer's payable (INSURER_PAYABLE_ACCOUNTS).
-    The bill's own credit account is the supplier's payable (2000), so the item's expense account is what tells."""
+    The bill's own credit account is the supplier's payable (2000), so the item's expense account is what tells.
+    """
     accounts = frappe.get_all(
-        "Account", filters={"company": company, "account_number": ["between", list(cf.INSURER_PAYABLE_ACCOUNTS)]},
-        pluck="name")
+        "Account",
+        filters={
+            "company": company,
+            "account_number": ["between", list(cf.INSURER_PAYABLE_ACCOUNTS)],
+        },
+        pluck="name",
+    )
     if not accounts:
         return set()
     rows = frappe.db.sql(
@@ -458,27 +522,50 @@ def dry_run(company=None, as_of=None):
     insurers = insurer_suppliers(company)
     result = compute(company, as_of)
     lines = result["lines"]
-    salary_months = {(day.year, day.month) for day, _amount in cf.payroll_postings(personnel_postings(company, as_of))}
+    salary_months = {
+        (day.year, day.month)
+        for day, _amount in cf.payroll_postings(personnel_postings(company, as_of))
+    }
     return {
         "bill_groups": len(sources["bills"]),
-        "bill_groups_per_period": dict(collections.Counter(item["period"] for item in sources["bills"])),
-        "insurer_bill_groups_per_period": dict(collections.Counter(
-            item["period"] for item in sources["bills"] if item["supplier"] in insurers)),
-        "insurer_open_bills": sum(1 for party, _amount, _due in open_documents(company, as_of, "Purchase Invoice").values()
-                                  if party in insurers),
-        "insurer_recurring_lines": sum(1 for l in lines if l["kind"] == "recurring" and l["party"] in insurers),
+        "bill_groups_per_period": dict(
+            collections.Counter(item["period"] for item in sources["bills"])
+        ),
+        "insurer_bill_groups_per_period": dict(
+            collections.Counter(
+                item["period"]
+                for item in sources["bills"]
+                if item["supplier"] in insurers
+            )
+        ),
+        "insurer_open_bills": sum(
+            1
+            for party, _amount, _due in open_documents(
+                company, as_of, "Purchase Invoice"
+            ).values()
+            if party in insurers
+        ),
+        "insurer_recurring_lines": sum(
+            1 for l in lines if l["kind"] == "recurring" and l["party"] in insurers
+        ),
         "payroll_salary_months": len(salary_months),
         "payroll_lines": sum(1 for l in lines if l["kind"] == "payroll"),
         "payroll_hrms": 1 if result["hrms_payroll"] is not None else 0,
         "payroll_accrued_lines": 1 if result["accrued_payroll"] else 0,
         "bank_lines_kept": sources["kept"],
         "bank_lines_left_out": dict(sources["left_out"]),
-        "bank_groups_per_period": dict(collections.Counter(item["period"] for item in sources["bank"])),
+        "bank_groups_per_period": dict(
+            collections.Counter(item["period"] for item in sources["bank"])
+        ),
         "bank_lines_in_groups": sources["bank_lines_in_groups"],
         "bank_groups_counted_by_contra": sources["bank_groups_counted_by_contra"],
         "bank_lines_counted_by_contra": sources["counted_by_contra"],
-        "bank_groups_with_a_bill_supplier_key": sum(1 for item in sources["bank"] if item["supplier"] in bill_keys),
-        "contra_groups_per_period": dict(collections.Counter(item["period"] for item in sources["contra"])),
+        "bank_groups_with_a_bill_supplier_key": sum(
+            1 for item in sources["bank"] if item["supplier"] in bill_keys
+        ),
+        "contra_groups_per_period": dict(
+            collections.Counter(item["period"] for item in sources["contra"])
+        ),
         "contra_lines_in_groups": sum(item["count"] for item in sources["contra"]),
         "contra_left_out": dict(sources["contra_left_out"]),
         "contra_not_modelled": dict(sources["contra_not_modelled"]),
@@ -493,11 +580,24 @@ def manual_inputs():
 
 
 def line(kind, day, amount, party, doctype, name, note):
-    return {"kind": kind, "day": day, "amount": round(amount, 2), "party": party,
-            "doctype": doctype, "name": name, "note": note}
+    return {
+        "kind": kind,
+        "day": day,
+        "amount": round(amount, 2),
+        "party": party,
+        "doctype": doctype,
+        "name": name,
+        "note": note,
+    }
 
 
-def compute(company, as_of, include_run_rate=True, include_new_purchases=True, include_owner_accounts=True):
+def compute(
+    company,
+    as_of,
+    include_run_rate=True,
+    include_new_purchases=True,
+    include_owner_accounts=True,
+):
     """The forecast for the company as of the date: the weeks, the lowest week, the lines in the horizon, and
     the counts the messages tell. include_run_rate: the new sales run-rate's lines are in the forecast (see the
     module's docstring); run_rate is its run_rate dict (weekly, low, high, since, basis), None when left out.
@@ -517,59 +617,159 @@ def compute(company, as_of, include_run_rate=True, include_new_purchases=True, i
         if party not in late:
             without_history.add(party)
         days = late.get(party, 0)
-        note = _("due {0}, {1} days late on average").format(due, days) if party in late else _("due {0}, no paid invoice in the last year").format(due)
-        lines.append(line(cf.RECEIPT, cf.expected_receipt(due, days), amount, party, "Sales Invoice", name, note))
+        note = (
+            _("due {0}, {1} days late on average").format(due, days)
+            if party in late
+            else _("due {0}, no paid invoice in the last year").format(due)
+        )
+        lines.append(
+            line(
+                cf.RECEIPT,
+                cf.expected_receipt(due, days),
+                amount,
+                party,
+                "Sales Invoice",
+                name,
+                note,
+            )
+        )
 
     for name, (party, amount, due) in payables.items():
-        lines.append(line("bill", due, amount, party, "Purchase Invoice", name, _("due {0}").format(due)))
+        lines.append(
+            line(
+                "bill",
+                due,
+                amount,
+                party,
+                "Purchase Invoice",
+                name,
+                _("due {0}").format(due),
+            )
+        )
 
     sources = recurring_sources(company, as_of)
     run_rate = None
     if include_run_rate:
         # the invoices not issued yet on the as-of date: a receipt every week, the basis of the recent windows
         run_rate = cf.run_rate(sales_paid_in_windows(company, as_of), as_of)
-        note = _("new sales run-rate: {0} since {1}, the receipts from the invoices issued in each window, between {2} and {3} a week, a thirteenth each week").format(
-            basis_label(run_rate["basis"]), run_rate["since"], run_rate["low"], run_rate["high"])
+        note = _(
+            "new sales run-rate: {0} since {1}, the receipts from the invoices issued in each window, between {2} and {3} a week, a thirteenth each week"
+        ).format(
+            basis_label(run_rate["basis"]),
+            run_rate["since"],
+            run_rate["low"],
+            run_rate["high"],
+        )
         for week in range(1, cf.WEEKS + 1):
-            lines.append(line(cf.NEW_SALES, cf.week_bounds(week, as_of)[0], run_rate["weekly"], "", "", "", note))
+            lines.append(
+                line(
+                    cf.NEW_SALES,
+                    cf.week_bounds(week, as_of)[0],
+                    run_rate["weekly"],
+                    "",
+                    "",
+                    "",
+                    note,
+                )
+            )
 
     new_purchases = None
     if include_new_purchases:
         # the bills not posted yet on the as-of date: a payment every week, the basis of the recent windows. The suppliers
         # the recurring costs forecast and the insurers' bills are left out: they are forecast already
-        excluded = {item["supplier"] for item in sources["bills"]} | insurer_suppliers(company)
-        new_purchases = cf.purchase_run_rate(purchase_paid_in_windows(company, as_of), as_of, excluded)
-        note = _("new purchases run-rate: {0} since {1}, the payments of the bills posted in each window, between {2} and {3} a week, {4} suppliers left out (recurring or insurer), a thirteenth each week").format(
-            basis_label(new_purchases["basis"]), new_purchases["since"], new_purchases["low"], new_purchases["high"],
-            new_purchases["excluded"])
+        excluded = {item["supplier"] for item in sources["bills"]} | insurer_suppliers(
+            company
+        )
+        new_purchases = cf.purchase_run_rate(
+            purchase_paid_in_windows(company, as_of), as_of, excluded
+        )
+        note = _(
+            "new purchases run-rate: {0} since {1}, the payments of the bills posted in each window, between {2} and {3} a week, {4} suppliers left out (recurring or insurer), a thirteenth each week"
+        ).format(
+            basis_label(new_purchases["basis"]),
+            new_purchases["since"],
+            new_purchases["low"],
+            new_purchases["high"],
+            new_purchases["excluded"],
+        )
         for week in range(1, cf.WEEKS + 1):
-            lines.append(line(cf.NEW_PURCHASES, cf.week_bounds(week, as_of)[0], new_purchases["weekly"], "", "", "", note))
+            lines.append(
+                line(
+                    cf.NEW_PURCHASES,
+                    cf.week_bounds(week, as_of)[0],
+                    new_purchases["weekly"],
+                    "",
+                    "",
+                    "",
+                    note,
+                )
+            )
 
     open_due = collections.defaultdict(list)
     for _name, (party, _amount, due) in payables.items():
         open_due[party].append(due)
     for item in sources["bills"]:
         for day in cf.recurring_dates(item, as_of, horizon):
-            if any(abs((day - due).days) <= cf.OPEN_BILL_MATCH_DAYS for due in open_due[item["supplier"]]):
+            if any(
+                abs((day - due).days) <= cf.OPEN_BILL_MATCH_DAYS
+                for due in open_due[item["supplier"]]
+            ):
                 continue
-            note = _("{0}, {1} bills, from the last one").format(item["period"], item["count"])
-            lines.append(line("recurring", day, item["amount"], item["supplier"], "Purchase Invoice", item["last_bill"], note))
+            note = _("{0}, {1} bills, from the last one").format(
+                item["period"], item["count"]
+            )
+            lines.append(
+                line(
+                    "recurring",
+                    day,
+                    item["amount"],
+                    item["supplier"],
+                    "Purchase Invoice",
+                    item["last_bill"],
+                    note,
+                )
+            )
     for item in sources["bank"]:
         for day in cf.recurring_dates(item, as_of, horizon):
             note = _("{0}, {1} bank lines described “{2}”, from the last one").format(
-                item["period"], item["count"], item["supplier"])
-            lines.append(line("recurring", day, item["amount"], "", "Bank Transaction", item["last_bill"], note))
+                item["period"], item["count"], item["supplier"]
+            )
+            lines.append(
+                line(
+                    "recurring",
+                    day,
+                    item["amount"],
+                    "",
+                    "Bank Transaction",
+                    item["last_bill"],
+                    note,
+                )
+            )
     for item in sources["contra"]:
         owner = item["supplier"] in cf.OWNER_ACCOUNTS
         if owner and not include_owner_accounts:
             continue
         label = item["label"] + (" " + _("(average, discretionary)") if owner else "")
         for day in cf.recurring_dates(item, as_of, horizon):
-            note = _("{0}, {1} journal entries to this account, from the last one").format(item["period"], item["count"])
-            lines.append(line("recurring", day, item["amount"], label, "Journal Entry", item["last_bill"], note))
+            note = _(
+                "{0}, {1} journal entries to this account, from the last one"
+            ).format(item["period"], item["count"])
+            lines.append(
+                line(
+                    "recurring",
+                    day,
+                    item["amount"],
+                    label,
+                    "Journal Entry",
+                    item["last_bill"],
+                    note,
+                )
+            )
 
     expected, manual = manual_inputs()
-    trailing = cf.payroll_from_postings(cf.payroll_postings(personnel_postings(company, as_of)))
+    trailing = cf.payroll_from_postings(
+        cf.payroll_postings(personnel_postings(company, as_of))
+    )
     slips = hrms_slips(company, as_of)
     hrms = cf.hrms_net(slips)
     amount = cf.payroll_level(expected, trailing, hrms)
@@ -582,24 +782,52 @@ def compute(company, as_of, include_run_rate=True, include_new_purchases=True, i
         for day in cf.payroll_dates(as_of, horizon, skip_month):
             lines.append(line("payroll", day, amount, "", "", "", note))
     if accrued:
-        lines.append(line("payroll", as_of + datetime.timedelta(days=1), accrued, "", "", "",
-                          _("accrued net pay on 1091, not yet paid")))
+        lines.append(
+            line(
+                "payroll",
+                as_of + datetime.timedelta(days=1),
+                accrued,
+                "",
+                "",
+                "",
+                _("accrued net pay on 1091, not yet paid"),
+            )
+        )
 
     for row in manual:
         if cf.manual_day_in_window(row.date, as_of, horizon):
-            note = _("manual input from Cash Forecast Settings, {0}").format(row.account) if row.account else _("manual input from Cash Forecast Settings")
-            lines.append(line(cf.MANUAL, row.date, cf.manual_amount(row.direction, flt(row.amount)), row.label,
-                              "Cash Forecast Manual Line", row.name, note))
+            note = (
+                _("manual input from Cash Forecast Settings, {0}").format(row.account)
+                if row.account
+                else _("manual input from Cash Forecast Settings")
+            )
+            lines.append(
+                line(
+                    cf.MANUAL,
+                    row.date,
+                    cf.manual_amount(row.direction, flt(row.amount)),
+                    row.label,
+                    "Cash Forecast Manual Line",
+                    row.name,
+                    note,
+                )
+            )
 
     closed_end = cf.quarter_start(as_of) - datetime.timedelta(days=1)
     owed_closed, owed_this_quarter = cf.vat_split(
-        cf.vat_owed(vat_balances(company, closed_end)), vat_paid_since(company, closed_end, as_of),
-        cf.vat_owed(vat_balances(company, as_of)))
+        cf.vat_owed(vat_balances(company, closed_end)),
+        vat_paid_since(company, closed_end, as_of),
+        cf.vat_owed(vat_balances(company, as_of)),
+    )
     for day, amount, end in cf.vat_lines(as_of, owed_closed, owed_this_quarter):
         if end == closed_end:
-            basis = _("VAT of the quarter ending {0}, as the books owed it on {1}").format(end, closed_end)
+            basis = _(
+                "VAT of the quarter ending {0}, as the books owed it on {1}"
+            ).format(end, closed_end)
         else:
-            basis = _("VAT booked in the quarter ending {0} so far, as of {1}").format(end, as_of)
+            basis = _("VAT booked in the quarter ending {0} so far, as of {1}").format(
+                end, as_of
+            )
         if amount < 0:
             basis = _("refund, {0}").format(basis)
         lines.append(line("vat", day, amount, "", "", "", basis))
@@ -610,7 +838,9 @@ def compute(company, as_of, include_run_rate=True, include_new_purchases=True, i
         "weeks": weeks,
         "lowest": lowest,
         "beyond": beyond,
-        "lines": sorted((l for l in lines if "week" in l), key=lambda l: (l["week"], l["day"])),
+        "lines": sorted(
+            (l for l in lines if "week" in l), key=lambda l: (l["week"], l["day"])
+        ),
         "without_history": len(without_history),
         "run_rate": run_rate,
         "new_purchases": new_purchases,
@@ -624,13 +854,21 @@ def compute(company, as_of, include_run_rate=True, include_new_purchases=True, i
 
 def closing_band_messages(result, currency):
     """The closing cash at the end of the horizon with its low and high, as a list of one message (empty when neither
-    run-rate is in the forecast). The forecast report and the lines report both show it."""
+    run-rate is in the forecast). The forecast report and the lines report both show it.
+    """
     if not (result["run_rate"] or result["new_purchases"]):
         return []
     low, high = result["closing_band"]
-    return [_("End of week {0} the closing cash is {1}, between {2} and {3} with the run-rates at their low and high.").format(
-        len(result["weeks"]), fmt_money(result["weeks"][-1]["closing"], currency=currency),
-        fmt_money(low, currency=currency), fmt_money(high, currency=currency))]
+    return [
+        _(
+            "End of week {0} the closing cash is {1}, between {2} and {3} with the run-rates at their low and high."
+        ).format(
+            len(result["weeks"]),
+            fmt_money(result["weeks"][-1]["closing"], currency=currency),
+            fmt_money(low, currency=currency),
+            fmt_money(high, currency=currency),
+        )
+    ]
 
 
 def execute(filters=None):
@@ -638,19 +876,31 @@ def execute(filters=None):
     company = filters.company or frappe.defaults.get_user_default("company")
     as_of = getdate(filters.as_of_date or nowdate())
     currency = frappe.get_cached_value("Company", company, "default_currency")
-    result = compute(company, as_of, include_run_rate=cint(filters.get("include_run_rate", 1)),
-                     include_new_purchases=cint(filters.get("include_new_purchases", 1)),
-                     include_owner_accounts=cint(filters.get("include_owner_accounts", 1)))
+    result = compute(
+        company,
+        as_of,
+        include_run_rate=cint(filters.get("include_run_rate", 1)),
+        include_new_purchases=cint(filters.get("include_new_purchases", 1)),
+        include_owner_accounts=cint(filters.get("include_owner_accounts", 1)),
+    )
     weeks, lowest, opening = result["weeks"], result["lowest"], result["opening"]
     has_manual = any(l["kind"] == cf.MANUAL for l in result["lines"])
 
     rows = [
         {
-            "week": row["week"], "from": row["start"], "to": row["end"],
-            "receipt": row["receipt"], "new_sales": row["new_sales"], "bill": row["bill"],
-            "new_purchases": row["new_purchases"], "recurring": row["recurring"],
-            "payroll": row["payroll"], "vat": row["vat"], "manual": row[cf.MANUAL],
-            "net": row["net"], "closing": row["closing"],
+            "week": row["week"],
+            "from": row["start"],
+            "to": row["end"],
+            "receipt": row["receipt"],
+            "new_sales": row["new_sales"],
+            "bill": row["bill"],
+            "new_purchases": row["new_purchases"],
+            "recurring": row["recurring"],
+            "payroll": row["payroll"],
+            "vat": row["vat"],
+            "manual": row[cf.MANUAL],
+            "net": row["net"],
+            "closing": row["closing"],
             "lowest": _("lowest") if row["week"] == lowest else None,
         }
         for row in weeks
@@ -659,20 +909,46 @@ def execute(filters=None):
     lowest_closing = weeks[lowest - 1]["closing"]
     final_closing = weeks[-1]["closing"]
     summary = [
-        {"value": opening, "label": _("Opening cash"), "datatype": "Currency", "currency": currency, "indicator": "Blue"},
-        {"value": lowest_closing, "label": _("Lowest, week {0}").format(lowest), "datatype": "Currency",
-         "currency": currency, "indicator": "Red" if lowest_closing < 0 else "Orange"},
-        {"value": final_closing, "label": _("End of week {0}").format(len(weeks)), "datatype": "Currency",
-         "currency": currency, "indicator": "Red" if final_closing < 0 else "Green"},
+        {
+            "value": opening,
+            "label": _("Opening cash"),
+            "datatype": "Currency",
+            "currency": currency,
+            "indicator": "Blue",
+        },
+        {
+            "value": lowest_closing,
+            "label": _("Lowest, week {0}").format(lowest),
+            "datatype": "Currency",
+            "currency": currency,
+            "indicator": "Red" if lowest_closing < 0 else "Orange",
+        },
+        {
+            "value": final_closing,
+            "label": _("End of week {0}").format(len(weeks)),
+            "datatype": "Currency",
+            "currency": currency,
+            "indicator": "Red" if final_closing < 0 else "Green",
+        },
     ]
 
     chart = {
         "data": {
-            "labels": [_("Today")] + [_("Week {0}").format(row["week"]) for row in weeks],
+            "labels": [_("Today")]
+            + [_("Week {0}").format(row["week"]) for row in weeks],
             "datasets": [
-                {"name": _("Closing cash"), "values": [opening] + [row["closing"] for row in weeks]},
-                {"name": _("Lowest point"), "values": [None] + [
-                    row["closing"] if row["week"] == lowest else None for row in weeks]},
+                {
+                    "name": _("Closing cash"),
+                    "values": [opening] + [row["closing"] for row in weeks],
+                },
+                {
+                    "name": _("Lowest point"),
+                    "values": [None]
+                    + [
+                        row["closing"] if row["week"] == lowest else None
+                        for row in weeks
+                    ],
+                },
             ],
         },
         "type": "line",
@@ -684,65 +960,194 @@ def execute(filters=None):
 
 def forecast_message(result, currency):
     """The report's message, as HTML: one line for the accounts without a regular series, then the reading of the
-    forecast, and the per-account lines folded at the end. None when there is nothing to say."""
+    forecast, and the per-account lines folded at the end. None when there is nothing to say.
+    """
     not_modelled = sorted(result["not_modelled"].items())
-    messages = [_(
-        "Journal entries are recurring costs by their contra account, one line each. Left out, as another line carries "
-        "them: payroll (5xxx, 1091), insurers (2270 to 2279), VAT (1170 to 1172, 2200, 2202), bill payments (2000), "
-        "transfers between bank and cash accounts, and entries reconciled to a purchase invoice. The owners' current "
-        "accounts (2100, 2121) are labelled average and discretionary; the filter \"Include owner accounts\" leaves them out.")]
+    messages = [
+        _(
+            "Journal entries are recurring costs by their contra account, one line each. Left out, as another line carries "
+            "them: payroll (5xxx, 1091), insurers (2270 to 2279), VAT (1170 to 1172, 2200, 2202), bill payments (2000), "
+            "transfers between bank and cash accounts, and entries reconciled to a purchase invoice. The owners' current "
+            'accounts (2100, 2121) are labelled average and discretionary; the filter "Include owner accounts" leaves them out.'
+        )
+    ]
     if not_modelled:
-        messages.insert(0, _("{0} accounts have no regular series and are not modelled (details folded at the end of this message).").format(
-            len(not_modelled)))
+        messages.insert(
+            0,
+            _(
+                "{0} accounts have no regular series and are not modelled (details folded at the end of this message)."
+            ).format(len(not_modelled)),
+        )
     if result["run_rate"]:
-        messages.append(_("New sales are in the forecast at {0} a week ({1} to {2}): {3} since {4}, receipts from the invoices issued in each window.").format(
-            fmt_money(result["run_rate"]["weekly"], currency=currency), fmt_money(result["run_rate"]["low"], currency=currency),
-            fmt_money(result["run_rate"]["high"], currency=currency), basis_label(result["run_rate"]["basis"]),
-            result["run_rate"]["since"]))
+        messages.append(
+            _(
+                "New sales are in the forecast at {0} a week ({1} to {2}): {3} since {4}, receipts from the invoices issued in each window."
+            ).format(
+                fmt_money(result["run_rate"]["weekly"], currency=currency),
+                fmt_money(result["run_rate"]["low"], currency=currency),
+                fmt_money(result["run_rate"]["high"], currency=currency),
+                basis_label(result["run_rate"]["basis"]),
+                result["run_rate"]["since"],
+            )
+        )
     if result["new_purchases"]:
-        messages.append(_("New purchases are in the forecast at {0} a week ({1} to {2}): {3} since {4}, payments of the bills posted in each window, {5} suppliers left out.").format(
-            fmt_money(result["new_purchases"]["weekly"], currency=currency), fmt_money(result["new_purchases"]["low"], currency=currency),
-            fmt_money(result["new_purchases"]["high"], currency=currency), basis_label(result["new_purchases"]["basis"]),
-            result["new_purchases"]["since"], result["new_purchases"]["excluded"]))
+        messages.append(
+            _(
+                "New purchases are in the forecast at {0} a week ({1} to {2}): {3} since {4}, payments of the bills posted in each window, {5} suppliers left out."
+            ).format(
+                fmt_money(result["new_purchases"]["weekly"], currency=currency),
+                fmt_money(result["new_purchases"]["low"], currency=currency),
+                fmt_money(result["new_purchases"]["high"], currency=currency),
+                basis_label(result["new_purchases"]["basis"]),
+                result["new_purchases"]["since"],
+                result["new_purchases"]["excluded"],
+            )
+        )
     if result["expected_payroll"]:
-        messages.append(_("Payroll is from settings: {0} a month, in place of the trailing mean of the last three salary months.").format(
-            fmt_money(result["expected_payroll"], currency=currency)))
+        messages.append(
+            _(
+                "Payroll is from settings: {0} a month, in place of the trailing mean of the last three salary months."
+            ).format(fmt_money(result["expected_payroll"], currency=currency))
+        )
     elif result["hrms_payroll"] is not None:
-        messages.append(_("Payroll is from the last submitted salary slips: {0} a month.").format(
-            fmt_money(result["hrms_payroll"], currency=currency)))
+        messages.append(
+            _("Payroll is from the last submitted salary slips: {0} a month.").format(
+                fmt_money(result["hrms_payroll"], currency=currency)
+            )
+        )
     manual_count = sum(1 for l in result["lines"] if l["kind"] == cf.MANUAL)
     if manual_count:
-        messages.append(_("{0} manual lines from Cash Forecast Settings are in the forecast.").format(manual_count))
+        messages.append(
+            _(
+                "{0} manual lines from Cash Forecast Settings are in the forecast."
+            ).format(manual_count)
+        )
     messages.extend(closing_band_messages(result, currency))
     if result["beyond"]:
-        messages.append(_("{0} lines fall after week {1} and are not in the forecast.").format(result["beyond"], len(result["weeks"])))
+        messages.append(
+            _("{0} lines fall after week {1} and are not in the forecast.").format(
+                result["beyond"], len(result["weeks"])
+            )
+        )
     if result["without_history"]:
-        messages.append(_("{0} customers have no paid invoice in the last year: their open invoices are taken as paid on the due date.").format(result["without_history"]))
+        messages.append(
+            _(
+                "{0} customers have no paid invoice in the last year: their open invoices are taken as paid on the due date."
+            ).format(result["without_history"])
+        )
     message = "<br>".join(escape_html(m) for m in messages)
     if not_modelled:
         # the per-account lines, folded so the message stays short above the summary
-        details = "<br>".join(escape_html(_("Not modelled, no regular series: {0} entries on account {1}.").format(count, number))
-                              for number, count in not_modelled)
-        message += "<br><details><summary>{0}</summary>{1}</details>".format(escape_html(_("Accounts not modelled")), details)
+        details = "<br>".join(
+            escape_html(
+                _(
+                    "Not modelled, no regular series: {0} entries on account {1}."
+                ).format(count, number)
+            )
+            for number, count in not_modelled
+        )
+        message += "<br><details><summary>{}</summary>{}</details>".format(
+            escape_html(_("Accounts not modelled")), details
+        )
     return message or None
 
 
 def columns(currency, has_manual=False):
     """The report's columns. The manual column is there only when the forecast has manual lines (has_manual)."""
-    manual = [{"label": _("Manual inputs"), "fieldname": cf.MANUAL, "fieldtype": "Float", "precision": 2, "width": 130}] if has_manual else []
-    return [
-        {"label": _("Week"), "fieldname": "week", "fieldtype": "Int", "width": 70},
-        {"label": _("From"), "fieldname": "from", "fieldtype": "Date", "width": 110},
-        {"label": _("To"), "fieldname": "to", "fieldtype": "Date", "width": 110},
-        {"label": _("Receipts"), "fieldname": "receipt", "fieldtype": "Float", "precision": 2, "width": 130},
-        {"label": _("New sales"), "fieldname": "new_sales", "fieldtype": "Float", "precision": 2, "width": 120},
-        {"label": _("Supplier bills"), "fieldname": "bill", "fieldtype": "Float", "precision": 2, "width": 130},
-        {"label": _("New purchases"), "fieldname": "new_purchases", "fieldtype": "Float", "precision": 2, "width": 130},
-        {"label": _("Recurring costs"), "fieldname": "recurring", "fieldtype": "Float", "precision": 2, "width": 130},
-        {"label": _("Payroll"), "fieldname": "payroll", "fieldtype": "Float", "precision": 2, "width": 120},
-        {"label": _("VAT"), "fieldname": "vat", "fieldtype": "Float", "precision": 2, "width": 120},
-    ] + manual + [
-        {"label": _("Net"), "fieldname": "net", "fieldtype": "Float", "precision": 2, "width": 120},
-        {"label": _("Closing cash ({0})").format(currency), "fieldname": "closing", "fieldtype": "Float", "precision": 2, "width": 150},
-        {"label": _("Lowest point"), "fieldname": "lowest", "fieldtype": "Data", "width": 110},
-    ]
+    manual = (
+        [
+            {
+                "label": _("Manual inputs"),
+                "fieldname": cf.MANUAL,
+                "fieldtype": "Float",
+                "precision": 2,
+                "width": 130,
+            }
+        ]
+        if has_manual
+        else []
+    )
+    return (
+        [
+            {"label": _("Week"), "fieldname": "week", "fieldtype": "Int", "width": 70},
+            {
+                "label": _("From"),
+                "fieldname": "from",
+                "fieldtype": "Date",
+                "width": 110,
+            },
+            {"label": _("To"), "fieldname": "to", "fieldtype": "Date", "width": 110},
+            {
+                "label": _("Receipts"),
+                "fieldname": "receipt",
+                "fieldtype": "Float",
+                "precision": 2,
+                "width": 130,
+            },
+            {
+                "label": _("New sales"),
+                "fieldname": "new_sales",
+                "fieldtype": "Float",
+                "precision": 2,
+                "width": 120,
+            },
+            {
+                "label": _("Supplier bills"),
+                "fieldname": "bill",
+                "fieldtype": "Float",
+                "precision": 2,
+                "width": 130,
+            },
+            {
+                "label": _("New purchases"),
+                "fieldname": "new_purchases",
+                "fieldtype": "Float",
+                "precision": 2,
+                "width": 130,
+            },
+            {
+                "label": _("Recurring costs"),
+                "fieldname": "recurring",
+                "fieldtype": "Float",
+                "precision": 2,
+                "width": 130,
+            },
+            {
+                "label": _("Payroll"),
+                "fieldname": "payroll",
+                "fieldtype": "Float",
+                "precision": 2,
+                "width": 120,
+            },
+            {
+                "label": _("VAT"),
+                "fieldname": "vat",
+                "fieldtype": "Float",
+                "precision": 2,
+                "width": 120,
+            },
+        ]
+        + manual
+        + [
+            {
+                "label": _("Net"),
+                "fieldname": "net",
+                "fieldtype": "Float",
+                "precision": 2,
+                "width": 120,
+            },
+            {
+                "label": _("Closing cash ({0})").format(currency),
+                "fieldname": "closing",
+                "fieldtype": "Float",
+                "precision": 2,
+                "width": 150,
+            },
+            {
+                "label": _("Lowest point"),
+                "fieldname": "lowest",
+                "fieldtype": "Data",
+                "width": 110,
+            },
+        ]
+    )

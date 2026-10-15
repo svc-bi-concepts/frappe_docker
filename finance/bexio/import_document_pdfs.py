@@ -30,7 +30,10 @@ import os
 import sys
 
 import launcher
-ex = launcher.load("export.py")  # export.py is a bash launcher; its python body is what runs here
+
+ex = launcher.load(
+    "export.py"
+)  # export.py is a bash launcher; its python body is what runs here
 import import_files as imf
 import import_master as im
 import import_purchase as ip
@@ -63,19 +66,25 @@ class Lookups:
 
     def __init__(self, documents, attached):
         self.documents = documents  # (doctype, bexio id) -> ERPNext name
-        self.attached = attached    # (doctype, ERPNext name) -> [(bexio id, file name)]
+        self.attached = attached  # (doctype, ERPNext name) -> [(bexio id, file name)]
 
     @classmethod
     def from_erp(cls, erp):
         documents = {}
         for doctype in DOCTYPES:
-            for r in erp.list(doctype, [["bexio_id", "is", "set"]], ["name", "bexio_id"]):
+            for r in erp.list(
+                doctype, [["bexio_id", "is", "set"]], ["name", "bexio_id"]
+            ):
                 documents[(doctype, r["bexio_id"])] = r["name"]
         attached = {}
-        for f in erp.list("File", [["attached_to_doctype", "in", DOCTYPES]],
-                          ["attached_to_doctype", "attached_to_name", "file_name", "bexio_id"]):
-            attached.setdefault((f["attached_to_doctype"], f["attached_to_name"]), []).append(
-                (f["bexio_id"] or "", f["file_name"]))
+        for f in erp.list(
+            "File",
+            [["attached_to_doctype", "in", DOCTYPES]],
+            ["attached_to_doctype", "attached_to_name", "file_name", "bexio_id"],
+        ):
+            attached.setdefault(
+                (f["attached_to_doctype"], f["attached_to_name"]), []
+            ).append((f["bexio_id"] or "", f["file_name"]))
         return cls(documents, attached)
 
 
@@ -107,8 +116,10 @@ def plan(pdfs, lookups, export_dir):
             document = lookups.documents.get((doctype, bexio_id))
         if document is None:
             outcome = NO_DOCUMENT
-        elif any(key in (file_key, bexio_id) or (not key and name == row["file"])
-                 for key, name in lookups.attached.get((doctype, document), [])):
+        elif any(
+            key in (file_key, bexio_id) or (not key and name == row["file"])
+            for key, name in lookups.attached.get((doctype, document), [])
+        ):
             # the bare key is a File uploaded before the kind prefix (offer 2 in the first run): the same document, the same PDF
             outcome = ATTACHED
         else:
@@ -119,8 +130,19 @@ def plan(pdfs, lookups, export_dir):
                 outcome = "size differs"
             else:
                 outcome = ATTACH
-        rows.append({"kind": kind, "id": row["id"], "bexio_id": bexio_id, "file_key": file_key, "file": row["file"],
-                     "doctype": doctype, "document": document, "outcome": outcome, "bytes": row["bytes"]})
+        rows.append(
+            {
+                "kind": kind,
+                "id": row["id"],
+                "bexio_id": bexio_id,
+                "file_key": file_key,
+                "file": row["file"],
+                "doctype": doctype,
+                "document": document,
+                "outcome": outcome,
+                "bytes": row["bytes"],
+            }
+        )
     return rows
 
 
@@ -139,29 +161,49 @@ def apply(rows, export_dir, erp):
         if row["outcome"] != ATTACH:
             continue
         with open(document_pdf_path(export_dir, row), "rb") as f:
-            imf.upload(erp, row["document"], row["file_key"], row["file"], f.read(), doctype=row["doctype"])
+            imf.upload(
+                erp,
+                row["document"],
+                row["file_key"],
+                row["file"],
+                f.read(),
+                doctype=row["doctype"],
+            )
         uploaded += 1
     return uploaded
 
 
 def report(rows, export_dir, applied=False):
     """Totals only: no ids, no names. One line per kind, then one per outcome that occurs."""
-    lines = ["document PDFs from {}".format(export_dir),
-             "{:<16}{:>7}{:>14}{:>9}{:>10}{:>10}".format("kind", "pdfs", "bytes", "attach", "attached", "problems")]
+    lines = [
+        f"document PDFs from {export_dir}",
+        "{:<16}{:>7}{:>14}{:>9}{:>10}{:>10}".format(
+            "kind", "pdfs", "bytes", "attach", "attached", "problems"
+        ),
+    ]
     for kind in sorted({r["kind"] for r in rows}):
         group = [r for r in rows if r["kind"] == kind]
-        lines.append("{:<16}{:>7}{:>14}{:>9}{:>10}{:>10}".format(
-            kind, len(group), sum(r["bytes"] for r in group),
-            sum(r["outcome"] == ATTACH for r in group), sum(r["outcome"] == ATTACHED for r in group),
-            sum(r["outcome"] in PROBLEMS for r in group)))
+        lines.append(
+            "{:<16}{:>7}{:>14}{:>9}{:>10}{:>10}".format(
+                kind,
+                len(group),
+                sum(r["bytes"] for r in group),
+                sum(r["outcome"] == ATTACH for r in group),
+                sum(r["outcome"] == ATTACHED for r in group),
+                sum(r["outcome"] in PROBLEMS for r in group),
+            )
+        )
     counts = {}
     for r in rows:
         counts[r["outcome"]] = counts.get(r["outcome"], 0) + 1
     for outcome in (ATTACH, ATTACHED, NO_DOCUMENT) + PROBLEMS:
         if counts.get(outcome):
-            lines.append("  {:<14}{:>6}".format(outcome, counts[outcome]))
-    lines.append("applied: the PDFs marked attach are uploaded as private Files" if applied
-                 else "dry run: nothing was written")
+            lines.append(f"  {outcome:<14}{counts[outcome]:>6}")
+    lines.append(
+        "applied: the PDFs marked attach are uploaded as private Files"
+        if applied
+        else "dry run: nothing was written"
+    )
     return "\n".join(lines)
 
 
@@ -170,10 +212,24 @@ def problem_line(row):
 
 
 def main(argv):
-    parser = argparse.ArgumentParser(description="Attach the bexio document PDFs to their ERPNext documents (a dry run by default).")
-    parser.add_argument("--export", default=None, help="export directory (default: the newest under <private>/bexio-export/)")
-    parser.add_argument("--dry-run", action="store_true", help="read ERPNext, write nothing, print the totals (the default)")
-    parser.add_argument("--apply", action="store_true", help="upload the PDFs that would be attached, as private Files")
+    parser = argparse.ArgumentParser(
+        description="Attach the bexio document PDFs to their ERPNext documents (a dry run by default)."
+    )
+    parser.add_argument(
+        "--export",
+        default=None,
+        help="export directory (default: the newest under <private>/bexio-export/)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="read ERPNext, write nothing, print the totals (the default)",
+    )
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="upload the PDFs that would be attached, as private Files",
+    )
     parser.add_argument("--token-file", default=im.TOKEN_FILE)
     args = parser.parse_args(argv)
     if args.apply and args.dry_run:
@@ -183,19 +239,27 @@ def main(argv):
         erp = im.Erp.from_file(args.token_file)
         rows = run(export_dir, erp)
         if rows is None:
-            print("aborted: no {} in {}; run export.py --complete first".format(PDFS_FILE, export_dir), file=sys.stderr)
+            print(
+                f"aborted: no {PDFS_FILE} in {export_dir}; run export.py --complete first",
+                file=sys.stderr,
+            )
             return 2
         if args.apply:
-            print("uploaded {} document PDF(s)".format(apply(rows, export_dir, erp)))
+            print(f"uploaded {apply(rows, export_dir, erp)} document PDF(s)")
             rows = run(export_dir, erp)
     except im.ErpError as err:
-        print("aborted: {}".format(err), file=sys.stderr)
+        print(f"aborted: {err}", file=sys.stderr)
         return 2
     print(report(rows, export_dir, applied=args.apply))
     listed = [r for r in rows if r["outcome"] != ATTACH and r["outcome"] != ATTACHED]
     if listed:
-        ip.write_private(os.path.join(im.PRIVATE, PROBLEMS_FILE), [problem_line(r) for r in listed])
-        print("{} line(s) listed in {}".format(len(listed), os.path.join(im.PRIVATE, PROBLEMS_FILE)), file=sys.stderr)
+        ip.write_private(
+            os.path.join(im.PRIVATE, PROBLEMS_FILE), [problem_line(r) for r in listed]
+        )
+        print(
+            f"{len(listed)} line(s) listed in {os.path.join(im.PRIVATE, PROBLEMS_FILE)}",
+            file=sys.stderr,
+        )
     return 1 if any(r["outcome"] in PROBLEMS for r in rows) else 0
 
 

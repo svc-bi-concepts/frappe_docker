@@ -9,12 +9,28 @@ lines carry the bank's words (Spesen, Gebühr, Kontoführung, Preis für, Zins, 
 """
 
 RULES = (
-    {"rule_name": "Wise fees", "transaction_type": "Withdrawal", "account_number": "6940",
-     "texts": ("Wise fee", "Wise Charges")},
-    {"rule_name": "UBS bank fees", "transaction_type": "Withdrawal", "account_number": "6940",
-     "texts": ("Spesen", "Gebühr", "Kontoführung", "Preis für")},
-    {"rule_name": "UBS interest received", "transaction_type": "Deposit", "account_number": "6950",
-     "texts": ("Zins", "Interest")},
-    {"rule_name": "UBS interest paid", "transaction_type": "Withdrawal", "account_number": "6900",
-     "texts": ("Zins", "Interest")},
+    {
+        "rule_name": "Wise fees",
+        "transaction_type": "Withdrawal",
+        "account_number": "6940",
+        "texts": ("Wise fee", "Wise Charges"),
+    },
+    {
+        "rule_name": "UBS bank fees",
+        "transaction_type": "Withdrawal",
+        "account_number": "6940",
+        "texts": ("Spesen", "Gebühr", "Kontoführung", "Preis für"),
+    },
+    {
+        "rule_name": "UBS interest received",
+        "transaction_type": "Deposit",
+        "account_number": "6950",
+        "texts": ("Zins", "Interest"),
+    },
+    {
+        "rule_name": "UBS interest paid",
+        "transaction_type": "Withdrawal",
+        "account_number": "6900",
+        "texts": ("Zins", "Interest"),
+    },
 )

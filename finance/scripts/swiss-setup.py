@@ -4,6 +4,7 @@ fields, currencies, banks, gebuev, qrbill, payslip, host, payments, hr, payroll_
 expenses); each one is re-runnable and skips what
 already exists. `freeze <date> [--apply]` is a separate command: it closes the
 books up to a date and is a dry run unless --apply is given."""
+
 import csv
 import datetime
 import json
@@ -30,10 +31,40 @@ COA_CSV = "apps/erpnextswiss/erpnextswiss/erpnextswiss/coa_import/accounts_templ
 BEXIO_TAXES = [
     ("S", 16, "UN77", "Normalsatz", 7.7, "2017-10 bis 2023-12", True, "2202", None),
     ("S", 28, "UN81", "Normalsatz", 8.1, "ab 2023-07", True, "2202", None),
-    ("S", 17, "UR25", "Reduzierter Satz", 2.5, "2017-10 bis 2023-12", True, "2202", None),
+    (
+        "S",
+        17,
+        "UR25",
+        "Reduzierter Satz",
+        2.5,
+        "2017-10 bis 2023-12",
+        True,
+        "2202",
+        None,
+    ),
     ("S", 29, "UR26", "Reduzierter Satz", 2.6, "ab 2023-07", True, "2202", None),
-    ("S", 18, "US37", "Sondersatz Beherbergung", 3.7, "ab 2017-10", False, "2202", None),
-    ("S", 30, "US38", "Sondersatz Beherbergung", 3.8, "ab 2023-07", False, "2202", None),
+    (
+        "S",
+        18,
+        "US37",
+        "Sondersatz Beherbergung",
+        3.7,
+        "ab 2017-10",
+        False,
+        "2202",
+        None,
+    ),
+    (
+        "S",
+        30,
+        "US38",
+        "Sondersatz Beherbergung",
+        3.8,
+        "ab 2023-07",
+        False,
+        "2202",
+        None,
+    ),
     ("S", 3, "UEX", "Export, steuerbefreit", 0, "", True, "2202", None),
     ("S", 4, "ULA", "Ausland", 0, "", False, "2202", None),
     ("S", 5, "MEL", "Meldeverfahren", 0, "", False, "2202", None),
@@ -43,37 +74,261 @@ BEXIO_TAXES = [
     ("S", 15, "UO77", "optiert", 7.7, "2017-10", False, "2202", None),
     ("S", 31, "UO81", "optiert", 8.1, "ab 2023-07", False, "2202", None),
     ("S", 48, "U00", "Null-Satz", 0, "", False, "2202", None),
-    ("P", 22, "VM77", "Normalsatz Material/DL", 7.7, "2017-10 bis 2023-12", True, "1172", None),
+    (
+        "P",
+        22,
+        "VM77",
+        "Normalsatz Material/DL",
+        7.7,
+        "2017-10 bis 2023-12",
+        True,
+        "1172",
+        None,
+    ),
     ("P", 35, "VM81", "Normalsatz Material/DL", 8.1, "ab 2023-07", True, "1172", None),
-    ("P", 8, "VM25", "Reduzierter Satz Material/DL", 2.5, "2017-10 bis 2023-12", True, "1172", None),
-    ("P", 34, "VM26", "Reduzierter Satz Material/DL", 2.6, "ab 2023-07", True, "1172", None),
-    ("P", 21, "VM37", "Sondersatz Beherbergung Material/DL", 3.7, "ab 2017-10", False, "1172", None),
-    ("P", 36, "VM38", "Sondersatz Beherbergung Material/DL", 3.8, "ab 2023-07", False, "1172", None),
+    (
+        "P",
+        8,
+        "VM25",
+        "Reduzierter Satz Material/DL",
+        2.5,
+        "2017-10 bis 2023-12",
+        True,
+        "1172",
+        None,
+    ),
+    (
+        "P",
+        34,
+        "VM26",
+        "Reduzierter Satz Material/DL",
+        2.6,
+        "ab 2023-07",
+        True,
+        "1172",
+        None,
+    ),
+    (
+        "P",
+        21,
+        "VM37",
+        "Sondersatz Beherbergung Material/DL",
+        3.7,
+        "ab 2017-10",
+        False,
+        "1172",
+        None,
+    ),
+    (
+        "P",
+        36,
+        "VM38",
+        "Sondersatz Beherbergung Material/DL",
+        3.8,
+        "ab 2023-07",
+        False,
+        "1172",
+        None,
+    ),
     ("P", 7, "VIM", "Import Material/DL, steuerbefreit", 0, "", True, "1172", None),
     ("P", 9, "ZOLLM", "Einfuhrsteuer Material/DL", 0, "", True, "1172", None),
-    ("P", 33, "BZM81", "Bezugsteuer Material/DL", 8.1, "ab 2023-07", True, "1172", "2202"),
-    ("P", 19, "BZM77", "Bezugsteuer Material/DL", 7.7, "ab 2017-10", False, "1172", "2202"),
-    ("P", 24, "VB77", "Normalsatz Invest./Aufwand", 7.7, "2017-10 bis 2024-12", True, "1172", None),
-    ("P", 38, "VB81", "Normalsatz Invest./Aufwand", 8.1, "ab 2023-01", True, "1172", None),
-    ("P", 12, "VB25", "Reduzierter Satz Invest./Aufwand", 2.5, "2017-10 bis 2023-12", True, "1172", None),
-    ("P", 37, "VB26", "Reduzierter Satz Invest./Aufwand", 2.6, "ab 2023-07", True, "1172", None),
-    ("P", 23, "VB37", "Sondersatz Beherbergung Invest./Aufwand", 3.7, "ab 2017-10", False, "1172", None),
-    ("P", 39, "VB38", "Sondersatz Beherbergung Invest./Aufwand", 3.8, "ab 2023-07", True, "1172", None),
+    (
+        "P",
+        33,
+        "BZM81",
+        "Bezugsteuer Material/DL",
+        8.1,
+        "ab 2023-07",
+        True,
+        "1172",
+        "2202",
+    ),
+    (
+        "P",
+        19,
+        "BZM77",
+        "Bezugsteuer Material/DL",
+        7.7,
+        "ab 2017-10",
+        False,
+        "1172",
+        "2202",
+    ),
+    (
+        "P",
+        24,
+        "VB77",
+        "Normalsatz Invest./Aufwand",
+        7.7,
+        "2017-10 bis 2024-12",
+        True,
+        "1172",
+        None,
+    ),
+    (
+        "P",
+        38,
+        "VB81",
+        "Normalsatz Invest./Aufwand",
+        8.1,
+        "ab 2023-01",
+        True,
+        "1172",
+        None,
+    ),
+    (
+        "P",
+        12,
+        "VB25",
+        "Reduzierter Satz Invest./Aufwand",
+        2.5,
+        "2017-10 bis 2023-12",
+        True,
+        "1172",
+        None,
+    ),
+    (
+        "P",
+        37,
+        "VB26",
+        "Reduzierter Satz Invest./Aufwand",
+        2.6,
+        "ab 2023-07",
+        True,
+        "1172",
+        None,
+    ),
+    (
+        "P",
+        23,
+        "VB37",
+        "Sondersatz Beherbergung Invest./Aufwand",
+        3.7,
+        "ab 2017-10",
+        False,
+        "1172",
+        None,
+    ),
+    (
+        "P",
+        39,
+        "VB38",
+        "Sondersatz Beherbergung Invest./Aufwand",
+        3.8,
+        "ab 2023-07",
+        True,
+        "1172",
+        None,
+    ),
     ("P", 47, "V00", "Null-Satz Invest./Aufwand", 0, "", True, "1172", None),
-    ("P", 10, "VSF", "Import Invest./Aufwand, steuerbefreit", 0, "", True, "1172", None),
+    (
+        "P",
+        10,
+        "VSF",
+        "Import Invest./Aufwand, steuerbefreit",
+        0,
+        "",
+        True,
+        "1172",
+        None,
+    ),
     ("P", 11, "ZOLLB", "Einfuhrsteuer Invest./Aufwand", 0, "", True, "1172", None),
-    ("P", 32, "BZB81", "Bezugsteuer Invest./Aufwand", 8.1, "ab 2023-07", True, "1172", "2202"),
-    ("P", 20, "BZB77", "Bezugsteuer Invest./Aufwand", 7.7, "2017-10 bis 2023-12", True, "1172", "2202"),
-    ("P", 25, "VES", "Vorsteuerkorrektur nachträglich", 7.7, "2017-10 bis 2023-12", False, "1172", None),
-    ("P", 26, "VEV", "Vorsteuerkorrektur Eigenverbrauch", 7.7, "2017-10 bis 2023-12", False, "1173", None),
-    ("P", 27, "VKÜ", "Vorsteuerkorrektur Kürzung", 7.7, "2017-10 bis 2023-12", False, "1174", None),
-    ("P", 40, "VES", "Vorsteuerkorrektur nachträglich", 8.1, "ab 2023-07", False, "1172", None),
-    ("P", 41, "VEV", "Vorsteuerkorrektur Eigenverbrauch", 8.1, "ab 2023-07", False, "1173", None),
-    ("P", 42, "VKÜ", "Vorsteuerkorrektur Kürzung", 8.1, "ab 2023-07", False, "1174", None),
+    (
+        "P",
+        32,
+        "BZB81",
+        "Bezugsteuer Invest./Aufwand",
+        8.1,
+        "ab 2023-07",
+        True,
+        "1172",
+        "2202",
+    ),
+    (
+        "P",
+        20,
+        "BZB77",
+        "Bezugsteuer Invest./Aufwand",
+        7.7,
+        "2017-10 bis 2023-12",
+        True,
+        "1172",
+        "2202",
+    ),
+    (
+        "P",
+        25,
+        "VES",
+        "Vorsteuerkorrektur nachträglich",
+        7.7,
+        "2017-10 bis 2023-12",
+        False,
+        "1172",
+        None,
+    ),
+    (
+        "P",
+        26,
+        "VEV",
+        "Vorsteuerkorrektur Eigenverbrauch",
+        7.7,
+        "2017-10 bis 2023-12",
+        False,
+        "1173",
+        None,
+    ),
+    (
+        "P",
+        27,
+        "VKÜ",
+        "Vorsteuerkorrektur Kürzung",
+        7.7,
+        "2017-10 bis 2023-12",
+        False,
+        "1174",
+        None,
+    ),
+    (
+        "P",
+        40,
+        "VES",
+        "Vorsteuerkorrektur nachträglich",
+        8.1,
+        "ab 2023-07",
+        False,
+        "1172",
+        None,
+    ),
+    (
+        "P",
+        41,
+        "VEV",
+        "Vorsteuerkorrektur Eigenverbrauch",
+        8.1,
+        "ab 2023-07",
+        False,
+        "1173",
+        None,
+    ),
+    (
+        "P",
+        42,
+        "VKÜ",
+        "Vorsteuerkorrektur Kürzung",
+        8.1,
+        "ab 2023-07",
+        False,
+        "1174",
+        None,
+    ),
 ]
 # Code of the sales and purchase template that is the company default (8.1 %).
 DEFAULT_SALES, DEFAULT_PURCHASE = 28, 35
-TAX_DOCTYPES = ("Sales Taxes and Charges Template", "Purchase Taxes and Charges Template", "Item Tax Template")
+TAX_DOCTYPES = (
+    "Sales Taxes and Charges Template",
+    "Purchase Taxes and Charges Template",
+    "Item Tax Template",
+)
 # ERPNext's own templates (MWST/USt/VSt, the rate per period in the name) are
 # replaced by the codes above and deleted by `vat`, once nothing refers to them.
 FIXED_ACCOUNTS = ("2202", "1172", "1173", "1174", "2203")
@@ -116,16 +371,34 @@ BEXIO_DOCTYPES = [
 
 # Currencies bexio books in, enabled by the `currencies` step. CHF is paid in
 # 0.05 steps (Swiss cash rounding); the others keep the cent.
-CURRENCIES = {"CHF": 0.05, "EUR": 0.01, "USD": 0.01, "GBP": 0.01,
-              "BRL": 0.01, "JPY": 0.01, "CNY": 0.01, "PLN": 0.01}
+CURRENCIES = {
+    "CHF": 0.05,
+    "EUR": 0.01,
+    "USD": 0.01,
+    "GBP": 0.01,
+    "BRL": 0.01,
+    "JPY": 0.01,
+    "CNY": 0.01,
+    "PLN": 0.01,
+}
 
 
 # GeBüV (OR 958f, GeBüV art. 9-10): a posted record may not change or vanish
 # without a trace. ERPNext v16 already refuses to delete a submitted document
 # and versions changes to tracked doctypes; the gebuev step sets what is left.
-GEBUEV_TRACKED = ["Account", "Customer", "Supplier", "Item", "Bank Account", "Company",
-                  "Sales Invoice", "Purchase Invoice", "Journal Entry", "Payment Entry",
-                  "Bank Transaction"]
+GEBUEV_TRACKED = [
+    "Account",
+    "Customer",
+    "Supplier",
+    "Item",
+    "Bank Account",
+    "Company",
+    "Sales Invoice",
+    "Purchase Invoice",
+    "Journal Entry",
+    "Payment Entry",
+    "Bank Transaction",
+]
 # The one role that may delete on these doctypes; Administrator is not listed
 # because it bypasses the role check.
 GEBUEV_DELETE_ROLE = "Accounts Manager"
@@ -138,20 +411,24 @@ def say(msg):
 def set_doctype_property(doctype, prop, value, property_type):
     # frappe 16 takes one args dict here; the positional form (doctype, fieldname, property, ...) raises
     # TypeError. fieldname stays None: a DocType property names no field.
-    frappe.make_property_setter({
-        "doctype": doctype,
-        "doctype_or_field": "DocType",
-        "fieldname": None,
-        "property": prop,
-        "value": value,
-        "property_type": property_type,
-    })
+    frappe.make_property_setter(
+        {
+            "doctype": doctype,
+            "doctype_or_field": "DocType",
+            "fieldname": None,
+            "property": prop,
+            "value": value,
+            "property_type": property_type,
+        }
+    )
 
 
 def delete_revokes(perms, keep):
     """perms: (role, permlevel, delete) rows, as the effective permissions of a
     doctype. Returns the (role, permlevel) pairs that may delete but are not in keep."""
-    return [(role, level) for role, level, delete in perms if delete and role not in keep]
+    return [
+        (role, level) for role, level, delete in perms if delete and role not in keep
+    ]
 
 
 def parse_freeze(args):
@@ -188,8 +465,14 @@ def coa():
         return
 
     # The stock 'Switzerland ... VAT' templates point at the old accounts.
-    for dt in ("Sales Taxes and Charges Template", "Purchase Taxes and Charges Template", "Item Tax Template"):
-        for name in frappe.get_all(dt, {"company": COMPANY, "title": ["like", "Switzerland %"]}, pluck="name"):
+    for dt in (
+        "Sales Taxes and Charges Template",
+        "Purchase Taxes and Charges Template",
+        "Item Tax Template",
+    ):
+        for name in frappe.get_all(
+            dt, {"company": COMPANY, "title": ["like", "Switzerland %"]}, pluck="name"
+        ):
             frappe.delete_doc(dt, name)
             say(f"coa: deleted {dt} {name}")
 
@@ -206,20 +489,22 @@ def coa():
     for row in rows:
         row = {k: (v or "").strip() for k, v in row.items()}
         parent = f"{row['parent_account']} - {abbr}" if row["parent_account"] else ""
-        acc = frappe.get_doc({
-            "doctype": "Account",
-            "account_name": row["account_name"],
-            "company": COMPANY,
-            "parent_account": parent,
-            "account_number": row["account_number"],
-            "is_group": int(row["is_group"]),
-            "root_type": row["root_type"],
-            "report_type": row["report_type"],
-            "account_currency": row["account_currency"],
-            "account_type": row["account_type"],
-            "tax_rate": float(row["tax_rate"] or 0),
-            "freeze_account": row["freeze_account"],
-        })
+        acc = frappe.get_doc(
+            {
+                "doctype": "Account",
+                "account_name": row["account_name"],
+                "company": COMPANY,
+                "parent_account": parent,
+                "account_number": row["account_number"],
+                "is_group": int(row["is_group"]),
+                "root_type": row["root_type"],
+                "report_type": row["report_type"],
+                "account_currency": row["account_currency"],
+                "account_type": row["account_type"],
+                "tax_rate": float(row["tax_rate"] or 0),
+                "freeze_account": row["freeze_account"],
+            }
+        )
         # roots have no parent, which the form marks mandatory
         acc.flags.ignore_mandatory = True
         acc.flags.ignore_root_company_validation = True
@@ -236,7 +521,9 @@ def coa():
     for mop, number in (("Cash", "1000"),):
         if frappe.db.exists("Mode of Payment", mop):
             doc = frappe.get_doc("Mode of Payment", mop)
-            doc.append("accounts", {"company": COMPANY, "default_account": account(number)})
+            doc.append(
+                "accounts", {"company": COMPANY, "default_account": account(number)}
+            )
             doc.save()
     frappe.db.commit()
     say(f"coa: {frappe.db.count('Account', {'company': COMPANY})} accounts")
@@ -253,12 +540,26 @@ def tax_rows(dt, kind, account_no, deduct_no, rate):
         return [{"tax_type": acc, "tax_rate": rate}]
     if dt == "Sales Taxes and Charges Template":
         return [{"charge_type": "On Net Total", "account_head": acc, "rate": rate}]
-    rows = [{"category": "Total", "add_deduct_tax": "Add", "charge_type": "On Net Total",
-             "account_head": acc, "rate": rate}]
+    rows = [
+        {
+            "category": "Total",
+            "add_deduct_tax": "Add",
+            "charge_type": "On Net Total",
+            "account_head": acc,
+            "rate": rate,
+        }
+    ]
     if deduct_no:
         # reverse charge: the same rate comes back as a deduction on 2202, net 0
-        rows.append({"category": "Total", "add_deduct_tax": "Deduct", "charge_type": "On Net Total",
-                     "account_head": account(deduct_no), "rate": rate})
+        rows.append(
+            {
+                "category": "Total",
+                "add_deduct_tax": "Deduct",
+                "charge_type": "On Net Total",
+                "account_head": account(deduct_no),
+                "rate": rate,
+            }
+        )
     return rows
 
 
@@ -279,7 +580,15 @@ def sync_tax(dt, bexio_id, title, rows, disabled, is_default):
     if dt != "Item Tax Template":
         fields["is_default"] = is_default
     if not name:
-        doc = frappe.get_doc({"doctype": dt, "company": COMPANY, "bexio_id": bexio_id, "taxes": rows, **fields})
+        doc = frappe.get_doc(
+            {
+                "doctype": dt,
+                "company": COMPANY,
+                "bexio_id": bexio_id,
+                "taxes": rows,
+                **fields,
+            }
+        )
         doc.insert()
         return "created"
     doc = frappe.get_doc(dt, name)
@@ -289,7 +598,9 @@ def sync_tax(dt, bexio_id, title, rows, disabled, is_default):
             doc.set(k, v)
             changed = True
     key = row_key(dt)
-    if [tuple(r.get(k) for k in key) for r in rows] != [tuple(getattr(r, k) for k in key) for r in doc.taxes]:
+    if [tuple(r.get(k) for k in key) for r in rows] != [
+        tuple(getattr(r, k) for k in key) for r in doc.taxes
+    ]:
         doc.set("taxes", rows)
         changed = True
     if changed:
@@ -311,18 +622,37 @@ def vat():
         if frappe.db.get_value("Account", name, "account_type") != "Tax":
             frappe.db.set_value("Account", name, "account_type", "Tax")
     tally = {}
-    for kind, bexio_id, code, name, rate, valid, active, account_no, deduct_no in BEXIO_TAXES:
+    for (
+        kind,
+        bexio_id,
+        code,
+        name,
+        rate,
+        valid,
+        active,
+        account_no,
+        deduct_no,
+    ) in BEXIO_TAXES:
         title = tax_title(code, rate, name)
         desc = f"bexio {bexio_id}" + (f", gültig {valid}" if valid else "")
         # every code gets an Item Tax Template; sales and purchase templates by kind
-        dts = ["Sales Taxes and Charges Template"] if kind == "S" else ["Purchase Taxes and Charges Template"]
+        dts = (
+            ["Sales Taxes and Charges Template"]
+            if kind == "S"
+            else ["Purchase Taxes and Charges Template"]
+        )
         dts.append("Item Tax Template")
         for dt in dts:
             rows = tax_rows(dt, kind, account_no, deduct_no, rate)
             for row in rows if dt != "Item Tax Template" else []:
                 row["description"] = desc
-            is_default = int(bexio_id in (DEFAULT_SALES, DEFAULT_PURCHASE) and dt != "Item Tax Template")
-            result = sync_tax(dt, str(bexio_id), title, rows, 0 if active else 1, is_default)
+            is_default = int(
+                bexio_id in (DEFAULT_SALES, DEFAULT_PURCHASE)
+                and dt != "Item Tax Template"
+            )
+            result = sync_tax(
+                dt, str(bexio_id), title, rows, 0 if active else 1, is_default
+            )
             tally[(dt, result)] = tally.get((dt, result), 0) + 1
     frappe.db.commit()
     for (dt, result), n in sorted(tally.items()):
@@ -352,7 +682,12 @@ def vat_differences(taxes, numbers, erp):
     for t in taxes:
         bid = str(t["id"])
         seen.add(bid)
-        want = (t["code"], float(t["value"]), numbers.get(str(t.get("account_id"))), not t["is_active"])
+        want = (
+            t["code"],
+            float(t["value"]),
+            numbers.get(str(t.get("account_id"))),
+            not t["is_active"],
+        )
         if bid not in erp:
             out.append(f"missing: {bid} {want[0]}")
             continue
@@ -369,13 +704,28 @@ def vat_check():
     # Runs in the container, which cannot see the export: swiss-setup.sh puts
     # taxes.json and accounts.json in TAXES_JSON and ACCOUNTS_JSON.
     taxes = json.loads(os.environ["TAXES_JSON"])
-    numbers = {str(a["id"]): str(a["account_no"]) for a in json.loads(os.environ["ACCOUNTS_JSON"])}
+    numbers = {
+        str(a["id"]): str(a["account_no"])
+        for a in json.loads(os.environ["ACCOUNTS_JSON"])
+    }
     erp = {}
-    for dt in ("Sales Taxes and Charges Template", "Purchase Taxes and Charges Template"):
-        for name in frappe.get_all(dt, {"company": COMPANY, "bexio_id": ["is", "set"]}, pluck="name"):
+    for dt in (
+        "Sales Taxes and Charges Template",
+        "Purchase Taxes and Charges Template",
+    ):
+        for name in frappe.get_all(
+            dt, {"company": COMPANY, "bexio_id": ["is", "set"]}, pluck="name"
+        ):
             doc = frappe.get_doc(dt, name)
-            acc = frappe.db.get_value("Account", doc.taxes[0].account_head, "account_number")
-            erp[doc.bexio_id] = (name.split()[0], float(doc.taxes[0].rate), acc, bool(doc.disabled))
+            acc = frappe.db.get_value(
+                "Account", doc.taxes[0].account_head, "account_number"
+            )
+            erp[doc.bexio_id] = (
+                name.split()[0],
+                float(doc.taxes[0].rate),
+                acc,
+                bool(doc.disabled),
+            )
     diffs = vat_differences(taxes, numbers, erp)
     for d in diffs:
         say(d)
@@ -389,10 +739,14 @@ def fiscal():
         if frappe.db.exists("Fiscal Year", str(year)):
             doc = frappe.get_doc("Fiscal Year", str(year))
         else:
-            doc = frappe.get_doc({
-                "doctype": "Fiscal Year", "year": str(year),
-                "year_start_date": f"{year}-01-01", "year_end_date": f"{year}-12-31",
-            })
+            doc = frappe.get_doc(
+                {
+                    "doctype": "Fiscal Year",
+                    "year": str(year),
+                    "year_start_date": f"{year}-01-01",
+                    "year_end_date": f"{year}-12-31",
+                }
+            )
         if COMPANY not in [c.company for c in doc.companies]:
             doc.append("companies", {"company": COMPANY})
             doc.save() if doc.get("creation") else doc.insert()
@@ -406,21 +760,25 @@ def fields():
             continue
         if not frappe.get_meta(dt).has_field(after):
             after = None
-        frappe.get_doc({
-            "doctype": "Custom Field",
-            "dt": dt,
-            "fieldname": "bexio_id",
-            "label": "bexio ID",
-            "fieldtype": "Data",
-            "unique": 1,
-            "read_only": 1,
-            "in_standard_filter": 1,
-            # a copied document must not inherit the id of the original
-            "no_copy": 1,
-            "insert_after": after,
-        }).insert()
+        frappe.get_doc(
+            {
+                "doctype": "Custom Field",
+                "dt": dt,
+                "fieldname": "bexio_id",
+                "label": "bexio ID",
+                "fieldtype": "Data",
+                "unique": 1,
+                "read_only": 1,
+                "in_standard_filter": 1,
+                # a copied document must not inherit the id of the original
+                "no_copy": 1,
+                "insert_after": after,
+            }
+        ).insert()
     frappe.db.commit()
-    say(f"fields: bexio_id on {frappe.db.count('Custom Field', {'fieldname': 'bexio_id'})} doctypes")
+    say(
+        f"fields: bexio_id on {frappe.db.count('Custom Field', {'fieldname': 'bexio_id'})} doctypes"
+    )
 
 
 def currencies():
@@ -471,7 +829,12 @@ def payments():
     # file against the Swiss schema after fixing its country code (see the app). Unidecode
     # turns the names into the character set the bank takes.
     s = frappe.get_single("ERPNextSwiss Settings")
-    want = {"validate_xml": 0, "use_unidecode": 1, "xml_version": "09", "banking_region": "CH"}
+    want = {
+        "validate_xml": 0,
+        "use_unidecode": 1,
+        "xml_version": "09",
+        "banking_region": "CH",
+    }
     changed = [f for f, v in want.items() if s.get(f) != v]
     for f in changed:
         say(f"payments: ERPNextSwiss Settings {f} {s.get(f)} -> {want[f]}")
@@ -481,10 +844,22 @@ def payments():
     else:
         say("payments: ERPNextSwiss Settings already set")
 
-    bank_accounts = frappe.get_all("Bank Account", filters={"company": COMPANY}, fields=["name", "account", "iban", "bank"])
-    gl_accounts = {ba.account: frappe.db.get_value("Account", ba.account, ["iban", "bic"], as_dict=True)
-                   for ba in bank_accounts if ba.account}
-    banks = {b.name: b.swift_number for b in frappe.get_all("Bank", fields=["name", "swift_number"])}
+    bank_accounts = frappe.get_all(
+        "Bank Account",
+        filters={"company": COMPANY},
+        fields=["name", "account", "iban", "bank"],
+    )
+    gl_accounts = {
+        ba.account: frappe.db.get_value(
+            "Account", ba.account, ["iban", "bic"], as_dict=True
+        )
+        for ba in bank_accounts
+        if ba.account
+    }
+    banks = {
+        b.name: b.swift_number
+        for b in frappe.get_all("Bank", fields=["name", "swift_number"])
+    }
     for dt, name, field, value in payment_fixes(bank_accounts, gl_accounts, banks):
         doc = frappe.get_doc(dt, name)
         doc.set(field, value)
@@ -493,11 +868,18 @@ def payments():
     if not bank_accounts:
         say("payments: no bank account of the company")
 
-    account = frappe.db.get_value("Account", {"account_name": "UBS Kontokorrent", "company": COMPANY}, ["name", "iban", "bic"], as_dict=True)
+    account = frappe.db.get_value(
+        "Account",
+        {"account_name": "UBS Kontokorrent", "company": COMPANY},
+        ["name", "iban", "bic"],
+        as_dict=True,
+    )
     if not account:
         say("payments: no account UBS Kontokorrent for the company")
     elif not account.iban or not account.bic:
-        say(f"payments: {account.name} has no IBAN or no BIC; a bank file cannot be made until both are set")
+        say(
+            f"payments: {account.name} has no IBAN or no BIC; a bank file cannot be made until both are set"
+        )
     frappe.db.commit()
 
 
@@ -511,8 +893,11 @@ HR_ROLES = ["HR Manager", "HR User", "Payroll Manager", "Leave Approver"]
 # Payroll Settings (single), Benchi 2026-10-11: payroll works on Leave, not
 # attendance; holidays count in the working days; no slip is e-mailed —
 # Salary Slip.on_submit mails the slip to the employee when this check is on.
-PAYROLL_SETTINGS_WANT = {"payroll_based_on": "Leave", "include_holidays_in_total_working_days": 1,
-                         "email_salary_slip_to_employee": 0}
+PAYROLL_SETTINGS_WANT = {
+    "payroll_based_on": "Leave",
+    "include_holidays_in_total_working_days": 1,
+    "email_salary_slip_to_employee": 0,
+}
 # HR Settings (single): v16.50.0 has no switch for employee self-service or for
 # onboarding e-mails. Self-service is off when no enabled user holds the
 # Employee Self Service role and no Employee carries a user; onboarding e-mails
@@ -520,8 +905,14 @@ PAYROLL_SETTINGS_WANT = {"payroll_based_on": "Leave", "include_holidays_in_total
 # importers write Employees directly). `hr --check` prints the counts.
 HR_SETTINGS_WANT = {}
 # The roles of an enabled user that make it an HR or payroll user in `hr --check`.
-HR_CHECK_ROLES = ("HR Manager", "HR User", "Leave Approver", "Expense Approver",
-                  "Payroll Manager", "Employee Self Service")
+HR_CHECK_ROLES = (
+    "HR Manager",
+    "HR User",
+    "Leave Approver",
+    "Expense Approver",
+    "Payroll Manager",
+    "Employee Self Service",
+)
 
 
 def hr_grants(wanted, site_roles, user_roles):
@@ -529,8 +920,10 @@ def hr_grants(wanted, site_roles, user_roles):
     user_roles: the user's roles. Returns (roles to add, roles the site has
     no Role document for). A role without a Role document is never added."""
     have_site, have_user = set(site_roles), set(user_roles)
-    return ([r for r in wanted if r in have_site and r not in have_user],
-            [r for r in wanted if r not in have_site])
+    return (
+        [r for r in wanted if r in have_site and r not in have_user],
+        [r for r in wanted if r not in have_site],
+    )
 
 
 def single_fixes(want, current, offered):
@@ -553,7 +946,9 @@ def hr():
     if not user_name:
         # Like host: no argument runs every step, and a step that needs a value from the
         # environment skips instead of ending the run.
-        say("hr: HR_USER not set; skipped (the user stays out of this repo; pass HR_USER=<user>)")
+        say(
+            "hr: HR_USER not set; skipped (the user stays out of this repo; pass HR_USER=<user>)"
+        )
         return
     if not frappe.db.exists("User", user_name):
         sys.exit(f"hr: no user {user_name}")
@@ -567,7 +962,9 @@ def hr():
         user.append("roles", {"role": role})
         say(f"hr: {user_name}: role {role} added")
     for role in not_offered:
-        say(f"hr: the site has no role {role}; HRMS v16.50.0 installs none and none is created here (payroll sits on HR Manager)")
+        say(
+            f"hr: the site has no role {role}; HRMS v16.50.0 installs none and none is created here (payroll sits on HR Manager)"
+        )
     if to_add:
         user.save()
     # read-back of every wanted role
@@ -576,7 +973,10 @@ def hr():
         if role in site_roles:
             say(f"hr: {user_name} {role}: {'yes' if role in have else 'NO'}")
 
-    for single, want in (("Payroll Settings", PAYROLL_SETTINGS_WANT), ("HR Settings", HR_SETTINGS_WANT)):
+    for single, want in (
+        ("Payroll Settings", PAYROLL_SETTINGS_WANT),
+        ("HR Settings", HR_SETTINGS_WANT),
+    ):
         offered = {f.fieldname for f in frappe.get_meta(single).fields if f.fieldname}
         doc = frappe.get_doc(single)
         changes, missing = single_fixes(want, {f: doc.get(f) for f in want}, offered)
@@ -592,38 +992,66 @@ def hr():
                 say(f"hr: {single} {f} = {fresh.get(f)!r}")
         for f in missing:
             say(f"hr: {single} has no field {f}; not set")
-    say("hr: HRMS v16.50.0 has no rounding setting; CHF rounds to 0.05 by the Currency smallest fraction (currencies step)")
-    say("hr: HRMS v16.50.0 has no switch for employee self-service or onboarding e-mails; hr --check reports the counts")
+    say(
+        "hr: HRMS v16.50.0 has no rounding setting; CHF rounds to 0.05 by the Currency smallest fraction (currencies step)"
+    )
+    say(
+        "hr: HRMS v16.50.0 has no switch for employee self-service or onboarding e-mails; hr --check reports the counts"
+    )
     frappe.db.commit()
 
 
 def hr_check():
     # Read-only. User names are not company data, but notes keep counts only.
     enabled = set(frappe.get_all("User", filters={"enabled": 1}, pluck="name"))
-    holders = [(r.parent, r.role) for r in frappe.get_all(
-        "Has Role", filters={"parenttype": "User", "role": ["in", list(HR_CHECK_ROLES)]},
-        fields=["parent", "role"]) if r.parent in enabled]
+    holders = [
+        (r.parent, r.role)
+        for r in frappe.get_all(
+            "Has Role",
+            filters={"parenttype": "User", "role": ["in", list(HR_CHECK_ROLES)]},
+            fields=["parent", "role"],
+        )
+        if r.parent in enabled
+    ]
     for user_with_role, role in sorted(holders):
         say(f"hr --check: {user_with_role}: {role}")
-    say(f"hr --check: {len({u for u, _ in holders})} enabled users hold HR or payroll roles")
-    for single, want in (("Payroll Settings", PAYROLL_SETTINGS_WANT), ("HR Settings", HR_SETTINGS_WANT)):
+    say(
+        f"hr --check: {len({u for u, _ in holders})} enabled users hold HR or payroll roles"
+    )
+    for single, want in (
+        ("Payroll Settings", PAYROLL_SETTINGS_WANT),
+        ("HR Settings", HR_SETTINGS_WANT),
+    ):
         offered = {f.fieldname for f in frappe.get_meta(single).fields if f.fieldname}
         for f, v in want.items():
             if f in offered:
                 got = frappe.db.get_single_value(single, f)
-                say(f"hr --check: {single} {f} = {got!r}" + ("" if got == v else f", want {v!r}"))
-    say("hr --check: HRMS v16.50.0 has no rounding setting; CHF rounds to 0.05 by the Currency smallest fraction")
-    say(f"hr --check: {frappe.db.count('Employee', {'user_id': ['is', 'set']})} employees carry a user")
-    say(f"hr --check: {frappe.db.count('Employee Onboarding')} Employee Onboarding documents")
+                say(
+                    f"hr --check: {single} {f} = {got!r}"
+                    + ("" if got == v else f", want {v!r}")
+                )
+    say(
+        "hr --check: HRMS v16.50.0 has no rounding setting; CHF rounds to 0.05 by the Currency smallest fraction"
+    )
+    say(
+        f"hr --check: {frappe.db.count('Employee', {'user_id': ['is', 'set']})} employees carry a user"
+    )
+    say(
+        f"hr --check: {frappe.db.count('Employee Onboarding')} Employee Onboarding documents"
+    )
     user_name = os.environ.get("HR_USER", "").strip()
     if not user_name:
         say("hr --check: HR_USER not set; the user's state is not compared")
         return
     site_roles = frappe.get_all("Role", pluck="name")
-    to_add, not_offered = hr_grants(HR_ROLES, site_roles,
-                                    [r.role for r in frappe.get_doc("User", user_name).roles])
+    to_add, not_offered = hr_grants(
+        HR_ROLES, site_roles, [r.role for r in frappe.get_doc("User", user_name).roles]
+    )
     wrong = [f"role {r} missing" for r in to_add]
-    for single, want in (("Payroll Settings", PAYROLL_SETTINGS_WANT), ("HR Settings", HR_SETTINGS_WANT)):
+    for single, want in (
+        ("Payroll Settings", PAYROLL_SETTINGS_WANT),
+        ("HR Settings", HR_SETTINGS_WANT),
+    ):
         offered = {f.fieldname for f in frappe.get_meta(single).fields if f.fieldname}
         doc = frappe.get_doc(single)
         fixes, _ = single_fixes(want, {f: doc.get(f) for f in want}, offered)
@@ -632,18 +1060,24 @@ def hr_check():
         say(f"hr --check: {user_name}: {w}")
     if wrong:
         sys.exit(f"hr --check: {len(wrong)} differences")
-    say(f"hr --check: {user_name} holds the offered HR roles and the settings hold the wanted values")
+    say(
+        f"hr --check: {user_name} holds the offered HR roles and the settings hold the wanted values"
+    )
 
 
 # The print format is a Jinja file of the bi_finance app (finance/apps/bi_finance),
 # which the image installs. The app's qrbill.py draws the QR code.
 PRINT_FORMAT = "BI Sales Invoice QR"
-QRBILL_HTML = "/home/frappe/frappe-bench/apps/bi_finance/bi_finance/bi_sales_invoice_qr.html"
+QRBILL_HTML = (
+    "/home/frappe/frappe-bench/apps/bi_finance/bi_finance/bi_sales_invoice_qr.html"
+)
 
 # The payslip format is a Jinja file of the bi_payroll app (finance/apps/bi_payroll), whose rows
 # come from bi_payroll/payslip.py through the jinja method payslip_data (hooks.py).
 LOHNABRECHNUNG = "Lohnabrechnung"
-PAYSLIP_HTML = "/home/frappe/frappe-bench/apps/bi_payroll/bi_payroll/lohnabrechnung.html"
+PAYSLIP_HTML = (
+    "/home/frappe/frappe-bench/apps/bi_payroll/bi_payroll/lohnabrechnung.html"
+)
 
 
 def host():
@@ -681,19 +1115,21 @@ def qrbill():
             doc.save()
             say(f"qrbill: print format {PRINT_FORMAT} updated")
     else:
-        frappe.get_doc({
-            "doctype": "Print Format",
-            "name": PRINT_FORMAT,
-            "doc_type": "Sales Invoice",
-            "module": "Accounts",
-            "custom_format": 1,
-            "print_format_type": "Jinja",
-            "standard": "No",
-            "disabled": 0,
-            # the payment part sits at the foot of the sheet: 1 mm bottom margin (0 falls back to the 15 mm default)
-            "margin_bottom": 1,
-            "html": html,
-        }).insert()
+        frappe.get_doc(
+            {
+                "doctype": "Print Format",
+                "name": PRINT_FORMAT,
+                "doc_type": "Sales Invoice",
+                "module": "Accounts",
+                "custom_format": 1,
+                "print_format_type": "Jinja",
+                "standard": "No",
+                "disabled": 0,
+                # the payment part sits at the foot of the sheet: 1 mm bottom margin (0 falls back to the 15 mm default)
+                "margin_bottom": 1,
+                "html": html,
+            }
+        ).insert()
         say(f"qrbill: print format {PRINT_FORMAT} created")
     frappe.db.commit()
     qrbill_default()
@@ -702,7 +1138,11 @@ def qrbill():
 def qrbill_default():
     # The default print format of Sales Invoice (Benchi: 'default now', 2026-10-11), as a Property
     # Setter so a migrate keeps it; the fixtures of bi_finance hold the same row.
-    filters = {"doc_type": "Sales Invoice", "doctype_or_field": "DocType", "property": "default_print_format"}
+    filters = {
+        "doc_type": "Sales Invoice",
+        "doctype_or_field": "DocType",
+        "property": "default_print_format",
+    }
     if frappe.db.get_value("Property Setter", filters, "value") == PRINT_FORMAT:
         say(f"qrbill: default print format of Sales Invoice is {PRINT_FORMAT} already")
         return
@@ -731,19 +1171,23 @@ def payslip():
             for field, value in changes.items():
                 doc.set(field, value)
             doc.save()
-            say(f"payslip: print format {LOHNABRECHNUNG} updated ({', '.join(changes)})")
+            say(
+                f"payslip: print format {LOHNABRECHNUNG} updated ({', '.join(changes)})"
+            )
     else:
-        frappe.get_doc({
-            "doctype": "Print Format",
-            "name": LOHNABRECHNUNG,
-            "doc_type": "Salary Slip",
-            "module": "HR",
-            "custom_format": 1,
-            "print_format_type": "Jinja",
-            "standard": "No",
-            "disabled": 0,
-            "html": html,
-        }).insert()
+        frappe.get_doc(
+            {
+                "doctype": "Print Format",
+                "name": LOHNABRECHNUNG,
+                "doc_type": "Salary Slip",
+                "module": "HR",
+                "custom_format": 1,
+                "print_format_type": "Jinja",
+                "standard": "No",
+                "disabled": 0,
+                "html": html,
+            }
+        ).insert()
         say(f"payslip: print format {LOHNABRECHNUNG} created")
     frappe.db.commit()
     payslip_default()
@@ -753,7 +1197,11 @@ def payslip_default():
     # The default print format of Salary Slip, always (the bead's decision: Benchi asked for the
     # HRMS integration), as a Property Setter so a migrate keeps it. The Print Format itself is
     # not a fixture: the setup step installs it from the app's file, as qrbill does.
-    filters = {"doc_type": "Salary Slip", "doctype_or_field": "DocType", "property": "default_print_format"}
+    filters = {
+        "doc_type": "Salary Slip",
+        "doctype_or_field": "DocType",
+        "property": "default_print_format",
+    }
     if frappe.db.get_value("Property Setter", filters, "value") == LOHNABRECHNUNG:
         say(f"payslip: default print format of Salary Slip is {LOHNABRECHNUNG} already")
         return
@@ -770,8 +1218,15 @@ def payslip_default():
 # that warning. Dynamic configuration reads the components of each table; the static one has no table for line 12.
 # Lines 2 to 7, 10.2 and 13 to 14 are not in payroll (finance/docs/hrms.md, Lohnausweis map), line 15 stays free text.
 LOHNAUSWEIS = {
-    "salary": [("Basic Salary", "B"), ("Commission", "COMM")],  # 1 Lohn: every Earning fixture (a new Earning joins this)
-    "deduction_ahv": [("AHV/IV/EO Employee", "AHV"), ("ALV Employee", "ALV"), ("NBU Employee", "NBUV")],  # 9
+    "salary": [
+        ("Basic Salary", "B"),
+        ("Commission", "COMM"),
+    ],  # 1 Lohn: every Earning fixture (a new Earning joins this)
+    "deduction_ahv": [
+        ("AHV/IV/EO Employee", "AHV"),
+        ("ALV Employee", "ALV"),
+        ("NBU Employee", "NBUV"),
+    ],  # 9
     "deduction_pension": [("BVG Employee", "PK")],  # 10.1 BVG
     "source_tax_deduction": [("Quellensteuer Employee", "QST")],  # 12 Quellensteuer
 }
@@ -785,17 +1240,28 @@ def lohnausweis_components(mapping=LOHNAUSWEIS):
 def lohnausweis_changes(dynamic_config, current, wanted):
     """current: field -> the component names its table holds now. Returns whether dynamic configuration must be switched
     on, and the tables that differ from wanted. A second run finds nothing to change."""
-    return not dynamic_config, [field for field in wanted if current.get(field, []) != wanted[field]]
+    return not dynamic_config, [
+        field for field in wanted if current.get(field, []) != wanted[field]
+    ]
 
 
 def lohnausweis_abbr_warnings():
     # A second Salary Component holding a fixture's abbr. The Settings are set by name, so they stay right, but any
     # lookup by abbr finds the other one. Said, not changed: which component keeps the abbr is a live decision (erp-zg4p).
-    for name, abbr in sorted({pair for pairs in LOHNAUSWEIS.values() for pair in pairs}):
-        site_abbr = frappe.db.get_value("Salary Component", name, "salary_component_abbr")
-        for other in frappe.get_all("Salary Component", filters={"salary_component_abbr": abbr, "name": ["!=", name]},
-                                    pluck="name"):
-            say(f"lohnausweis: abbr {abbr} is held by '{other}', the fixture's '{name}' has {site_abbr}")
+    for name, abbr in sorted(
+        {pair for pairs in LOHNAUSWEIS.values() for pair in pairs}
+    ):
+        site_abbr = frappe.db.get_value(
+            "Salary Component", name, "salary_component_abbr"
+        )
+        for other in frappe.get_all(
+            "Salary Component",
+            filters={"salary_component_abbr": abbr, "name": ["!=", name]},
+            pluck="name",
+        ):
+            say(
+                f"lohnausweis: abbr {abbr} is held by '{other}', the fixture's '{name}' has {site_abbr}"
+            )
 
 
 def lohnausweis():
@@ -804,11 +1270,15 @@ def lohnausweis():
     wanted = lohnausweis_components()
     for name in sorted({name for names in wanted.values() for name in names}):
         if not frappe.db.exists("Salary Component", name):
-            say(f"lohnausweis: no Salary Component named {name}; the bi_payroll fixtures are not installed")
+            say(
+                f"lohnausweis: no Salary Component named {name}; the bi_payroll fixtures are not installed"
+            )
             return
     lohnausweis_abbr_warnings()
     settings = frappe.get_single("Salary Certificate Settings")
-    current = {field: [row.component for row in settings.get(field) or []] for field in wanted}
+    current = {
+        field: [row.component for row in settings.get(field) or []] for field in wanted
+    }
     turn_on, fields = lohnausweis_changes(settings.dynamic_config, current, wanted)
     if turn_on or fields:
         settings.dynamic_config = 1
@@ -816,22 +1286,29 @@ def lohnausweis():
             settings.set(field, [{"component": name} for name in wanted[field]])
         settings.save()
         frappe.db.commit()
-        say(f"lohnausweis: Salary Certificate Settings set, tables {', '.join(fields) or 'none'}")
+        say(
+            f"lohnausweis: Salary Certificate Settings set, tables {', '.join(fields) or 'none'}"
+        )
     else:
         say("lohnausweis: Salary Certificate Settings in place")
     primary = frappe.db.sql(
         """SELECT a.name FROM `tabAddress` a INNER JOIN `tabDynamic Link` dl ON dl.parent = a.name
         WHERE dl.parenttype = 'Address' AND dl.link_doctype = 'Company' AND dl.link_name = %s AND a.is_primary_address = 1""",
-        COMPANY)
+        COMPANY,
+    )
     if not primary:
-        say(f"lohnausweis: {COMPANY} has no primary address; the Form 11 address will be empty")
+        say(
+            f"lohnausweis: {COMPANY} has no primary address; the Form 11 address will be empty"
+        )
 
 
 def banks():
     # Bank needs System Manager, which the API user lacks. The names are company
     # data, so they come from the BANKS environment variable (one per line),
     # never from this file: import_master.py --print-banks lists them.
-    for name in filter(None, (n.strip() for n in os.environ.get("BANKS", "").split("\n"))):
+    for name in filter(
+        None, (n.strip() for n in os.environ.get("BANKS", "").split("\n"))
+    ):
         if not frappe.db.exists("Bank", name):
             frappe.get_doc({"doctype": "Bank", "bank_name": name}).insert()
     frappe.db.commit()
@@ -857,7 +1334,9 @@ def gebuev():
     # frappe refuses to delete a submitted document for everyone, so this
     # covers drafts and cancelled documents.
     for dt in GEBUEV_TRACKED:
-        perms = [(p.role, p.permlevel, p.delete) for p in frappe.get_meta(dt).permissions]
+        perms = [
+            (p.role, p.permlevel, p.delete) for p in frappe.get_meta(dt).permissions
+        ]
         for role, level in delete_revokes(perms, keep=[GEBUEV_DELETE_ROLE]):
             frappe.permissions.update_permission_property(dt, role, level, "delete", 0)
             say(f"gebuev: {dt}: delete revoked from {role} (permlevel {level})")
@@ -902,19 +1381,32 @@ def claim_type_rows(wanted, company, existing):
     company, or its account is not the wanted one.
     """
     have = set(existing)
-    return [(name, company, number) for number, name in wanted if (name, company, number) not in have]
+    return [
+        (name, company, number)
+        for number, name in wanted
+        if (name, company, number) not in have
+    ]
 
 
 def expenses():
     # 1. The Expense Claim Types with their account for the company.
     abbr = frappe.db.get_value("Company", COMPANY, "abbr")
     existing = {
-        (t.name, a.company, frappe.db.get_value("Account", a.default_account, "account_number"))
+        (
+            t.name,
+            a.company,
+            frappe.db.get_value("Account", a.default_account, "account_number"),
+        )
         for t in frappe.get_all("Expense Claim Type", fields=["name"])
-        for a in frappe.get_all("Expense Claim Account", filters={"parent": t.name},
-                                fields=["company", "default_account"])
+        for a in frappe.get_all(
+            "Expense Claim Account",
+            filters={"parent": t.name},
+            fields=["company", "default_account"],
+        )
     }
-    for name, company, number in claim_type_rows(EXPENSE_CLAIM_TYPES, COMPANY, existing):
+    for name, company, number in claim_type_rows(
+        EXPENSE_CLAIM_TYPES, COMPANY, existing
+    ):
         acc = account(number)
         if frappe.db.exists("Expense Claim Type", name):
             doc = frappe.get_doc("Expense Claim Type", name)
@@ -927,18 +1419,25 @@ def expenses():
                 doc.append("accounts", {"company": company, "default_account": acc})
             doc.save()
         else:
-            frappe.get_doc({
-                "doctype": "Expense Claim Type",
-                "expense_type": name,
-                "accounts": [{"company": company, "default_account": acc}],
-            }).insert()
+            frappe.get_doc(
+                {
+                    "doctype": "Expense Claim Type",
+                    "expense_type": name,
+                    "accounts": [{"company": company, "default_account": acc}],
+                }
+            ).insert()
             say(f"expenses: {name} created with account {acc}")
     frappe.db.commit()
 
     # 2. The account a claim's payable sits on: without it a claim submits no GL.
     payable = account(ACC_EXPENSE_PAYABLE)
-    if frappe.db.get_value("Company", COMPANY, "default_expense_claim_payable_account") != payable:
-        frappe.db.set_value("Company", COMPANY, "default_expense_claim_payable_account", payable)
+    if (
+        frappe.db.get_value("Company", COMPANY, "default_expense_claim_payable_account")
+        != payable
+    ):
+        frappe.db.set_value(
+            "Company", COMPANY, "default_expense_claim_payable_account", payable
+        )
         frappe.db.commit()
         say(f"expenses: default expense claim payable account set to {payable}")
     else:
@@ -951,7 +1450,9 @@ def expenses():
         say("expenses: HR_USER not set; the Expense Approver role was set on nobody")
     elif not frappe.db.exists("User", email):
         sys.exit(f"expenses: no user {email}; HR_USER must name an existing user")
-    elif EXPENSE_APPROVER_ROLE not in [r.role for r in frappe.get_doc("User", email).roles]:
+    elif EXPENSE_APPROVER_ROLE not in [
+        r.role for r in frappe.get_doc("User", email).roles
+    ]:
         user = frappe.get_doc("User", email)
         user.append("roles", {"role": EXPENSE_APPROVER_ROLE})
         user.save()
@@ -959,7 +1460,9 @@ def expenses():
         say(f"expenses: {EXPENSE_APPROVER_ROLE} role set on {email}")
     else:
         say(f"expenses: {email} has the {EXPENSE_APPROVER_ROLE} role already")
-    say(f"expenses: {len(EXPENSE_CLAIM_TYPES)} expense claim types for {COMPANY} ({abbr})")
+    say(
+        f"expenses: {len(EXPENSE_CLAIM_TYPES)} expense claim types for {COMPANY} ({abbr})"
+    )
 
 
 def freeze(date, apply):
@@ -969,11 +1472,18 @@ def freeze(date, apply):
     company = frappe.get_doc("Company", COMPANY)
     current = company.accounts_frozen_till_date
     if current and str(current) > date:
-        sys.exit(f"STOP: accounts are frozen till {current}; a freeze is not moved back to {date}")
-    gl = frappe.db.count("GL Entry", {"company": COMPANY, "posting_date": ["<=", date], "is_cancelled": 0})
+        sys.exit(
+            f"STOP: accounts are frozen till {current}; a freeze is not moved back to {date}"
+        )
+    gl = frappe.db.count(
+        "GL Entry",
+        {"company": COMPANY, "posting_date": ["<=", date], "is_cancelled": 0},
+    )
     say(f"freeze: accounts frozen till {current or '(none)'} -> {date}")
     say(f"freeze: {gl} GL entries dated on or before {date}")
-    say(f"freeze: role allowed to post into frozen periods: {company.role_allowed_for_frozen_entries or '(none)'}")
+    say(
+        f"freeze: role allowed to post into frozen periods: {company.role_allowed_for_frozen_entries or '(none)'}"
+    )
     if not apply:
         say("freeze: dry run, nothing changed; add --apply to set it")
         return
@@ -1001,11 +1511,20 @@ PAYROLL_ACCOUNTS = {
 
 def new_accounts(table):
     """The rows the accounts step inserts, in number order: number, name, root and report type, parent group
-    number. table: number -> (name, root type, parent group number); the report type follows the root type."""
-    return [{"account_number": number, "account_name": name, "root_type": root,
-             "report_type": "Balance Sheet" if root == "Liability" else "Profit and Loss",
-             "parent_number": parent}
-            for number, (name, root, parent) in sorted(table.items())]
+    number. table: number -> (name, root type, parent group number); the report type follows the root type.
+    """
+    return [
+        {
+            "account_number": number,
+            "account_name": name,
+            "root_type": root,
+            "report_type": (
+                "Balance Sheet" if root == "Liability" else "Profit and Loss"
+            ),
+            "parent_number": parent,
+        }
+        for number, (name, root, parent) in sorted(table.items())
+    ]
 
 
 def accounts():
@@ -1018,17 +1537,21 @@ def accounts():
         if frappe.db.exists("Account", {"company": COMPANY, "account_number": number}):
             say(f"accounts: {number} in place")
             continue
-        frappe.get_doc({
-            "doctype": "Account",
-            "account_name": row["account_name"],
-            "company": COMPANY,
-            "parent_account": account(row["parent_number"]),
-            "account_number": number,
-            "is_group": 0,
-            "root_type": row["root_type"],
-            "report_type": row["report_type"],
-            "account_currency": frappe.db.get_value("Company", COMPANY, "default_currency"),
-        }).insert()
+        frappe.get_doc(
+            {
+                "doctype": "Account",
+                "account_name": row["account_name"],
+                "company": COMPANY,
+                "parent_account": account(row["parent_number"]),
+                "account_number": number,
+                "is_group": 0,
+                "root_type": row["root_type"],
+                "report_type": row["report_type"],
+                "account_currency": frappe.db.get_value(
+                    "Company", COMPANY, "default_currency"
+                ),
+            }
+        ).insert()
         say(f"accounts: {number} created")
     frappe.db.commit()
 
@@ -1039,7 +1562,10 @@ def payroll_accounts():
     from bi_payroll.swiss_rates import PAYROLL_PAYABLE_ACCOUNT
 
     payable = account(PAYROLL_PAYABLE_ACCOUNT)
-    if frappe.db.get_value("Company", COMPANY, "default_payroll_payable_account") == payable:
+    if (
+        frappe.db.get_value("Company", COMPANY, "default_payroll_payable_account")
+        == payable
+    ):
         say("payroll_accounts: default payroll payable already set")
         return
     frappe.db.set_value("Company", COMPANY, "default_payroll_payable_account", payable)
@@ -1047,9 +1573,24 @@ def payroll_accounts():
     say(f"payroll_accounts: default payroll payable set to {PAYROLL_PAYABLE_ACCOUNT}")
 
 
-STEPS = {"coa": coa, "accounts": accounts, "vat": vat, "fiscal": fiscal, "fields": fields, "currencies": currencies,
-         "banks": banks, "gebuev": gebuev, "qrbill": qrbill, "payslip": payslip, "host": host, "payments": payments, "hr": hr,
-         "payroll_accounts": payroll_accounts, "lohnausweis": lohnausweis, "expenses": expenses}
+STEPS = {
+    "coa": coa,
+    "accounts": accounts,
+    "vat": vat,
+    "fiscal": fiscal,
+    "fields": fields,
+    "currencies": currencies,
+    "banks": banks,
+    "gebuev": gebuev,
+    "qrbill": qrbill,
+    "payslip": payslip,
+    "host": host,
+    "payments": payments,
+    "hr": hr,
+    "payroll_accounts": payroll_accounts,
+    "lohnausweis": lohnausweis,
+    "expenses": expenses,
+}
 
 if __name__ == "__main__":
     args = sys.argv[1:]

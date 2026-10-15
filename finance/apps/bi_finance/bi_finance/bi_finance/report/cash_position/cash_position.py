@@ -16,23 +16,58 @@ import datetime
 from collections import defaultdict
 
 import frappe
+from bi_finance.cash_conversion import CHART_MONTHS, month_label
 from frappe import _
 from frappe.utils import escape_html, flt, getdate, nowdate
-
-from bi_finance.cash_conversion import CHART_MONTHS, month_label
 
 BASE = "CHF"
 CASH_ACCOUNT_TYPES = ["Bank", "Cash"]
 HISTORY_FROM = datetime.date(2019, 1, 1)
 
+
 def columns():
     return [
-        {"label": _("Account"), "fieldname": "account", "fieldtype": "Link", "options": "Account", "width": 300},
-        {"label": _("Currency"), "fieldname": "currency", "fieldtype": "Link", "options": "Currency", "width": 90},
-        {"label": _("Balance"), "fieldname": "balance", "fieldtype": "Float", "precision": 2, "width": 140},
-        {"label": _("Rate to CHF"), "fieldname": "rate", "fieldtype": "Float", "precision": 6, "width": 120},
-        {"label": _("Rate date"), "fieldname": "rate_date", "fieldtype": "Date", "width": 110},
-        {"label": _("Balance CHF"), "fieldname": "balance_chf", "fieldtype": "Float", "precision": 2, "width": 140},
+        {
+            "label": _("Account"),
+            "fieldname": "account",
+            "fieldtype": "Link",
+            "options": "Account",
+            "width": 300,
+        },
+        {
+            "label": _("Currency"),
+            "fieldname": "currency",
+            "fieldtype": "Link",
+            "options": "Currency",
+            "width": 90,
+        },
+        {
+            "label": _("Balance"),
+            "fieldname": "balance",
+            "fieldtype": "Float",
+            "precision": 2,
+            "width": 140,
+        },
+        {
+            "label": _("Rate to CHF"),
+            "fieldname": "rate",
+            "fieldtype": "Float",
+            "precision": 6,
+            "width": 120,
+        },
+        {
+            "label": _("Rate date"),
+            "fieldname": "rate_date",
+            "fieldtype": "Date",
+            "width": 110,
+        },
+        {
+            "label": _("Balance CHF"),
+            "fieldname": "balance_chf",
+            "fieldtype": "Float",
+            "precision": 2,
+            "width": 140,
+        },
     ]
 
 
@@ -85,29 +120,39 @@ def build(accounts, movements, rates, as_of, months, total_label="Total CHF"):
         value = chf(balance, rate)
         if value is None:
             missing.append((name, currency))
-        rows.append({
-            "account": name,
-            "currency": currency,
-            "balance": balance,
-            "rate": rate,
-            # CHF is its own base: no rate date to show
-            "rate_date": rate_date if currency != BASE else None,
-            "balance_chf": value,
-        })
-    total = round(sum(row["balance_chf"] for row in rows if row["balance_chf"] is not None), 2)
+        rows.append(
+            {
+                "account": name,
+                "currency": currency,
+                "balance": balance,
+                "rate": rate,
+                # CHF is its own base: no rate date to show
+                "rate_date": rate_date if currency != BASE else None,
+                "balance_chf": value,
+            }
+        )
+    total = round(
+        sum(row["balance_chf"] for row in rows if row["balance_chf"] is not None), 2
+    )
 
     datasets = []
     totals = [0.0] * len(months)
     for name, currency in accounts:
         values = []
         for i, day in enumerate(months):
-            value = chf(round(balance_on(movements.get(name, []), day), 2), rate_on(rates.get(currency, []), day)[1])
+            value = chf(
+                round(balance_on(movements.get(name, []), day), 2),
+                rate_on(rates.get(currency, []), day)[1],
+            )
             values.append(value)
             if value is not None:
                 totals[i] += value
         datasets.append({"name": name, "values": values})
     datasets.append({"name": total_label, "values": [round(t, 2) for t in totals]})
-    chart = {"data": {"labels": [month_label(day) for day in months], "datasets": datasets}, "type": "line"}
+    chart = {
+        "data": {"labels": [month_label(day) for day in months], "datasets": datasets},
+        "type": "line",
+    }
     return rows, chart, total, missing
 
 
@@ -117,13 +162,20 @@ def execute(filters=None):
     as_of = getdate(filters.as_of_date or nowdate())
 
     # The Treasury cards select one account by its chart number (the card files carry no names).
-    account_filter = {"company": company, "account_type": ["in", CASH_ACCOUNT_TYPES], "is_group": 0}
+    account_filter = {
+        "company": company,
+        "account_type": ["in", CASH_ACCOUNT_TYPES],
+        "is_group": 0,
+    }
     if filters.account:
         account_filter["name"] = filters.account
     if filters.account_number:
         account_filter["account_number"] = filters.account_number
     accounts = frappe.get_all(
-        "Account", filters=account_filter, fields=["name", "account_currency"], order_by="account_number, name"
+        "Account",
+        filters=account_filter,
+        fields=["name", "account_currency"],
+        order_by="account_number, name",
     )
     accounts = [(a.name, a.account_currency) for a in accounts]
 
@@ -143,7 +195,11 @@ def execute(filters=None):
     for currency in {a[1] for a in accounts} - {BASE}:
         found = frappe.get_all(
             "Currency Exchange",
-            filters={"from_currency": currency, "to_currency": BASE, "date": ["<=", as_of]},
+            filters={
+                "from_currency": currency,
+                "to_currency": BASE,
+                "date": ["<=", as_of],
+            },
             fields=["date", "exchange_rate"],
             order_by="date asc",
         )
@@ -153,9 +209,19 @@ def execute(filters=None):
     rows, chart, total, missing = build(
         accounts, movements, rates, as_of, month_ends(HISTORY_FROM, as_of), total_label
     )
-    summary = [{"value": total, "label": total_label, "datatype": "Currency", "currency": BASE, "indicator": "Blue"}]
+    summary = [
+        {
+            "value": total,
+            "label": total_label,
+            "datatype": "Currency",
+            "currency": BASE,
+            "indicator": "Blue",
+        }
+    ]
     messages = [
-        _("No {0} rate on or before {1} for {2}; its CHF value is left out.").format(currency, as_of, name)
+        _("No {0} rate on or before {1} for {2}; its CHF value is left out.").format(
+            currency, as_of, name
+        )
         for name, currency in missing
     ]
     message = "<br>".join(escape_html(m) for m in messages) or None

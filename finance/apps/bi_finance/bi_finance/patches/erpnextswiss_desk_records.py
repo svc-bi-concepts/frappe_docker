@@ -22,7 +22,9 @@ def execute():
     for doctype, filters in TARGETS:
         names = frappe.get_all(doctype, filters=filters, pluck="name")
         for name in names:
-            frappe.delete_doc(doctype, name, ignore_permissions=True, force=True, ignore_missing=True)
+            frappe.delete_doc(
+                doctype, name, ignore_permissions=True, force=True, ignore_missing=True
+            )
         counts.append(len(names))
     if any(counts):
         print(

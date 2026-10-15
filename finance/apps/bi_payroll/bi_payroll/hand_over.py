@@ -12,7 +12,7 @@ Pure Python, so the offline tests run without frappe (test_hand_over.py). The re
 (bi_payroll/bi_payroll/report/payroll_hand_over) reads the submitted Salary Slips and passes them here.
 """
 
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 from itertools import groupby
 
 # Column key -> the Salary Component's name in fixtures/salary_component.json. Quellensteuer is the component
@@ -47,7 +47,11 @@ AMOUNTS = ["gross", "net", "earnings", *EARNINGS, *COMPONENTS, "employer_total"]
 LOHNAUSWEIS = [
     ("line_1", "1. Lohn", ["earnings"]),
     ("line_8", "8. Bruttolohn total", ["gross"]),
-    ("line_9", "9. Beiträge AHV/IV/EO/ALV/NBUV", ["ahv_employee", "alv_employee", "nbu_employee"]),
+    (
+        "line_9",
+        "9. Beiträge AHV/IV/EO/ALV/NBUV",
+        ["ahv_employee", "alv_employee", "nbu_employee"],
+    ),
     ("line_10_1", "10.1 Ordentliche Beiträge berufliche Vorsorge", ["bvg_employee"]),
     ("line_11", "11. Nettolohn", None),
     ("line_12", "12. Quellensteuerabzug", ["quellensteuer"]),
@@ -63,7 +67,8 @@ def hand_over(slips, lines, by_month, earnings=None):
     lines: {slip name: {component name: amount}}, the Salary Detail rows of each slip summed by component.
     earnings: {slip name: {component name, ...}}, the rows that sit in a slip's earnings table; their sum is
     Lohnausweis line 1, so it names every earning, not only Basic Salary.
-    by_month: one row per employee and month, else one row per employee for the whole period."""
+    by_month: one row per employee and month, else one row per employee for the whole period.
+    """
     key_of = {name: key for key, name in {**EARNINGS, **COMPONENTS}.items()}
     earning_names = earnings or {}
     rows = {}
@@ -72,8 +77,13 @@ def hand_over(slips, lines, by_month, earnings=None):
         row = rows.get((slip["employee"], month))
         if row is None:
             row = rows[(slip["employee"], month)] = dict(
-                employee=slip["employee"], employee_name=slip["employee_name"], ahv_number=slip["ahv_number"],
-                month=month, slips=0, **{key: 0 for key in AMOUNTS})
+                employee=slip["employee"],
+                employee_name=slip["employee_name"],
+                ahv_number=slip["ahv_number"],
+                month=month,
+                slips=0,
+                **{key: 0 for key in AMOUNTS},
+            )
         row["slips"] += 1
         row["gross"] += slip["gross_pay"]
         row["net"] += slip["net_pay"]
@@ -99,19 +109,31 @@ def certificate_rounding(amount):
 def lohnausweis(rows, francs=False):
     """The hand-over rows, with the amounts on the Lohnausweis lines instead of the components: one row per row.
     Line 11 is computed per the Wegleitung (line 8 less lines 9 and 10.1), line 15 remarks the KTG employee share.
-    francs: whole francs for the printed certificate or the export (round half up); the view keeps rappen."""
+    francs: whole francs for the printed certificate or the export (round half up); the view keeps rappen.
+    """
     view = []
     for row in rows:
         line = {
-            **{key: row[key] for key in ("employee", "employee_name", "ahv_number", "month", "slips")},
-            **{column: round(sum(row[key] for key in keys), 2) for column, _, keys in LOHNAUSWEIS if keys},
+            **{
+                key: row[key]
+                for key in ("employee", "employee_name", "ahv_number", "month", "slips")
+            },
+            **{
+                column: round(sum(row[key] for key in keys), 2)
+                for column, _, keys in LOHNAUSWEIS
+                if keys
+            },
         }
         # Ziffer 11: Ziffer 8 less the total of Ziffer 9 and 10 — not the slips' net pay, which also deducts
         # Quellensteuer (Ziffer 12) and KTG.
         line["line_11"] = round(line["line_8"] - line["line_9"] - line["line_10_1"], 2)
         # Ziffer 15 (Bemerkungen): the KTG employee share has no line of its own.
         if row["ktg_employee"]:
-            amount = certificate_rounding(row["ktg_employee"]) if francs else f"{row['ktg_employee']:.2f}"
+            amount = (
+                certificate_rounding(row["ktg_employee"])
+                if francs
+                else f"{row['ktg_employee']:.2f}"
+            )
             line["line_15"] = KTG_REMARK.format(amount)
         else:
             line["line_15"] = ""
@@ -133,7 +155,8 @@ def qst_rows(slips, period):
     """The Quellensteuer view. slips: dicts with name, employee, employee_name, month, gross_pay, swiss_qst_canton,
     swiss_qst_code, swiss_qst_amount (submitted slips that carry a code: the report filters them).
     period: "month" or "quarter". One row per canton, period and employee, then the canton's total for the period.
-    The rate is the tax over the gross, the effective rate of the slips: the tariff's own rate is not on the slip."""
+    The rate is the tax over the gross, the effective rate of the slips: the tariff's own rate is not on the slip.
+    """
     if period not in QST_PERIODS:
         raise ValueError(f"period must be one of {QST_PERIODS}, not {period!r}")
 
@@ -143,25 +166,57 @@ def qst_rows(slips, period):
     rows = {}
     for slip in slips:
         # the code is part of the key: an employee whose code changed in the period has a row for each
-        key = (slip["swiss_qst_canton"] or "", period_of(slip), slip["employee"], slip["swiss_qst_code"] or "")
+        key = (
+            slip["swiss_qst_canton"] or "",
+            period_of(slip),
+            slip["employee"],
+            slip["swiss_qst_code"] or "",
+        )
         row = rows.get(key)
         if row is None:
             row = rows[key] = dict(
-                canton=key[0], period=key[1], employee=slip["employee"], employee_name=slip["employee_name"],
-                tariff_code=key[3], slips=0, gross=0, amount=0)
+                canton=key[0],
+                period=key[1],
+                employee=slip["employee"],
+                employee_name=slip["employee_name"],
+                tariff_code=key[3],
+                slips=0,
+                gross=0,
+                amount=0,
+            )
         row["slips"] += 1
         row["gross"] += slip["gross_pay"]
         row["amount"] += slip["swiss_qst_amount"]
 
-    ordered = sorted(rows.values(), key=lambda row: (row["canton"], row["period"], row["employee"], row["tariff_code"]))
+    ordered = sorted(
+        rows.values(),
+        key=lambda row: (
+            row["canton"],
+            row["period"],
+            row["employee"],
+            row["tariff_code"],
+        ),
+    )
     out = []
-    for (canton, number), group in groupby(ordered, key=lambda row: (row["canton"], row["period"])):
+    for (canton, number), group in groupby(
+        ordered, key=lambda row: (row["canton"], row["period"])
+    ):
         group = list(group)
         out += [_finish_qst(row) for row in group]
-        out.append(_finish_qst(dict(
-            canton=canton, period=number, employee="", employee_name="Total", tariff_code="",
-            slips=sum(row["slips"] for row in group), gross=sum(row["gross"] for row in group),
-            amount=sum(row["amount"] for row in group))))
+        out.append(
+            _finish_qst(
+                dict(
+                    canton=canton,
+                    period=number,
+                    employee="",
+                    employee_name="Total",
+                    tariff_code="",
+                    slips=sum(row["slips"] for row in group),
+                    gross=sum(row["gross"] for row in group),
+                    amount=sum(row["amount"] for row in group),
+                )
+            )
+        )
     return out
 
 
@@ -175,7 +230,15 @@ def _finish_qst(row):
 # The Jahresdeklarationen: the wage sums per insurance for the year, as the funds ask them. The wage bases are the
 # slips' own: the AHV and the FAK and KTG bases are the gross, the ALV and UVG/NBU bases stop at the ceiling the slip
 # was computed with, and the BVG salary is the one of the slip's assignment, from the threshold on, the age band.
-ANNUAL_BASES = ["ahv_wage", "alv_wage", "uvg_wage", "bvg_salary", "bvg_coordinated", "fak_wage", "ktg_wage"]
+ANNUAL_BASES = [
+    "ahv_wage",
+    "alv_wage",
+    "uvg_wage",
+    "bvg_salary",
+    "bvg_coordinated",
+    "fak_wage",
+    "ktg_wage",
+]
 ANNUAL_CONTRIBUTIONS = [key for key in COMPONENTS if key != "quellensteuer"]
 
 
@@ -188,14 +251,18 @@ def bvg_insured(slip, lines):
     age = slip.get("age") or lines.get("BVG Age") or 0
     if slip["bvg_insured_yearly"] < slip["swiss_bvg_threshold"] or not 25 <= age < 65:
         return 0, 0
-    return slip["bvg_insured_yearly"] / 12, max(0, slip["bvg_insured_yearly"] - slip["swiss_bvg_coordination"]) / 12
+    return (
+        slip["bvg_insured_yearly"] / 12,
+        max(0, slip["bvg_insured_yearly"] - slip["swiss_bvg_coordination"]) / 12,
+    )
 
 
 def annual_rows(slips, lines, year):
     """The Jahresdeklarationen: one row per employee for the year, and the total. slips: dicts with name, employee,
     employee_name, ahv_number, start_date, gross_pay, swiss_alv_ceiling, swiss_uvg_max, swiss_bvg_threshold,
     swiss_bvg_coordination, bvg_insured_yearly (the slip's assignment). lines: {slip name: {component name: amount}}, as
-    in hand_over. A slip of another year is left out; an employee who left in the year has the months he was paid."""
+    in hand_over. A slip of another year is left out; an employee who left in the year has the months he was paid.
+    """
     key_of = {name: key for key, name in COMPONENTS.items()}
     rows = {}
     for slip in slips:
@@ -205,8 +272,13 @@ def annual_rows(slips, lines, year):
         row = rows.get(slip["employee"])
         if row is None:
             row = rows[slip["employee"]] = dict(
-                employee=slip["employee"], employee_name=slip["employee_name"], ahv_number=slip["ahv_number"], slips=0,
-                **{key: 0 for key in ANNUAL_BASES}, **{key: 0 for key in ANNUAL_CONTRIBUTIONS})
+                employee=slip["employee"],
+                employee_name=slip["employee_name"],
+                ahv_number=slip["ahv_number"],
+                slips=0,
+                **{key: 0 for key in ANNUAL_BASES},
+                **{key: 0 for key in ANNUAL_CONTRIBUTIONS},
+            )
         slip_lines = lines.get(slip["name"], {})
         row["slips"] += 1
         row["ahv_wage"] += gross
@@ -224,7 +296,12 @@ def annual_rows(slips, lines, year):
     out = []
     for row in sorted(rows.values(), key=lambda row: row["employee"]):
         out.append(_finish_annual(row))
-    total = dict(employee="", employee_name="Total", ahv_number="", slips=sum(r["slips"] for r in out))
+    total = dict(
+        employee="",
+        employee_name="Total",
+        ahv_number="",
+        slips=sum(r["slips"] for r in out),
+    )
     for key in ANNUAL_BASES + ANNUAL_CONTRIBUTIONS:
         total[key] = sum(row[key] for row in out)
     out.append(_finish_annual(total))

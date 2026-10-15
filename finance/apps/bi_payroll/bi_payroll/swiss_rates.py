@@ -3,12 +3,27 @@ Salary Slip, the formulas and the structure agree on these names. Pure Python, s
 (test_swiss_payroll.py)."""
 
 RATE_FIELDS = [
-    "swiss_ahv_ee", "swiss_ahv_ag",
-    "swiss_alv_ee", "swiss_alv_ag", "swiss_alv_ceiling",
-    "swiss_bvg_threshold", "swiss_bvg_coordination",
-    "swiss_bvg_ee_25", "swiss_bvg_ee_35", "swiss_bvg_ee_45", "swiss_bvg_ee_55",
-    "swiss_bvg_ag_25", "swiss_bvg_ag_35", "swiss_bvg_ag_45", "swiss_bvg_ag_55",
-    "swiss_uvg_max", "swiss_uvg_ag", "swiss_nbu_ee", "swiss_ktg_ee", "swiss_ktg_ag", "swiss_fak_ag",
+    "swiss_ahv_ee",
+    "swiss_ahv_ag",
+    "swiss_alv_ee",
+    "swiss_alv_ag",
+    "swiss_alv_ceiling",
+    "swiss_bvg_threshold",
+    "swiss_bvg_coordination",
+    "swiss_bvg_ee_25",
+    "swiss_bvg_ee_35",
+    "swiss_bvg_ee_45",
+    "swiss_bvg_ee_55",
+    "swiss_bvg_ag_25",
+    "swiss_bvg_ag_35",
+    "swiss_bvg_ag_45",
+    "swiss_bvg_ag_55",
+    "swiss_uvg_max",
+    "swiss_uvg_ag",
+    "swiss_nbu_ee",
+    "swiss_ktg_ee",
+    "swiss_ktg_ag",
+    "swiss_fak_ag",
 ]
 
 # Per assignment (Salary Structure Assignment), not from the settings: the insured salary is fixed per year.
@@ -30,14 +45,21 @@ STRUCTURE_DEDUCTIONS = [
 # The employer shares are Employer Contribution components: HRMS keeps them in the structure's employer_contributions
 # table, off the employee's deductions, and the accrual books each one as an expense against a liability.
 STRUCTURE_EMPLOYER_CONTRIBUTIONS = [
-    "AHV/IV/EO Employer", "ALV Employer", "BVG Employer", "UVG Employer", "KTG Employer", "FAK Employer",
+    "AHV/IV/EO Employer",
+    "ALV Employer",
+    "BVG Employer",
+    "UVG Employer",
+    "KTG Employer",
+    "FAK Employer",
 ]
 
 
 # The Company's GL accounts of the payroll, by account number (the KMU chart, as bexio booked the payroll in 2020 to 2026).
 # The live GL read (erp-nqyb): each payroll Journal Entry debits 5000 and credits 1091 for the net wages, pays 1091 to 1020,
 # and credits the employee deductions to 2270, 2271, 2273, 2274 and 2279. ALV and AHV share 2271 in bexio's books.
-PAYROLL_PAYABLE_ACCOUNT = "1091"  # Lohndurchlaufkonto: the Company's default payroll payable account
+PAYROLL_PAYABLE_ACCOUNT = (
+    "1091"  # Lohndurchlaufkonto: the Company's default payroll payable account
+)
 # The Earning and Deduction components: one account each (the Salary Component's account row, the liability_account left empty).
 # Commission is bexio's 5003 Provisionen: its live journals debit 5003 against 1091, as the Basic Salary's do against 5000.
 COMPONENT_ACCOUNTS = {
@@ -65,9 +87,14 @@ EMPLOYER_CONTRIBUTION_ACCOUNTS = {
 
 def missing_components(earnings, deductions, employer_contributions):
     """The structure components that a Salary Structure with these component names lacks. ensure_structure makes a
-    structure only when the company has none, so one made before a component was added keeps the gap: this names it."""
+    structure only when the company has none, so one made before a component was added keeps the gap: this names it.
+    """
     return (
         [c for c in STRUCTURE_EARNINGS if c not in earnings]
         + [c for c in STRUCTURE_DEDUCTIONS if c not in deductions]
-        + [c for c in STRUCTURE_EMPLOYER_CONTRIBUTIONS if c not in employer_contributions]
+        + [
+            c
+            for c in STRUCTURE_EMPLOYER_CONTRIBUTIONS
+            if c not in employer_contributions
+        ]
     )

@@ -50,7 +50,11 @@ def norm(value):
         try:
             return round(float(value), 6)
         except ValueError:
-            return html.unescape(value.replace("\r\n", "\n").replace("<br />", "<br>").replace("<br/>", "<br>"))
+            return html.unescape(
+                value.replace("\r\n", "\n")
+                .replace("<br />", "<br>")
+                .replace("<br/>", "<br>")
+            )
     return str(value)
 
 
@@ -63,7 +67,9 @@ def differs(have, want):
     for key, value in want.items():
         if isinstance(value, list):
             rows = have.get(key) or []
-            if len(rows) != len(value) or any(row_differs(r, w) for r, w in zip(rows, value)):
+            if len(rows) != len(value) or any(
+                row_differs(r, w) for r, w in zip(rows, value)
+            ):
                 return True
         elif norm(have.get(key)) != norm(value):
             return True
@@ -111,13 +117,22 @@ def apply_plan(plan, store, submit=False):
     keep_draft = {str(bexio_id) for bexio_id in plan.get("keep_draft", [])}
     documents = plan["documents"]
     if submit:
-        documents = sorted(documents, key=lambda item: (item["values"].get("posting_date") or "", str(item["bexio_id"])))
+        documents = sorted(
+            documents,
+            key=lambda item: (
+                item["values"].get("posting_date") or "",
+                str(item["bexio_id"]),
+            ),
+        )
     for item in documents:
         try:
             status, name = load_document(item, store)
             after = None
             if submit and status != "skipped":
-                if item["doctype"] in NEVER_SUBMITTED or str(item["bexio_id"]) in keep_draft:
+                if (
+                    item["doctype"] in NEVER_SUBMITTED
+                    or str(item["bexio_id"]) in keep_draft
+                ):
                     after = "kept draft"
                 else:
                     store.submit(item["doctype"], name)
@@ -127,10 +142,14 @@ def apply_plan(plan, store, submit=False):
             counts[(item["doctype"], status)] += 1
             if after:
                 counts[(item["doctype"], after)] += 1
-        except Exception as err:  # one document's failure must not stop the others; it is listed by bexio id
+        except (
+            Exception
+        ) as err:  # one document's failure must not stop the others; it is listed by bexio id
             store.rollback()
             counts[(item["doctype"], "failed")] += 1
-            failures.append((item["doctype"], str(item["bexio_id"]), "{}: {}".format(type(err).__name__, err)))
+            failures.append(
+                (item["doctype"], str(item["bexio_id"]), f"{type(err).__name__}: {err}")
+            )
     return counts, failures
 
 
@@ -160,13 +179,17 @@ def apply_reconcile(plan, store):
                 raise ValueError("already allocated to other vouchers")
             status = store.reconcile(name, item["vouchers"])
             if status != "Reconciled":
-                raise ValueError("status is {} after the allocation, not Reconciled".format(status))
+                raise ValueError(
+                    f"status is {status} after the allocation, not Reconciled"
+                )
             store.commit()
             counts["reconciled"] += 1
         except Exception as err:
             store.rollback()
             counts["failed"] += 1
-            failures.append(("Bank Transaction", bexio_id, "{}: {}".format(type(err).__name__, err)))
+            failures.append(
+                ("Bank Transaction", bexio_id, f"{type(err).__name__}: {err}")
+            )
     return counts, failures
 
 
@@ -186,16 +209,27 @@ def relink(plan, store, write=True):
             continue
         bexio_id = str(item["bexio_id"])
         values = item["values"]
-        amount = sum(float(line.get("debit_in_account_currency") or 0) for line in values["accounts"])
+        amount = sum(
+            float(line.get("debit_in_account_currency") or 0)
+            for line in values["accounts"]
+        )
         found = store.journal_entries(values["posting_date"], values["user_remark"])
         if any(entry["bexio_id"] == bexio_id for entry in found):
             counts["already linked"] += 1
             continue
-        match = [e for e in found if e["docstatus"] == 1 and not e["bexio_id"] and abs(e["amount"] - amount) < 0.005]
+        match = [
+            e
+            for e in found
+            if e["docstatus"] == 1
+            and not e["bexio_id"]
+            and abs(e["amount"] - amount) < 0.005
+        ]
         if len(match) == 1:
             links.append((match[0]["name"], bexio_id))
         else:
-            problems.append(("Journal Entry", bexio_id, "{} matches, need exactly one".format(len(match))))
+            problems.append(
+                ("Journal Entry", bexio_id, f"{len(match)} matches, need exactly one")
+            )
     if problems:
         return counts, problems
     if not write:
@@ -215,7 +249,9 @@ class FrappeStore:
         self.frappe = frappe
 
     def find(self, doctype, bexio_id):
-        row = self.frappe.db.get_value(doctype, {"bexio_id": bexio_id}, ["name", "docstatus"], as_dict=True)
+        row = self.frappe.db.get_value(
+            doctype, {"bexio_id": bexio_id}, ["name", "docstatus"], as_dict=True
+        )
         return (row.name, row.docstatus) if row else None
 
     def exists(self, doctype, name):
@@ -240,14 +276,30 @@ class FrappeStore:
         self.frappe.get_doc(doctype, name).submit()
 
     def rate_exists(self, rate):
-        return bool(self.frappe.db.exists("Currency Exchange", {
-            "date": rate["date"], "from_currency": rate["from"], "to_currency": rate["to"], "for_selling": 1}))
+        return bool(
+            self.frappe.db.exists(
+                "Currency Exchange",
+                {
+                    "date": rate["date"],
+                    "from_currency": rate["from"],
+                    "to_currency": rate["to"],
+                    "for_selling": 1,
+                },
+            )
+        )
 
     def insert_rate(self, rate):
-        self.frappe.get_doc({
-            "doctype": "Currency Exchange", "date": rate["date"], "from_currency": rate["from"],
-            "to_currency": rate["to"], "exchange_rate": rate["rate"], "for_selling": 1, "for_buying": 0,
-        }).insert()
+        self.frappe.get_doc(
+            {
+                "doctype": "Currency Exchange",
+                "date": rate["date"],
+                "from_currency": rate["from"],
+                "to_currency": rate["to"],
+                "exchange_rate": rate["rate"],
+                "for_selling": 1,
+                "for_buying": 0,
+            }
+        ).insert()
 
     def commit(self):
         self.frappe.db.commit()
@@ -260,29 +312,58 @@ class FrappeStore:
 
     def journal_entries(self, posting_date, user_remark):
         """The Journal Entries on the date with the remark, each with its docstatus, bexio_id and debit total."""
-        rows = self.frappe.get_all("Journal Entry", filters={"posting_date": posting_date, "user_remark": user_remark},
-                                   fields=["name", "docstatus", "bexio_id"])
+        rows = self.frappe.get_all(
+            "Journal Entry",
+            filters={"posting_date": posting_date, "user_remark": user_remark},
+            fields=["name", "docstatus", "bexio_id"],
+        )
         entries = []
         for row in rows:
-            debit = self.frappe.db.sql("select coalesce(sum(debit_in_account_currency), 0) from `tabJournal Entry Account` "
-                                       "where parent = %s", row.name)[0][0]
-            entries.append({"name": row.name, "docstatus": row.docstatus, "bexio_id": row.bexio_id or "", "amount": float(debit)})
+            debit = self.frappe.db.sql(
+                "select coalesce(sum(debit_in_account_currency), 0) from `tabJournal Entry Account` "
+                "where parent = %s",
+                row.name,
+            )[0][0]
+            entries.append(
+                {
+                    "name": row.name,
+                    "docstatus": row.docstatus,
+                    "bexio_id": row.bexio_id or "",
+                    "amount": float(debit),
+                }
+            )
         return entries
 
     def set_bexio_id(self, doctype, name, bexio_id):
         # no modified stamp: the entry is the same document, only its bexio key is set
-        self.frappe.db.set_value(doctype, name, "bexio_id", bexio_id, update_modified=False)
+        self.frappe.db.set_value(
+            doctype, name, "bexio_id", bexio_id, update_modified=False
+        )
 
     def allocated(self, name):
         """The vouchers a Bank Transaction is allocated to, as (doctype, name)."""
-        rows = self.frappe.get_all("Bank Transaction Payments", filters={"parent": name, "parenttype": "Bank Transaction"},
-                                   fields=["payment_document", "payment_entry"])
+        rows = self.frappe.get_all(
+            "Bank Transaction Payments",
+            filters={"parent": name, "parenttype": "Bank Transaction"},
+            fields=["payment_document", "payment_entry"],
+        )
         return {(row.payment_document, row.payment_entry) for row in rows}
 
     def reconcile(self, name, vouchers):
         """Allocate the vouchers to the Bank Transaction, as the bank reconciliation tool does; returns its status after."""
-        from erpnext.accounts.doctype.bank_reconciliation_tool.bank_reconciliation_tool import reconcile_vouchers
-        reconcile_vouchers(name, json.dumps([{"payment_doctype": v["doctype"], "payment_name": v["name"]} for v in vouchers]))
+        from erpnext.accounts.doctype.bank_reconciliation_tool.bank_reconciliation_tool import (
+            reconcile_vouchers,
+        )
+
+        reconcile_vouchers(
+            name,
+            json.dumps(
+                [
+                    {"payment_doctype": v["doctype"], "payment_name": v["name"]}
+                    for v in vouchers
+                ]
+            ),
+        )
         return self.frappe.db.get_value("Bank Transaction", name, "status")
 
 
@@ -298,18 +379,20 @@ def main(stdin):
         # check reports what relink would link; neither writes when a single item does not match exactly once
         counts, failures = relink(plan, FrappeStore(frappe), write=mode == "relink")
     else:
-        counts, failures = apply_plan(plan, FrappeStore(frappe), submit=mode == "submit")
+        counts, failures = apply_plan(
+            plan, FrappeStore(frappe), submit=mode == "submit"
+        )
         if mode == "submit" and plan.get("reconcile"):
             more, more_failures = apply_reconcile(plan, FrappeStore(frappe))
             counts.update(more)
             failures += more_failures
     for key in sorted(counts, key=str):
         if isinstance(key, tuple):
-            print("{:<18}{:<12}{:>6}".format(key[0], key[1], counts[key]))
+            print(f"{key[0]:<18}{key[1]:<12}{counts[key]:>6}")
         else:
-            print("{:<30}{:>6}".format(key, counts[key]))
+            print(f"{key:<30}{counts[key]:>6}")
     for doctype, bexio_id, message in failures:
-        print("failed {} {}: {}".format(doctype, bexio_id, message))
+        print(f"failed {doctype} {bexio_id}: {message}")
     return 1 if failures else 0
 
 

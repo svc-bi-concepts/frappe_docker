@@ -5,7 +5,6 @@ account number is not in the company is not created: the gap is logged and the m
 """
 
 import frappe
-
 from bi_finance.bank_rules import RULES
 
 
@@ -16,20 +15,32 @@ def execute():
 
 
 def _create(company, spec):
-    if frappe.db.exists("Bank Transaction Rule", {"company": company, "rule_name": spec["rule_name"]}):
+    if frappe.db.exists(
+        "Bank Transaction Rule", {"company": company, "rule_name": spec["rule_name"]}
+    ):
         return
     account = frappe.db.get_value(
-        "Account", {"company": company, "account_number": spec["account_number"], "is_group": 0}, "name")
+        "Account",
+        {"company": company, "account_number": spec["account_number"], "is_group": 0},
+        "name",
+    )
     if not account:
-        frappe.log_error(title="bank rule {}".format(spec["rule_name"]), message="no account number {}".format(spec["account_number"]))
+        frappe.log_error(
+            title="bank rule {}".format(spec["rule_name"]),
+            message="no account number {}".format(spec["account_number"]),
+        )
         return
-    frappe.get_doc({
-        "doctype": "Bank Transaction Rule",
-        "rule_name": spec["rule_name"],
-        "company": company,
-        "transaction_type": spec["transaction_type"],
-        "classify_as": "Bank Entry",
-        "bank_entry_type": "Single Account",
-        "account": account,
-        "description_rules": [{"check": "Contains", "value": text} for text in spec["texts"]],
-    }).insert(ignore_permissions=True)
+    frappe.get_doc(
+        {
+            "doctype": "Bank Transaction Rule",
+            "rule_name": spec["rule_name"],
+            "company": company,
+            "transaction_type": spec["transaction_type"],
+            "classify_as": "Bank Entry",
+            "bank_entry_type": "Single Account",
+            "account": account,
+            "description_rules": [
+                {"check": "Contains", "value": text} for text in spec["texts"]
+            ],
+        }
+    ).insert(ignore_permissions=True)

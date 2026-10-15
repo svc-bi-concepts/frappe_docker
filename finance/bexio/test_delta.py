@@ -9,7 +9,10 @@ import os
 import subprocess
 import tempfile
 import unittest
-from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
+
+from private_guard import (  # every test below runs against a temp private folder, never the real one
+    setUpModule,
+)
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 SCRIPT = os.path.join(ROOT, "finance", "bexio", "delta.sh")
@@ -54,7 +57,11 @@ def signatures(log_path):
     with open(log_path) as f:
         for line in f:
             parts = line.split()
-            flags = tuple(p for p in parts[1:] if p in ("--dry-run", "--apply", "--write", "--check"))
+            flags = tuple(
+                p
+                for p in parts[1:]
+                if p in ("--dry-run", "--apply", "--write", "--check")
+            )
             out.append((os.path.basename(parts[0]), flags))
     return out
 
@@ -62,7 +69,9 @@ def signatures(log_path):
 def table_rows(stdout):
     """The counts table's rows, label -> [new, changed, skipped, failed, exit]."""
     lines = stdout.splitlines()
-    start = next(i for i, line in enumerate(lines) if line.startswith("counts per step"))
+    start = next(
+        i for i, line in enumerate(lines) if line.startswith("counts per step")
+    )
     rows = {}
     for line in lines[start + 2 :]:
         parts = line.split()
@@ -126,7 +135,10 @@ class DeltaScript(unittest.TestCase):
         env.pop("BACKUP_ID", None)
         env.update(env_extra or {})
         run = subprocess.run(
-            ["sh", SCRIPT] + (args if args is not None else [exp]), capture_output=True, text=True, env=env
+            ["sh", SCRIPT] + (args if args is not None else [exp]),
+            capture_output=True,
+            text=True,
+            env=env,
         )
         run.priv = priv
         run.exp = exp
@@ -162,7 +174,9 @@ class DeltaScript(unittest.TestCase):
         run = self.run_delta(env_extra={"DELTA_APPLY": "1"})
         self.assertEqual(run.returncode, 2)
         self.assertIn("BACKUP_ID", run.stderr)
-        self.assertFalse(os.path.exists(run.log), "no step may run without the backup id")
+        self.assertFalse(
+            os.path.exists(run.log), "no step may run without the backup id"
+        )
 
     def test_apply_value_is_0_or_1(self):
         run = self.run_delta(env_extra={"DELTA_APPLY": "yes", "BACKUP_ID": "b1"})
@@ -179,7 +193,7 @@ class DeltaScript(unittest.TestCase):
         lock = os.path.join(run.priv, ".bexio-delta.lock")
         os.makedirs(lock)
         with open(os.path.join(lock, "holder"), "w") as f:
-            f.write("{} held".format(holder.pid))
+            f.write(f"{holder.pid} held")
         run2 = self.run_delta(env_extra={"PRIVATE": run.priv})
         self.assertEqual(run2.returncode, 2)
         self.assertIn("another delta run", run2.stderr)
@@ -192,11 +206,13 @@ class DeltaScript(unittest.TestCase):
         lock = os.path.join(run.priv, ".bexio-delta.lock")
         os.makedirs(lock)
         with open(os.path.join(lock, "holder"), "w") as f:
-            f.write("{} held".format(gone.pid))
+            f.write(f"{gone.pid} held")
         run2 = self.run_delta(env_extra={"PRIVATE": run.priv})
         self.assertEqual(run2.returncode, 0, run2.stderr)
         self.assertIn("stale", run2.stderr)
-        self.assertFalse(os.path.exists(lock), "the lock must be released after the run")
+        self.assertFalse(
+            os.path.exists(lock), "the lock must be released after the run"
+        )
 
     # ---- the dry pass ------------------------------------------------------------
 
@@ -205,17 +221,20 @@ class DeltaScript(unittest.TestCase):
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertEqual(
             signatures(run.log),
-            [("delta_counts.py", ())] + DRY_P1 + [("delta_counts.py", ()), ("check_trial_balance.py", ())],
+            [("delta_counts.py", ())]
+            + DRY_P1
+            + [("delta_counts.py", ()), ("check_trial_balance.py", ())],
         )
         self.assertFalse(
-            os.path.exists(run.dlog) and open(run.dlog).read(), "the dry run submits nothing"
+            os.path.exists(run.dlog) and open(run.dlog).read(),
+            "the dry run submits nothing",
         )
 
     def test_dry_run_refuses_moved_counts(self):
         seq = tempfile.mkdtemp()
         self.addCleanup(subprocess.run, ["rm", "-rf", seq])
         for i, count in enumerate(("Sales Invoice\t10", "Sales Invoice\t11"), start=1):
-            with open(os.path.join(seq, "{}.txt".format(i)), "w") as f:
+            with open(os.path.join(seq, f"{i}.txt"), "w") as f:
                 f.write(count)
         run = self.run_delta(env_extra={"DELTA_COUNTS_SEQ_DIR": seq})
         self.assertEqual(run.returncode, 5)
@@ -224,7 +243,9 @@ class DeltaScript(unittest.TestCase):
     # ---- the apply pass ----------------------------------------------------------
 
     def test_apply_order_and_submits(self):
-        run = self.run_delta(env_extra={"DELTA_APPLY": "1", "BACKUP_ID": "20261011_015806"})
+        run = self.run_delta(
+            env_extra={"DELTA_APPLY": "1", "BACKUP_ID": "20261011_015806"}
+        )
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertIn("backup: 20261011_015806", run.stdout)
         calls = signatures(run.log)
@@ -243,7 +264,9 @@ class DeltaScript(unittest.TestCase):
                 ("import_vat_fix.py", ("--write",)),
             ],
         )
-        self.assertIn(("import_master.py", ()), p2, "master's apply mode is the default, no flag")
+        self.assertIn(
+            ("import_master.py", ()), p2, "master's apply mode is the default, no flag"
+        )
         self.assertIn(("import_bank.py", ("--check",)), p2)
         self.assertIn(("import_payroll.py", ("--check",)), p2)
         self.assertIn(("import_files.py", ("--apply",)), p2)
@@ -259,7 +282,11 @@ class DeltaScript(unittest.TestCase):
         # the plans of the write loaders land in the run directory
         run_dirs = os.listdir(os.path.join(run.priv, "bexio-delta"))
         self.assertEqual(len(run_dirs), 1)
-        self.assertTrue(os.path.exists(os.path.join(run.priv, "bexio-delta", run_dirs[0], "p2", "bank.json")))
+        self.assertTrue(
+            os.path.exists(
+                os.path.join(run.priv, "bexio-delta", run_dirs[0], "p2", "bank.json")
+            )
+        )
         self.assertFalse(os.path.exists(os.path.join(run.priv, ".bexio-delta.lock")))
 
     def canned_output(self, text):
@@ -270,9 +297,16 @@ class DeltaScript(unittest.TestCase):
         return path
 
     def test_apply_counts_table_sums_the_loader_lines(self):
-        out = MASTER_TABLE + "Sales Invoice created 2\nSales Invoice skipped 9\nPayment Entry failed 1\n"
+        out = (
+            MASTER_TABLE
+            + "Sales Invoice created 2\nSales Invoice skipped 9\nPayment Entry failed 1\n"
+        )
         run = self.run_delta(
-            env_extra={"DELTA_APPLY": "1", "BACKUP_ID": "b1", "DELTA_OUT": self.canned_output(out)}
+            env_extra={
+                "DELTA_APPLY": "1",
+                "BACKUP_ID": "b1",
+                "DELTA_OUT": self.canned_output(out),
+            }
         )
         self.assertEqual(run.returncode, 0, run.stderr)
         rows = table_rows(run.stdout)
@@ -304,30 +338,53 @@ class DeltaScript(unittest.TestCase):
         self.assertEqual(rows["sales"], ["2", "0", "124", "0", "0"])
 
     def test_rerun_must_insert_nothing(self):
-        out = "\n".join(
-            "Currency                5        0         8       0        0" if line.startswith("Currency") else line
-            for line in MASTER_TABLE.splitlines()
-        ) + "\n"
+        out = (
+            "\n".join(
+                (
+                    "Currency                5        0         8       0        0"
+                    if line.startswith("Currency")
+                    else line
+                )
+                for line in MASTER_TABLE.splitlines()
+            )
+            + "\n"
+        )
         run = self.run_delta(
-            env_extra={"DELTA_APPLY": "1", "BACKUP_ID": "b1", "DELTA_OUT": self.canned_output(out)}
+            env_extra={
+                "DELTA_APPLY": "1",
+                "BACKUP_ID": "b1",
+                "DELTA_OUT": self.canned_output(out),
+            }
         )
         self.assertEqual(run.returncode, 4)
         self.assertIn("the rerun would insert 5 in master", run.stderr)
 
     def test_a_failed_step_stops_the_run(self):
-        run = self.run_delta(env_extra={"DELTA_APPLY": "1", "BACKUP_ID": "b1", "DELTA_RC": "2"})
+        run = self.run_delta(
+            env_extra={"DELTA_APPLY": "1", "BACKUP_ID": "b1", "DELTA_RC": "2"}
+        )
         self.assertEqual(run.returncode, 3)
         self.assertIn("aborted", run.stderr)
         calls = signatures(run.log)
-        self.assertEqual(calls, [("delta_counts.py", ()), ("import_master.py", ("--dry-run",))])
+        self.assertEqual(
+            calls, [("delta_counts.py", ()), ("import_master.py", ("--dry-run",))]
+        )
 
     def test_rerun_must_not_move_the_counts(self):
         seq = tempfile.mkdtemp()
         self.addCleanup(subprocess.run, ["rm", "-rf", seq])
-        for i, count in enumerate(("Sales Invoice\t10", "Sales Invoice\t12", "Sales Invoice\t13"), start=1):
-            with open(os.path.join(seq, "{}.txt".format(i)), "w") as f:
+        for i, count in enumerate(
+            ("Sales Invoice\t10", "Sales Invoice\t12", "Sales Invoice\t13"), start=1
+        ):
+            with open(os.path.join(seq, f"{i}.txt"), "w") as f:
                 f.write(count)
-        run = self.run_delta(env_extra={"DELTA_APPLY": "1", "BACKUP_ID": "b1", "DELTA_COUNTS_SEQ_DIR": seq})
+        run = self.run_delta(
+            env_extra={
+                "DELTA_APPLY": "1",
+                "BACKUP_ID": "b1",
+                "DELTA_COUNTS_SEQ_DIR": seq,
+            }
+        )
         self.assertEqual(run.returncode, 5)
         self.assertIn("rerun moved", run.stderr)
         self.assertIn("Sales Invoice", run.stderr)

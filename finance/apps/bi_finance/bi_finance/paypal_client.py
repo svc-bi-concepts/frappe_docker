@@ -38,15 +38,19 @@ def _request(path, opener, headers, data=None, params=None):
     url = BASE_URL + path
     if params:
         url += "?" + urllib.parse.urlencode(params)
-    request = urllib.request.Request(url, data=data, headers=headers, method="GET" if data is None else "POST")
+    request = urllib.request.Request(
+        url, data=data, headers=headers, method="GET" if data is None else "POST"
+    )
     try:
         with opener(request, timeout=TIMEOUT_SECONDS) as response:
             return json.load(response)
     except urllib.error.HTTPError as err:
-        raise PayPalError("HTTP {} from PayPal on {}".format(err.code, path)) from None
+        raise PayPalError(f"HTTP {err.code} from PayPal on {path}") from None
     except (urllib.error.URLError, TimeoutError, ValueError) as err:
         # a network failure or a body that is not JSON; the reason is a class name, the text may carry the URL
-        raise PayPalError("no usable answer from PayPal on {} ({})".format(path, type(err).__name__)) from None
+        raise PayPalError(
+            f"no usable answer from PayPal on {path} ({type(err).__name__})"
+        ) from None
 
 
 def _bearer(token):
@@ -55,7 +59,7 @@ def _bearer(token):
 
 def access_token(client_id, client_secret, opener=urllib.request.urlopen):
     """An access token for the REST app, by the client credentials grant. The secret is sent once, in this call only."""
-    basic = base64.b64encode("{}:{}".format(client_id, client_secret).encode("utf-8")).decode("ascii")
+    basic = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode("ascii")
     headers = {
         "Authorization": "Basic " + basic,
         "Content-Type": "application/x-www-form-urlencoded",
@@ -144,7 +148,16 @@ def feed_rows(details):
             rows.append(_row(key, date, gross, currency, "PayPal " + event, tid))
         fee = info.get("fee_amount") or {}
         if fee.get("value") and float(fee["value"]):
-            rows.append(_row(key + ":fee", date, float(fee["value"]), currency, "PayPal fee " + event, tid))
+            rows.append(
+                _row(
+                    key + ":fee",
+                    date,
+                    float(fee["value"]),
+                    currency,
+                    "PayPal fee " + event,
+                    tid,
+                )
+            )
     return rows
 
 

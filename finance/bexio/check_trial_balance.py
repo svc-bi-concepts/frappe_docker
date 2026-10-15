@@ -36,18 +36,38 @@ from decimal import Decimal
 import import_master as im
 import posting_plan as pp
 
-TOLERANCE = Decimal("0.005")  # a difference of a rappen or less is rounding, not a difference
-CLOSING_ROOTS = ("1", "2")    # balance-sheet accounts compare the closing balance
-CLOSING_ACCOUNT_NO = "9100"   # bexio's closing account: its lines are left out on bexio's side
-BANDS = ((Decimal("0.005"), "up to a rappen"), (Decimal("1"), "up to 1 CHF"), (None, "above 1 CHF"))
-FIELDS = ["year", "account_no", "bexio_id", "erp_account", "basis", "bexio", "erpnext", "difference"]
+TOLERANCE = Decimal(
+    "0.005"
+)  # a difference of a rappen or less is rounding, not a difference
+CLOSING_ROOTS = ("1", "2")  # balance-sheet accounts compare the closing balance
+CLOSING_ACCOUNT_NO = (
+    "9100"  # bexio's closing account: its lines are left out on bexio's side
+)
+BANDS = (
+    (Decimal("0.005"), "up to a rappen"),
+    (Decimal("1"), "up to 1 CHF"),
+    (None, "above 1 CHF"),
+)
+FIELDS = [
+    "year",
+    "account_no",
+    "bexio_id",
+    "erp_account",
+    "basis",
+    "bexio",
+    "erpnext",
+    "difference",
+]
 
 
 def load_years(export_dir):
     """The business years of the export, oldest first: [{id, start, end}]."""
     with open(os.path.join(export_dir, "business_years.json"), encoding="utf-8") as f:
         years = json.load(f)
-    return sorted(({"id": y["id"], "start": y["start"], "end": y["end"]} for y in years), key=lambda y: y["start"])
+    return sorted(
+        ({"id": y["id"], "start": y["start"], "end": y["end"]} for y in years),
+        key=lambda y: y["start"],
+    )
 
 
 def year_of(date, years):
@@ -74,7 +94,9 @@ def _movements(entries, years):
 
 def bexio_entries(data, buckets, accounts):
     """(date, bexio account id, amount) for every journal line that bexio's side counts: debit positive, credit negative."""
-    closing_ids = {str(a["id"]) for a in accounts if a["account_no"] == CLOSING_ACCOUNT_NO}
+    closing_ids = {
+        str(a["id"]) for a in accounts if a["account_no"] == CLOSING_ACCOUNT_NO
+    }
     entries = []
     for line in data["journal"]:
         if buckets[line["id"]] == "carry_forward":
@@ -94,7 +116,11 @@ def erp_entries(gl_rows, erp_bexio_id, closing_ids):
     A voucher with a leg on a closing account (closing_ids: bexio ids of 9100) is left out whole, as bexio's
     carry-forward lines are on bexio's side.
     """
-    closing_vouchers = {row["voucher_no"] for row in gl_rows if erp_bexio_id.get(row["account"]) in closing_ids}
+    closing_vouchers = {
+        row["voucher_no"]
+        for row in gl_rows
+        if erp_bexio_id.get(row["account"]) in closing_ids
+    }
     entries = []
     for row in gl_rows:
         if row["voucher_no"] in closing_vouchers:
@@ -138,10 +164,18 @@ def compare(bexio, erp, years, accounts):
             want, have = (b_close, e_close) if basis == "closing" else (b_move, e_move)
             if want == 0 and have == 0:
                 continue
-            rows.append({
-                "year": y["id"], "account_no": account_no, "bexio_id": bexio_id, "erp_account": erp_account,
-                "basis": basis, "bexio": want, "erpnext": have, "difference": have - want,
-            })
+            rows.append(
+                {
+                    "year": y["id"],
+                    "account_no": account_no,
+                    "bexio_id": bexio_id,
+                    "erp_account": erp_account,
+                    "basis": basis,
+                    "bexio": want,
+                    "erpnext": have,
+                    "difference": have - want,
+                }
+            )
     return rows
 
 
@@ -157,17 +191,26 @@ def summary(rows, years, accounts_compared):
     """The totals of a run as lines for stdout: counts only, no amounts."""
     differing = [r for r in rows if abs(r["difference"]) > TOLERANCE]
     lines = [
-        "years compared: {}".format(len(years)),
-        "accounts compared: {}".format(accounts_compared),
-        "rows (year and account) compared: {}".format(len(rows)),
-        "rows with a difference: {}".format(len(differing)),
-        "accounts with a difference: {}".format(len({r["bexio_id"] or r["erp_account"] for r in differing})),
+        f"years compared: {len(years)}",
+        f"accounts compared: {accounts_compared}",
+        f"rows (year and account) compared: {len(rows)}",
+        f"rows with a difference: {len(differing)}",
+        "accounts with a difference: {}".format(
+            len({r["bexio_id"] or r["erp_account"] for r in differing})
+        ),
     ]
     if differing:
         largest = max(differing, key=lambda r: abs(r["difference"]))
-        lines.append("largest difference: {} (rows in that band: {})".format(
-            band(largest["difference"]),
-            sum(1 for r in differing if band(r["difference"]) == band(largest["difference"]))))
+        lines.append(
+            "largest difference: {} (rows in that band: {})".format(
+                band(largest["difference"]),
+                sum(
+                    1
+                    for r in differing
+                    if band(r["difference"]) == band(largest["difference"])
+                ),
+            )
+        )
     else:
         lines.append("largest difference: none")
     return "\n".join(lines)
@@ -179,18 +222,37 @@ def write_csv(path, rows):
         writer = csv.DictWriter(f, fieldnames=FIELDS, extrasaction="ignore")
         writer.writeheader()
         for r in rows:
-            writer.writerow(dict(r, bexio=format(r["bexio"], "f"), erpnext=format(r["erpnext"], "f"), difference=format(r["difference"], "f")))
+            writer.writerow(
+                dict(
+                    r,
+                    bexio=format(r["bexio"], "f"),
+                    erpnext=format(r["erpnext"], "f"),
+                    difference=format(r["difference"], "f"),
+                )
+            )
 
 
 def main(argv):
-    parser = argparse.ArgumentParser(description="Compare ERPNext's trial balance per business year and account with bexio's journal.")
-    parser.add_argument("--export", default=None, help="export directory (default: the newest under <private>/bexio-export/)")
-    parser.add_argument("--out", default=None, help="CSV for the rows (default: <private>/bexio-trial-balance-<today>.csv)")
+    parser = argparse.ArgumentParser(
+        description="Compare ERPNext's trial balance per business year and account with bexio's journal."
+    )
+    parser.add_argument(
+        "--export",
+        default=None,
+        help="export directory (default: the newest under <private>/bexio-export/)",
+    )
+    parser.add_argument(
+        "--out",
+        default=None,
+        help="CSV for the rows (default: <private>/bexio-trial-balance-<today>.csv)",
+    )
     parser.add_argument("--token-file", default=im.TOKEN_FILE)
     args = parser.parse_args(argv)
 
     export_dir = args.export or im.newest_export()
-    out = args.out or os.path.join(im.PRIVATE, "bexio-trial-balance-{}.csv".format(datetime.date.today().isoformat()))
+    out = args.out or os.path.join(
+        im.PRIVATE, f"bexio-trial-balance-{datetime.date.today().isoformat()}.csv"
+    )
     years = load_years(export_dir)
     with open(os.path.join(export_dir, "accounts.json"), encoding="utf-8") as f:
         accounts_json = json.load(f)
@@ -202,21 +264,34 @@ def main(argv):
 
     erp = im.Erp.from_file(args.token_file)
     try:
-        erp_bexio_id = {r["name"]: r["bexio_id"] for r in erp.list("Account", [["bexio_id", "is", "set"]], ["name", "bexio_id"])}
-        gl = erp.list("GL Entry", [["is_cancelled", "=", 0]], ["account", "debit", "credit", "posting_date", "voucher_no"])
+        erp_bexio_id = {
+            r["name"]: r["bexio_id"]
+            for r in erp.list(
+                "Account", [["bexio_id", "is", "set"]], ["name", "bexio_id"]
+            )
+        }
+        gl = erp.list(
+            "GL Entry",
+            [["is_cancelled", "=", 0]],
+            ["account", "debit", "credit", "posting_date", "voucher_no"],
+        )
     except im.ErpError as err:
-        print("aborted: {}".format(err), file=sys.stderr)
+        print(f"aborted: {err}", file=sys.stderr)
         return 2
-    closing_ids = {str(a["id"]) for a in accounts_json if a["account_no"] == CLOSING_ACCOUNT_NO}
+    closing_ids = {
+        str(a["id"]) for a in accounts_json if a["account_no"] == CLOSING_ACCOUNT_NO
+    }
     erp_side, outside_erp = balances(erp_entries(gl, erp_bexio_id, closing_ids), years)
 
     rows = compare(bexio, erp_side, years, accounts)
     write_csv(out, rows)
     if outside_bexio or outside_erp:
-        print("dates outside every business year: bexio {}, ERPNext {}".format(len(outside_bexio), len(outside_erp)))
+        print(
+            f"dates outside every business year: bexio {len(outside_bexio)}, ERPNext {len(outside_erp)}"
+        )
     compared = len({r["bexio_id"] or r["erp_account"] for r in rows})
     print(summary(rows, years, compared))
-    print("CSV written to {}".format(out))
+    print(f"CSV written to {out}")
     return 1 if any(abs(r["difference"]) > TOLERANCE for r in rows) else 0
 
 

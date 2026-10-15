@@ -7,12 +7,16 @@ import os
 import unittest
 
 import private_guard
-from private_guard import setUpModule  # every test below runs against a temp private folder, never the real one
+from private_guard import (  # every test below runs against a temp private folder, never the real one
+    setUpModule,
+)
 
 
 class GuardTest(unittest.TestCase):
     def test_a_write_into_the_real_private_folder_is_refused(self):
-        write = private_guard._guarded(lambda path, lines: None, os.path.realpath(private_guard.REAL))
+        write = private_guard._guarded(
+            lambda path, lines: None, os.path.realpath(private_guard.REAL)
+        )
         with self.assertRaises(AssertionError):
             write(os.path.join(private_guard.REAL, "a-test-wrote-here.txt"), ["x"])
 
