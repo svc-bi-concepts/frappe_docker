@@ -3,7 +3,7 @@
 # av runs a Blessed Script as /dev/fd/N, and the mini's Python 3.9 reads a
 # /dev/fd script from where its zip check left the shared offset: a script
 # of more than a few bytes then runs empty and exits 0 (IT, 2026-10-14).
-exec / usr / bin / python3 - I - "$@" << "__BEXIO_OAUTH_PY__"
+exec /usr/bin/python3 -I - "$@" <<'__BEXIO_OAUTH_PY__'
 """OAuth login for the bexio API: one login by hand, then refresh tokens from the Automic Vault.
 
 The login asks for the read-only scopes (SCOPE below) only. bexio enforces
@@ -79,16 +79,14 @@ class VaultError(Exception):
 
 
 def _login_hint():
-    return f"run `{LOGIN_COMMAND}` again"
+    return "run `{}` again".format(LOGIN_COMMAND)
 
 
 def _client_credentials():
     client_id = os.environ.get("BEXIO_CLIENT_ID")
     client_secret = os.environ.get("BEXIO_CLIENT_SECRET")
     if not client_id or not client_secret:
-        raise SystemExit(
-            "BEXIO_CLIENT_ID and BEXIO_CLIENT_SECRET must be set; run this through its av launcher (see the module docstring)"
-        )
+        raise SystemExit("BEXIO_CLIENT_ID and BEXIO_CLIENT_SECRET must be set; run this through its av launcher (see the module docstring)")
     return {"client_id": client_id, "client_secret": client_secret}
 
 
@@ -125,9 +123,7 @@ def _token_request(fields):
         with urllib.request.urlopen(req, timeout=30) as resp:
             return json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as err:
-        raise OAuthError(
-            f"bexio answered HTTP {err.code} ({_error_code(err)})"
-        ) from None
+        raise OAuthError("bexio answered HTTP {} ({})".format(err.code, _error_code(err))) from None
     except urllib.error.URLError:
         raise OAuthError("could not reach bexio's login server") from None
 
@@ -159,10 +155,7 @@ class _CallbackHandler(http.server.BaseHTTPRequestHandler):
             return
         params = urllib.parse.parse_qs(url.query)
         server = self.server
-        if not secrets.compare_digest(
-            params.get("state", [""])[0].encode("utf-8"),
-            server.expected_state.encode("utf-8"),
-        ):
+        if not secrets.compare_digest(params.get("state", [""])[0].encode("utf-8"), server.expected_state.encode("utf-8")):
             server.outcome = {"error": "state does not match this login"}
         elif "error" in params:
             server.outcome = {"error": params["error"][0]}
@@ -198,19 +191,13 @@ def wait_for_code(expected_state):
         while server.outcome is None:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                raise OAuthError(
-                    f"no answer from bexio within {LOGIN_TIMEOUT} seconds; {_login_hint()}"
-                )
+                raise OAuthError("no answer from bexio within {} seconds; {}".format(LOGIN_TIMEOUT, _login_hint()))
             server.timeout = remaining
             server.handle_request()
     finally:
         server.server_close()
     if "error" in server.outcome:
-        raise OAuthError(
-            "bexio did not grant the login ({}); {}".format(
-                server.outcome["error"], _login_hint()
-            )
-        )
+        raise OAuthError("bexio did not grant the login ({}); {}".format(server.outcome["error"], _login_hint()))
     return server.outcome["code"]
 
 
@@ -230,14 +217,12 @@ def save_refresh_token(token, key=REFRESH_KEY):
     try:
         done = subprocess.run(
             [VAULT_CLI, "save", "--stdin", "--project-directory", VAULT_PROJECT, key],
-            input=token.encode("utf-8"),
-            capture_output=True,
-            check=False,
+            input=token.encode("utf-8"), capture_output=True, check=False,
         )
     except OSError as err:
-        raise VaultError(f"could not run av ({err.strerror or err})") from None
+        raise VaultError("could not run av ({})".format(err.strerror or err)) from None
     if done.returncode != 0:
-        raise VaultError(f"av did not save {key} (exit status {done.returncode})")
+        raise VaultError("av did not save {} (exit status {})".format(key, done.returncode))
     os.environ[key] = token
 
 
@@ -253,14 +238,9 @@ def login():
     body = exchange_code(code, verifier)
     refresh = body.get("refresh_token")
     if not refresh:
-        raise OAuthError(
-            "bexio sent no refresh token; the login needs offline_access in its scopes"
-        )
+        raise OAuthError("bexio sent no refresh token; the login needs offline_access in its scopes")
     save_refresh_token(refresh, REFRESH_KEY)
-    print(
-        f"Saved the bexio refresh token in the Automic Vault as {REFRESH_KEY}.",
-        file=sys.stderr,
-    )
+    print("Saved the bexio refresh token in the Automic Vault as {}.".format(REFRESH_KEY), file=sys.stderr)
 
 
 def refresh_access_token():
@@ -275,27 +255,23 @@ def refresh_access_token():
     hint = _login_hint()
     current = read_refresh_token(key)
     if current is None:
-        raise OAuthError(f"no bexio {label} ({key} is not set); {hint}")
+        raise OAuthError("no bexio {} ({} is not set); {}".format(label, key, hint))
     fields = {"grant_type": "refresh_token", "refresh_token": current}
     fields.update(_client_credentials())
     try:
         body = _token_request(fields)
     except OAuthError as err:
-        raise OAuthError(
-            f"{err}. If bexio refused the {label} (expired or revoked), {hint}"
-        ) from None
+        raise OAuthError("{}. If bexio refused the {} (expired or revoked), {}".format(err, label, hint)) from None
     rotated = body.get("refresh_token")
     if not rotated or not body.get("access_token"):
-        raise OAuthError(f"bexio's refresh answer had no tokens; {hint}")
+        raise OAuthError("bexio's refresh answer had no tokens; {}".format(hint))
     try:
         save_refresh_token(rotated, key)
     except VaultError as err:
         # The old token is spent once bexio rotated it, so the new one must be saved or the login is lost.
         raise OAuthError(
             "bexio rotated the {} but it could not be saved ({}); a new login is needed: "
-            "log in again through the login page (finance/bexio/login_helper.py)".format(
-                label, err
-            )
+            "log in again through the login page (finance/bexio/login_helper.py)".format(label, err)
         ) from None
     return body["access_token"]
 
@@ -308,7 +284,7 @@ def main(argv):
         try:
             login()
         except (OAuthError, VaultError) as err:
-            raise SystemExit(f"login failed: {err}")
+            raise SystemExit("login failed: {}".format(err))
         return
     raise SystemExit(USAGE)
 

@@ -14,18 +14,26 @@ repos:
   - repo: https://github.com/asottile/pyupgrade
     rev: v3.21.2
     hooks:
+      # The av-inject launchers (finance/bexio/*.py, finance/sharepoint/sp_read.py) are bash
+      # files; the .py name is the av job's convention (erp-tkfq). They are not python, so the
+      # python tools cannot run on them: black parsed the exec line as a python expression and
+      # rewrote it (/ usr / bin), breaking the launchers. Same principle as the patch excludes
+      # above: the content's language decides, not the extension.
       - id: pyupgrade
         args: [--py37-plus]
+        exclude: ^finance/(bexio/(create_contact_and_bill|export|inventory|login_helper|oauth|upload_bill)|sharepoint/sp_read)\.py$
 
   - repo: https://github.com/psf/black
     rev: 26.5.1
     hooks:
       - id: black
+        exclude: ^finance/(bexio/(create_contact_and_bill|export|inventory|login_helper|oauth|upload_bill)|sharepoint/sp_read)\.py$
 
   - repo: https://github.com/pycqa/isort
     rev: 9.0.2
     hooks:
       - id: isort
+        exclude: ^finance/(bexio/(create_contact_and_bill|export|inventory|login_helper|oauth|upload_bill)|sharepoint/sp_read)\.py$
 
   - repo: https://github.com/pre-commit/mirrors-prettier
     rev: v4.0.0-alpha.8

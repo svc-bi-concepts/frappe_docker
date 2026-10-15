@@ -3,7 +3,7 @@
 # av runs a Blessed Script as /dev/fd/N, and the mini's Python 3.9 reads a
 # /dev/fd script from where its zip check left the shared offset: a script
 # of more than a few bytes then runs empty and exits 0 (IT, 2026-10-14).
-exec / usr / bin / python3 - I - "$@" << "__BEXIO_UPLOAD_BILL_PY__"
+exec /usr/bin/python3 -I - "$@" <<'__BEXIO_UPLOAD_BILL_PY__'
 """Upload bill PDFs to the bexio file inbox (Dateneingang): the one write to bexio.
 
 bexio turns a file in its inbox into a bill; this script only puts the file there.
@@ -34,10 +34,7 @@ import urllib.error
 import urllib.request
 import uuid
 
-BEXIO_DIR = (
-    os.environ.get("BEXIO_DIR")
-    or "/Users/bsaladin/ws_yardr_finance/frappe_docker/finance/bexio"
-)
+BEXIO_DIR = os.environ.get("BEXIO_DIR") or "/Users/bsaladin/ws_yardr_finance/frappe_docker/finance/bexio"
 sys.path.insert(0, BEXIO_DIR)
 
 import client  # noqa: E402
@@ -77,9 +74,7 @@ def _send(method, path, body, content_type, token):
     send could make a duplicate in the inbox. The token goes only into the header.
     """
     if (method, path) != (UPLOAD_METHOD, UPLOAD_PATH):
-        raise RefusedRequest(
-            f"refused {method} {path}: the upload script only sends {UPLOAD_METHOD} {UPLOAD_PATH}"
-        )
+        raise RefusedRequest("refused {} {}: the upload script only sends {} {}".format(method, path, UPLOAD_METHOD, UPLOAD_PATH))
     req = urllib.request.Request(client.BASE_URL + path, data=body, method=method)
     req.add_header("Authorization", "Bearer " + token)
     req.add_header("Content-Type", content_type)
@@ -89,11 +84,7 @@ def _send(method, path, body, content_type, token):
         with urllib.request.urlopen(req, timeout=120) as resp:
             return json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as err:
-        raise SystemExit(
-            "bexio refused the upload (HTTP {}): {}".format(
-                err.code, client._error_detail(err) or "no detail"
-            )
-        )
+        raise SystemExit("bexio refused the upload (HTTP {}): {}".format(err.code, client._error_detail(err) or "no detail"))
     except urllib.error.URLError:
         raise SystemExit("could not reach bexio; nothing was uploaded")
 
@@ -101,16 +92,14 @@ def _send(method, path, body, content_type, token):
 def check_pdf(path):
     """The resolved path of a PDF that exists and lies under the private folder; exits otherwise."""
     if os.path.splitext(path)[1].lower() != ".pdf":
-        raise SystemExit(f"refused {path}: only .pdf files are uploaded")
+        raise SystemExit("refused {}: only .pdf files are uploaded".format(path))
     real = os.path.realpath(path)
     if os.path.splitext(real)[1].lower() != ".pdf":
-        raise SystemExit(f"refused {path}: it links to a file that is not a .pdf")
+        raise SystemExit("refused {}: it links to a file that is not a .pdf".format(path))
     if not os.path.isfile(real):
-        raise SystemExit(f"refused {path}: no such file")
+        raise SystemExit("refused {}: no such file".format(path))
     if not real.startswith(os.path.realpath(PRIVATE) + os.sep):
-        raise SystemExit(
-            f"refused {path}: a bill is uploaded only from under the private folder"
-        )
+        raise SystemExit("refused {}: a bill is uploaded only from under the private folder".format(path))
     return real
 
 
@@ -123,7 +112,7 @@ def multipart(filename, content):
         'Content-Disposition: form-data; name="{f}"; filename="{n}"\r\n'
         "Content-Type: application/pdf\r\n\r\n"
     ).format(b=boundary, f=UPLOAD_FIELD, n=name)
-    tail = f"\r\n--{boundary}--\r\n"
+    tail = "\r\n--{}--\r\n".format(boundary)
     body = head.encode("utf-8") + content + tail.encode("utf-8")
     return "multipart/form-data; boundary=" + boundary, body
 
@@ -137,51 +126,35 @@ def upload(path, token):
         content = f.read()
     content_type, body = multipart(path, content)
     answer = _send(UPLOAD_METHOD, UPLOAD_PATH, body, content_type, token)
-    stored = (
-        answer[0]
-        if isinstance(answer, list) and answer and isinstance(answer[0], dict)
-        else answer
-    )
+    stored = answer[0] if isinstance(answer, list) and answer and isinstance(answer[0], dict) else answer
     file_id = stored.get("id") if isinstance(stored, dict) else None
     if file_id is None:
-        raise SystemExit(
-            "bexio answered the upload without a file id; the file may be stored, check the inbox before sending it again"
-        )
+        raise SystemExit("bexio answered the upload without a file id; the file may be stored, check the inbox before sending it again")
     return file_id, stored.get("uuid")
 
 
 def main(argv):
-    parser = argparse.ArgumentParser(
-        description="Upload bill PDFs to the bexio file inbox."
-    )
+    parser = argparse.ArgumentParser(description="Upload bill PDFs to the bexio file inbox.")
     parser.add_argument("files", nargs="+", help="PDF files under the private folder")
-    parser.add_argument(
-        "--yes",
-        action="store_true",
-        help="upload for real (default: dry run, nothing is sent)",
-    )
+    parser.add_argument("--yes", action="store_true", help="upload for real (default: dry run, nothing is sent)")
     args = parser.parse_args(argv)
 
     token = os.environ.get("BEXIO_TOKEN")
     if not token:
-        raise SystemExit(
-            "BEXIO_TOKEN is not set; run through av inject (see finance/bexio/README.md)"
-        )
+        raise SystemExit("BEXIO_TOKEN is not set; run through av inject (see finance/bexio/README.md)")
 
     # Every file is checked before the first upload, so a bad name sends nothing.
     paths = [check_pdf(f) for f in args.files]
 
     if not args.yes:
         for path in paths:
-            print(
-                f"dry run: would upload {os.path.basename(path)} ({os.path.getsize(path)} bytes) to the bexio file inbox"
-            )
+            print("dry run: would upload {} ({} bytes) to the bexio file inbox".format(os.path.basename(path), os.path.getsize(path)))
         print("dry run: nothing sent; add --yes to upload")
         return
 
     for path in paths:
         file_id, file_uuid = upload(path, token)
-        line = f"uploaded {os.path.basename(path)}: bexio file id {file_id} (uuid {file_uuid})"
+        line = "uploaded {}: bexio file id {} (uuid {})".format(os.path.basename(path), file_id, file_uuid)
         print(line)
         record_result(line)
 
