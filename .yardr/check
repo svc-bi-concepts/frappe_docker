@@ -23,4 +23,14 @@ if ! command -v pre-commit >/dev/null; then
   echo "pre-commit not installed" >&2
   exit 2
 fi
+# validate-compose (language: system) invokes `python`; a GitHub runner has it, a dev Mac
+# may have only python3 (whose /usr/bin stub even refuses to run under another name). A
+# private wrapper for the pre-commit call keeps the gate self-contained; the lint is unchanged.
+if ! command -v python >/dev/null 2>&1; then
+  PYSHIM=$(mktemp -d)
+  printf '#!/bin/sh\nexec python3 "$@"\n' >"$PYSHIM/python"
+  chmod +x "$PYSHIM/python"
+  PATH="$PYSHIM:$PATH"
+  export PATH
+fi
 pre-commit run --all-files
