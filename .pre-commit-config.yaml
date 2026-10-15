@@ -4,8 +4,12 @@ repos:
     hooks:
       - id: check-executables-have-shebangs
       - id: check-shebang-scripts-are-executable
+      # finance/patches/*.patch carry unified diffs whose context must byte-match upstream
+      # sources: a stripped trailing space in a hunk makes git apply fail at the image build.
       - id: trailing-whitespace
+        exclude: ^finance/patches/.*\.patch$
       - id: end-of-file-fixer
+        exclude: ^finance/patches/.*\.patch$
 
   - repo: https://github.com/asottile/pyupgrade
     rev: v3.21.2
@@ -38,7 +42,23 @@ repos:
         exclude: ^docs/pnpm-lock\.yaml$
         args:
           - -L
-          - "ro"
+          # Words codespell flags that are correct here, each with the reason:
+          #   ro - upstream's own entry (Swiss postfinance QR-bill strings, kept)
+          #   oder, ist, offen, sie - German words ("or", "is", "open", "it") in
+          #     user-facing MwSt/report strings and German docs prose
+          #   januar, februar, juni, juli, oktober, dezember - German month names
+          #     in cash_forecast's month keys, its tests and the docs
+          #   Referenz, Adresse, Periode - German QR-bill/payroll labels ("reference",
+          #     "address", "period") rendered to users
+          #   Informations - French QR-bill label ("Informations supplémentaires")
+          #   Automic - Broadcom Automic Automation, the vault system's product name
+          #   BU - Swiss occupational-accident insurance share (Betriebsunfall),
+          #        the UVG employer-share label's term (BU vs NBU)
+          #   positiv, negativ - German for positive/negative: erpnextswiss's own
+          #     variable names at the pin, quoted in patch context and pin excerpts
+          - >-
+            ro,oder,ist,offen,sie,januar,februar,juni,juli,oktober,dezember,
+            Referenz,Adresse,Periode,Informations,Automic,BU,positiv,negativ
 
   - repo: local
     hooks:
