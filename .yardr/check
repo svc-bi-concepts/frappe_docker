@@ -18,7 +18,9 @@ sh .yardr/check-host.sh
 IMAGE=$(sh finance/scripts/gate-image.sh)
 docker run --rm -v "$PWD/finance/apps/bi_finance:/home/frappe/frappe-bench/apps/bi_finance:ro" "$IMAGE" \
   sh -c 'mkdir -p /home/frappe/logs /home/frappe/frappe-bench/apps/logs && cd /home/frappe/frappe-bench/apps/bi_finance && ../../env/bin/python -m unittest bi_finance.test_payment_run bi_finance.test_treasury bi_finance.test_bank_list bi_finance.test_bank_statement_upload bi_finance.test_cash_flow_forecast bi_finance.test_cash_position bi_finance.test_paypal bi_finance.test_paypal_sync bi_finance.test_qrbill bi_finance.test_setup bi_finance.test_wise'
-# Upstream's own lint, when pre-commit is installed (optional for now).
-if command -v pre-commit >/dev/null; then
-  pre-commit run --all-files
+# Upstream's own lint, required: a red lint must stop the landing here, not pass unseen (erp-jmmz).
+if ! command -v pre-commit >/dev/null; then
+  echo "pre-commit not installed" >&2
+  exit 2
 fi
+pre-commit run --all-files
