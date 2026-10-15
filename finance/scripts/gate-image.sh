@@ -10,7 +10,10 @@
 set -eu
 
 case "${1:-}" in
-  -h|--help) echo "usage: finance/scripts/gate-image.sh"; exit 0 ;;
+-h | --help)
+  echo "usage: finance/scripts/gate-image.sh"
+  exit 0
+  ;;
 esac
 
 REPO=frappe-finance-custom
@@ -33,6 +36,7 @@ elif present "$BRANCH"; then
 else
   REST=$(docker images --format '{{.Tag}}' "$REPO")
   # Word splitting drops the blank lines of an empty list.
+  # shellcheck disable=SC2086 # intentional: REST is a newline-separated tag list, one word per tag
   set -- $REST
   if [ $# -ne 1 ]; then
     echo "gate-image: no $REPO image to gate with: looked for origin/main's ${MAIN:-(unreadable)} and the branch's $BRANCH, and $# images are at rest" >&2

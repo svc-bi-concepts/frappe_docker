@@ -23,12 +23,27 @@ import sys
 # The settings' rate fields, as bi_payroll/bi_payroll/swiss_rates.py's RATE_FIELDS.
 # The test asserts the two lists agree, so a new field cannot be added on one side only.
 RATE_FIELDS = [
-    "swiss_ahv_ee", "swiss_ahv_ag",
-    "swiss_alv_ee", "swiss_alv_ag", "swiss_alv_ceiling",
-    "swiss_bvg_threshold", "swiss_bvg_coordination",
-    "swiss_bvg_ee_25", "swiss_bvg_ee_35", "swiss_bvg_ee_45", "swiss_bvg_ee_55",
-    "swiss_bvg_ag_25", "swiss_bvg_ag_35", "swiss_bvg_ag_45", "swiss_bvg_ag_55",
-    "swiss_uvg_max", "swiss_uvg_ag", "swiss_nbu_ee", "swiss_ktg_ee", "swiss_ktg_ag", "swiss_fak_ag",
+    "swiss_ahv_ee",
+    "swiss_ahv_ag",
+    "swiss_alv_ee",
+    "swiss_alv_ag",
+    "swiss_alv_ceiling",
+    "swiss_bvg_threshold",
+    "swiss_bvg_coordination",
+    "swiss_bvg_ee_25",
+    "swiss_bvg_ee_35",
+    "swiss_bvg_ee_45",
+    "swiss_bvg_ee_55",
+    "swiss_bvg_ag_25",
+    "swiss_bvg_ag_35",
+    "swiss_bvg_ag_45",
+    "swiss_bvg_ag_55",
+    "swiss_uvg_max",
+    "swiss_uvg_ag",
+    "swiss_nbu_ee",
+    "swiss_ktg_ee",
+    "swiss_ktg_ag",
+    "swiss_fak_ag",
 ]
 
 SETTINGS = "Payroll Swiss Settings"
@@ -48,11 +63,15 @@ def prepare(csv_path):
                 continue
             field = (row.get("field") or "").strip()
             if field not in RATE_FIELDS:
-                raise ValueError("line %d: field %r is not a settings rate field" % (line, field))
+                raise ValueError(
+                    "line %d: field %r is not a settings rate field" % (line, field)
+                )
             try:
                 value = float((row.get("value") or "").strip())
             except ValueError:
-                raise ValueError("line %d: value %r is not a number" % (line, row.get("value")))
+                raise ValueError(
+                    "line %d: value %r is not a number" % (line, row.get("value"))
+                )
             rows.append({"field": field, "value": value})
     if not rows:
         raise ValueError("no row with set=yes in %s" % csv_path)
@@ -77,21 +96,31 @@ def container_apply(dry):
             changed.append(row["field"])
             doc.set(row["field"], row["value"])
     if dry:
-        print("%s: %d of %d fields would change (%s), nothing saved" % (
-            SETTINGS, len(changed), len(rows), ", ".join(changed) or "none"))
+        print(
+            "%s: %d of %d fields would change (%s), nothing saved"
+            % (SETTINGS, len(changed), len(rows), ", ".join(changed) or "none")
+        )
     else:
         doc.save()
         frappe.db.commit()
-        print("%s: %d of %d fields changed (%s)" % (
-            SETTINGS, len(changed), len(rows), ", ".join(changed) or "none"))
+        print(
+            "%s: %d of %d fields changed (%s)"
+            % (SETTINGS, len(changed), len(rows), ", ".join(changed) or "none")
+        )
     frappe.destroy()
 
 
 def main(argv):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--prepare", metavar="RATES_CSV", help="host: the rates CSV, rows as JSON")
-    parser.add_argument("--apply", action="store_true", help="container: save the settings")
-    parser.add_argument("--dry", action="store_true", help="container: report without saving")
+    parser.add_argument(
+        "--prepare", metavar="RATES_CSV", help="host: the rates CSV, rows as JSON"
+    )
+    parser.add_argument(
+        "--apply", action="store_true", help="container: save the settings"
+    )
+    parser.add_argument(
+        "--dry", action="store_true", help="container: report without saving"
+    )
     args = parser.parse_args(argv)
     if args.prepare:
         print(json.dumps(prepare(args.prepare)))
@@ -101,10 +130,14 @@ def main(argv):
             try:
                 import frappe  # noqa: F401
             except ImportError:
-                raise SystemExit("refused: no frappe here; --apply runs in the backend container")
+                raise SystemExit(
+                    "refused: no frappe here; --apply runs in the backend container"
+                )
         container_apply(dry=args.dry)
         return 0
-    parser.error("nothing to do: --prepare <csv> on the host, or --apply/--dry in the container")
+    parser.error(
+        "nothing to do: --prepare <csv> on the host, or --apply/--dry in the container"
+    )
     return 2
 
 

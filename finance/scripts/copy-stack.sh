@@ -28,45 +28,60 @@ usage() {
 }
 
 case "${1:-}" in
-  -h|--help) usage; exit 0 ;;
+-h | --help)
+  usage
+  exit 0
+  ;;
 esac
 
 CMD="${1:-}"
 JOBS=0
 WEBSOCKET=0
 case "$CMD" in
-  up)
-    if [ $# -lt 2 ]; then usage >&2; exit 2; fi
-    TAG="$2"
-    case "$TAG" in
-      -*) usage >&2; exit 2 ;;
-    esac
-    shift 2
-    for FLAG in "$@"; do
-      case "$FLAG" in
-        --jobs) JOBS=1 ;;
-        --websocket) WEBSOCKET=1 ;;
-        *) usage >&2; exit 2 ;;
-      esac
-    done
-    ;;
-  refresh|down|remove)
-    if [ $# -ne 1 ]; then usage >&2; exit 2; fi
-    ;;
-  *)
+up)
+  if [ $# -lt 2 ]; then
+    usage >&2
+    exit 2
+  fi
+  TAG="$2"
+  case "$TAG" in
+  -*)
     usage >&2
     exit 2
     ;;
+  esac
+  shift 2
+  for FLAG in "$@"; do
+    case "$FLAG" in
+    --jobs) JOBS=1 ;;
+    --websocket) WEBSOCKET=1 ;;
+    *)
+      usage >&2
+      exit 2
+      ;;
+    esac
+  done
+  ;;
+refresh | down | remove)
+  if [ $# -ne 1 ]; then
+    usage >&2
+    exit 2
+  fi
+  ;;
+*)
+  usage >&2
+  exit 2
+  ;;
 esac
 
 # The copy's compose project. Only frappe-finance-copy* is accepted: the live project (frappe-finance) is refused.
 PROJECT="${COPY_PROJECT:-frappe-finance-copy}"
 case "$PROJECT" in
-  frappe-finance-copy*) ;;
-  *)
-    echo "refused: project $PROJECT is not the copy's (frappe-finance-copy); this script never runs the live stack" >&2
-    exit 1
-    ;;
+frappe-finance-copy*) ;;
+*)
+  echo "refused: project $PROJECT is not the copy's (frappe-finance-copy); this script never runs the live stack" >&2
+  exit 1
+  ;;
 esac
 
 # Compose files live at the repo root, two levels up from this script.
@@ -98,7 +113,7 @@ require_image() {
 check_memory() {
   kb=$(docker run --rm --entrypoint cat "frappe-finance-custom:$1" /proc/meminfo | awk '/^MemAvailable:/ {print $2}')
   case "$kb" in
-    ''|*[!0-9]*) refuse "could not read the free memory of the VM" ;;
+  '' | *[!0-9]*) refuse "could not read the free memory of the VM" ;;
   esac
   if [ "$kb" -lt "$MEM_NEEDED_KB" ]; then
     refuse "free memory is $((kb / 1024)) MiB; the copy needs 2560 MiB. Stop something first"
@@ -118,7 +133,7 @@ live_backup() {
   DB=$(docker exec "$LIVE_BACKEND" sh -c "ls -t $LIVE_BACKUPS/*-database.sql.gz | head -1")
   PREFIX=$(basename "${DB%-database.sql.gz}")
   case "$PREFIX" in
-    ''|*' '*) refuse "no backup of the live site was found" ;;
+  '' | *' '*) refuse "no backup of the live site was found" ;;
   esac
   mkdir -p "$STAGE"
   chmod 700 "$STAGE"
@@ -154,7 +169,9 @@ safety() {
   # The bank API syncs (hourly on live) and outgoing mail, off on the copy.
   copy_compose exec -T backend bench --site frontend execute frappe.db.set_single_value --args '["Wise Settings", "sync_enabled", 0]'
   copy_compose exec -T backend bench --site frontend execute frappe.db.set_single_value --args '["PayPal Settings", "sync_enabled", 0]'
+  # shellcheck disable=SC2016 # the backticks are SQL identifier quotes and must reach bench unexpanded
   copy_compose exec -T backend bench --site frontend execute frappe.db.sql --args '["update `tabEmail Account` set enable_outgoing = 0, enable_incoming = 0"]'
+  # shellcheck disable=SC2016 # the backticks are SQL identifier quotes and must reach bench unexpanded
   copy_compose exec -T backend bench --site frontend execute frappe.db.sql --args '["update `tabWebhook` set enabled = 0"]'
   # The navbar brand: the app name starts with COPY, so the copy cannot be mistaken for live.
   copy_compose exec -T backend bench --site frontend execute frappe.db.set_single_value --args '["Website Settings", "app_name", "COPY - finance copy, not live"]'
@@ -163,7 +180,10 @@ safety() {
 # The copy's own Administrator password (the restore brings the live hash back). Made once, mode 600.
 set_admin_password() {
   if [ ! -f "$PW_FILE" ]; then
-    ( umask 077; openssl rand -base64 24 > "$PW_FILE" )
+    (
+      umask 077
+      openssl rand -base64 24 >"$PW_FILE"
+    )
     echo "made $PW_FILE (mode 600)"
   fi
   copy_compose exec -T backend bench --site frontend set-admin-password "$(cat "$PW_FILE")"
@@ -215,8 +235,8 @@ remove() {
 }
 
 case "$CMD" in
-  up) up ;;
-  refresh) refresh ;;
-  down) down ;;
-  remove) remove ;;
+up) up ;;
+refresh) refresh ;;
+down) down ;;
+remove) remove ;;
 esac

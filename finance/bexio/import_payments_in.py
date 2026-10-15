@@ -65,7 +65,10 @@ OVER_ALLOCATED = "payment exceeds the outstanding amount of its invoice"
 BANK_ACCOUNTS = ("1020", "1021")
 RECEIVABLE = "1100"
 ADVANCE = "2030"  # Erhaltene Anzahlungen von Dritten: money received before any invoice it settles
-VAT_FROM, VAT_TO = "2202", "2200"  # VAT moved on payment: Abrechnungskonto to Geschuldete MWST
+VAT_FROM, VAT_TO = (
+    "2202",
+    "2200",
+)  # VAT moved on payment: Abrechnungskonto to Geschuldete MWST
 # the exchange difference account of a customer receipt that is received at another CHF amount: the revenue-side
 # Kursdifferenzen of the KMU chart. bexio's journal names no account for it; 4906 is for supplier payments (erp-9h1k)
 EXCHANGE_DIFFERENCE = "3806"
@@ -134,7 +137,9 @@ def starting_owing(invoice, lookups):
     erp = chf_in_erpnext(invoice, lookups)
     if erp is None:
         return invoice_total(invoice)
-    return erp["outstanding"] + lookups.get("loaded_allocated", {}).get(erp["name"], ZERO)
+    return erp["outstanding"] + lookups.get("loaded_allocated", {}).get(
+        erp["name"], ZERO
+    )
 
 
 def _entry(row, customer, bank, paid_from, currency, paid, received, rate):
@@ -143,13 +148,22 @@ def _entry(row, customer, bank, paid_from, currency, paid, received, rate):
     A receipt into a bank account needs a reference number and date: bexio gives none, so the receipt's bexio id and its date stand in.
     """
     return {
-        "doctype": "Payment Entry", "company": im.COMPANY, "payment_type": "Receive",
-        "party_type": "Customer", "party": customer, "posting_date": row["date"],
-        "paid_from": paid_from, "paid_from_account_currency": currency,
-        "paid_to": bank["account"], "paid_to_account_currency": BASE_CURRENCY,
-        "paid_amount": float(paid), "received_amount": float(received),
-        "source_exchange_rate": float(rate), "target_exchange_rate": 1.0,
-        "reference_no": "bexio payment {}".format(row["id"]), "reference_date": row["date"],
+        "doctype": "Payment Entry",
+        "company": im.COMPANY,
+        "payment_type": "Receive",
+        "party_type": "Customer",
+        "party": customer,
+        "posting_date": row["date"],
+        "paid_from": paid_from,
+        "paid_from_account_currency": currency,
+        "paid_to": bank["account"],
+        "paid_to_account_currency": BASE_CURRENCY,
+        "paid_amount": float(paid),
+        "received_amount": float(received),
+        "source_exchange_rate": float(rate),
+        "target_exchange_rate": 1.0,
+        "reference_no": "bexio payment {}".format(row["id"]),
+        "reference_date": row["date"],
         "bexio_id": str(row["id"]),
     }
 
@@ -184,10 +198,12 @@ def map_payment(row, invoice, lookups, owing):
         raise Unmapped("the invoice's currency is not in the export")
     receivable = lookups["receivable"].get(currency)
     if receivable is None:
-        raise Unmapped("no receivable account in {}".format(currency))
+        raise Unmapped(f"no receivable account in {currency}")
     rate = rate_on(lookups, currency, row["date"])
     if rate is None:
-        raise Unmapped("no Currency Exchange {} to CHF on or before the payment date".format(currency))
+        raise Unmapped(
+            f"no Currency Exchange {currency} to CHF on or before the payment date"
+        )
     value = _money(row["value"])
     received = _cents(value * rate)
     if value > owing:
@@ -197,16 +213,23 @@ def map_payment(row, invoice, lookups, owing):
         advance = lookups["gl"].get(ADVANCE)
         if advance is None:
             raise Unmapped("no Erhaltene Anzahlungen account")
-        return _entry(row, customer, bank, advance, currency, value, received, rate), received
+        return (
+            _entry(row, customer, bank, advance, currency, value, received, rate),
+            received,
+        )
     name = lookups["invoice"].get(str(invoice["id"])) or invoice.get("document_nr")
     if not name:
         raise Unmapped("the invoice has no document number")
     doc = _entry(row, customer, bank, receivable, currency, value, received, rate)
-    doc["references"] = [{
-        "reference_doctype": "Sales Invoice", "reference_name": name,
-        "allocated_amount": float(value), "total_amount": float(invoice_total(invoice)),
-        "outstanding_amount": float(owing),
-    }]
+    doc["references"] = [
+        {
+            "reference_doctype": "Sales Invoice",
+            "reference_name": name,
+            "allocated_amount": float(value),
+            "total_amount": float(invoice_total(invoice)),
+            "outstanding_amount": float(owing),
+        }
+    ]
     return doc, received
 
 
@@ -226,24 +249,38 @@ def _map_chf_booked(row, erp, customer, bank, lookups, owing):
     gap = owing - paid
     if gap < -TOLERANCE:
         raise Unmapped(OVER_ALLOCATED)
-    difference, deduct_to = (gap, EXCHANGE_DIFFERENCE) if abs(gap) <= TOLERANCE else (ZERO, None)
+    difference, deduct_to = (
+        (gap, EXCHANGE_DIFFERENCE) if abs(gap) <= TOLERANCE else (ZERO, None)
+    )
     deduction = lookups.get("booked_deductions", {}).get(str(row["id"]))
     if deduction and abs(gap) > TOLERANCE and abs(deduction[2] - gap) <= CENT:
         difference, deduct_to = gap, deduction[1]
     receivable = lookups["receivable"].get(BASE_CURRENCY)
     if receivable is None:
         raise Unmapped("no receivable account in CHF")
-    doc = _entry(row, customer, bank, receivable, BASE_CURRENCY, paid, paid, Decimal("1"))
-    doc["references"] = [{
-        "reference_doctype": "Sales Invoice", "reference_name": erp["name"],
-        "allocated_amount": float(paid + difference), "total_amount": float(erp["total"]),
-        "outstanding_amount": float(owing),
-    }]
+    doc = _entry(
+        row, customer, bank, receivable, BASE_CURRENCY, paid, paid, Decimal("1")
+    )
+    doc["references"] = [
+        {
+            "reference_doctype": "Sales Invoice",
+            "reference_name": erp["name"],
+            "allocated_amount": float(paid + difference),
+            "total_amount": float(erp["total"]),
+            "outstanding_amount": float(owing),
+        }
+    ]
     if difference:
         account = lookups["gl"].get(deduct_to)
         if account is None:
-            raise Unmapped("no account {} for the deduction".format(deduct_to))
-        doc["deductions"] = [{"account": account, "cost_center": lookups["cost_center"], "amount": float(difference)}]
+            raise Unmapped(f"no account {deduct_to} for the deduction")
+        doc["deductions"] = [
+            {
+                "account": account,
+                "cost_center": lookups["cost_center"],
+                "amount": float(difference),
+            }
+        ]
     return doc, paid
 
 
@@ -254,8 +291,13 @@ def account_ids(accounts):
 
 def receipt_lines(journal, row_ids):
     """The journal lines booked against a receipt: a bexio client account entry whose ref_id is a payment row of the export."""
-    return [line for line in journal
-            if line.get("ref_class") == "KbClientAccountEntry" and line.get("ref_id") is not None and str(line["ref_id"]) in row_ids]
+    return [
+        line
+        for line in journal
+        if line.get("ref_class") == "KbClientAccountEntry"
+        and line.get("ref_id") is not None
+        and str(line["ref_id"]) in row_ids
+    ]
 
 
 def bank_booked_chf(journal, accounts, row_ids):
@@ -264,7 +306,10 @@ def bank_booked_chf(journal, accounts, row_ids):
     banks = {ids[n] for n in BANK_ACCOUNTS if n in ids}
     booked = collections.defaultdict(lambda: ZERO)
     for line in receipt_lines(journal, row_ids):
-        if line["debit_account_id"] in banks and line["credit_account_id"] == ids[RECEIVABLE]:
+        if (
+            line["debit_account_id"] in banks
+            and line["credit_account_id"] == ids[RECEIVABLE]
+        ):
             booked[str(line["ref_id"])] += _dec(line["base_currency_amount"])
     return dict(booked)
 
@@ -282,30 +327,52 @@ def bank_booked_deductions(journal, accounts, row_ids):
     for line in left_lines(journal, accounts, row_ids):
         amount = _money(_dec(line["base_currency_amount"]))
         # a zero line moves nothing, so it is no deduction, whichever line of the receipt comes first
-        if line["credit_account_id"] == ids[RECEIVABLE] and line["debit_account_id"] in numbers and amount != ZERO:
-            deductions.setdefault(str(line["ref_id"]), (line["id"], numbers[line["debit_account_id"]], amount))
+        if (
+            line["credit_account_id"] == ids[RECEIVABLE]
+            and line["debit_account_id"] in numbers
+            and amount != ZERO
+        ):
+            deductions.setdefault(
+                str(line["ref_id"]),
+                (line["id"], numbers[line["debit_account_id"]], amount),
+            )
     return deductions
 
 
 def vat_lines(journal, accounts, row_ids):
     """The journal lines that move VAT on payment, 2202 to 2200, on a receipt: every one, zero amounts included."""
     ids = account_ids(accounts)
-    return [line for line in receipt_lines(journal, row_ids)
-            if line["debit_account_id"] == ids[VAT_FROM] and line["credit_account_id"] == ids[VAT_TO]]
+    return [
+        line
+        for line in receipt_lines(journal, row_ids)
+        if line["debit_account_id"] == ids[VAT_FROM]
+        and line["credit_account_id"] == ids[VAT_TO]
+    ]
 
 
 def left_lines(journal, accounts, row_ids):
     """The receipt lines this import does not book: not a bank against the receivable, not one against the advance, not VAT on payment."""
     ids = account_ids(accounts)
     banks = [ids[n] for n in BANK_ACCOUNTS if n in ids]
-    covered = {(b, ids[RECEIVABLE]) for b in banks} | {(b, ids[ADVANCE]) for b in banks} | {(ids[VAT_FROM], ids[VAT_TO])}
-    return [line for line in receipt_lines(journal, row_ids) if (line["debit_account_id"], line["credit_account_id"]) not in covered]
+    covered = (
+        {(b, ids[RECEIVABLE]) for b in banks}
+        | {(b, ids[ADVANCE]) for b in banks}
+        | {(ids[VAT_FROM], ids[VAT_TO])}
+    )
+    return [
+        line
+        for line in receipt_lines(journal, row_ids)
+        if (line["debit_account_id"], line["credit_account_id"]) not in covered
+    ]
 
 
 def plan(data, lookups):
     """Map every payment of the export, in date order; one result per payment row."""
     invoices = {str(i["id"]): i for i in data["invoices"]}
-    rows = sorted((row for p in data["payments"] for row in p["rows"]), key=lambda r: (r["date"], r["id"]))
+    rows = sorted(
+        (row for p in data["payments"] for row in p["rows"]),
+        key=lambda r: (r["date"], r["id"]),
+    )
     row_ids = {str(row["id"]) for row in rows}
     allocated = collections.defaultdict(lambda: ZERO)
     for references in loaded_here(lookups, row_ids).values():
@@ -313,34 +380,62 @@ def plan(data, lookups):
             allocated[name] += amount
     lookups = dict(lookups, loaded_allocated=dict(allocated))
     if "journal" in data:
-        lookups = dict(lookups, booked_chf=bank_booked_chf(data["journal"], data["accounts"], row_ids),
-                       booked_deductions=bank_booked_deductions(data["journal"], data["accounts"], row_ids))
+        lookups = dict(
+            lookups,
+            booked_chf=bank_booked_chf(data["journal"], data["accounts"], row_ids),
+            booked_deductions=bank_booked_deductions(
+                data["journal"], data["accounts"], row_ids
+            ),
+        )
     owing = {}  # bexio invoice id -> what it still owes, after the mapped payments
     results = []
     for row in rows:
         key = str(row["kb_invoice_id"])
         invoice = invoices.get(key)
         remaining = owing.get(key, starting_owing(invoice, lookups))
-        result = {"bexio_id": str(row["id"]), "invoice": key, "year": row["date"][:4],
-                  "invoice_name": (lookups["invoice"].get(key) or (invoice or {}).get("document_nr")),
-                  "currency": lookups["currency"].get(str(invoice.get("currency_id"))) if invoice else None,
-                  "value": _money(row["value"]), "doc": None, "chf": None, "error": None}
+        result = {
+            "bexio_id": str(row["id"]),
+            "invoice": key,
+            "year": row["date"][:4],
+            "invoice_name": (
+                lookups["invoice"].get(key) or (invoice or {}).get("document_nr")
+            ),
+            "currency": (
+                lookups["currency"].get(str(invoice.get("currency_id")))
+                if invoice
+                else None
+            ),
+            "value": _money(row["value"]),
+            "doc": None,
+            "chf": None,
+            "error": None,
+        }
         try:
             doc, received = map_payment(row, invoice, lookups, remaining)
         except Unmapped as err:
             result["error"] = str(err)
         else:
-            settled = sum((_dec(ref["allocated_amount"]) for ref in doc.get("references", [])), ZERO)
+            settled = sum(
+                (_dec(ref["allocated_amount"]) for ref in doc.get("references", [])),
+                ZERO,
+            )
             owing[key] = remaining - settled
             result.update(doc=doc, chf=received)
             deduction = lookups.get("booked_deductions", {}).get(result["bexio_id"])
-            if deduction and doc.get("deductions") and doc["deductions"][0]["account"] == lookups["gl"].get(deduction[1]):
+            if (
+                deduction
+                and doc.get("deductions")
+                and doc["deductions"][0]["account"] == lookups["gl"].get(deduction[1])
+            ):
                 # the journal line this deduction books: not left for erp-fd93 to import a second time
                 result["journal_line"] = deduction[0]
             if chf_in_erpnext(invoice, lookups) and remaining - settled > TOLERANCE:
                 # a gap beyond TOLERANCE is not booked here: the invoice stays open, listed for erp-fd93
-                result["note"] = "CHF {} of the invoice stays open after this receipt; not an exchange difference".format(
-                    remaining - settled)
+                result["note"] = (
+                    "CHF {} of the invoice stays open after this receipt; not an exchange difference".format(
+                        remaining - settled
+                    )
+                )
         results.append(result)
     return results
 
@@ -350,15 +445,24 @@ def vat_document(line, result, gl):
     amount = _cents(_dec(line["base_currency_amount"]))
     debit, credit = (VAT_FROM, VAT_TO) if amount > 0 else (VAT_TO, VAT_FROM)
     value = float(abs(amount))
-    return {"doctype": "Journal Entry", "name": None, "bexio_id": str(line["id"]), "values": {
-        "company": im.COMPANY, "voucher_type": "Journal Entry", "bexio_id": str(line["id"]),
-        "posting_date": result["doc"]["posting_date"],
-        "user_remark": "VAT on payment: bexio receipt {} on {}".format(result["bexio_id"], result["invoice_name"]),
-        "accounts": [
-            {"account": gl[debit], "debit_in_account_currency": value},
-            {"account": gl[credit], "credit_in_account_currency": value},
-        ],
-    }}
+    return {
+        "doctype": "Journal Entry",
+        "name": None,
+        "bexio_id": str(line["id"]),
+        "values": {
+            "company": im.COMPANY,
+            "voucher_type": "Journal Entry",
+            "bexio_id": str(line["id"]),
+            "posting_date": result["doc"]["posting_date"],
+            "user_remark": "VAT on payment: bexio receipt {} on {}".format(
+                result["bexio_id"], result["invoice_name"]
+            ),
+            "accounts": [
+                {"account": gl[debit], "debit_in_account_currency": value},
+                {"account": gl[credit], "credit_in_account_currency": value},
+            ],
+        },
+    }
 
 
 def write_plan(results, submitted, vat=(), gl=None, loaded=()):
@@ -380,7 +484,14 @@ def write_plan(results, submitted, vat=(), gl=None, loaded=()):
             continue
         values = dict(r["doc"])
         values.pop("doctype")
-        documents.append({"doctype": "Payment Entry", "name": None, "bexio_id": r["bexio_id"], "values": values})
+        documents.append(
+            {
+                "doctype": "Payment Entry",
+                "name": None,
+                "bexio_id": r["bexio_id"],
+                "values": values,
+            }
+        )
         handed[r["bexio_id"]] = r
     for line in vat:
         r = handed.get(str(line["ref_id"]))
@@ -401,17 +512,32 @@ def reconciliation(results, data):
     for key in sorted(mapped):
         have = _dec(invoices[key]["total_received_payments"])
         if have != mapped[key]:
-            lines.append("invoice {}: mapped {} against bexio's received {}".format(key, mapped[key], have))
+            lines.append(
+                f"invoice {key}: mapped {mapped[key]} against bexio's received {have}"
+            )
     return lines
 
 
 def unknown_fields(doc, metas):
     """Fields of the Payment Entry and its references that ERPNext's doctype does not have."""
-    found = ["Payment Entry.{}".format(k) for k in doc if k not in ("doctype", "references", "deductions") and k not in metas["Payment Entry"]]
+    found = [
+        f"Payment Entry.{k}"
+        for k in doc
+        if k not in ("doctype", "references", "deductions")
+        and k not in metas["Payment Entry"]
+    ]
     for ref in doc.get("references", []):
-        found.extend("Payment Entry Reference.{}".format(k) for k in ref if k not in metas["Payment Entry Reference"])
-    for ded in doc.get("deductions", []):
-        found.extend("Payment Entry Deduction.{}".format(k) for k in ded if k not in metas["Payment Entry Deduction"])
+        found.extend(
+            f"Payment Entry Reference.{k}"
+            for k in ref
+            if k not in metas["Payment Entry Reference"]
+        )
+    for deduction in doc.get("deductions", []):
+        found.extend(
+            f"Payment Entry Deduction.{k}"
+            for k in deduction
+            if k not in metas["Payment Entry Deduction"]
+        )
     return sorted(set(found))
 
 
@@ -421,13 +547,23 @@ def loaded_allocations(erp):
     An advance has no reference, so its list is empty; it is still a receipt already loaded. One GET per entry: the
     references are a child table of the Payment Entry.
     """
-    entries = erp.list("Payment Entry", [["docstatus", "=", 1], ["payment_type", "=", "Receive"], ["bexio_id", "is", "set"]],
-                       ["name", "bexio_id"])
+    entries = erp.list(
+        "Payment Entry",
+        [
+            ["docstatus", "=", 1],
+            ["payment_type", "=", "Receive"],
+            ["bexio_id", "is", "set"],
+        ],
+        ["name", "bexio_id"],
+    )
     loaded = {}
     for entry in entries:
         refs = erp.get("Payment Entry", entry["name"]).get("references", [])
-        loaded[entry["bexio_id"]] = [(ref["reference_name"], _dec(ref["allocated_amount"]))
-                                     for ref in refs if ref["reference_doctype"] == "Sales Invoice"]
+        loaded[entry["bexio_id"]] = [
+            (ref["reference_name"], _dec(ref["allocated_amount"]))
+            for ref in refs
+            if ref["reference_doctype"] == "Sales Invoice"
+        ]
     return loaded
 
 
@@ -438,36 +574,82 @@ def loaded_here(lookups, row_ids):
 
 def lookups_from_erp(erp, data):
     """What the mapping needs from ERPNext, read only: customers, bank accounts, accounts, rates, invoices."""
+
     def bexio_names(doctype):
-        return {r["bexio_id"]: r["name"] for r in erp.list(doctype, [["bexio_id", "is", "set"]], ["name", "bexio_id"])}
+        return {
+            r["bexio_id"]: r["name"]
+            for r in erp.list(
+                doctype, [["bexio_id", "is", "set"]], ["name", "bexio_id"]
+            )
+        }
 
     currency = {str(c["id"]): c["name"] for c in data["currencies"]}
-    gl_bank = {r["bexio_id"]: r["account"] for r in erp.list("Bank Account", [["bexio_id", "is", "set"]], ["name", "bexio_id", "account"])}
+    gl_bank = {
+        r["bexio_id"]: r["account"]
+        for r in erp.list(
+            "Bank Account", [["bexio_id", "is", "set"]], ["name", "bexio_id", "account"]
+        )
+    }
     bank = {}
     for b in data["bank_accounts"]:
         if str(b["id"]) in gl_bank:
-            bank[str(b["id"])] = {"account": gl_bank[str(b["id"])], "currency": currency.get(str(b["currency_id"]))}
-    accounts = erp.list("Account", [["company", "=", im.COMPANY], ["is_group", "=", 0]], ["name", "account_number", "account_type", "account_currency"])
+            bank[str(b["id"])] = {
+                "account": gl_bank[str(b["id"])],
+                "currency": currency.get(str(b["currency_id"])),
+            }
+    accounts = erp.list(
+        "Account",
+        [["company", "=", im.COMPANY], ["is_group", "=", 0]],
+        ["name", "account_number", "account_type", "account_currency"],
+    )
     # the receivable of a currency: the lowest-named one (1100 for CHF; the KMU chart has 1102 as a second CHF one)
     receivable = {}
-    for r in sorted((a for a in accounts if a["account_type"] == "Receivable"), key=lambda r: r["name"]):
+    for r in sorted(
+        (a for a in accounts if a["account_type"] == "Receivable"),
+        key=lambda r: r["name"],
+    ):
         receivable.setdefault(r["account_currency"], r["name"])
     exchange = collections.defaultdict(list)
-    for r in erp.list("Currency Exchange", [], ["from_currency", "to_currency", "date", "exchange_rate"]):
-        exchange[(r["from_currency"], r["to_currency"])].append((str(r["date"]), _dec(r["exchange_rate"])))
+    for r in erp.list(
+        "Currency Exchange",
+        [],
+        ["from_currency", "to_currency", "date", "exchange_rate"],
+    ):
+        exchange[(r["from_currency"], r["to_currency"])].append(
+            (str(r["date"]), _dec(r["exchange_rate"]))
+        )
     for rates in exchange.values():
         rates.sort(reverse=True)
-    centers = [c["name"] for c in erp.list("Cost Center", [["company", "=", im.COMPANY], ["is_group", "=", 0]], ["name"])]
+    centers = [
+        c["name"]
+        for c in erp.list(
+            "Cost Center",
+            [["company", "=", im.COMPANY], ["is_group", "=", 0]],
+            ["name"],
+        )
+    ]
     return {
         "currency": currency,
         "loaded": loaded_allocations(erp),
         "customer": bexio_names("Customer"),
         "invoice": bexio_names("Sales Invoice"),
-        "invoice_erp": {r["bexio_id"]: {"name": r["name"], "currency": r["currency"], "total": _dec(r["grand_total"]),
-                                        "outstanding": _dec(r["outstanding_amount"])}
-                        for r in erp.list("Sales Invoice", [["bexio_id", "is", "set"]],
-                                          ["name", "bexio_id", "currency", "grand_total", "outstanding_amount"])},
-        "submitted": {r["name"] for r in erp.list("Sales Invoice", [["docstatus", "=", 1]], ["name"])},
+        "invoice_erp": {
+            r["bexio_id"]: {
+                "name": r["name"],
+                "currency": r["currency"],
+                "total": _dec(r["grand_total"]),
+                "outstanding": _dec(r["outstanding_amount"]),
+            }
+            for r in erp.list(
+                "Sales Invoice",
+                [["bexio_id", "is", "set"]],
+                ["name", "bexio_id", "currency", "grand_total", "outstanding_amount"],
+            )
+        },
+        "submitted": {
+            r["name"]
+            for r in erp.list("Sales Invoice", [["docstatus", "=", 1]], ["name"])
+        },
         "bank": bank,
         "receivable": receivable,
         "gl": {a["account_number"]: a["name"] for a in accounts},
@@ -479,7 +661,14 @@ def lookups_from_erp(erp, data):
 def load_payments(path):
     """The export's payments, invoices, bank accounts, currencies, accounts and journal."""
     data = {}
-    for name in ("invoice_payments", "invoices", "bank_accounts", "currencies", "accounts", "journal"):
+    for name in (
+        "invoice_payments",
+        "invoices",
+        "bank_accounts",
+        "currencies",
+        "accounts",
+        "journal",
+    ):
         with open(os.path.join(path, name + ".json"), encoding="utf-8") as f:
             data[name] = json.load(f)
     data["payments"] = data.pop("invoice_payments")
@@ -488,7 +677,11 @@ def load_payments(path):
 
 def summary(results):
     """Totals per year of the payment date, and the reasons; no names, no bexio ids."""
-    lines = ["{:<8}{:>10}{:>8}{:>10}{:>18}".format("year", "payments", "mapped", "unmapped", "CHF received")]
+    lines = [
+        "{:<8}{:>10}{:>8}{:>10}{:>18}".format(
+            "year", "payments", "mapped", "unmapped", "CHF received"
+        )
+    ]
     per_year = collections.OrderedDict()
     for r in results:
         acc = per_year.setdefault(r["year"], [0, 0, ZERO])
@@ -497,16 +690,27 @@ def summary(results):
             acc[1] += 1
             acc[2] += r["chf"]
     for year, (count, mapped, chf) in per_year.items():
-        lines.append("{:<8}{:>10}{:>8}{:>10}{:>18,.2f}".format(year, count, mapped, count - mapped, chf))
-    lines.append("{:<8}{:>10}{:>8}{:>10}{:>18,.2f}".format("total", len(results), sum(a[1] for a in per_year.values()),
-                                                           sum(a[0] - a[1] for a in per_year.values()), sum(a[2] for a in per_year.values())))
+        lines.append(
+            f"{year:<8}{count:>10}{mapped:>8}{count - mapped:>10}{chf:>18,.2f}"
+        )
+    lines.append(
+        "{:<8}{:>10}{:>8}{:>10}{:>18,.2f}".format(
+            "total",
+            len(results),
+            sum(a[1] for a in per_year.values()),
+            sum(a[0] - a[1] for a in per_year.values()),
+            sum(a[2] for a in per_year.values()),
+        )
+    )
 
     unmapped = [r for r in results if r["error"]]
     if unmapped:
         lines.append("")
         lines.append("unmapped by reason:")
-        for reason, count in collections.Counter(r["error"] for r in unmapped).most_common():
-            lines.append("  {:>4}  {}".format(count, reason))
+        for reason, count in collections.Counter(
+            r["error"] for r in unmapped
+        ).most_common():
+            lines.append(f"  {count:>4}  {reason}")
         # not converted: the amounts stay in the invoice's currency, so nothing is hidden in CHF
         lines.append("unmapped, in the invoice's currency, by year:")
         by_currency = collections.OrderedDict()
@@ -514,27 +718,54 @@ def summary(results):
             key = (r["year"], r["currency"] or "?")
             by_currency[key] = by_currency.get(key, ZERO) + r["value"]
         for (year, currency), value in by_currency.items():
-            lines.append("  {:<8}{:<5}{:>16,.2f}".format(year, currency, value))
+            lines.append(f"  {year:<8}{currency:<5}{value:>16,.2f}")
     return "\n".join(lines)
 
 
 def detail_lines(results, reconciled):
     """The unmapped payments by bexio id, and the reconciliation lines, for the private report file."""
-    lines = ["payment {} (invoice {}): unmapped: {}".format(r["bexio_id"], r["invoice"], r["error"]) for r in results if r["error"]]
-    lines += ["payment {} (invoice {}): {}".format(r["bexio_id"], r["invoice"], r["note"]) for r in results if r.get("note")]
+    lines = [
+        "payment {} (invoice {}): unmapped: {}".format(
+            r["bexio_id"], r["invoice"], r["error"]
+        )
+        for r in results
+        if r["error"]
+    ]
+    lines += [
+        "payment {} (invoice {}): {}".format(r["bexio_id"], r["invoice"], r["note"])
+        for r in results
+        if r.get("note")
+    ]
     return lines + reconciled
 
 
 def main(argv):
-    parser = argparse.ArgumentParser(description="Map the bexio payments on invoices to ERPNext Payment Entries.")
-    parser.add_argument("--export", default=None, help="export directory (default: the newest under <private>/bexio-export/)")
-    parser.add_argument("--dry-run", action="store_true", help="read ERPNext, write nothing, print the totals")
-    parser.add_argument("--write", metavar="FILE", default=None,
-                        help="write the Payment Entries and their VAT Journal Entries to a private file for the loader "
-                             "(bexio-drafts.sh FILE submit); nothing goes into ERPNext here. Stops, writing nothing, if a "
-                             "payment would over-allocate")
-    parser.add_argument("--report", default=os.path.join(im.PRIVATE, PROBLEMS_FILE),
-                        help="private file for the unmapped payments and the reconciliation, by bexio id")
+    parser = argparse.ArgumentParser(
+        description="Map the bexio payments on invoices to ERPNext Payment Entries."
+    )
+    parser.add_argument(
+        "--export",
+        default=None,
+        help="export directory (default: the newest under <private>/bexio-export/)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="read ERPNext, write nothing, print the totals",
+    )
+    parser.add_argument(
+        "--write",
+        metavar="FILE",
+        default=None,
+        help="write the Payment Entries and their VAT Journal Entries to a private file for the loader "
+        "(bexio-drafts.sh FILE submit); nothing goes into ERPNext here. Stops, writing nothing, if a "
+        "payment would over-allocate",
+    )
+    parser.add_argument(
+        "--report",
+        default=os.path.join(im.PRIVATE, PROBLEMS_FILE),
+        help="private file for the unmapped payments and the reconciliation, by bexio id",
+    )
     parser.add_argument("--token-file", default=im.TOKEN_FILE)
     args = parser.parse_args(argv)
     if args.dry_run == (args.write is not None):
@@ -545,9 +776,16 @@ def main(argv):
     erp = im.Erp.from_file(args.token_file)
     try:
         lookups = lookups_from_erp(erp, data)
-        metas = {dt: isl.doctype_fields(erp, dt) for dt in ("Payment Entry", "Payment Entry Reference", "Payment Entry Deduction")}
+        metas = {
+            dt: isl.doctype_fields(erp, dt)
+            for dt in (
+                "Payment Entry",
+                "Payment Entry Reference",
+                "Payment Entry Deduction",
+            )
+        }
     except im.ErpError as err:
-        print("aborted: {}".format(err), file=sys.stderr)
+        print(f"aborted: {err}", file=sys.stderr)
         return 2
 
     results = plan(data, lookups)
@@ -557,13 +795,27 @@ def main(argv):
     lines = detail_lines(results, reconciliation(results, data))
     row_ids = {r["bexio_id"] for r in results}
     covered = {r["journal_line"] for r in results if r.get("journal_line")}
-    lines += ["journal line {} on receipt {}: not booked here, for erp-fd93: {} CHF".format(line["id"], line["ref_id"], line["base_currency_amount"])
-              for line in left_lines(data["journal"], data["accounts"], row_ids) if line["id"] not in covered]
-    lines += ["journal line {} on receipt {}: booked as the deduction of its Payment Entry; erp-fd93 must not import it".format(
-        r["journal_line"], r["bexio_id"]) for r in results if r.get("journal_line")]
-    lines += ["Payment Entry {}: ERPNext has no field {}".format(r["bexio_id"], f)
-              for r in results if r["doc"] for f in r["unknown"]]
-    print("payments from {}".format(export_dir))
+    lines += [
+        "journal line {} on receipt {}: not booked here, for erp-fd93: {} CHF".format(
+            line["id"], line["ref_id"], line["base_currency_amount"]
+        )
+        for line in left_lines(data["journal"], data["accounts"], row_ids)
+        if line["id"] not in covered
+    ]
+    lines += [
+        "journal line {} on receipt {}: booked as the deduction of its Payment Entry; erp-fd93 must not import it".format(
+            r["journal_line"], r["bexio_id"]
+        )
+        for r in results
+        if r.get("journal_line")
+    ]
+    lines += [
+        "Payment Entry {}: ERPNext has no field {}".format(r["bexio_id"], f)
+        for r in results
+        if r["doc"]
+        for f in r["unknown"]
+    ]
+    print(f"payments from {export_dir}")
     print(summary(results))
     fd = os.open(args.report, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as f:
@@ -571,30 +823,61 @@ def main(argv):
     over = [r["bexio_id"] for r in results if r["error"] == OVER_ALLOCATED]
     if args.write and over:
         # the rule of the live run: a payment that would over-allocate stops the whole run, nothing partial
-        print("stop: {} payment(s) would over-allocate their invoice, by bexio id: {}; nothing written".format(
-            len(over), ", ".join(over)))
+        print(
+            "stop: {} payment(s) would over-allocate their invoice, by bexio id: {}; nothing written".format(
+                len(over), ", ".join(over)
+            )
+        )
         return 1
     if args.write:
         vat = vat_lines(data["journal"], data["accounts"], row_ids)
         here = loaded_here(lookups, row_ids)
-        documents, skipped = write_plan(results, lookups["submitted"], vat, lookups["gl"], loaded=set(here))
-        isl.write_private(args.write, json.dumps({"documents": documents, "exchange_rates": []}, indent=1))
+        documents, skipped = write_plan(
+            results, lookups["submitted"], vat, lookups["gl"], loaded=set(here)
+        )
+        isl.write_private(
+            args.write,
+            json.dumps({"documents": documents, "exchange_rates": []}, indent=1),
+        )
         loaded = {d["bexio_id"] for d in documents if d["doctype"] == "Payment Entry"}
         # the VAT lines of every receipt mapped on a submitted invoice, handed over now or loaded by an earlier run, zero ones
         # too: erp-fd93 must not import these again, and a rerun hands none over, so the file must not shrink to nothing
-        kept = {r["bexio_id"] for r in results if r["doc"] and r["invoice_name"] in lookups["submitted"]}
+        kept = {
+            r["bexio_id"]
+            for r in results
+            if r["doc"] and r["invoice_name"] in lookups["submitted"]
+        }
         ids = [line for line in vat if str(line["ref_id"]) in kept]
-        isl.write_private(os.path.join(im.PRIVATE, VAT_IDS_FILE), "\n".join(
-            "journal {} receipt {}".format(line["id"], line["ref_id"]) for line in ids))
+        isl.write_private(
+            os.path.join(im.PRIVATE, VAT_IDS_FILE),
+            "\n".join(
+                "journal {} receipt {}".format(line["id"], line["ref_id"])
+                for line in ids
+            ),
+        )
         journal_entries = sum(d["doctype"] == "Journal Entry" for d in documents)
-        print("{} documents handed to the loader: {} Payment Entries, {} VAT Journal Entries; {} VAT lines of "
-              "{} receipts in {}; {} skipped: invoice not submitted in ERPNext, by bexio id: {}; {} already loaded by an "
-              "earlier run, not handed over".format(
-                  len(documents), len(loaded), journal_entries, len(ids), len(kept), VAT_IDS_FILE,
-                  len(skipped), ", ".join(skipped) or "none", len(kept & set(here))))
-        print("{} lines of unmapped payments or reconciliation in {}".format(len(lines), args.report))
+        print(
+            "{} documents handed to the loader: {} Payment Entries, {} VAT Journal Entries; {} VAT lines of "
+            "{} receipts in {}; {} skipped: invoice not submitted in ERPNext, by bexio id: {}; {} already loaded by an "
+            "earlier run, not handed over".format(
+                len(documents),
+                len(loaded),
+                journal_entries,
+                len(ids),
+                len(kept),
+                VAT_IDS_FILE,
+                len(skipped),
+                ", ".join(skipped) or "none",
+                len(kept & set(here)),
+            )
+        )
+        print(
+            f"{len(lines)} lines of unmapped payments or reconciliation in {args.report}"
+        )
     else:
-        print("dry run: nothing was written; {} lines of unmapped payments or reconciliation in {}".format(len(lines), args.report))
+        print(
+            f"dry run: nothing was written; {len(lines)} lines of unmapped payments or reconciliation in {args.report}"
+        )
     return 1 if lines else 0
 
 

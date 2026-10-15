@@ -12,8 +12,10 @@
 # A module counts as named only as its whole dotted name on a code line (comments are not
 # read): bi_finance.test_treasury hides neither behind bi_finance.test_treasury_card nor
 # behind bi_payroll's test_layout (review, erp-evgh).
+# SC2155: the split export keeps mktemp's failure visible the same as before (both run before set -e).
 export PYTHONDONTWRITEBYTECODE=1
-export PYTHONPYCACHEPREFIX="$(mktemp -d)"
+PYTHONPYCACHEPREFIX="$(mktemp -d)"
+export PYTHONPYCACHEPREFIX
 set -e
 python3 - "$0" "$(dirname "$0")/check" <<'EOF'
 import pathlib, re, sys

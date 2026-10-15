@@ -28,11 +28,15 @@ class AppLists(unittest.TestCase):
     def test_live_list_has_hrms_at_pinned_tag(self):
         # Payroll runs on the live site (finance/docs/hrms.md, Decision 2026-10-10).
         hrms = [app for app in load("apps.json") if is_hrms(app)]
-        self.assertEqual(hrms, [{"url": "https://github.com/frappe/hrms", "branch": "v16.50.0"}])
+        self.assertEqual(
+            hrms, [{"url": "https://github.com/frappe/hrms", "branch": "v16.50.0"}]
+        )
 
     def test_copy_list_has_hrms_at_pinned_tag(self):
         hrms = [app for app in load("apps-copy.json") if is_hrms(app)]
-        self.assertEqual(hrms, [{"url": "https://github.com/frappe/hrms", "branch": "v16.50.0"}])
+        self.assertEqual(
+            hrms, [{"url": "https://github.com/frappe/hrms", "branch": "v16.50.0"}]
+        )
 
     def test_copy_list_is_live_list(self):
         self.assertEqual(load("apps-copy.json"), load("apps.json"))
@@ -47,7 +51,9 @@ class BuildImageModes(unittest.TestCase):
         self.assertIn("live", out)
         self.assertIn("copy", out)
 
-    def run_in_layout(self, files, tag="t1", mode="live", existing_images=(), env_extra=None):
+    def run_in_layout(
+        self, files, tag="t1", mode="live", existing_images=(), env_extra=None
+    ):
         """Run the script from a scratch layout with a stub docker; return (code, stderr, docker calls)."""
         with tempfile.TemporaryDirectory() as tmp:
             os.makedirs(os.path.join(tmp, "finance", "scripts"))
@@ -67,14 +73,22 @@ class BuildImageModes(unittest.TestCase):
                     'if [ "$1 $2" = "buildx inspect" ]; then\n'
                     '  [ -n "$DOCKER_STUB_NO_BUILDER" ] && exit 1\n'
                     "  exit 0\nfi\n"
-                    'if [ "$1 $2" = "buildx build" ]; then exit 0; fi\nexit 1\n' % (log, " ".join(existing_images))
+                    'if [ "$1 $2" = "buildx build" ]; then exit 0; fi\nexit 1\n'
+                    % (log, " ".join(existing_images))
                 )
             os.chmod(stub, 0o755)
             env = {"PATH": os.path.join(tmp, "bin") + os.pathsep + os.environ["PATH"]}
             env.update(env_extra or {})
             run = subprocess.run(
-                ["sh", os.path.join(tmp, "finance", "scripts", "build-image.sh"), mode, tag],
-                capture_output=True, text=True, env=env,
+                [
+                    "sh",
+                    os.path.join(tmp, "finance", "scripts", "build-image.sh"),
+                    mode,
+                    tag,
+                ],
+                capture_output=True,
+                text=True,
+                env=env,
             )
             calls = ""
             if os.path.exists(log):
@@ -87,7 +101,9 @@ class BuildImageModes(unittest.TestCase):
         hrms = [{"url": "https://github.com/frappe/hrms", "branch": "v16.50.0"}]
         code, err, calls = self.run_in_layout({"apps.json": hrms}, tag="t1")
         self.assertEqual(code, 0, err)
-        builds = [line for line in calls.splitlines() if line.startswith("buildx build ")]
+        builds = [
+            line for line in calls.splitlines() if line.startswith("buildx build ")
+        ]
         self.assertEqual(len(builds), 3, calls)
         for build in builds:
             # The capped builder only (the 2026-10-11 OOMs), and --load so the tag
@@ -103,25 +119,41 @@ class BuildImageModes(unittest.TestCase):
         # The capped builder cannot read the local image store: each layer's BASE comes
         # from the OCI layout the build before wrote, as a named context.
         self.assertIn("--output type=oci,tar=false,dest=", builds[0])
-        self.assertIn("--build-context frappe-finance-custom:t1-base=oci-layout://", builds[1])
+        self.assertIn(
+            "--build-context frappe-finance-custom:t1-base=oci-layout://", builds[1]
+        )
         self.assertIn(":t1-base ", builds[1])
         self.assertIn("--output type=oci,tar=false,dest=", builds[1])
-        self.assertIn("--build-context frappe-finance-custom:t1-finance=oci-layout://", builds[2])
+        self.assertIn(
+            "--build-context frappe-finance-custom:t1-finance=oci-layout://", builds[2]
+        )
         self.assertIn(":t1-finance ", builds[2])
-        self.assertIn("--build-arg BASE=frappe-finance-custom:t1-base --tag frappe-finance-custom:t1-finance ", builds[1])
+        self.assertIn(
+            "--build-arg BASE=frappe-finance-custom:t1-base --tag frappe-finance-custom:t1-finance ",
+            builds[1],
+        )
         self.assertIn("--file finance/images/bi_finance.Containerfile", builds[1])
-        self.assertIn("--build-arg BASE=frappe-finance-custom:t1-finance --tag frappe-finance-custom:t1 ", builds[2])
+        self.assertIn(
+            "--build-arg BASE=frappe-finance-custom:t1-finance --tag frappe-finance-custom:t1 ",
+            builds[2],
+        )
         self.assertIn("--file finance/images/bi_payroll.Containerfile", builds[2])
 
     def test_node_heap_defaults_to_900_and_follows_node_heap_mb(self):
         hrms = [{"url": "https://github.com/frappe/hrms", "branch": "v16.50.0"}]
-        code, err, calls = self.run_in_layout({"apps.json": hrms}, tag="t1", env_extra={"NODE_HEAP_MB": "600"})
+        code, err, calls = self.run_in_layout(
+            {"apps.json": hrms}, tag="t1", env_extra={"NODE_HEAP_MB": "600"}
+        )
         self.assertEqual(code, 0, err)
-        builds = [line for line in calls.splitlines() if line.startswith("buildx build ")]
+        builds = [
+            line for line in calls.splitlines() if line.startswith("buildx build ")
+        ]
         self.assertIn("--build-arg NODE_OPTIONS=--max-old-space-size=600 ", builds[0])
         code, err, calls = self.run_in_layout({"apps.json": hrms}, tag="t1")
         self.assertEqual(code, 0, err)
-        builds = [line for line in calls.splitlines() if line.startswith("buildx build ")]
+        builds = [
+            line for line in calls.splitlines() if line.startswith("buildx build ")
+        ]
         self.assertIn("--build-arg NODE_OPTIONS=--max-old-space-size=900 ", builds[0])
 
     def test_a_node_heap_that_is_not_a_number_is_refused_before_docker(self):
@@ -138,7 +170,9 @@ class BuildImageModes(unittest.TestCase):
     def test_refuses_an_existing_finance_layer_tag(self):
         erpnext = [{"url": "https://github.com/frappe/erpnext", "branch": "v16.50.0"}]
         code, err, calls = self.run_in_layout(
-            {"apps.json": erpnext}, tag="t1", existing_images=["frappe-finance-custom:t1-finance"]
+            {"apps.json": erpnext},
+            tag="t1",
+            existing_images=["frappe-finance-custom:t1-finance"],
         )
         self.assertEqual(code, 1)
         self.assertIn("already exists", err)
@@ -154,7 +188,9 @@ class BuildImageModes(unittest.TestCase):
     def test_refuses_an_existing_tag(self):
         erpnext = [{"url": "https://github.com/frappe/erpnext", "branch": "v16.50.0"}]
         code, err, calls = self.run_in_layout(
-            {"apps.json": erpnext}, tag="t1", existing_images=["frappe-finance-custom:t1"]
+            {"apps.json": erpnext},
+            tag="t1",
+            existing_images=["frappe-finance-custom:t1"],
         )
         self.assertEqual(code, 1)
         self.assertIn("already exists", err)
@@ -163,7 +199,9 @@ class BuildImageModes(unittest.TestCase):
     def test_refuses_an_existing_base_tag(self):
         erpnext = [{"url": "https://github.com/frappe/erpnext", "branch": "v16.50.0"}]
         code, err, _ = self.run_in_layout(
-            {"apps.json": erpnext}, tag="t1", existing_images=["frappe-finance-custom:t1-base"]
+            {"apps.json": erpnext},
+            tag="t1",
+            existing_images=["frappe-finance-custom:t1-base"],
         )
         self.assertEqual(code, 1)
         self.assertIn("already exists", err)
@@ -223,7 +261,7 @@ ITEM_TOOLS = [
     "                SELECT ...",
     "                WHERE ",
     "                    `item_code` = %(voucher)s",
-    "                    AND `parent` IN (SELECT `name` FROM `tabSales Invoice` WHERE `docstatus` = 1 AND `customer` = %(customer)s);\"\"\",",
+    '                    AND `parent` IN (SELECT `name` FROM `tabSales Invoice` WHERE `docstatus` = 1 AND `customer` = %(customer)s);""",',
     "            ,",
     "            {",
     "                'voucher': voucher_code,",
@@ -252,98 +290,109 @@ PAYMENT_PROPOSAL = """\
 """
 # The lines of erpnextswiss common_functions.py at the pin around get_primary_address's
 # query (its line 69): the context of the third real patch, same idea as ITEM_TOOLS.
-COMMON_FUNCTIONS = "\n".join([
-    "        LEFT JOIN `tabCountry` ON `tabAddress`.`country` = `tabCountry`.`name`",
-    "        WHERE `link_doctype` = %(type)s AND `link_name` = %(name)s",
-    "        ORDER BY `tabAddress`.`is_primary_address` DESC",
-    '        LIMIT 1;\"\"\".format',
-    "    try:",
-    "        return frappe.db.sql(sql_query, ",
-    "            {",
-    "                'type': target_type, ",
-    "                'name': target_name",
-    "            },",
-    "            as_dict=True)[0]",
-]) + "\n"
+COMMON_FUNCTIONS = (
+    "\n".join(
+        [
+            "        LEFT JOIN `tabCountry` ON `tabAddress`.`country` = `tabCountry`.`name`",
+            "        WHERE `link_doctype` = %(type)s AND `link_name` = %(name)s",
+            "        ORDER BY `tabAddress`.`is_primary_address` DESC",
+            '        LIMIT 1;""".format',
+            "    try:",
+            "        return frappe.db.sql(sql_query, ",
+            "            {",
+            "                'type': target_type, ",
+            "                'name': target_name",
+            "            },",
+            "            as_dict=True)[0]",
+        ]
+    )
+    + "\n"
+)
 
 
 # The lines of erpnextswiss salary_certificate.py at the pin (5d85c45) around the three hunks of the
 # patches 0002-0004: the imports (0004), Pos 11 in fetch_dynamic (0002) and get_component_dynamic (0003).
 # The bodies are the upstream ones, the untouched middle is cut: git apply needs a hunk's context, not its
 # line numbers. The file at the pin ends without a newline, at `return pos - neg`.
-SALARY_CERTIFICATE_PATH = "erpnextswiss/erpnextswiss/doctype/salary_certificate/salary_certificate.py"
-SALARY_CERTIFICATE = '''# -*- coding: utf-8 -*-
-# Copyright (c) 2018-2024, libracore (https://www.libracore.com) and contributors
-# For license information, please see license.txt
-
-from __future__ import unicode_literals
-import frappe
-from frappe.model.document import Document
-
-class SalaryCertificate(Document):
-    pass
-
-
-    # Pos 10.1
-    self.deduction_pension = get_component_dynamic(self.employee, self.start_date, self.end_date, frappe.get_doc('Salary Certificate Settings').deduction_pension)
-    # Pos 10.2
-    self.deduction_pension_additional = get_component_dynamic(self.employee, self.start_date, self.end_date, frappe.get_doc('Salary Certificate Settings').deduction_pension_additional)
-    # Pos 11
-    self.net_salary = values[0].net
-    # Pos 12
-    self.source_tax_deduction = get_component_dynamic(self.employee, self.start_date, self.end_date, frappe.get_doc('Salary Certificate Settings').source_tax_deduction)
-    # Pos 13.1.1
-
-
-def get_component_dynamic(employee, start_date, end_date, componentlist):
-    
-    if len(componentlist) == 0:
-        return 0.0;
-
-    expression = "";
-    
-    positiv = []
-    negativ = []
-    for item in componentlist:
-        comp = frappe.get_doc("Salary Component", item.component)
-        if item.is_negativ == 1:
-            negativ.append(comp.name)
-        else:
-            positiv.append(comp.name)
-
-    expression = "' OR `tabSalary Detail`.`salary_component` = '"
-
-    pos = 0.0
-    neg = 0.0
-
-    if len(positiv) > 0:
-        expression_pos = expression.join(positiv)
-
-        sql_query_pos = """SELECT `tabSalary Slip`.`employee`, IFNULL(SUM(`tabSalary Detail`.`amount`), 0) AS `amount`
-            FROM `tabSalary Slip` 
-            INNER JOIN `tabSalary Detail` ON `tabSalary Slip`.`name` = `tabSalary Detail`.`parent`
-            WHERE `tabSalary Slip`.`employee` = '{0}'
-            AND `tabSalary Slip`.`posting_date` >= '{1}'
-            AND `tabSalary Slip`.`posting_date` <= '{2}'
-            AND `tabSalary Slip`.`docstatus` = 1
-            AND (`tabSalary Detail`.`salary_component` = '{3}');""".format(employee, start_date, end_date, expression_pos)
-        values = frappe.db.sql(sql_query_pos, as_dict=True)
-        pos = values[0].amount
-    
-    if len(negativ) > 0:
-        expression_neg = expression.join(negativ)
-
-        sql_query_neg = """SELECT `tabSalary Slip`.`employee`, IFNULL(SUM(`tabSalary Detail`.`amount`), 0) AS `amount`
-            FROM `tabSalary Slip` 
-            INNER JOIN `tabSalary Detail` ON `tabSalary Slip`.`name` = `tabSalary Detail`.`parent`
-            WHERE `tabSalary Slip`.`employee` = '{0}'
-            AND `tabSalary Slip`.`posting_date` >= '{1}'
-            AND `tabSalary Slip`.`posting_date` <= '{2}'
-            AND `tabSalary Slip`.`docstatus` = 1
-            AND (`tabSalary Detail`.`salary_component` = '{3}');""".format(employee, start_date, end_date, expression_neg)
-        values = frappe.db.sql(sql_query_neg, as_dict=True)
-        neg = values[0].amount
-    return pos - neg'''
+SALARY_CERTIFICATE_PATH = (
+    "erpnextswiss/erpnextswiss/doctype/salary_certificate/salary_certificate.py"
+)
+SALARY_CERTIFICATE = "\n".join(
+    [
+        "# -*- coding: utf-8 -*-",
+        "# Copyright (c) 2018-2024, libracore (https://www.libracore.com) and contributors",
+        "# For license information, please see license.txt",
+        "",
+        "from __future__ import unicode_literals",
+        "import frappe",
+        "from frappe.model.document import Document",
+        "",
+        "class SalaryCertificate(Document):",
+        "    pass",
+        "",
+        "",
+        "    # Pos 10.1",
+        "    self.deduction_pension = get_component_dynamic(self.employee, self.start_date, self.end_date, frappe.get_doc('Salary Certificate Settings').deduction_pension)",
+        "    # Pos 10.2",
+        "    self.deduction_pension_additional = get_component_dynamic(self.employee, self.start_date, self.end_date, frappe.get_doc('Salary Certificate Settings').deduction_pension_additional)",
+        "    # Pos 11",
+        "    self.net_salary = values[0].net",
+        "    # Pos 12",
+        "    self.source_tax_deduction = get_component_dynamic(self.employee, self.start_date, self.end_date, frappe.get_doc('Salary Certificate Settings').source_tax_deduction)",
+        "    # Pos 13.1.1",
+        "",
+        "",
+        "def get_component_dynamic(employee, start_date, end_date, componentlist):",
+        "    ",
+        "    if len(componentlist) == 0:",
+        "        return 0.0;",
+        "",
+        '    expression = "";',
+        "    ",
+        "    positiv = []",
+        "    negativ = []",
+        "    for item in componentlist:",
+        '        comp = frappe.get_doc("Salary Component", item.component)',
+        "        if item.is_negativ == 1:",
+        "            negativ.append(comp.name)",
+        "        else:",
+        "            positiv.append(comp.name)",
+        "",
+        "    expression = \"' OR `tabSalary Detail`.`salary_component` = '\"",
+        "",
+        "    pos = 0.0",
+        "    neg = 0.0",
+        "",
+        "    if len(positiv) > 0:",
+        "        expression_pos = expression.join(positiv)",
+        "",
+        '        sql_query_pos = """SELECT `tabSalary Slip`.`employee`, IFNULL(SUM(`tabSalary Detail`.`amount`), 0) AS `amount`',
+        "            FROM `tabSalary Slip` ",
+        "            INNER JOIN `tabSalary Detail` ON `tabSalary Slip`.`name` = `tabSalary Detail`.`parent`",
+        "            WHERE `tabSalary Slip`.`employee` = '{0}'",
+        "            AND `tabSalary Slip`.`posting_date` >= '{1}'",
+        "            AND `tabSalary Slip`.`posting_date` <= '{2}'",
+        "            AND `tabSalary Slip`.`docstatus` = 1",
+        '            AND (`tabSalary Detail`.`salary_component` = \'{3}\');""".format(employee, start_date, end_date, expression_pos)',
+        "        values = frappe.db.sql(sql_query_pos, as_dict=True)",
+        "        pos = values[0].amount",
+        "    ",
+        "    if len(negativ) > 0:",
+        "        expression_neg = expression.join(negativ)",
+        "",
+        '        sql_query_neg = """SELECT `tabSalary Slip`.`employee`, IFNULL(SUM(`tabSalary Detail`.`amount`), 0) AS `amount`',
+        "            FROM `tabSalary Slip` ",
+        "            INNER JOIN `tabSalary Detail` ON `tabSalary Slip`.`name` = `tabSalary Detail`.`parent`",
+        "            WHERE `tabSalary Slip`.`employee` = '{0}'",
+        "            AND `tabSalary Slip`.`posting_date` >= '{1}'",
+        "            AND `tabSalary Slip`.`posting_date` <= '{2}'",
+        "            AND `tabSalary Slip`.`docstatus` = 1",
+        '            AND (`tabSalary Detail`.`salary_component` = \'{3}\');""".format(employee, start_date, end_date, expression_neg)',
+        "        values = frappe.db.sql(sql_query_neg, as_dict=True)",
+        "        neg = values[0].amount",
+        "    return pos - neg",
+    ]
+)
 
 
 # The first lines of erpnextswiss print format 605.040.18n_form._11.json at the pin (5d85c45):
@@ -353,20 +402,20 @@ def get_component_dynamic(employee, start_date, end_date, componentlist):
 # on its own. Raw string: the css carries the JSON escapes (\n, \") as the two characters they
 # are, and the opening brace sits on the string's first line (a raw string keeps a \\\n continuation).
 FORM11_JSON_PATH = "erpnextswiss/erpnextswiss/print_format/605.040.18n_form._11/605.040.18n_form._11.json"
-FORM11_JSON = r'''{
+FORM11_JSON = r"""{
  "align_labels_right": 0,
  "creation": "2018-01-21 20:46:35.275930",
  "css": ".print-format {\n   margin-left: 0.6mm;\n   margin-right: 0mm;\n   margin-top: 0mm;\n   margin-bottom: 0mm;\n   padding: 0px;\n   font-size: 10pt;\n   font-face: Arial, Helvetica, sans-serif;\n}\n\n/* use to debug\n.ff {\n  background-color: rgba(255, 0, 0, 0.2) !important;\n}\n*/\n\n.form11 {\n   background-image: url(\"/assets/erpnextswiss/images/605_040_18N_Form_11.png\");\n   background-size:cover;\n   width: 980px;\n   height: 1400px;\n}",
  "custom_format": 1,
  "disable_smart_shrinking": 0,
  "disabled": 0,
-}'''
+}"""
 
 # The first 27 lines of erpnextswiss hooks.py at the pin (5d85c45): the add_to_apps_screen block
 # (lines 16 to 24) is patch 0008's target, and line 27 is its last context line. The rest of the
 # file is cut: git apply needs the hunk's context, not the whole file.
 HOOKS_PATH = "erpnextswiss/hooks.py"
-HOOKS_HEAD = '''# -*- coding: utf-8 -*-
+HOOKS_HEAD = """# -*- coding: utf-8 -*-
 from __future__ import unicode_literals
 from . import __version__ as app_version
 
@@ -393,12 +442,12 @@ add_to_apps_screen = [
 # Includes in <head>
 # ------------------
 
-'''
+"""
 
 # hrms's shipped dock at the pin v16.50.0 (hrms/dock/hrms/hrms.json, 87 lines, upstream content):
 # the whole file, so the patch's context is the file's own. The patch adds one key, mount_on.
 HRMS_DOCK_PATH = "hrms/dock/hrms/hrms.json"
-HRMS_DOCK_JSON = r'''{
+HRMS_DOCK_JSON = r"""{
  "app": "hrms",
  "creation": "2026-08-26 23:55:00",
  "docstatus": 0,
@@ -484,7 +533,7 @@ HRMS_DOCK_JSON = r'''{
  "owner": "Administrator",
  "standard": 1,
  "user": ""
-}'''
+}"""
 
 # frappe's apps.py at the pin v16.51.0 (apps/frappe/frappe/apps.py): the head through get_apps's loop, cut
 # after its for line. The patch's context is the lines around the frappe skip; the tabs are upstream's.
@@ -549,7 +598,10 @@ def get_apps():
 def git(cwd, *args):
     subprocess.run(
         ["git", "-c", "user.name=test", "-c", "user.email=test@example.invalid", *args],
-        cwd=cwd, check=True, capture_output=True, text=True,
+        cwd=cwd,
+        check=True,
+        capture_output=True,
+        text=True,
     )
 
 
@@ -575,10 +627,14 @@ class PatchStep(unittest.TestCase):
 
     def commit_pin_sources(self):
         """Every file of erpnextswiss the patches touch, as they read at the pin 5d85c45:
-        the step applies the whole directory in one run, so the tree holds all of them."""
+        the step applies the whole directory in one run, so the tree holds all of them.
+        """
         self.commit("erpnextswiss/scripts/item_tools.py", "\n".join(ITEM_TOOLS) + "\n")
         self.commit(SALARY_CERTIFICATE_PATH, SALARY_CERTIFICATE)
-        self.commit("erpnextswiss/erpnextswiss/doctype/payment_proposal/payment_proposal.py", PAYMENT_PROPOSAL)
+        self.commit(
+            "erpnextswiss/erpnextswiss/doctype/payment_proposal/payment_proposal.py",
+            PAYMENT_PROPOSAL,
+        )
         self.commit("erpnextswiss/erpnextswiss/common_functions.py", COMMON_FUNCTIONS)
         self.commit(FORM11_JSON_PATH, FORM11_JSON)
         self.commit(HOOKS_PATH, HOOKS_HEAD)
@@ -590,7 +646,8 @@ class PatchStep(unittest.TestCase):
     def apply(self, patch_dir=None):
         return subprocess.run(
             ["sh", APPLY, patch_dir or self.patches, self.app],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
 
     def read(self, name):
@@ -599,29 +656,57 @@ class PatchStep(unittest.TestCase):
 
     def test_applies_in_name_order(self):
         self.commit("tool.py", "VALUE = 1\nOTHER = 2\n")
-        self.patch("0001-value.patch", "--- a/tool.py\n+++ b/tool.py\n@@ -1,2 +1,2 @@\n-VALUE = 1\n+VALUE = 3\n OTHER = 2\n")
+        self.patch(
+            "0001-value.patch",
+            "--- a/tool.py\n+++ b/tool.py\n@@ -1,2 +1,2 @@\n-VALUE = 1\n+VALUE = 3\n OTHER = 2\n",
+        )
         # Applies only after 0001: its context reads VALUE = 3.
-        self.patch("0002-value-again.patch", "--- a/tool.py\n+++ b/tool.py\n@@ -1,2 +1,2 @@\n-VALUE = 3\n+VALUE = 5\n OTHER = 2\n")
+        self.patch(
+            "0002-value-again.patch",
+            "--- a/tool.py\n+++ b/tool.py\n@@ -1,2 +1,2 @@\n-VALUE = 3\n+VALUE = 5\n OTHER = 2\n",
+        )
         run = self.apply()
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertEqual(self.read("tool.py"), "VALUE = 5\nOTHER = 2\n")
-        self.assertIn("applied: " + os.path.join(self.patches, "0002-value-again.patch"), run.stdout)
+        self.assertIn(
+            "applied: " + os.path.join(self.patches, "0002-value-again.patch"),
+            run.stdout,
+        )
 
     def test_a_patch_that_does_not_apply_stops_the_step_and_names_it(self):
         self.commit("tool.py", "VALUE = 1\nOTHER = 2\n")
-        self.patch("0001-broken.patch", "--- a/tool.py\n+++ b/tool.py\n@@ -1,2 +1,2 @@\n-VALUE = 9\n+VALUE = 3\n OTHER = 2\n")
+        self.patch(
+            "0001-broken.patch",
+            "--- a/tool.py\n+++ b/tool.py\n@@ -1,2 +1,2 @@\n-VALUE = 9\n+VALUE = 3\n OTHER = 2\n",
+        )
         run = self.apply()
         self.assertEqual(run.returncode, 1)
-        self.assertIn("patch does not apply to " + self.app + ": " + os.path.join(self.patches, "0001-broken.patch"), run.stderr)
+        self.assertIn(
+            "patch does not apply to "
+            + self.app
+            + ": "
+            + os.path.join(self.patches, "0001-broken.patch"),
+            run.stderr,
+        )
         self.assertEqual(self.read("tool.py"), "VALUE = 1\nOTHER = 2\n")
 
     def test_relative_paths_work(self):
         # Regression: a relative patch path was read from the app's directory, not the caller's.
         self.commit("tool.py", "VALUE = 1\nOTHER = 2\n")
-        self.patch("0001-value.patch", "--- a/tool.py\n+++ b/tool.py\n@@ -1,2 +1,2 @@\n-VALUE = 1\n+VALUE = 3\n OTHER = 2\n")
+        self.patch(
+            "0001-value.patch",
+            "--- a/tool.py\n+++ b/tool.py\n@@ -1,2 +1,2 @@\n-VALUE = 1\n+VALUE = 3\n OTHER = 2\n",
+        )
         run = subprocess.run(
-            ["sh", APPLY, os.path.relpath(self.patches, self.tmp), os.path.relpath(self.app, self.tmp)],
-            cwd=self.tmp, capture_output=True, text=True,
+            [
+                "sh",
+                APPLY,
+                os.path.relpath(self.patches, self.tmp),
+                os.path.relpath(self.app, self.tmp),
+            ],
+            cwd=self.tmp,
+            capture_output=True,
+            text=True,
         )
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertEqual(self.read("tool.py"), "VALUE = 3\nOTHER = 2\n")
@@ -633,7 +718,9 @@ class PatchStep(unittest.TestCase):
         self.assertEqual(self.read("tool.py"), "VALUE = 1\n")
 
     def test_wrong_arguments_are_a_usage_error(self):
-        run = subprocess.run(["sh", APPLY, self.patches], capture_output=True, text=True)
+        run = subprocess.run(
+            ["sh", APPLY, self.patches], capture_output=True, text=True
+        )
         self.assertEqual(run.returncode, 2)
 
     def test_our_item_tools_patch_fixes_the_stray_comma(self):
@@ -644,9 +731,13 @@ class PatchStep(unittest.TestCase):
         # The patches name their files from the repository root; the step applies every
         # patch of the directory, so the tree holds every file they touch.
         self.commit_pin_sources()
-        run = subprocess.run(["sh", APPLY, PATCH_DIR, self.app], capture_output=True, text=True)
+        run = subprocess.run(
+            ["sh", APPLY, PATCH_DIR, self.app], capture_output=True, text=True
+        )
         self.assertEqual(run.returncode, 0, run.stderr)
-        compile(self.read("erpnextswiss/scripts/item_tools.py"), "item_tools.py", "exec")
+        compile(
+            self.read("erpnextswiss/scripts/item_tools.py"), "item_tools.py", "exec"
+        )
 
     def test_our_expense_claim_patch_pays_the_grand_total(self):
         # Regression: at the pin, the proposal's expense-claim rows carry the sanctioned amount,
@@ -654,7 +745,9 @@ class PatchStep(unittest.TestCase):
         self.commit_pin_sources()
         path = "erpnextswiss/erpnextswiss/doctype/payment_proposal/payment_proposal.py"
         self.assertIn("`total_sanctioned_amount` AS `amount`", PAYMENT_PROPOSAL)
-        run = subprocess.run(["sh", APPLY, PATCH_DIR, self.app], capture_output=True, text=True)
+        run = subprocess.run(
+            ["sh", APPLY, PATCH_DIR, self.app], capture_output=True, text=True
+        )
         self.assertEqual(run.returncode, 0, run.stderr)
         patched = self.read(path)
         self.assertIn("`grand_total` AS `amount`", patched)
@@ -668,7 +761,9 @@ class PatchStep(unittest.TestCase):
         self.commit_pin_sources()
         path = "erpnextswiss/erpnextswiss/common_functions.py"
         self.assertIn('LIMIT 1;""".format', COMMON_FUNCTIONS)
-        run = subprocess.run(["sh", APPLY, PATCH_DIR, self.app], capture_output=True, text=True)
+        run = subprocess.run(
+            ["sh", APPLY, PATCH_DIR, self.app], capture_output=True, text=True
+        )
         self.assertEqual(run.returncode, 0, run.stderr)
         patched = self.read(path)
         self.assertIn('LIMIT 1;"""\n', patched)
@@ -683,12 +778,16 @@ class PatchStep(unittest.TestCase):
         self.assertIn("self.net_salary = values[0].net", source)
         self.assertIn(".format(employee, start_date, end_date, expression_pos)", source)
         self.commit_pin_sources()
-        run = subprocess.run(["sh", APPLY, PATCH_DIR, self.app], capture_output=True, text=True)
+        run = subprocess.run(
+            ["sh", APPLY, PATCH_DIR, self.app], capture_output=True, text=True
+        )
         self.assertEqual(run.returncode, 0, run.stderr)
         patched = self.read(SALARY_CERTIFICATE_PATH)
         compile(patched, SALARY_CERTIFICATE_PATH, "exec")
         self.assertIn("from frappe import _", patched)
-        self.assertIn("self.net_salary = (self.gross_salary - self.deduction_ahv", patched)
+        self.assertIn(
+            "self.net_salary = (self.gross_salary - self.deduction_ahv", patched
+        )
         self.assertNotIn("self.net_salary = values[0].net", patched)
         self.assertIn("IN %s", patched)
         self.assertIn("tuple(positiv)", patched)
@@ -704,10 +803,15 @@ class PatchStep(unittest.TestCase):
         self.assertNotIn("zoom:", FORM11_JSON)
         self.assertIn("width: 980px", FORM11_JSON)
         self.commit_pin_sources()
-        run = subprocess.run(["sh", APPLY, PATCH_DIR, self.app], capture_output=True, text=True)
+        run = subprocess.run(
+            ["sh", APPLY, PATCH_DIR, self.app], capture_output=True, text=True
+        )
         self.assertEqual(run.returncode, 0, run.stderr)
-        css_line = next(l for l in self.read(FORM11_JSON_PATH).splitlines()
-                        if l.startswith(' "css": '))
+        css_line = next(
+            l
+            for l in self.read(FORM11_JSON_PATH).splitlines()
+            if l.startswith(' "css": ')
+        )
         css = json.loads("{" + css_line.rstrip(",") + "}")["css"]
         self.assertIn(".form11 {\n   zoom: 0.69;\n", css)
         self.assertIn("width: 980px", css)
@@ -716,12 +820,17 @@ class PatchStep(unittest.TestCase):
         # Regression: erpnextswiss's add_to_apps_screen put a second "Schweizer Buchhaltung" tile on
         # /apps next to ERPNext. 0008 removes the block and nothing else in hooks.py.
         self.commit_pin_sources()
-        run = subprocess.run(["sh", APPLY, PATCH_DIR, self.app], capture_output=True, text=True)
+        run = subprocess.run(
+            ["sh", APPLY, PATCH_DIR, self.app], capture_output=True, text=True
+        )
         self.assertEqual(run.returncode, 0, run.stderr)
         hooks = self.read(HOOKS_PATH)
         self.assertNotIn("add_to_apps_screen", hooks)
         self.assertIn('app_home = "/desk/schweizer-buchhaltung"\n', hooks)
-        self.assertIn('app_logo_url = "/assets/erpnextswiss/images/schweizer_buchhaltung.svg"\n', hooks)
+        self.assertIn(
+            'app_logo_url = "/assets/erpnextswiss/images/schweizer_buchhaltung.svg"\n',
+            hooks,
+        )
         self.assertIn("# Includes in <head>\n# ------------------\n\n", hooks)
 
     def test_our_bundler_patch_keeps_the_node_options_the_build_was_given(self):
@@ -730,28 +839,41 @@ class PatchStep(unittest.TestCase):
         path = "frappe/bundler.py"
         self.commit(path, BUNDLER)
         self.commit(APPS_PY_PATH, APPS_PY)
-        run = subprocess.run(["sh", APPLY, FRAPPE_PATCH_DIR, self.app], capture_output=True, text=True)
+        run = subprocess.run(
+            ["sh", APPLY, FRAPPE_PATCH_DIR, self.app], capture_output=True, text=True
+        )
         self.assertEqual(run.returncode, 0, run.stderr)
         scope = {"os": os}
         exec(self.read(path), scope)
         with mock.patch.dict(os.environ, {"NODE_OPTIONS": "--max-old-space-size=900"}):
-            self.assertEqual(scope["get_node_env"](), {"NODE_OPTIONS": "--max-old-space-size=900"})
+            self.assertEqual(
+                scope["get_node_env"](), {"NODE_OPTIONS": "--max-old-space-size=900"}
+            )
         with mock.patch.dict(os.environ):
             os.environ.pop("NODE_OPTIONS", None)
-            self.assertEqual(scope["get_node_env"](), {"NODE_OPTIONS": "--max_old_space_size=2928"})
+            self.assertEqual(
+                scope["get_node_env"](), {"NODE_OPTIONS": "--max_old_space_size=2928"}
+            )
 
     def test_our_apps_screen_patch_skips_the_docked_apps(self):
         # Regression: get_docked_apps said a mounted app is kept off the apps screen, but get_apps never
         # called it, so a mounted app's tile stayed on /apps while the sidebar switcher dropped it.
         self.commit("frappe/bundler.py", BUNDLER)
         self.commit(APPS_PY_PATH, APPS_PY)
-        run = subprocess.run(["sh", APPLY, FRAPPE_PATCH_DIR, self.app], capture_output=True, text=True)
+        run = subprocess.run(
+            ["sh", APPLY, FRAPPE_PATCH_DIR, self.app], capture_output=True, text=True
+        )
         self.assertEqual(run.returncode, 0, run.stderr)
         get_apps = self.read(APPS_PY_PATH)
-        get_apps = get_apps[get_apps.index("def get_apps"):]
-        self.assertIn('\t\tif app == "frappe":\n\t\t\tcontinue\n\t\t# The mount wins: a docked app is kept off the apps screen, see get_docked_apps.\n'
-                      '\t\tif app in get_docked_apps():\n\t\t\tcontinue\n', get_apps)
-        self.assertLess(get_apps.index("get_docked_apps()"), get_apps.index("app_details = "))
+        get_apps = get_apps[get_apps.index("def get_apps") :]
+        self.assertIn(
+            '\t\tif app == "frappe":\n\t\t\tcontinue\n\t\t# The mount wins: a docked app is kept off the apps screen, see get_docked_apps.\n'
+            "\t\tif app in get_docked_apps():\n\t\t\tcontinue\n",
+            get_apps,
+        )
+        self.assertLess(
+            get_apps.index("get_docked_apps()"), get_apps.index("app_details = ")
+        )
 
     def test_our_hrms_dock_patch_mounts_the_rail_on_erpnext(self):
         # Regression: hrms's dock had no mount, so its nine HR entries kept their own apps-screen
@@ -760,7 +882,9 @@ class PatchStep(unittest.TestCase):
         # The stamp moves with the patch: frappe's migrate imports a shipped document only when its
         # modified is newer than the stored row's, so a site that holds the old dock never got the mount.
         self.commit(HRMS_DOCK_PATH, HRMS_DOCK_JSON)
-        run = subprocess.run(["sh", APPLY, HRMS_PATCH_DIR, self.app], capture_output=True, text=True)
+        run = subprocess.run(
+            ["sh", APPLY, HRMS_PATCH_DIR, self.app], capture_output=True, text=True
+        )
         self.assertEqual(run.returncode, 0, run.stderr)
         dock = json.loads(self.read(HRMS_DOCK_PATH))
         self.assertEqual(dock["mount_on"], "erpnext")
@@ -778,9 +902,13 @@ class PatchStep(unittest.TestCase):
     def test_the_containerfile_applies_the_hrms_patch_before_the_asset_build(self):
         with open(CONTAINERFILE) as f:
             text = f.read()
-        self.assertIn("COPY --chown=frappe:0 finance/patches/hrms /home/frappe/patches/hrms", text)
+        self.assertIn(
+            "COPY --chown=frappe:0 finance/patches/hrms /home/frappe/patches/hrms", text
+        )
         hrms = text.index("apply-patches.sh /home/frappe/patches/hrms apps/hrms")
-        self.assertLess(text.index("apply-patches.sh /home/frappe/patches/frappe apps/frappe"), hrms)
+        self.assertLess(
+            text.index("apply-patches.sh /home/frappe/patches/frappe apps/frappe"), hrms
+        )
         self.assertLess(hrms, text.index("bench build --production"))
 
     def test_the_containerfile_removes_the_erpnextswiss_desk_folders(self):
@@ -789,14 +917,27 @@ class PatchStep(unittest.TestCase):
         # removal is the whole fix; it must run after the patches that touch erpnextswiss and before the asset build.
         with open(CONTAINERFILE) as f:
             text = f.read()
-        removals = [line.strip() for line in text.splitlines() if line.strip().startswith("rm -r apps/erpnextswiss")]
+        removals = [
+            line.strip()
+            for line in text.splitlines()
+            if line.strip().startswith("rm -r apps/erpnextswiss")
+        ]
         self.assertEqual(len(removals), 1, removals)
-        self.assertIn("apps/erpnextswiss/erpnextswiss/erpnextswiss/workspace ", removals[0])
+        self.assertIn(
+            "apps/erpnextswiss/erpnextswiss/erpnextswiss/workspace ", removals[0]
+        )
         self.assertIn("apps/erpnextswiss/erpnextswiss/desktop_icon ", removals[0])
         self.assertIn("apps/erpnextswiss/erpnextswiss/workspace_sidebar ", removals[0])
         removed = text.index(removals[0])
-        self.assertLess(text.index("apply-patches.sh /home/frappe/patches/erpnextswiss apps/erpnextswiss"), removed)
-        self.assertLess(text.index("apply-patches.sh /home/frappe/patches/hrms apps/hrms"), removed)
+        self.assertLess(
+            text.index(
+                "apply-patches.sh /home/frappe/patches/erpnextswiss apps/erpnextswiss"
+            ),
+            removed,
+        )
+        self.assertLess(
+            text.index("apply-patches.sh /home/frappe/patches/hrms apps/hrms"), removed
+        )
         self.assertLess(removed, text.index("bench build --production"))
 
 

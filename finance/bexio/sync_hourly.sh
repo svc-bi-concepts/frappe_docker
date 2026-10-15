@@ -171,8 +171,8 @@ EXPORT_DIR="$PRIVATE/bexio-export/$(date +%F)"
 
 RC=0
 run_step() { # run_step <name> <outfile|-> <command...>: run, keep the log, print it, record the rc.
-# outfile is where stdout goes (the counts snapshots the gate reads); "-" folds stdout into
-# the log, the way delta.sh keeps a step's output.
+  # outfile is where stdout goes (the counts snapshots the gate reads); "-" folds stdout into
+  # the log, the way delta.sh keeps a step's output.
   step=$1
   outfile=$2
   shift 2

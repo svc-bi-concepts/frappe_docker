@@ -14,18 +14,27 @@ set -eu
 cd "$(dirname "$0")/../.."
 
 CSV="${RATES_CSV:-/Users/bsaladin/ws_yardr_finance/private/payroll-insurance/rates-2026.csv}"
-[ -f "$CSV" ] || { echo "no rates CSV at $CSV" >&2; exit 1; }
+[ -f "$CSV" ] || {
+  echo "no rates CSV at $CSV" >&2
+  exit 1
+}
 
 APPLY="" LIVE="" BACKUP=""
 for arg in "$@"; do
   case "$arg" in
-    --apply) APPLY=1 ;;
-    --live) LIVE=1 ;;
-    --backup) BACKUP=1 ;;
-    *) echo "unknown argument $arg" >&2; exit 2 ;;
+  --apply) APPLY=1 ;;
+  --live) LIVE=1 ;;
+  --backup) BACKUP=1 ;;
+  *)
+    echo "unknown argument $arg" >&2
+    exit 2
+    ;;
   esac
 done
-[ -z "$LIVE" ] || [ -n "$APPLY" ] || { echo "--live needs --apply" >&2; exit 2; }
+[ -z "$LIVE" ] || [ -n "$APPLY" ] || {
+  echo "--live needs --apply" >&2
+  exit 2
+}
 
 if [ -n "$LIVE" ]; then
   PROJECT="frappe-finance"
@@ -40,6 +49,7 @@ RATES_JSON=$(python3 finance/scripts/load_swiss_rates.py --prepare "$CSV")
 export RATES_JSON
 
 if [ -n "$BACKUP" ]; then
+  # shellcheck disable=SC2086 # intentional: FILES is the -f flag list, one word per flag and file
   docker compose -p "$PROJECT" $FILES exec -T backend \
     bench --site frontend backup --with-files
 fi
@@ -49,6 +59,7 @@ if [ -n "$APPLY" ]; then
   MODE=--apply
 fi
 
+# shellcheck disable=SC2086 # intentional: FILES is the -f flag list, one word per flag and file
 docker compose -p "$PROJECT" $FILES exec -T -e RATES_JSON backend \
   sh -c 'cd /home/frappe/frappe-bench/sites && exec ../env/bin/python - "$@"' sh "$MODE" \
-  < finance/scripts/load_swiss_rates.py
+  <finance/scripts/load_swiss_rates.py
