@@ -9,17 +9,17 @@
 # new module that is in no list fails the gate here instead of waiting unseen on main (IT's
 # standing rule, 2026-10-15). The stdlib-only modules are named on the host lines below, the
 # frappe-image modules in the docker run line of .yardr/check; no list names a module twice.
+# A module counts as named only as its whole dotted name on a code line (comments are not
+# read): bi_finance.test_treasury hides neither behind bi_finance.test_treasury_card nor
+# behind bi_payroll's test_layout (review, erp-evgh).
 export PYTHONDONTWRITEBYTECODE=1
 export PYTHONPYCACHEPREFIX="$(mktemp -d)"
 set -e
 python3 - "$0" "$(dirname "$0")/check" <<'EOF'
-import pathlib, sys
-gate = "".join(pathlib.Path(a).read_text() for a in sys.argv[1:])
-missing = [str(p) for root in (
-    "finance/apps/bi_finance/bi_finance",
-    "finance/apps/bi_payroll/bi_payroll",
-    "finance/scripts",
-) for p in sorted(pathlib.Path(root).glob("test_*.py")) if p.stem not in gate]
+import pathlib, re, sys
+gate = "\n".join(l for a in sys.argv[1:] for l in pathlib.Path(a).read_text().splitlines() if not l.lstrip().startswith("#"))
+roots = {"finance/apps/bi_finance/bi_finance": "bi_finance.", "finance/apps/bi_payroll/bi_payroll": "bi_payroll.", "finance/scripts": ""}
+missing = [str(p) for root, pkg in roots.items() for p in sorted(pathlib.Path(root).glob("test_*.py")) if not re.search(rf"\b{re.escape(pkg + p.stem)}\b", gate)]
 if missing:
     sys.exit("test modules in no gate list:\n  " + "\n  ".join(missing))
 EOF
