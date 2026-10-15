@@ -1,0 +1,24 @@
+# Per-repo no-mistakes overrides, modelled on doc-platform's
+# (.no-mistakes.yaml on doc-platform's main).
+
+# Pin the Test step to the repository's own gate command. It is the same suite
+# the yard's landing runs (`sh .yardr/check`), so a pipeline validation and a
+# landing cannot disagree about what passes. Without the pin the step has no
+# command to run and hands the suite to an agent to work out how to run it
+# freehand - a judgement call on a stage that needs none.
+#
+# The private real-amounts guard (sh private/check-real-amounts.sh) is not part
+# of this command on purpose: it needs the private/ data that never leaves the
+# yard, so it stays in the yard's test command and the push step, not in the
+# pipeline's.
+commands:
+  test: 'sh .yardr/check'
+
+# Pin the PR base branch to main. This is the only part of the PR target this
+# file can pin: no-mistakes has no setting for the PR repository. The target
+# repo comes from the checkout's remotes / gh's default repo, and for this fork
+# it must be svc-bi-concepts/frappe_docker - never the frappe/frappe_docker
+# 'upstream' remote. That pin lives in gh's default repo in the checkout, not
+# here; see the bead note.
+pr:
+  base_branch: main
