@@ -31,7 +31,7 @@ class Registration(unittest.TestCase):
         self.assertTrue(os.path.isfile(os.path.join(PACKAGE, SCRIPT)), SCRIPT)
 
     def test_the_script_registers_on_the_same_doctype(self):
-        self.assertIn("frappe.ui.form.on('VAT Declaration'", read(SCRIPT))
+        self.assertIn('frappe.ui.form.on("VAT Declaration"', read(SCRIPT))
 
 
 class Method(unittest.TestCase):
@@ -90,8 +90,8 @@ class Desk(unittest.TestCase):
     def test_the_title_of_a_new_declaration_follows_the_period_convention(self):
         script = read(SCRIPT)
         self.assertIn('"MWST " + period', script)
-        self.assertIn("'start_date': function(frm) { set_title(frm) }", script)
-        self.assertIn("'end_date': function(frm) { set_title(frm) }", script)
+        self.assertIn("start_date: function (frm) {\n    set_title(frm);\n  }", script)
+        self.assertIn("end_date: function (frm) {\n    set_title(frm);\n  }", script)
 
     def test_the_title_rule_replaces_erpnextswiss_default_and_our_own_only(self):
         script = read(SCRIPT)
@@ -102,7 +102,7 @@ class Desk(unittest.TestCase):
     def test_the_title_is_set_on_refresh_as_well_as_on_the_dates(self):
         # erpnextswiss's onload sets its default title after the dates, so the refresh has the last word on a new form
         script = read(SCRIPT)
-        self.assertIn("if (frm.is_new()) {\n            set_title(frm);", script)
+        self.assertIn("if (frm.is_new()) {\n      set_title(frm);", script)
 
 
 if __name__ == "__main__":
