@@ -5,6 +5,21 @@ export PYTHONPYCACHEPREFIX="$(mktemp -d)"
 # a bead lands only when it exits 0. yardr reads this file from the base
 # branch (main), so an edit here counts once it has landed there.
 set -e
+# The guard: every test_*.py under bi_finance, bi_payroll and finance/scripts must be named in
+# this file, so a new module that is in no list fails the gate here instead of waiting unseen
+# on main (IT's standing rule, 2026-10-15). Stdlib-only modules go on a host line, modules that
+# import frappe into the docker run line below.
+python3 - "$0" <<'EOF'
+import pathlib, sys
+gate = pathlib.Path(sys.argv[1]).read_text()
+missing = [str(p) for root in (
+    "finance/apps/bi_finance/bi_finance",
+    "finance/apps/bi_payroll/bi_payroll",
+    "finance/scripts",
+) for p in sorted(pathlib.Path(root).glob("test_*.py")) if p.stem not in gate]
+if missing:
+    sys.exit("test modules in no gate list:\n  " + "\n  ".join(missing))
+EOF
 # The finance stack's compose files (live and the HRMS copy) must parse together.
 docker compose -f pwd.yml -f finance-local.yml config -q
 docker compose -f pwd.yml -f finance-copy.yml config -q
@@ -24,7 +39,7 @@ assert all(s[n].get('restart') != 'unless-stopped' for n in ['configurator', 'cr
 "
 # The bi_finance layout and stamp guard, stdlib only (no frappe), so it runs on the host.
 # A synced JSON changed without a newer 'modified' fails here; see test_layout.py.
-(cd finance/apps/bi_finance && python3 -m unittest bi_finance.test_layout bi_finance.test_wise_client bi_finance.test_estv_vat_xml bi_finance.test_mwst_payment bi_finance.test_treasury_card bi_finance.test_vat_declaration_client bi_finance.test_bank_match bi_finance.test_camt bi_finance.test_mwst_quarterly bi_finance.test_sidebar bi_finance.test_erpnextswiss_desk_records)
+(cd finance/apps/bi_finance && python3 -m unittest bi_finance.test_layout bi_finance.test_wise_client bi_finance.test_estv_vat_xml bi_finance.test_mwst_payment bi_finance.test_treasury_card bi_finance.test_vat_declaration_client bi_finance.test_bank_match bi_finance.test_camt bi_finance.test_mwst_quarterly bi_finance.test_sidebar bi_finance.test_erpnextswiss_desk_records bi_finance.test_cash_conversion bi_finance.test_cash_forecast)
 # The bi_payroll formulas (invented employees), the ESTV withholding tariffs (invented rows), the payroll hand-over rows
 # (invented employees), the payslip data and the Lohnabrechnung template's render (invented employee), the Quellensteuer
 # tariff codes (invented rows) and its layout and stamp guard, stdlib only (test_payslip's render needs jinja2).
@@ -40,7 +55,7 @@ assert all(s[n].get('restart') != 'unless-stopped' for n in ['configurator', 'cr
 # The D4 patch check (update-check.sh): invented tag lists, the upstream replaced, no network.
 # swiss-setup.py's pure helpers (frappe mocked): the payslip and the hr steps among them.
 # The structure remake's plan (frappe mocked): create, move, restore, the wrapper's project.
-(cd finance/scripts && python3 -m unittest test_build_image test_switch_image test_gate_image test_copy_stack test_update_check test_load_swiss_rates test_swiss_setup test_swiss_structure_remake)
+(cd finance/scripts && python3 -m unittest test_build_image test_switch_image test_gate_image test_copy_stack test_update_check test_load_swiss_rates test_swiss_setup test_swiss_structure_remake test_bexio_drafts test_swiss_vat)
 # The bi_finance test modules that import frappe need the image: every one of them runs here, in one container
 # start, so a change to a synced JSON cannot leave one of them red on main unseen (erp-jta3). The image is the tag
 # gate-image.sh picks: main's deploy pin first, so a branch cut before the last switch still runs (erp-0f93); mounted
@@ -49,7 +64,7 @@ assert all(s[n].get('restart') != 'unless-stopped' for n in ['configurator', 'cr
 # A flake that depends on the clock (erp-c7wk) blocks a landing here instead of hiding in the how-to.
 IMAGE=$(sh finance/scripts/gate-image.sh)
 docker run --rm -v "$PWD/finance/apps/bi_finance:/home/frappe/frappe-bench/apps/bi_finance:ro" "$IMAGE" \
-  sh -c 'mkdir -p /home/frappe/logs /home/frappe/frappe-bench/apps/logs && cd /home/frappe/frappe-bench/apps/bi_finance && ../../env/bin/python -m unittest bi_finance.test_payment_run bi_finance.test_treasury bi_finance.test_bank_list bi_finance.test_bank_statement_upload'
+  sh -c 'mkdir -p /home/frappe/logs /home/frappe/frappe-bench/apps/logs && cd /home/frappe/frappe-bench/apps/bi_finance && ../../env/bin/python -m unittest bi_finance.test_payment_run bi_finance.test_treasury bi_finance.test_bank_list bi_finance.test_bank_statement_upload bi_finance.test_cash_flow_forecast bi_finance.test_cash_position bi_finance.test_paypal bi_finance.test_paypal_sync bi_finance.test_qrbill bi_finance.test_setup bi_finance.test_wise'
 # Upstream's own lint, when pre-commit is installed (optional for now).
 if command -v pre-commit >/dev/null; then
   pre-commit run --all-files
