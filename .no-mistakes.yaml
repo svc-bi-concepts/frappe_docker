@@ -20,5 +20,12 @@ commands:
 # it must be svc-bi-concepts/frappe_docker - never the frappe/frappe_docker
 # 'upstream' remote. That pin lives in gh's default repo in the checkout, not
 # here; see the bead note.
+#
+# Start the PR body from the yard's PR standard: the template is a verbatim
+# copy of the yard's integrations/pr-template.md (the 7 headings of
+# integrations/pr-standard.md), kept in .github/pr-template.md. The daemon
+# (v1.84+) reads pr.template from this file on the default branch; example of
+# adoption: yardr-yard PR #24.
 pr:
   base_branch: main
+  template: .github/pr-template.md
