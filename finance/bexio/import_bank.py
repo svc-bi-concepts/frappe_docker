@@ -74,9 +74,6 @@ PASS_COMBINED = "combined transfer"
 # the bexio bank account that --cancel works on: the Wise CHF account (bank_account_id 2 in the export)
 WISE_BEXIO_ID = "2"
 
-# journal entries posted under a key that is a correction, not a bank booking (erp-fd93: the bexio 1099 entry's correction)
-CORRECTION_KEYS = ("manual-1099-correction",)
-
 # the most vouchers of one account and window a combined transfer is searched in (2^12 subsets at most)
 COMBINE_LIMIT = 12
 
@@ -86,6 +83,12 @@ CENT = Decimal("0.01")
 
 class Unmapped(Exception):
     """A record the importer does not map. The message names the reason, never a company name."""
+
+
+def is_correction(bexio_id):
+    """True for the key of a correction the bexio export does not hold: import_manual_entries --extra posted it as
+    manual-<id>-<suffix>, so read_vouchers skips it as no bank booking's voucher."""
+    return re.fullmatch(r"manual-[0-9]+-.+", bexio_id) is not None
 
 
 def _dec(value):
@@ -263,7 +266,7 @@ def read_vouchers(erp, gl_accounts):
     vouchers = []
     for (doctype, name, account, date), amount in net.items():
         bexio_id = keys.get((doctype, name))
-        if bexio_id is None or bexio_id in CORRECTION_KEYS or amount == ZERO:
+        if bexio_id is None or is_correction(bexio_id) or amount == ZERO:
             continue
         vouchers.append(
             {

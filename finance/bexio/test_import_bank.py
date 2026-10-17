@@ -786,7 +786,7 @@ class VoucherTest(unittest.TestCase):
             ],
             "Journal Entry": [
                 {"name": "JE-1", "bexio_id": "manual-7"},
-                {"name": "JE-9", "bexio_id": ib.CORRECTION_KEYS[0]},
+                {"name": "JE-9", "bexio_id": "manual-4711-correction"},
             ],
         }
         found = ib.read_vouchers(FakeErp(gl=gl, vouchers=vouchers), [ACCOUNT])
@@ -794,6 +794,14 @@ class VoucherTest(unittest.TestCase):
             [(v["name"], str(v["amount"]), v["bexio_id"]) for v in found],
             [("PE-1", "1500.00", "pay-1"), ("JE-1", "200.00", "manual-7")],
         )
+
+    def test_is_correction_takes_only_the_manual_keys_with_a_suffix(self):
+        self.assertTrue(ib.is_correction("manual-4711-correction"))
+        self.assertTrue(ib.is_correction("manual-4711-2"))
+        self.assertFalse(ib.is_correction("manual-4711"))
+        self.assertFalse(ib.is_correction("vatfix-manual-4711"))
+        self.assertFalse(ib.is_correction("vatfix-manual-4711-2"))
+        self.assertFalse(ib.is_correction("pay-7"))
 
     def test_the_gl_account_name_gives_its_number(self):
         self.assertEqual(ib.account_number("1020 - UBS Kontokorrent - bic"), "1020")
