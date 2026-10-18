@@ -301,7 +301,7 @@ def payroll_month(user, today):
         "top": _get_list(
             "Salary Slip",
             filters=[["docstatus", "<", 2]] + bounds,
-            fields=["name", "employee", "employee_name", "docstatus"],
+            fields=["name", "employee", "docstatus"],
             order_by="modified desc",
             limit_page_length=TOP,
         ),
@@ -379,7 +379,13 @@ def _items(items):
         seen.add((doctype, name))
         if doctype not in known:
             known[doctype] = bool(frappe.db.exists("DocType", doctype))
-        if not known[doctype] or not frappe.db.exists(doctype, name):
+        if (
+            not known[doctype]
+            or not frappe.db.exists(doctype, name)
+            or not frappe.has_permission(
+                doctype, "read", doc=name, user=frappe.session.user
+            )
+        ):
             continue
         out.append({"doctype": doctype, "name": name, "link": _link(doctype, name)})
     return out[:TOP]

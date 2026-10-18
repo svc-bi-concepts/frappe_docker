@@ -81,6 +81,7 @@ class Frappe:
         self.present = {}  # doctype -> names db.exists answers yes to
         self.singles = {}  # doctype -> field -> value
         self.readable = set()  # doctypes has_permission allows
+        self.unreadable_docs = set()
         self.settings = Settings()
         self.thrown = []
         self.utils = types.SimpleNamespace(
@@ -109,7 +110,10 @@ class Frappe:
         return self.settings
 
     def has_permission(self, doctype=None, ptype="read", user=None, **kwargs):
-        return doctype in self.readable
+        return doctype in self.readable and (
+            doctype,
+            kwargs.get("doc"),
+        ) not in self.unreadable_docs
 
     def get_list(self, doctype, **kwargs):
         self.lists.append((doctype, kwargs))
@@ -118,7 +122,11 @@ class Frappe:
         if kwargs.get("fields") == ["count(name) as n"]:
             decide = self.count_of.get(doctype)
             return [{"n": decide(kwargs) if decide else self.counts.get(doctype, 0)}]
-        return [dict(row) for row in self.rows.get(doctype, [])]
+        fields = kwargs.get("fields") or []
+        rows = [dict(row) for row in self.rows.get(doctype, [])]
+        if all(isinstance(field, str) and " " not in field for field in fields):
+            rows = [{field: row.get(field) for field in fields} for row in rows]
+        return rows
 
     class DB:
         def __init__(self, frappe):
@@ -352,6 +360,7 @@ class Ask(unittest.TestCase):
 
     def existing(self):
         # the documents db.exists answers yes to, so an item's link is only built for what exists
+        FRAPPE.readable.update({"Sales Invoice", "Purchase Invoice"})
         FRAPPE.present.update(
             {
                 "Sales Invoice": {"INV-2026-0042"},
@@ -488,6 +497,20 @@ class Ask(unittest.TestCase):
             "/app/sales-invoice/INV-0000-0000",
             [item["link"] for item in result["items"]],
         )
+
+    def test_items_without_session_user_read_permission_are_dropped(self):
+        self.existing()
+        FRAPPE.unreadable_docs.add(("Sales Invoice", "INV-2026-0042"))
+        with mock.patch.object(
+            assistant_client,
+            "answer",
+            return_value={
+                "text": "x",
+                "items": [{"doctype": "Sales Invoice", "name": "INV-2026-0042"}],
+            },
+        ):
+            result = assistant.ask("q")
+        self.assertEqual(result["items"], [])
 
     def test_an_openrouter_failure_is_a_clear_message_without_the_key(self):
         with mock.patch.object(
@@ -734,6 +757,11 @@ class Collectors(unittest.TestCase):
         self.assertEqual(payroll["submitted"], 2)
         self.assertEqual(payroll["drafts"], 1)
         self.assertEqual(payroll["count"], 3)
+        self.assertEqual(
+            last_calls("Salary Slip")[-1]["fields"],
+            ["name", "employee", "docstatus"],
+        )
+        self.assertNotIn("employee_name", payroll["top"][0])
         bounds = last_calls("Salary Slip")[1]["filters"]
         self.assertIn(["start_date", ">=", date(2026, 10, 1)], bounds)
         self.assertIn(["start_date", "<=", date(2026, 10, 31)], bounds)
