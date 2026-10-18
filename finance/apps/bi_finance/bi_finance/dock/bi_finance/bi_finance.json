@@ -10,9 +10,15 @@
       "link_to": "Treasury",
       "link_type": "Sidebar",
       "title": "Treasury"
+    },
+    {
+      "icon": "sparkles",
+      "link_to": "/desk/assistant",
+      "link_type": "URL",
+      "title": "Assistant"
     }
   ],
-  "modified": "2026-10-12 04:00:00.000000",
+  "modified": "2026-10-18 21:40:00.000000",
   "modified_by": "Administrator",
   "mount_on": "erpnext",
   "name": "bi_finance",

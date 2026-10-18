@@ -1,0 +1,66 @@
+{
+  "actions": [],
+  "creation": "2026-10-18 21:30:00.000000",
+  "doctype": "DocType",
+  "editable_grid": 0,
+  "engine": "InnoDB",
+  "field_order": [
+    "enabled",
+    "openrouter_api_key",
+    "model",
+    "max_tokens_per_answer"
+  ],
+  "fields": [
+    {
+      "default": "0",
+      "description": "Off until the key is entered. When off, the Assistant answers nothing.",
+      "fieldname": "enabled",
+      "fieldtype": "Check",
+      "label": "Enabled"
+    },
+    {
+      "description": "The OpenRouter API key. It is stored as a password, never logged and never sent to the browser.",
+      "fieldname": "openrouter_api_key",
+      "fieldtype": "Password",
+      "label": "OpenRouter API key"
+    },
+    {
+      "default": "anthropic/claude-sonnet-5-5",
+      "description": "The OpenRouter model the answers come from.",
+      "fieldname": "model",
+      "fieldtype": "Data",
+      "label": "Model"
+    },
+    {
+      "default": "1200",
+      "description": "The size cap of one answer, in tokens.",
+      "fieldname": "max_tokens_per_answer",
+      "fieldtype": "Int",
+      "label": "Max tokens per answer"
+    }
+  ],
+  "issingle": 1,
+  "links": [],
+  "modified": "2026-10-18 21:30:00.000000",
+  "modified_by": "Administrator",
+  "module": "BI Finance",
+  "name": "AI Assistant Settings",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "create": 1,
+      "delete": 0,
+      "email": 0,
+      "export": 0,
+      "print": 0,
+      "read": 1,
+      "report": 0,
+      "role": "System Manager",
+      "share": 0,
+      "write": 1
+    }
+  ],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": []
+}

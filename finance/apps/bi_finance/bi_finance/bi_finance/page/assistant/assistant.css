@@ -1,0 +1,66 @@
+/* The Assistant page's chat column: messages as cards, the user's at the right, links as chips. */
+
+.assistant-chat {
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.assistant-messages {
+  overflow-y: auto;
+  max-height: 60vh;
+  padding-right: 4px;
+  margin-bottom: 12px;
+}
+
+.assistant-msg {
+  padding: 10px 14px;
+  margin-bottom: 10px;
+  border-radius: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.assistant-msg--user {
+  background: var(--control-bg);
+  margin-left: 56px;
+}
+
+.assistant-msg--bot {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+}
+
+.assistant-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.assistant-item {
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: var(--text-xs, 12px);
+  background: var(--control-bg);
+}
+
+.assistant-item:hover {
+  text-decoration: none;
+  border-color: var(--primary, #2490ef);
+}
+
+.assistant-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.assistant-input {
+  resize: vertical;
+}
+
+.assistant-hint {
+  margin-top: 8px;
+  font-size: var(--text-xs, 12px);
+}
