@@ -78,6 +78,7 @@ class Frappe:
         self.counts = {}  # doctype -> n the aggregate row returns
         self.count_of = {}  # doctype -> callable(kwargs) -> n, when the filters decide
         self.denied = set()  # doctypes get_list refuses
+        self.denied_rows = set()
         self.present = {}  # doctype -> names db.exists answers yes to
         self.singles = {}  # doctype -> field -> value
         self.readable = set()  # doctypes has_permission allows
@@ -122,6 +123,8 @@ class Frappe:
         if kwargs.get("fields") == ["count(name) as n"]:
             decide = self.count_of.get(doctype)
             return [{"n": decide(kwargs) if decide else self.counts.get(doctype, 0)}]
+        if doctype in self.denied_rows:
+            raise self.PermissionError(doctype)
         fields = kwargs.get("fields") or []
         rows = [dict(row) for row in self.rows.get(doctype, [])]
         if all(isinstance(field, str) and " " not in field for field in fields):
@@ -644,6 +647,28 @@ class Collectors(unittest.TestCase):
         drafts = entry(self.collect(), "drafts")
         self.assertEqual(drafts["count"], 12 * len(assistant.DRAFT_DOCTYPES))
         self.assertEqual(len(drafts["top"]), assistant.TOP)
+
+    def test_drafts_skip_unreadable_doctypes_at_count_and_row_reads(self):
+        readable, count_denied, rows_denied = assistant.DRAFT_DOCTYPES[:3]
+        FRAPPE.counts.update({readable: 2, count_denied: 5, rows_denied: 7})
+        FRAPPE.rows[readable] = [
+            {"name": "Invented-Readable-1", "modified": "2026-10-17"},
+            {"name": "Invented-Readable-2", "modified": "2026-10-16"},
+        ]
+        FRAPPE.rows[rows_denied] = [
+            {"name": "Invented-Rows-Denied", "modified": "2026-10-18"}
+        ]
+        FRAPPE.denied.add(count_denied)
+        FRAPPE.denied_rows.add(rows_denied)
+        drafts = entry(self.collect(), "drafts")
+        self.assertEqual(drafts["count"], 2)
+        self.assertEqual(drafts["by_doctype"][readable], 2)
+        self.assertNotIn(count_denied, drafts["by_doctype"])
+        self.assertNotIn(rows_denied, drafts["by_doctype"])
+        self.assertEqual(
+            [row["name"] for row in drafts["top"]],
+            ["Invented-Readable-1", "Invented-Readable-2"],
+        )
 
     def test_overdue_sales_invoices_are_unpaid_and_past_the_due_date(self):
         FRAPPE.counts["Sales Invoice"] = 1

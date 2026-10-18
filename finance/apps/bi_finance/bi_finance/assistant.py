@@ -173,17 +173,26 @@ def drafts(user, today):
     top = []
     for doctype in DRAFT_DOCTYPES:
         filters = {"docstatus": 0}
-        by_doctype[doctype] = _count(doctype, filters)
-        if by_doctype[doctype]:
-            top += [
-                {"doctype": doctype, "name": row["name"], "modified": row.get("modified")}
-                for row in _get_list(
+        try:
+            count = _count(doctype, filters)
+            rows = (
+                _get_list(
                     doctype,
                     filters=filters,
                     fields=["name", "modified"],
                     order_by="modified desc",
                     limit_page_length=TOP,
                 )
+                if count
+                else []
+            )
+        except NotPermitted:
+            continue
+        by_doctype[doctype] = count
+        if rows:
+            top += [
+                {"doctype": doctype, "name": row["name"], "modified": row.get("modified")}
+                for row in rows
             ]
     return {
         "count": sum(by_doctype.values()),
