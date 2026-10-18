@@ -431,15 +431,20 @@ class Ask(unittest.TestCase):
         )
 
     def test_the_history_keeps_the_last_turns_of_the_known_roles_capped(self):
-        turns = [{"role": "user", "content": f"q{i}"} for i in range(20)]
+        turns = [
+            {"role": role, "content": f"{role}-{i}"}
+            for i in range(15)
+            for role in ("user", "assistant")
+        ]
         turns.insert(0, {"role": "tool", "content": "junk"})
         turns.append({"role": "assistant", "content": "word " * 2000})
         _, client = self.ask(history=turns)
         history = client.call_args.kwargs["history"]
+        self.assertEqual(assistant.HISTORY_MESSAGES, 24)
         self.assertEqual(len(history), assistant.HISTORY_MESSAGES)
         self.assertTrue(all(turn["role"] in ("user", "assistant") for turn in history))
         self.assertEqual(len(history[-1]["content"]), assistant.MESSAGE_CHARS)
-        self.assertEqual(history[0]["content"], "q9")
+        self.assertEqual(history[0]["content"], "assistant-3")
 
     def test_history_as_the_client_sends_it_is_json_text(self):
         _, client = self.ask(

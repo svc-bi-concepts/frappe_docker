@@ -23,9 +23,7 @@ DEFAULT_MODEL = "anthropic/claude-sonnet-5.5"  # the id as OpenRouter lists it (
 DEFAULT_MAX_TOKENS = 1200
 
 TOP = 10  # the top ten each, never whole tables (mem-4v01)
-HISTORY_MESSAGES = (
-    12  # the turns kept, so a long thread cannot grow one request without end
-)
+HISTORY_MESSAGES = 24
 MESSAGE_CHARS = 4000  # one question's size cap
 FIELD_CHARS = 200  # one row's free-text field in the data, so one long text cannot bloat the prompt
 
@@ -343,7 +341,7 @@ def _message(message):
 
 
 def _history(history):
-    """The past turns as the request carries them: the last HISTORY_MESSAGES, user and assistant only, each capped."""
+    """The past turns as the request carries them: the last HISTORY_MESSAGES messages, user and assistant only."""
     if isinstance(history, str):
         history = frappe.parse_json(history)
     if not isinstance(history, list):
