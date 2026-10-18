@@ -14,6 +14,7 @@ open. The desk page and the synced JSON files are guarded by test_layout and tes
 """
 
 import io
+import http.client
 import json
 import re
 import sys
@@ -181,6 +182,17 @@ class FakeOpener:
         return io.BytesIO(json.dumps(self.answer).encode("utf-8"))
 
 
+class DisconnectedResponse:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def read(self, *args):
+        raise http.client.RemoteDisconnected("connection closed")
+
+
 # ---------------------------------------------------------------- the client
 
 
@@ -268,6 +280,21 @@ class ClientParse(unittest.TestCase):
 
 
 class ClientErrors(unittest.TestCase):
+    def test_disconnect_during_response_read_reaches_ask_as_clear_error(self):
+        real_answer = assistant_client.answer
+
+        def disconnected(**kwargs):
+            return real_answer(
+                **kwargs,
+                opener=lambda request, timeout: DisconnectedResponse(),
+            )
+
+        with mock.patch.object(assistant_client, "answer", side_effect=disconnected):
+            with self.assertRaises(Frappe.ValidationError) as raised:
+                assistant.ask("What is open for me?")
+        self.assertIn("RemoteDisconnected", str(raised.exception))
+        self.assertIn("no usable answer from OpenRouter", str(raised.exception))
+
     def test_unusable_success_response_shapes_are_assistant_errors(self):
         for response in (
             [],

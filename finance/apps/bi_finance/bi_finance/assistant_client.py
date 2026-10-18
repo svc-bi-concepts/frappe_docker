@@ -13,6 +13,7 @@ anywhere in ERPNext, so a key that can only chat is enough.
 """
 
 import json
+import http.client
 import re
 import urllib.error
 import urllib.request
@@ -68,7 +69,7 @@ def answer(
             reply = json.load(response)
     except urllib.error.HTTPError as err:
         raise AssistantError(f"HTTP {err.code} from OpenRouter") from None
-    except (urllib.error.URLError, TimeoutError, ValueError) as err:
+    except (urllib.error.URLError, TimeoutError, ValueError, http.client.HTTPException, OSError) as err:
         # a network failure or a body that is not JSON; the reason is a class name, the text may carry the URL
         raise AssistantError(
             f"no usable answer from OpenRouter ({type(err).__name__})"
