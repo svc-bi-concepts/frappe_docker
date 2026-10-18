@@ -31,7 +31,7 @@ KEY = "invented-openrouter-key-0000"
 TODAY = date(2026, 10, 18)
 NOW = datetime(
     2026, 10, 18, 12, 0, 0
-)  # the stub clock the staleness of a feed is measured against
+)  # the stub clock the staleness of a feed is measured against (assistant._now_utc)
 
 ANSWER = {
     "choices": [
@@ -115,7 +115,6 @@ class Frappe:
         self.thrown = []
         self.utils = types.SimpleNamespace(
             getdate=lambda *args: TODAY,
-            now_datetime=lambda: NOW,
             strip_html=lambda text: re.sub(r"<[^>]*>", " ", text or ""),
         )
 
@@ -757,6 +756,10 @@ class Collectors(unittest.TestCase):
         FRAPPE.__init__()
         FRAPPE.present["DocType"] = {"Sales Invoice", "Purchase Invoice", "ToDo"}
         FRAPPE.readable = {"Wise Settings", "PayPal Settings"}
+        # the clock of the feed staleness: naive UTC, as wise.py and paypal.py write last_sync
+        clock = mock.patch.object(assistant, "_now_utc", return_value=NOW)
+        clock.start()
+        self.addCleanup(clock.stop)
         JOB.reset()
         self._saved_job = getattr(bi_finance, "bank_match_job", None)
         bi_finance.bank_match_job = JOB
@@ -1449,6 +1452,22 @@ class Collectors(unittest.TestCase):
         self.assertEqual(feeds["count"], 1)
         self.assertTrue(feeds["upload_month_missing"])
         self.assertIsNone(feeds["latest_upload"])
+
+    def test_the_upload_month_is_counted_between_the_month_bounds(self):
+        # imported_on is a Datetime field: between extends the upper bound to the end of that day,
+        # while <= on a date stops at its midnight and would miss an import from the last day
+        FRAPPE.counts["Bank Statement Upload"] = 1
+        feeds = entry(self.collect(), "bank.feeds")
+        upload_call = next(
+            kwargs
+            for kwargs in last_calls("Bank Statement Upload")
+            if kwargs.get("fields") == ["count(name) as n"]
+        )
+        self.assertEqual(
+            upload_call["filters"],
+            [["imported_on", "between", [date(2026, 9, 1), date(2026, 9, 30)]]],
+        )
+        self.assertFalse(feeds["upload_month_missing"])
 
     def test_a_feed_the_user_cannot_read_is_skipped(self):
         FRAPPE.readable = set()

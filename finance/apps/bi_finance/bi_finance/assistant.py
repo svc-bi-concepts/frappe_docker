@@ -670,6 +670,13 @@ def _decide_recent(lines):
     return reasons, top
 
 
+def _now_utc():
+    """The clock both feeds write their last_sync with: naive UTC (wise.py, paypal.py do the same),
+    not now_datetime() (the site's timezone, whatever System Settings say) - one stamp, one clock,
+    or the staleness skews by the offset between them."""
+    return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+
+
 def _hours_since(stamp, now=None):
     """Hours since a Datetime stamp, or None when there is none."""
     if not stamp:
@@ -679,7 +686,7 @@ def _hours_since(stamp, now=None):
         if isinstance(stamp, datetime.datetime)
         else datetime.datetime.fromisoformat(str(stamp)[:19])
     )
-    return ((now or frappe.utils.now_datetime()) - when).total_seconds() / 3600.0
+    return ((now or _now_utc()) - when).total_seconds() / 3600.0
 
 
 def _upload_status(today):
@@ -695,7 +702,10 @@ def _upload_status(today):
     try:
         count = _count(
             "Bank Statement Upload",
-            [["imported_on", ">=", first], ["imported_on", "<=", last]],
+            # between, not <=: imported_on is a Datetime field, and frappe extends between's upper
+            # bound to the end of that day, while <= on a date stops at its midnight and would miss
+            # an import from the month's last day
+            [["imported_on", "between", [first, last]]],
         )
         rows = _get_list(
             "Bank Statement Upload",
