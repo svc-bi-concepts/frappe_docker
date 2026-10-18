@@ -296,8 +296,24 @@ class Cache(Base, unittest.TestCase):
 class Listed(unittest.TestCase):
     def test_the_patch_is_listed_after_the_model_sync(self):
         with open(os.path.join(HERE, "patches.txt"), encoding="utf-8") as f:
-            post = f.read().split("[post_model_sync]")[1]
-        self.assertIn("\nbi_finance.patches.module_profile_finance\n", post)
+            manifest = f.read()
+
+        sections = {}
+        section = None
+        for line in manifest.splitlines():
+            entry = line.strip()
+            if not entry or entry.startswith("#"):
+                continue
+            if entry.startswith("[") and entry.endswith("]"):
+                section = entry[1:-1]
+                sections.setdefault(section, [])
+                continue
+            self.assertIsNotNone(section, f"entry outside a section: {entry}")
+            sections[section].append(entry)
+
+        patch_name = "bi_finance.patches.module_profile_finance"
+        self.assertEqual(sections.get("post_model_sync", []).count(patch_name), 1)
+        self.assertEqual(sections.get("pre_model_sync", []).count(patch_name), 0)
 
 
 if __name__ == "__main__":
