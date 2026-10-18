@@ -265,9 +265,6 @@ class ClientParse(unittest.TestCase):
             {"text": "hi", "items": []},
         )
 
-    def test_items_left_out_is_an_empty_list(self):
-        self.assertEqual(self.parse('{"text": "hi"}'), {"text": "hi", "items": []})
-
     def test_a_shape_that_cannot_be_linked_is_refused(self):
         for content in (
             "no json at all",
@@ -277,6 +274,8 @@ class ClientParse(unittest.TestCase):
             '{"text": 5, "items": []}',
             '{"text": "   ", "items": []}',
             '{"text": "hi", "items": "one"}',
+            '{"text": "hi"}',
+            '{"text": "hi", "items": null}',
         ):
             with self.assertRaises(assistant_client.AssistantError):
                 self.parse(content)
@@ -396,10 +395,12 @@ class Ask(unittest.TestCase):
         FRAPPE.readable.update({"Sales Invoice", "Purchase Invoice"})
         FRAPPE.present.update(
             {
-                "Sales Invoice": {"INV-2026-0042"},
+                "Sales Invoice": {"INV-2026-0042", "INV-2026-9999"},
                 "Purchase Invoice": {"PINV-2026-0007"},
             }
         )
+        FRAPPE.rows["Sales Invoice"] = [{"name": "INV-2026-0042"}]
+        FRAPPE.rows["Purchase Invoice"] = [{"name": "PINV-2026-0007"}]
 
     def test_switched_off_says_what_to_do_and_reads_nothing(self):
         FRAPPE.settings = Settings(enabled=False)
@@ -439,6 +440,24 @@ class Ask(unittest.TestCase):
             ],
         )
         client.assert_called_once()
+
+    def test_only_documents_in_collector_data_are_linked(self):
+        self.existing()
+        with mock.patch.object(
+            assistant_client,
+            "answer",
+            return_value={
+                "text": "Two invoices.",
+                "items": [
+                    {"doctype": "Sales Invoice", "name": "INV-2026-0042"},
+                    {"doctype": "Sales Invoice", "name": "INV-2026-9999"},
+                ],
+            },
+        ):
+            result = assistant.ask("What is open for me?")
+        self.assertEqual(
+            [item["name"] for item in result["items"]], ["INV-2026-0042"]
+        )
 
     def test_the_key_is_nowhere_in_the_response(self):
         result, _ = self.ask()
@@ -499,6 +518,9 @@ class Ask(unittest.TestCase):
     def test_items_the_model_invents_are_dropped_not_linked(self):
         self.existing()
         FRAPPE.present["Purchase Invoice"] = {f"PINV-2026-{n:04d}" for n in range(12)}
+        FRAPPE.rows["Purchase Invoice"] = [
+            {"name": f"PINV-2026-{n:04d}"} for n in range(12)
+        ]
         with mock.patch.object(
             assistant_client,
             "answer",

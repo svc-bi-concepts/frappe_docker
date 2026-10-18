@@ -13,7 +13,7 @@
     },
     {
       "icon": "sparkles",
-      "link_to": "/desk/assistant",
+      "link_to": "/app/assistant",
       "link_type": "URL",
       "title": "Assistant"
     }

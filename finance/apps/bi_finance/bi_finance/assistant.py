@@ -82,17 +82,18 @@ def ask(message, history=None):
             _("There is no OpenRouter API key yet. Enter it in AI Assistant Settings.")
         )
     try:
+        data = collect()
         answer = assistant_client.answer(
             key=key,
             model=settings.model or DEFAULT_MODEL,
             max_tokens=int(settings.max_tokens_per_answer or 0) or DEFAULT_MAX_TOKENS,
             message=message,
             history=_history(history),
-            data=collect(),
+            data=data,
         )
     except assistant_client.AssistantError as err:
         frappe.throw(str(err))
-    return {"text": answer["text"], "items": _items(answer["items"])}
+    return {"text": answer["text"], "items": _items(answer["items"], data)}
 
 
 def collect(today=None, user=None, registry=None):
@@ -366,13 +367,41 @@ def _history(history):
     return turns
 
 
-def _items(items):
+def _items(items, data):
     """The answer's items as the page links them: known doctypes with existing documents, each once, at most TOP.
 
     The model's strings are cleaned and capped, the doctype and the document are both checked against the database,
     and the link is built here the way the desk spells routes: /app/<doctype slug>/<name>. What the model invents is
     dropped, not linked; the scan stops once TOP are collected, so a long answer cannot turn into many lookups.
     """
+    doctype_by_collector = {
+        "todos": "ToDo",
+        "sales_overdue": "Sales Invoice",
+        "purchase_due": "Purchase Invoice",
+        "vat_declaration": "VAT Declaration",
+        "payroll_month": "Salary Slip",
+    }
+    allowed = set()
+    for collector_result in data:
+        if not isinstance(collector_result, dict):
+            continue
+        key = collector_result.get("key")
+        for row in collector_result.get("top") or []:
+            if not isinstance(row, dict):
+                continue
+            doctype = row.get("doctype") or doctype_by_collector.get(key)
+            name = row.get("name")
+            if doctype and name:
+                allowed.add((doctype, name))
+            if (
+                key == "todos"
+                and row.get("reference_type")
+                and row.get("reference_name")
+            ):
+                allowed.add((row["reference_type"], row["reference_name"]))
+            if key == "bank_unreconciled" and row.get("bank_account"):
+                allowed.add(("Bank Account", row["bank_account"]))
+
     out = []
     seen = set()
     known = {}
@@ -389,7 +418,8 @@ def _items(items):
         if doctype not in known:
             known[doctype] = bool(frappe.db.exists("DocType", doctype))
         if (
-            not known[doctype]
+            (doctype, name) not in allowed
+            or not known[doctype]
             or not frappe.db.exists(doctype, name)
             or not frappe.has_permission(
                 doctype, "read", doc=name, user=frappe.session.user

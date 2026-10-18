@@ -146,7 +146,7 @@ class Sidebar(unittest.TestCase):
             ],
             [
                 ("Sidebar", "Treasury", "Treasury"),
-                ("URL", "/desk/assistant", "Assistant"),
+                ("URL", "/app/assistant", "Assistant"),
             ],
         )
         self.assertEqual(self.doc["name"], dock["items"][0]["link_to"])

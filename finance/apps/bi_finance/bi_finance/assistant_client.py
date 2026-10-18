@@ -123,8 +123,6 @@ def parse_answer(content):
     if parsed is None:
         raise AssistantError("OpenRouter's answer was not the JSON asked for")
     items = parsed.get("items")
-    if items is None:
-        items = []
     text = parsed.get("text")
     if not isinstance(items, list) or not isinstance(text, str) or not text.strip():
         raise AssistantError("OpenRouter's answer was not the JSON asked for")
