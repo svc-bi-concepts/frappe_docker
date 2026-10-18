@@ -73,12 +73,19 @@ def answer(
         raise AssistantError(
             f"no usable answer from OpenRouter ({type(err).__name__})"
         ) from None
+    if not isinstance(reply, dict):
+        raise AssistantError("OpenRouter returned an unusable response")
     if reply.get("error"):
         # OpenRouter answers routing and credit problems as a success code with an error object;
         # its text may name the account, so the message stays general
         raise AssistantError("OpenRouter refused the request")
-    content = (reply.get("choices") or [{}])[0].get("message", {}).get("content")
-    return parse_answer(content or "")
+    choices = reply.get("choices")
+    if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+        raise AssistantError("OpenRouter returned an unusable response")
+    message = choices[0].get("message")
+    if not isinstance(message, dict) or not isinstance(message.get("content"), str):
+        raise AssistantError("OpenRouter returned an unusable response")
+    return parse_answer(message["content"])
 
 
 def request_body(model, max_tokens, message, history, data):

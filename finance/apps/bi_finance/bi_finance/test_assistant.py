@@ -257,6 +257,29 @@ class ClientParse(unittest.TestCase):
 
 
 class ClientErrors(unittest.TestCase):
+    def test_unusable_success_response_shapes_are_assistant_errors(self):
+        for response in (
+            [],
+            None,
+            {},
+            {"choices": []},
+            {"choices": "wrong"},
+            {"choices": [{}]},
+            {"choices": [{"message": "wrong"}]},
+            {"choices": [{"message": {"content": []}}]},
+        ):
+            with self.subTest(response=response):
+                with self.assertRaises(assistant_client.AssistantError):
+                    assistant_client.answer(
+                        key=KEY,
+                        model="m",
+                        max_tokens=1,
+                        message="q",
+                        history=[],
+                        data=[],
+                        opener=FakeOpener(response),
+                    )
+
     def test_an_http_error_names_the_status_and_not_the_body(self):
         opener = FakeOpener(
             error=urllib.error.HTTPError(
