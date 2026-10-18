@@ -73,6 +73,15 @@ search bar offers no Schweizer Buchhaltung workspace. A bare route to an erpnext
 still opens in the ERPNextSwiss shell frappe builds from the module's doctypes; its four documents that Benchi works
 in are claimed on ERPNext's rail (below).
 
+The modules the company never uses are hidden from the desk navigation with frappe's own mechanism: the Module
+Profile "Finance" (bi_finance patch `module_profile_finance`, its 28 blocked Module Defs are the constant
+`BLOCKED_MODULES` in the patch) is set on every enabled System User that carries no profile of their own. A blocked
+module's workspace vanishes from the boot and the search bar; its doctypes still open by route and link (frappe
+hides the way, never the document), so Item stays reachable from a Sales Invoice although Stock is blocked.
+Administrator carries no profile and keeps the full view for repair. Taking a
+module back: remove it from the constant and migrate (the profile's users are synced by frappe's own
+`update_all_users`), or clear the Module Profile on the User form for one person.
+
 BI Finance is a companion of ERPNext, not an app of its own in the apps screen (Benchi, 2026-10-12). Its
 shipped documents are a Dock mounted on erpnext (`dock/bi_finance/bi_finance.json`: one rail entry, Treasury, after
 Portal) and a module Sidebar titled Treasury (`bi_finance/sidebar/treasury/treasury.json`), arranged like
