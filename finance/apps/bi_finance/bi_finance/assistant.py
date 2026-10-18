@@ -178,11 +178,11 @@ def drafts(user, today):
         by_doctype[doctype] = _count(doctype, filters)
         if by_doctype[doctype]:
             top += [
-                {"doctype": doctype, "name": row["name"]}
+                {"doctype": doctype, "name": row["name"], "modified": row.get("modified")}
                 for row in _get_list(
                     doctype,
                     filters=filters,
-                    fields=["name"],
+                    fields=["name", "modified"],
                     order_by="modified desc",
                     limit_page_length=TOP,
                 )
@@ -190,7 +190,10 @@ def drafts(user, today):
     return {
         "count": sum(by_doctype.values()),
         "by_doctype": by_doctype,
-        "top": top[:TOP],
+        "top": [
+            {"doctype": row["doctype"], "name": row["name"]}
+            for row in sorted(top, key=lambda row: row["modified"] or "", reverse=True)[:TOP]
+        ],
     }
 
 
@@ -276,7 +279,7 @@ def current_vat_declaration(user, today):
         limit_page_length=TOP,
     )
     return {
-        "count": len(rows),
+        "count": _count("VAT Declaration", filters),
         "period": f"{start.isoformat()} to {end.isoformat()}",
         "missing": not rows,
         "top": rows,

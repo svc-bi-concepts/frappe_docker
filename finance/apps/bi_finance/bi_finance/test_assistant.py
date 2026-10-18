@@ -546,10 +546,12 @@ class Collectors(unittest.TestCase):
             "VAT Declaration": 1,
         }
         FRAPPE.rows["Sales Invoice"] = [
-            {"name": "INV-2026-0042"},
-            {"name": "INV-2026-0043"},
+            {"name": "INV-2026-0042", "modified": "2026-10-10 10:00:00"},
+            {"name": "INV-2026-0043", "modified": "2026-10-11 10:00:00"},
         ]
-        FRAPPE.rows["VAT Declaration"] = [{"name": "MWST 2026Q3"}]
+        FRAPPE.rows["VAT Declaration"] = [
+            {"name": "MWST 2026Q3", "modified": "2026-10-12 10:00:00"}
+        ]
         drafts = entry(self.collect(), "drafts")
         self.assertEqual(drafts["count"], 3)
         self.assertEqual(drafts["by_doctype"]["Sales Invoice"], 2)
@@ -557,14 +559,29 @@ class Collectors(unittest.TestCase):
         self.assertEqual(
             [(row["doctype"], row["name"]) for row in drafts["top"]],
             [
-                ("Sales Invoice", "INV-2026-0042"),
-                ("Sales Invoice", "INV-2026-0043"),
                 ("VAT Declaration", "MWST 2026Q3"),
+                ("Sales Invoice", "INV-2026-0043"),
+                ("Sales Invoice", "INV-2026-0042"),
             ],
         )
         for kwargs in last_calls("Sales Invoice")[:2]:
             self.assertEqual(kwargs["filters"], {"docstatus": 0})
             self.assertLessEqual(kwargs["limit_page_length"], assistant.TOP)
+
+    def test_drafts_are_the_ten_most_recent_across_doctypes(self):
+        for index, doctype in enumerate(assistant.DRAFT_DOCTYPES):
+            FRAPPE.counts[doctype] = 10
+            FRAPPE.rows[doctype] = [
+                {
+                    "name": "Invented-{}-{:02d}".format(index, row),
+                    "modified": "2026-10-{:02d} 00:00:00".format(index + row + 1),
+                }
+                for row in range(assistant.TOP)
+            ]
+        drafts = entry(self.collect(), "drafts")
+        self.assertEqual(len(drafts["top"]), assistant.TOP)
+        self.assertEqual(drafts["top"][0]["doctype"], assistant.DRAFT_DOCTYPES[-1])
+        self.assertEqual(drafts["top"][-1]["doctype"], assistant.DRAFT_DOCTYPES[-1])
 
     def test_drafts_cap_the_combined_list_across_doctypes(self):
         for index, doctype in enumerate(assistant.DRAFT_DOCTYPES):
@@ -651,9 +668,10 @@ class Collectors(unittest.TestCase):
         )
 
     def test_a_covering_declaration_answers_the_vat_collector(self):
+        FRAPPE.counts["VAT Declaration"] = 12
         FRAPPE.rows["VAT Declaration"] = [{"name": "MWST 2026Q3", "docstatus": 1}]
         vat = entry(self.collect(), "vat_declaration")
-        self.assertEqual(vat["count"], 1)
+        self.assertEqual(vat["count"], 12)
         self.assertFalse(vat["missing"])
         self.assertEqual(vat["period"], "2026-07-01 to 2026-09-30")
         filters = last_calls("VAT Declaration")[-1]["filters"]
