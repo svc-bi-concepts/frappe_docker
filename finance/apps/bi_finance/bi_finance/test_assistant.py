@@ -327,6 +327,15 @@ class Ask(unittest.TestCase):
             result = assistant.ask(message, history)
         return result, client
 
+    def existing(self):
+        # the documents db.exists answers yes to, so an item's link is only built for what exists
+        FRAPPE.present.update(
+            {
+                "Sales Invoice": {"INV-2026-0042"},
+                "Purchase Invoice": {"PINV-2026-0007"},
+            }
+        )
+
     def test_switched_off_says_what_to_do_and_reads_nothing(self):
         FRAPPE.settings = Settings(enabled=False)
         with self.assertRaises(Frappe.ValidationError) as raised:
@@ -343,6 +352,7 @@ class Ask(unittest.TestCase):
         client.assert_not_called()
 
     def test_the_answer_is_the_structured_json_with_links(self):
+        self.existing()
         with mock.patch.object(
             assistant_client,
             "answer",
@@ -417,6 +427,8 @@ class Ask(unittest.TestCase):
         )
 
     def test_items_the_model_invents_are_dropped_not_linked(self):
+        self.existing()
+        FRAPPE.present["Purchase Invoice"] = {f"PINV-2026-{n:04d}" for n in range(12)}
         with mock.patch.object(
             assistant_client,
             "answer",
@@ -425,6 +437,7 @@ class Ask(unittest.TestCase):
                 "items": [
                     {"doctype": "Not A Doctype", "name": "X"},
                     {"doctype": "Sales Invoice", "name": ""},
+                    {"doctype": "Sales Invoice", "name": "INV-0000-0000"},
                     "not a dict",
                     {"doctype": "Sales Invoice", "name": "INV-2026-0042"},
                     {"doctype": "Sales Invoice", "name": "INV-2026-0042"},
@@ -441,6 +454,11 @@ class Ask(unittest.TestCase):
         self.assertEqual(
             len([item for item in result["items"] if item["name"] == "INV-2026-0042"]),
             1,
+        )
+        # an invented name under a doctype that exists is not linked either: the document is checked too
+        self.assertNotIn(
+            "/app/sales-invoice/INV-0000-0000",
+            [item["link"] for item in result["items"]],
         )
 
     def test_an_openrouter_failure_is_a_clear_message_without_the_key(self):

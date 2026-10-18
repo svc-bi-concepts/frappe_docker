@@ -8,8 +8,8 @@
     "sha": "2bd0924fa67d8fb7cfeab53b84bbf9dce7139ec29e6f685b55f45c284370fc03"
   },
   "bi_finance/doctype/ai_assistant_settings/ai_assistant_settings.json": {
-    "modified": "2026-10-18 21:30:00.000000",
-    "sha": "0b13269f7870b5fb46226a68435d795138a79b8e30b01064432604a766698daf"
+    "modified": "2026-10-18 21:54:00.000000",
+    "sha": "91edb455b61650c78f7104012636c4ff5e41f271c91591bafc7651dcda572577"
   },
   "bi_finance/doctype/bank_matching_settings/bank_matching_settings.json": {
     "modified": "2026-10-12 12:00:00.000000",

@@ -19,7 +19,7 @@ import frappe
 from bi_finance import assistant_client
 from frappe import _
 
-DEFAULT_MODEL = "anthropic/claude-sonnet-5-5"
+DEFAULT_MODEL = "anthropic/claude-sonnet-5.5"  # the id as OpenRouter lists it (dot, not dash: -5-5 is a 400)
 DEFAULT_MAX_TOKENS = 1200
 
 TOP = 10  # the top ten each, never whole tables (mem-4v01)
@@ -352,15 +352,18 @@ def _history(history):
 
 
 def _items(items):
-    """The answer's items as the page links them: known doctypes only, each once, at most TOP.
+    """The answer's items as the page links them: known doctypes with existing documents, each once, at most TOP.
 
-    The model's strings are cleaned and capped, the doctype is checked against the database, and the link is built
-    here the way the desk spells routes: /app/<doctype slug>/<name>. What the model invents is dropped, not linked.
+    The model's strings are cleaned and capped, the doctype and the document are both checked against the database,
+    and the link is built here the way the desk spells routes: /app/<doctype slug>/<name>. What the model invents is
+    dropped, not linked; the scan stops once TOP are collected, so a long answer cannot turn into many lookups.
     """
     out = []
     seen = set()
     known = {}
     for item in items or []:
+        if len(out) >= TOP:
+            break
         if not isinstance(item, dict):
             continue
         doctype = _text(item.get("doctype"), 140)
@@ -370,7 +373,7 @@ def _items(items):
         seen.add((doctype, name))
         if doctype not in known:
             known[doctype] = bool(frappe.db.exists("DocType", doctype))
-        if not known[doctype]:
+        if not known[doctype] or not frappe.db.exists(doctype, name):
             continue
         out.append({"doctype": doctype, "name": name, "link": _link(doctype, name)})
     return out[:TOP]

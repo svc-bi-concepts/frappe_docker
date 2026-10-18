@@ -25,7 +25,7 @@
       "label": "OpenRouter API key"
     },
     {
-      "default": "anthropic/claude-sonnet-5-5",
+      "default": "anthropic/claude-sonnet-5.5",
       "description": "The OpenRouter model the answers come from.",
       "fieldname": "model",
       "fieldtype": "Data",
@@ -41,7 +41,7 @@
   ],
   "issingle": 1,
   "links": [],
-  "modified": "2026-10-18 21:30:00.000000",
+  "modified": "2026-10-18 21:54:00.000000",
   "modified_by": "Administrator",
   "module": "BI Finance",
   "name": "AI Assistant Settings",
