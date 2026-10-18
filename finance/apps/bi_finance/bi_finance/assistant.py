@@ -9,14 +9,21 @@ decorator and takes its proposals from the same shape.
 
 The key is read with get_password, travels in the request header and nowhere else: never logged, never in a
 response, never in the browser. Counts and the top ten each, never whole tables (mem-4v01). bexio imports run
-outside ERPNext and keep no sync log doctype, so the sync collector reports the feeds ERPNext holds only.
+outside ERPNext and keep no sync log doctype, so the feed collector reports the feeds ERPNext holds only.
+
+The collector keys are the task ids of the bookkeeper's plan (erp-00z0): bank.lines, bank.feeds, sales.overdue,
+drafts, bills.due, expenses.approve, month.revaluation, month.close, vat.quarter, payroll.month; todos has no id,
+it is the user's own list. While today is before the ledger date (AI Assistant Settings.ledger_actions_from,
+default 2027-01-01) every answer starts with one line: bexio leads, ERPNext is the parallel copy, nothing is
+booked before then.
 """
 
+import collections
 import datetime
 import urllib.parse
 
 import frappe
-from bi_finance import assistant_client
+from bi_finance import assistant_client, bank_match
 from frappe import _
 
 DEFAULT_MODEL = "anthropic/claude-sonnet-5.5"  # the id as OpenRouter lists it (dot, not dash: -5-5 is a 400)
@@ -37,11 +44,49 @@ DRAFT_DOCTYPES = (
     "VAT Declaration",
 )
 
-# the feeds whose last sync ERPNext holds (a Datetime on the settings doctype); the user must be
-# able to read a settings doctype for its stamp to be reported
+# drafts of doctypes another app brings (Payment Proposal: erpnextswiss, Expense Claim: HRMS); counted only when
+# the table is there, as payment_run.create_payment_proposal reads Expense Claim (frappe.db.table_exists)
+OPTIONAL_DRAFT_DOCTYPES = ("Payment Proposal", "Expense Claim")
+
+# the drafts month.close counts by their date field: the transaction-dated ones only, so a period
+# document (VAT Declaration) stays with vat.quarter and month.revaluation reports itself
+MONTH_DATED_DRAFTS = (
+    ("Sales Invoice", "posting_date"),
+    ("Purchase Invoice", "posting_date"),
+    ("Payment Entry", "posting_date"),
+    ("Journal Entry", "posting_date"),
+    ("Payment Proposal", "date"),
+    ("Expense Claim", "posting_date"),
+    ("Salary Slip", "start_date"),
+)
+
+# the feeds whose sync_enabled and last_sync ERPNext holds (fields on the settings doctype); the user must be
+# able to read a settings doctype for its stamps to be reported
 FEED_SETTINGS = (("Wise Settings", "Wise"), ("PayPal Settings", "PayPal"))
 
+# a feed sync runs hourly; an older last_sync (or sync_enabled off) is flagged
+FEED_STALE_HOURS = 3
+
+# the doctypes behind one bank.lines answer: the lines and the match job's own reads. The readers use frappe.get_all,
+# which asks no permissions, so the user must be able to read every one of them or the collector reports nothing
+BANK_LINE_DOCTYPES = (
+    "Bank Transaction",
+    "Bank Account",
+    "Account",
+    "Sales Invoice",
+    "Purchase Invoice",
+    "Payment Entry",
+    "Bank Transaction Rule",
+)
+
 DUE_SOON_DAYS = 14
+
+# bexio leads until the ledger date (the bookkeeper's D1); the line every answer starts with before it
+LEDGER_ACTIONS_FROM_DEFAULT = datetime.date(2027, 1, 1)
+BANNER_TEXT = (
+    "bexio leads until {date}; ERPNext is the parallel copy, "
+    "the assistant books nothing before then."
+)
 
 # the registry part 2 extends: each entry {"key", "label", "run"}, run(user, today) -> a dict with
 # count, top and whatever else the prompt should carry
@@ -81,6 +126,7 @@ def ask(message, history=None):
         frappe.throw(
             _("There is no OpenRouter API key yet. Enter it in AI Assistant Settings.")
         )
+    banner = _ledger_banner(settings)
     try:
         data = collect()
         answer = assistant_client.answer(
@@ -90,10 +136,15 @@ def ask(message, history=None):
             message=message,
             history=_history(history),
             data=data,
+            banner=banner,
         )
     except assistant_client.AssistantError as err:
         frappe.throw(str(err))
-    return {"text": answer["text"], "items": _items(answer["items"], data)}
+    text = answer["text"]
+    # the model is told the line; should it drop or change it, it is put in front here, never twice
+    if banner and not text.startswith(banner):
+        text = banner + "\n" + text
+    return {"text": text, "items": _items(answer["items"], data)}
 
 
 def collect(today=None, user=None, registry=None):
@@ -169,10 +220,19 @@ def open_todos(user, today):
 
 @collector("drafts", "Drafts waiting to be reviewed and submitted")
 def drafts(user, today):
-    """The drafts of the finance doctypes, per doctype the count and the ten most recently touched."""
+    """The drafts of the finance doctypes, per doctype the count and the ten most recently touched.
+
+    Payment Proposal and Expense Claim are counted only when their table exists (ERPNext without
+    erpnextswiss or HRMS has neither).
+    """
     by_doctype = {}
     top = []
-    for doctype in DRAFT_DOCTYPES:
+    doctypes = list(DRAFT_DOCTYPES) + [
+        doctype
+        for doctype in OPTIONAL_DRAFT_DOCTYPES
+        if frappe.db.table_exists(doctype)
+    ]
+    for doctype in doctypes:
         filters = {"docstatus": 0}
         try:
             count = _count(doctype, filters)
@@ -212,7 +272,7 @@ def drafts(user, today):
 
 
 @collector(
-    "sales_overdue", "Sales Invoices overdue (submitted, unpaid, past the due date)"
+    "sales.overdue", "Sales Invoices overdue (submitted, unpaid, past the due date)"
 )
 def overdue_sales_invoices(user, today):
     filters = {
@@ -233,47 +293,102 @@ def overdue_sales_invoices(user, today):
 
 
 @collector(
-    "purchase_due",
-    "Purchase Invoices due within 14 days (submitted, unpaid, overdue ones in)",
+    "bills.due",
+    "Bills due within 14 days (submitted, unpaid: Purchase Invoices, Expense Claims)",
 )
-def purchase_invoices_due(user, today):
+def bills_due(user, today):
+    """Submitted Purchase Invoices unpaid and due within the horizon, plus submitted Expense Claims still Unpaid
+    when HRMS is installed (their claim names and amounts only, never the employee)."""
     horizon = today + datetime.timedelta(days=DUE_SOON_DAYS)
     filters = {
         "docstatus": 1,
         "outstanding_amount": [">", 0],
         "due_date": ["<=", horizon],
     }
-    return {
-        "count": _count("Purchase Invoice", filters),
-        "top": _get_list(
+    by_doctype = {"Purchase Invoice": _count("Purchase Invoice", filters)}
+    rows = [
+        {
+            "doctype": "Purchase Invoice",
+            "name": row["name"],
+            "supplier": row.get("supplier"),
+            "date": str(row.get("due_date") or "")[:10],
+            "outstanding_amount": row.get("outstanding_amount"),
+        }
+        for row in _get_list(
             "Purchase Invoice",
             filters=filters,
             fields=["name", "supplier", "due_date", "outstanding_amount"],
             order_by="due_date asc, modified desc",
             limit_page_length=TOP,
-        ),
+        )
+    ]
+    if frappe.db.table_exists("Expense Claim"):
+        claim_filters = {"docstatus": 1, "status": "Unpaid"}
+        by_doctype["Expense Claim"] = _count("Expense Claim", claim_filters)
+        rows += [
+            {
+                "doctype": "Expense Claim",
+                "name": row["name"],
+                "date": str(row.get("posting_date") or "")[:10],
+                "total_claimed_amount": row.get("total_claimed_amount"),
+            }
+            for row in _get_list(
+                "Expense Claim",
+                filters=claim_filters,
+                fields=["name", "posting_date", "total_claimed_amount"],
+                order_by="posting_date asc, modified desc",
+                limit_page_length=TOP,
+            )
+        ]
+    return {
+        "count": sum(by_doctype.values()),
+        "by_doctype": by_doctype,
+        "top": sorted(rows, key=lambda row: row["date"] or "")[:TOP],
     }
 
 
-@collector("bank_unreconciled", "Bank Transactions not reconciled, per account")
-def unreconciled_bank_transactions(user, today):
-    """The Unreconciled Bank Transactions, one count per account; the top lists the accounts, not the rows."""
-    filters = {"docstatus": ["<", 2], "status": "Unreconciled"}
-    rows = _get_list(
+@collector(
+    "bank.lines",
+    "Bank lines not reconciled, per account, and why the recent ones stayed",
+)
+def bank_lines(user, today):
+    """The Unreconciled Bank Transactions: per account the recent lines (this and last month) counted apart from the
+    older history (most open lines are imported history), and for the recent ones only, why each stayed.
+
+    The why is bank_match.decide run read-only on the ten most recent lines with the match job's own readers, so the
+    reasons are the job's: several candidates, a document two lines claim, nothing the rules book, nothing found.
+    Recent lines only and capped, never the whole table and never a whole-table decide (mem-4v01). The job's readers
+    read with frappe.get_all and ask no permissions, so every doctype behind the answer must be readable, or the
+    collector reports nothing.
+    """
+    # the job's module pulls erpnext at its import, so it is imported here and not with this module
+    from bi_finance import bank_match_job
+
+    _permitted(user, BANK_LINE_DOCTYPES)
+    base = [["docstatus", "<", 2], ["status", "=", "Unreconciled"]]
+    total = _count("Bank Transaction", base)
+    first_of_last = _month_bounds(today)[0]
+    recent_filters = base + [["date", ">=", first_of_last]]
+    recent = _count("Bank Transaction", recent_filters)
+    lines = _get_list(
         "Bank Transaction",
-        filters=filters,
-        fields=["bank_account", "count(name) as n"],
-        group_by="bank_account",
-        order_by="bank_account asc",
+        filters=recent_filters,
+        fields=bank_match_job.LINE_FIELDS + ["bank_account"],
+        order_by="date desc",
         limit_page_length=TOP,
     )
-    counts = [
-        {"bank_account": row["bank_account"], "n": int(row["n"] or 0)} for row in rows
-    ]
-    return {"count": _count("Bank Transaction", filters), "top": counts[:TOP]}
+    reasons, top = _decide_recent(lines)
+    return {
+        "count": total,
+        "recent": recent,
+        "older": total - recent,
+        "by_account": _per_account_counts(base, first_of_last),
+        "reasons": reasons,
+        "top": top,
+    }
 
 
-@collector("vat_declaration", "VAT Declaration of the last closed quarter")
+@collector("vat.quarter", "VAT Declaration of the last closed quarter")
 def current_vat_declaration(user, today):
     """Whether the last closed quarter's declaration exists (a draft or submitted one that covers it).
 
@@ -300,7 +415,7 @@ def current_vat_declaration(user, today):
     }
 
 
-@collector("payroll_month", "Salary Slips of the current month")
+@collector("payroll.month", "Salary Slips of the current month")
 def payroll_month(user, today):
     """The month's Salary Slips: submitted and draft counts, the ten most recently touched."""
     first = today.replace(day=1)
@@ -314,30 +429,306 @@ def payroll_month(user, today):
         "month": first.isoformat()[:7],
         "submitted": submitted,
         "drafts": drafts,
+        # counts and slip names only, never employee or employee_name (the review of erp-r6zb)
         "top": _get_list(
             "Salary Slip",
             filters=[["docstatus", "<", 2]] + bounds,
-            fields=["name", "employee", "docstatus"],
+            fields=["name", "docstatus"],
             order_by="modified desc",
             limit_page_length=TOP,
         ),
     }
 
 
-@collector("syncs", "Last sync of the bank feeds")
-def sync_results(user, today):
-    """Each feed's last sync, when the user may read its settings doctype; bexio keeps no sync log doctype."""
+@collector("bank.feeds", "Bank feeds: last sync and the month's statement upload")
+def bank_feeds(user, today):
+    """Wise and PayPal: sync on or off and the last sync, flagged when off or older than FEED_STALE_HOURS; plus the
+    latest Bank Statement Upload month, flagged when the last full month has none. bexio imports run outside ERPNext
+    and keep no sync log doctype, so bexio reports nothing here."""
     rows = []
+    flags = 0
     for doctype, feed in FEED_SETTINGS:
         if not frappe.has_permission(doctype, "read", user=user):
             continue
+        enabled = bool(frappe.db.get_single_value(doctype, "sync_enabled"))
         stamp = frappe.db.get_single_value(doctype, "last_sync")
-        rows.append({"feed": feed, "last_sync": stamp})
+        hours = _hours_since(stamp)
+        if not enabled:
+            why, stale = "sync is off", True
+        elif hours is None:
+            why, stale = "never synced", True
+        elif hours > FEED_STALE_HOURS:
+            why, stale = f"last sync more than {FEED_STALE_HOURS} h ago", True
+        else:
+            why, stale = None, False
+        flags += 1 if stale else 0
+        rows.append(
+            {
+                "feed": feed,
+                "sync_enabled": enabled,
+                "last_sync": str(stamp)[:19] if stamp else None,
+                "hours_since": round(hours, 1) if hours is not None else None,
+                "flag": why,
+            }
+        )
+    upload = _upload_status(today)
+    flags += 1 if upload.get("upload_month_missing") else 0
     return {
-        "count": sum(1 for row in rows if row["last_sync"]),
+        "count": flags,
         "top": rows,
+        **upload,
         "note": "bexio imports outside ERPNext keep no sync log, so bexio reports nothing here",
     }
+
+
+@collector("expenses.approve", "Expense Claims waiting for approval")
+def expense_approvals(user, today):
+    """The Expense Claims in approval, docstatus 0 and approval_status Draft or pending; claim names and amounts
+    only, never the employee. Nothing when HRMS is not installed."""
+    if not frappe.db.table_exists("Expense Claim"):
+        return {
+            "count": 0,
+            "top": [],
+            "note": "no Expense Claim doctype (HRMS is not installed)",
+        }
+    filters = {
+        "docstatus": 0,
+        "approval_status": ["in", ["Draft", "Pending"]],
+    }
+    return {
+        "count": _count("Expense Claim", filters),
+        "top": _get_list(
+            "Expense Claim",
+            filters=filters,
+            fields=["name", "approval_status", "total_claimed_amount", "posting_date"],
+            order_by="posting_date asc, modified desc",
+            limit_page_length=TOP,
+        ),
+    }
+
+
+@collector("month.revaluation", "Exchange Rate Revaluation drafts to review and submit")
+def revaluation_drafts(user, today):
+    """The Exchange Rate Revaluation drafts, the ten most recent first; a person reviews and submits them."""
+    filters = {"docstatus": 0}
+    return {
+        "count": _count("Exchange Rate Revaluation", filters),
+        "top": _get_list(
+            "Exchange Rate Revaluation",
+            filters=filters,
+            fields=["name", "company", "posting_date"],
+            order_by="posting_date desc, modified desc",
+            limit_page_length=TOP,
+        ),
+    }
+
+
+@collector("month.close", "Checklist of the last full month")
+def month_close(user, today):
+    """The last full month, counts only: unreconciled bank lines dated in it, drafts dated in it, and whether a
+    submitted Exchange Rate Revaluation exists for it."""
+    first, last = _month_bounds(today)
+    bounds = [["date", ">=", first], ["date", "<=", last]]
+    lines_open = _count(
+        "Bank Transaction",
+        [["docstatus", "<", 2], ["status", "=", "Unreconciled"]] + bounds,
+    )
+    drafts = {}
+    for doctype, field in MONTH_DATED_DRAFTS:
+        if doctype in OPTIONAL_DRAFT_DOCTYPES and not frappe.db.table_exists(doctype):
+            continue
+        try:
+            drafts[doctype] = _count(
+                doctype,
+                [["docstatus", "=", 0], [field, ">=", first], [field, "<=", last]],
+            )
+        except NotPermitted:
+            continue
+    submitted = _count(
+        "Exchange Rate Revaluation",
+        {"docstatus": 1, "posting_date": ["between", [first, last]]},
+    )
+    return {
+        "count": lines_open + sum(drafts.values()),
+        "month": first.isoformat()[:7],
+        "lines_unreconciled": lines_open,
+        "drafts": drafts,
+        "revaluation_submitted": bool(submitted),
+        "top": [],
+    }
+
+
+def _permitted(user, doctypes):
+    """NotPermitted unless the user may read every doctype of a combined read."""
+    for doctype in doctypes:
+        if not frappe.has_permission(doctype, "read", user=user):
+            raise NotPermitted(doctype)
+
+
+def _month_bounds(today):
+    """The last full month before today's: its first and last day."""
+    last_of_previous = today.replace(day=1) - datetime.timedelta(days=1)
+    return last_of_previous.replace(day=1), last_of_previous
+
+
+def _per_account_counts(base, first_of_last):
+    """The Unreconciled Bank Transactions per account, the recent ones (this and last month) apart from the older
+    history; at most the ten accounts the top carries."""
+    maps = []
+    for filters in (
+        base + [["date", ">=", first_of_last]],
+        base + [["date", "<", first_of_last]],
+    ):
+        rows = _get_list(
+            "Bank Transaction",
+            filters=filters,
+            fields=["bank_account", "count(name) as n"],
+            group_by="bank_account",
+            order_by="bank_account asc",
+            limit_page_length=TOP,
+        )
+        maps.append({row["bank_account"]: int(row["n"] or 0) for row in rows})
+    recent, older = maps
+    return [
+        {
+            "bank_account": account,
+            "recent": recent.get(account, 0),
+            "older": older.get(account, 0),
+        }
+        for account in sorted(set(recent) | set(older))
+    ][:TOP]
+
+
+def _decide_recent(lines):
+    """bank_match.decide read-only on the recent lines, per account, with the match job's own readers: the counts per
+    reason (several, shared, not booked, none) and the lines with their reason, most recent first. A line whose
+    account gives no company or currency is decided by nobody and carries no reason."""
+    from bi_finance import bank_match_job
+
+    reasons = {
+        key: 0
+        for key in (
+            bank_match.SEVERAL,
+            bank_match.SHARED,
+            bank_match.NOT_BOOKED,
+            "none",
+        )
+    }
+    top = []
+    if not lines:
+        return reasons, top
+    accounts = collections.OrderedDict()
+    for line in lines:
+        accounts.setdefault(line["bank_account"], []).append(line)
+    decided = {}
+    for account, account_lines in accounts.items():
+        gl, company = frappe.db.get_value(
+            "Bank Account", account, ["account", "company"]
+        ) or (None, None)
+        currency = (
+            frappe.db.get_value("Account", gl, "account_currency") if gl else None
+        )
+        if not (currency and company):
+            continue
+        for line in account_lines:
+            line["currency"] = currency
+            line["company"] = company
+        decided.update(
+            {
+                decision["line"]: decision
+                for decision in bank_match.decide(
+                    account_lines,
+                    bank_match_job._open_documents(company, currency),
+                    bank_match_job._open_payments(company, currency, gl),
+                    bank_match_job._rules(company),
+                )
+            }
+        )
+    for line in lines:
+        decision = decided.get(line["name"])
+        if decision is None:
+            reason = None
+        elif decision["state"] == "match":
+            reason = "matched"
+        elif decision["state"] == "uncertain" and decision["reason"]:
+            reason = decision["reason"]
+            reasons[reason] += 1
+        else:
+            reason = "none"
+            reasons["none"] += 1
+        top.append(
+            {
+                "doctype": "Bank Transaction",
+                "bank_account": line["bank_account"],
+                "name": line["name"],
+                "date": str(line["date"])[:10],
+                "amount": bank_match.signed(line),
+                "description": _text(line.get("description"), FIELD_CHARS),
+                "reason": reason,
+            }
+        )
+    return reasons, top
+
+
+def _hours_since(stamp, now=None):
+    """Hours since a Datetime stamp, or None when there is none."""
+    if not stamp:
+        return None
+    when = (
+        stamp
+        if isinstance(stamp, datetime.datetime)
+        else datetime.datetime.fromisoformat(str(stamp)[:19])
+    )
+    return ((now or frappe.utils.now_datetime()) - when).total_seconds() / 3600.0
+
+
+def _upload_status(today):
+    """The latest Bank Statement Upload with its month, and whether the last full month has none; when the doctype is
+    not readable for the user, the month is not checked instead of failing the feed report.
+    """
+    first, last = _month_bounds(today)
+    status = {
+        "latest_upload": None,
+        "upload_month": None,
+        "upload_month_missing": None,
+    }
+    try:
+        count = _count(
+            "Bank Statement Upload",
+            [["imported_on", ">=", first], ["imported_on", "<=", last]],
+        )
+        rows = _get_list(
+            "Bank Statement Upload",
+            fields=["name", "imported_on"],
+            order_by="imported_on desc",
+            limit_page_length=1,
+        )
+    except NotPermitted:
+        status["note"] = (
+            "Bank Statement Upload is not readable for you, so its month is not checked"
+        )
+        return status
+    status["upload_month_missing"] = count == 0
+    if rows:
+        status["latest_upload"] = rows[0]["name"]
+        status["upload_month"] = str(rows[0]["imported_on"])[:7]
+    return status
+
+
+def _ledger_banner(settings, today=None):
+    """The line every answer starts with while today is before the ledger date, else None.
+
+    An empty setting counts as the default (2027-01-01), the date the bookkeeper's plan names.
+    """
+    raw = getattr(settings, "ledger_actions_from", None)
+    if raw and not isinstance(raw, datetime.date):
+        raw = datetime.date.fromisoformat(str(raw)[:10])
+    ledger_from = raw or LEDGER_ACTIONS_FROM_DEFAULT
+    if (today or frappe.utils.getdate()) >= ledger_from:
+        return None
+    return BANNER_TEXT.format(
+        date=f"{ledger_from.day}.{ledger_from.month}.{ledger_from.year}"
+    )
 
 
 def _last_closed_quarter(today):
@@ -382,10 +773,12 @@ def _items(items, data):
     """
     doctype_by_collector = {
         "todos": "ToDo",
-        "sales_overdue": "Sales Invoice",
-        "purchase_due": "Purchase Invoice",
-        "vat_declaration": "VAT Declaration",
-        "payroll_month": "Salary Slip",
+        "sales.overdue": "Sales Invoice",
+        "bills.due": "Purchase Invoice",
+        "vat.quarter": "VAT Declaration",
+        "payroll.month": "Salary Slip",
+        "expenses.approve": "Expense Claim",
+        "month.revaluation": "Exchange Rate Revaluation",
     }
     allowed = set()
     for collector_result in data:
@@ -405,7 +798,7 @@ def _items(items, data):
                 and row.get("reference_name")
             ):
                 allowed.add((row["reference_type"], row["reference_name"]))
-            if key == "bank_unreconciled" and row.get("bank_account"):
+            if key == "bank.lines" and row.get("bank_account"):
                 allowed.add(("Bank Account", row["bank_account"]))
 
     out = []
