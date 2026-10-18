@@ -13,8 +13,8 @@ else, the no-key and switched-off paths say what to do, and the answer is struct
 open. The desk page and the synced JSON files are guarded by test_layout and test_sidebar.
 """
 
-import io
 import http.client
+import io
 import json
 import re
 import sys
@@ -112,10 +112,14 @@ class Frappe:
         return self.settings
 
     def has_permission(self, doctype=None, ptype="read", user=None, **kwargs):
-        return doctype in self.readable and (
-            doctype,
-            kwargs.get("doc"),
-        ) not in self.unreadable_docs
+        return (
+            doctype in self.readable
+            and (
+                doctype,
+                kwargs.get("doc"),
+            )
+            not in self.unreadable_docs
+        )
 
     def get_list(self, doctype, **kwargs):
         self.lists.append((doctype, kwargs))
@@ -455,9 +459,7 @@ class Ask(unittest.TestCase):
             },
         ):
             result = assistant.ask("What is open for me?")
-        self.assertEqual(
-            [item["name"] for item in result["items"]], ["INV-2026-0042"]
-        )
+        self.assertEqual([item["name"] for item in result["items"]], ["INV-2026-0042"])
 
     def test_the_key_is_nowhere_in_the_response(self):
         result, _ = self.ask()
@@ -679,8 +681,8 @@ class Collectors(unittest.TestCase):
             FRAPPE.counts[doctype] = 10
             FRAPPE.rows[doctype] = [
                 {
-                    "name": "Invented-{}-{:02d}".format(index, row),
-                    "modified": "2026-10-{:02d} 00:00:00".format(index + row + 1),
+                    "name": f"Invented-{index}-{row:02d}",
+                    "modified": f"2026-10-{index + row + 1:02d} 00:00:00",
                 }
                 for row in range(assistant.TOP)
             ]
@@ -693,8 +695,7 @@ class Collectors(unittest.TestCase):
         for index, doctype in enumerate(assistant.DRAFT_DOCTYPES):
             FRAPPE.counts[doctype] = 12
             FRAPPE.rows[doctype] = [
-                {"name": "Invented-{}-{:02d}".format(index, row)}
-                for row in range(assistant.TOP)
+                {"name": f"Invented-{index}-{row:02d}"} for row in range(assistant.TOP)
             ]
         drafts = entry(self.collect(), "drafts")
         self.assertEqual(drafts["count"], 12 * len(assistant.DRAFT_DOCTYPES))
@@ -777,13 +778,15 @@ class Collectors(unittest.TestCase):
     def test_unreconciled_bank_accounts_are_capped_at_ten(self):
         FRAPPE.counts["Bank Transaction"] = assistant.TOP + 2
         FRAPPE.rows["Bank Transaction"] = [
-            {"bank_account": "Invented Bank {}".format(index), "n": 1}
+            {"bank_account": f"Invented Bank {index}", "n": 1}
             for index in range(assistant.TOP + 2)
         ]
         bank = entry(self.collect(), "bank_unreconciled")
         self.assertEqual(bank["count"], assistant.TOP + 2)
         self.assertEqual(len(bank["top"]), assistant.TOP)
-        self.assertEqual(last_calls("Bank Transaction")[0]["limit_page_length"], assistant.TOP)
+        self.assertEqual(
+            last_calls("Bank Transaction")[0]["limit_page_length"], assistant.TOP
+        )
 
     def test_the_last_closed_quarter_is_what_the_declaration_must_cover(self):
         self.assertEqual(

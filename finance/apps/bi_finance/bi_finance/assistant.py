@@ -192,7 +192,11 @@ def drafts(user, today):
         by_doctype[doctype] = count
         if rows:
             top += [
-                {"doctype": doctype, "name": row["name"], "modified": row.get("modified")}
+                {
+                    "doctype": doctype,
+                    "name": row["name"],
+                    "modified": row.get("modified"),
+                }
                 for row in rows
             ]
     return {
@@ -200,7 +204,9 @@ def drafts(user, today):
         "by_doctype": by_doctype,
         "top": [
             {"doctype": row["doctype"], "name": row["name"]}
-            for row in sorted(top, key=lambda row: row["modified"] or "", reverse=True)[:TOP]
+            for row in sorted(top, key=lambda row: row["modified"] or "", reverse=True)[
+                :TOP
+            ]
         ],
     }
 
