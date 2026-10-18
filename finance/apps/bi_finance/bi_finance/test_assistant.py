@@ -1114,6 +1114,12 @@ class Collectors(unittest.TestCase):
         )
         self.assertEqual(close["count"], 8)
         self.assertTrue(close["revaluation_submitted"])
+        bank_filters = [
+            call["filters"]
+            for doctype, call in FRAPPE.lists
+            if doctype == "Bank Transaction"
+        ]
+        self.assertEqual(bank_filters[0][0], ["docstatus", "=", 1])
 
     def test_month_close_reports_a_missing_revaluation(self):
         FRAPPE.counts["Bank Transaction"] = 0
@@ -1195,6 +1201,14 @@ class Collectors(unittest.TestCase):
             }
         ]
         bank = entry(self.collect(), "bank.lines")
+        bank_filters = [
+            kwargs["filters"]
+            for doctype, kwargs in FRAPPE.lists
+            if doctype == "Bank Transaction"
+        ]
+        self.assertTrue(
+            all(["docstatus", "=", 1] in filters for filters in bank_filters)
+        )
         self.assertEqual(bank["count"], 5)
         self.assertEqual(bank["recent"], 2)
         self.assertEqual(bank["older"], 3)

@@ -365,7 +365,7 @@ def bank_lines(user, today):
     from bi_finance import bank_match_job
 
     _permitted(user, BANK_LINE_DOCTYPES)
-    base = [["docstatus", "<", 2], ["status", "=", "Unreconciled"]]
+    base = [["docstatus", "=", 1], ["status", "=", "Unreconciled"]]
     total = _count("Bank Transaction", base)
     first_of_last = _month_bounds(today)[0]
     recent_filters = base + [["date", ">=", first_of_last]]
@@ -531,7 +531,7 @@ def month_close(user, today):
     bounds = [["date", ">=", first], ["date", "<=", last]]
     lines_open = _count(
         "Bank Transaction",
-        [["docstatus", "<", 2], ["status", "=", "Unreconciled"]] + bounds,
+        [["docstatus", "=", 1], ["status", "=", "Unreconciled"]] + bounds,
     )
     drafts = {}
     for doctype, field in MONTH_DATED_DRAFTS:
