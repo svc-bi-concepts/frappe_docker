@@ -187,7 +187,11 @@ def drafts(user, today):
                     limit_page_length=TOP,
                 )
             ]
-    return {"count": sum(by_doctype.values()), "by_doctype": by_doctype, "top": top}
+    return {
+        "count": sum(by_doctype.values()),
+        "by_doctype": by_doctype,
+        "top": top[:TOP],
+    }
 
 
 @collector(
@@ -237,18 +241,19 @@ def purchase_invoices_due(user, today):
 @collector("bank_unreconciled", "Bank Transactions not reconciled, per account")
 def unreconciled_bank_transactions(user, today):
     """The Unreconciled Bank Transactions, one count per account; the top lists the accounts, not the rows."""
+    filters = {"docstatus": ["<", 2], "status": "Unreconciled"}
     rows = _get_list(
         "Bank Transaction",
-        filters={"docstatus": ["<", 2], "status": "Unreconciled"},
+        filters=filters,
         fields=["bank_account", "count(name) as n"],
         group_by="bank_account",
         order_by="bank_account asc",
-        limit_page_length=0,
+        limit_page_length=TOP,
     )
     counts = [
         {"bank_account": row["bank_account"], "n": int(row["n"] or 0)} for row in rows
     ]
-    return {"count": sum(c["n"] for c in counts), "top": counts}
+    return {"count": _count("Bank Transaction", filters), "top": counts[:TOP]}
 
 
 @collector("vat_declaration", "VAT Declaration of the last closed quarter")

@@ -566,6 +566,17 @@ class Collectors(unittest.TestCase):
             self.assertEqual(kwargs["filters"], {"docstatus": 0})
             self.assertLessEqual(kwargs["limit_page_length"], assistant.TOP)
 
+    def test_drafts_cap_the_combined_list_across_doctypes(self):
+        for index, doctype in enumerate(assistant.DRAFT_DOCTYPES):
+            FRAPPE.counts[doctype] = 12
+            FRAPPE.rows[doctype] = [
+                {"name": "Invented-{}-{:02d}".format(index, row)}
+                for row in range(assistant.TOP)
+            ]
+        drafts = entry(self.collect(), "drafts")
+        self.assertEqual(drafts["count"], 12 * len(assistant.DRAFT_DOCTYPES))
+        self.assertEqual(len(drafts["top"]), assistant.TOP)
+
     def test_overdue_sales_invoices_are_unpaid_and_past_the_due_date(self):
         FRAPPE.counts["Sales Invoice"] = 1
         FRAPPE.rows["Sales Invoice"] = [
@@ -600,6 +611,7 @@ class Collectors(unittest.TestCase):
         self.assertEqual(filters["outstanding_amount"], [">", 0])
 
     def test_unreconciled_bank_transactions_are_counted_per_account(self):
+        FRAPPE.counts["Bank Transaction"] = 4
         FRAPPE.rows["Bank Transaction"] = [
             {"bank_account": "Wise CHF - Invented Bank", "n": 3},
             {"bank_account": "Post - Invented Bank", "n": 1},
@@ -616,6 +628,17 @@ class Collectors(unittest.TestCase):
         kwargs = last_calls("Bank Transaction")[0]
         self.assertEqual(kwargs["filters"]["status"], "Unreconciled")
         self.assertEqual(kwargs["group_by"], "bank_account")
+
+    def test_unreconciled_bank_accounts_are_capped_at_ten(self):
+        FRAPPE.counts["Bank Transaction"] = assistant.TOP + 2
+        FRAPPE.rows["Bank Transaction"] = [
+            {"bank_account": "Invented Bank {}".format(index), "n": 1}
+            for index in range(assistant.TOP + 2)
+        ]
+        bank = entry(self.collect(), "bank_unreconciled")
+        self.assertEqual(bank["count"], assistant.TOP + 2)
+        self.assertEqual(len(bank["top"]), assistant.TOP)
+        self.assertEqual(last_calls("Bank Transaction")[0]["limit_page_length"], assistant.TOP)
 
     def test_the_last_closed_quarter_is_what_the_declaration_must_cover(self):
         self.assertEqual(
