@@ -231,17 +231,21 @@ class JobModule(types.ModuleType):
         self.payments = []
         self.rules = []
         self.calls = []
+        self.users = []
 
-    def _open_documents(self, company, currency):
+    def _open_documents(self, company, currency, user=None):
         self.calls.append(("documents", company, currency))
+        self.users.append(user)
         return [dict(row) for row in self.docs]
 
-    def _open_payments(self, company, currency, gl_account):
+    def _open_payments(self, company, currency, gl_account, user=None):
         self.calls.append(("payments", company, currency, gl_account))
+        self.users.append(user)
         return [dict(row) for row in self.payments]
 
-    def _rules(self, company):
+    def _rules(self, company, user=None):
         self.calls.append(("rules", company))
+        self.users.append(user)
         return list(self.rules)
 
 
@@ -1217,7 +1221,8 @@ class Collectors(unittest.TestCase):
             [{"bank_account": "Invented Bank CHF", "recent": 2, "older": 3}],
         )
         self.assertEqual(
-            bank["reasons"], {"several": 0, "shared": 0, "not_booked": 0, "none": 1}
+            bank["reasons"],
+            {"several": 0, "shared": 0, "not_booked": 0, "matched": 1, "none": 1},
         )
         self.assertEqual(
             [row["name"] for row in bank["top"]], ["BT-2026-0002", "BT-2026-0001"]
@@ -1231,6 +1236,7 @@ class Collectors(unittest.TestCase):
             ("payments", "Invented Company AG", "CHF", "Invented GL CHF"), JOB.calls
         )
         self.assertIn(("rules", "Invented Company AG"), JOB.calls)
+        self.assertEqual(JOB.users, [USER, USER, USER])
         line_calls = [
             kwargs
             for called, kwargs in FRAPPE.lists
@@ -1319,7 +1325,8 @@ class Collectors(unittest.TestCase):
         # two lines claim the same bill (shared), one names two bills (several),
         # one a rule this job does not book (not booked), one nothing at all (none)
         self.assertEqual(
-            bank["reasons"], {"several": 1, "shared": 2, "not_booked": 1, "none": 1}
+            bank["reasons"],
+            {"several": 1, "shared": 2, "not_booked": 1, "matched": 0, "none": 1},
         )
         self.assertEqual(
             [row["reason"] for row in bank["top"]],
@@ -1333,6 +1340,17 @@ class Collectors(unittest.TestCase):
         self.assertIsNone(bank["count"])
         self.assertIn("note", bank)
         self.assertEqual(JOB.calls, [])
+
+    def test_bank_lines_keeps_all_grouped_accounts(self):
+        FRAPPE.readable.update(set(assistant.BANK_LINE_DOCTYPES))
+        FRAPPE.counts["Bank Transaction"] = 0
+        FRAPPE.groups_of["Bank Transaction"] = lambda kwargs: [
+            {"bank_account": f"Invented Bank {index:02d}", "n": 1}
+            for index in range(12)
+        ]
+        bank = entry(self.collect(), "bank.lines")
+        self.assertEqual(len(bank["by_account"]), 12)
+        self.assertEqual(bank["by_account"][-1]["bank_account"], "Invented Bank 11")
 
     def test_the_last_closed_quarter_is_what_the_declaration_must_cover(self):
         self.assertEqual(

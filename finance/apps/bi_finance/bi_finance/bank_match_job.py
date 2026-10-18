@@ -123,28 +123,32 @@ def match_after_import(bank_account):
     }
 
 
-def _open_documents(company, currency):
+def _open_documents(company, currency, user=None):
     docs = []
     for doctype, party_field, direction in (
         ("Sales Invoice", "customer_name", "in"),
         ("Purchase Invoice", "supplier_name", "out"),
     ):
-        for inv in frappe.get_all(
-            doctype,
-            filters={
+        reader = frappe.get_list if user else frappe.get_all
+        filters = {
                 "company": company,
                 "docstatus": 1,
                 "outstanding_amount": [">", 0],
                 "currency": currency,
-            },
-            fields=[
+            }
+        kwargs = {
+            "filters": filters,
+            "fields": [
                 "name",
                 party_field,
                 "posting_date",
                 "outstanding_amount",
                 "currency",
             ],
-        ):
+        }
+        if user:
+            kwargs["user"] = user
+        for inv in reader(doctype, **kwargs):
             docs.append(
                 {
                     "doctype": doctype,
@@ -164,18 +168,18 @@ def _open_documents(company, currency):
     return docs
 
 
-def _open_payments(company, currency, gl_account):
+def _open_payments(company, currency, gl_account, user=None):
     # a Payment Entry with a clearance date is already reconciled with a line: it names no second one
     payments = []
-    for pe in frappe.get_all(
-        "Payment Entry",
-        filters={
+    reader = frappe.get_list if user else frappe.get_all
+    kwargs = {
+        "filters": {
             "company": company,
             "docstatus": 1,
             "unallocated_amount": [">", 0],
             "clearance_date": ["is", "not set"],
         },
-        fields=[
+        "fields": [
             "name",
             "payment_type",
             "reference_no",
@@ -187,7 +191,10 @@ def _open_payments(company, currency, gl_account):
             "paid_from_account_currency",
             "paid_to_account_currency",
         ],
-    ):
+    }
+    if user:
+        kwargs["user"] = user
+    for pe in reader("Payment Entry", **kwargs):
         if pe.payment_type == "Pay" and pe.paid_from == gl_account:
             direction, pe_currency = "out", pe.paid_from_account_currency
         elif pe.payment_type == "Receive" and pe.paid_to == gl_account:
@@ -211,11 +218,13 @@ def _open_payments(company, currency, gl_account):
     return payments
 
 
-def _rules(company):
+def _rules(company, user=None):
     rules = []
-    for name in frappe.get_all(
-        "Bank Transaction Rule", filters={"company": company}, pluck="name"
-    ):
+    reader = frappe.get_list if user else frappe.get_all
+    kwargs = {"filters": {"company": company}, "pluck": "name"}
+    if user:
+        kwargs["user"] = user
+    for name in reader("Bank Transaction Rule", **kwargs):
         doc = frappe.get_doc("Bank Transaction Rule", name)
         rules.append(
             {

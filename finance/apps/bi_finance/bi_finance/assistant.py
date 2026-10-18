@@ -67,8 +67,8 @@ FEED_SETTINGS = (("Wise Settings", "Wise"), ("PayPal Settings", "PayPal"))
 # a feed sync runs hourly; an older last_sync (or sync_enabled off) is flagged
 FEED_STALE_HOURS = 3
 
-# the doctypes behind one bank.lines answer: the lines and the match job's own reads. The readers use frappe.get_all,
-# which asks no permissions, so the user must be able to read every one of them or the collector reports nothing
+# the doctypes behind one bank.lines answer: the lines and the match job's own reads. The user must be able to read
+# every one of them or the collector reports nothing
 BANK_LINE_DOCTYPES = (
     "Bank Transaction",
     "Bank Account",
@@ -377,7 +377,7 @@ def bank_lines(user, today):
         order_by="date desc",
         limit_page_length=TOP,
     )
-    reasons, top = _decide_recent(lines)
+    reasons, top = _decide_recent(lines, user)
     return {
         "count": total,
         "recent": recent,
@@ -572,8 +572,7 @@ def _month_bounds(today):
 
 
 def _per_account_counts(base, first_of_last):
-    """The Unreconciled Bank Transactions per account, the recent ones (this and last month) apart from the older
-    history; at most the ten accounts the top carries."""
+    """The Unreconciled Bank Transactions per account, recent ones apart from older history."""
     maps = []
     for filters in (
         base + [["date", ">=", first_of_last]],
@@ -585,7 +584,6 @@ def _per_account_counts(base, first_of_last):
             fields=["bank_account", "count(name) as n"],
             group_by="bank_account",
             order_by="bank_account asc",
-            limit_page_length=TOP,
         )
         maps.append({row["bank_account"]: int(row["n"] or 0) for row in rows})
     recent, older = maps
@@ -596,13 +594,13 @@ def _per_account_counts(base, first_of_last):
             "older": older.get(account, 0),
         }
         for account in sorted(set(recent) | set(older))
-    ][:TOP]
+    ]
 
 
-def _decide_recent(lines):
-    """bank_match.decide read-only on the recent lines, per account, with the match job's own readers: the counts per
-    reason (several, shared, not booked, none) and the lines with their reason, most recent first. A line whose
-    account gives no company or currency is decided by nobody and carries no reason."""
+def _decide_recent(lines, user):
+    """bank_match.decide read-only on recent lines, with the match job's readers scoped to the user: counts by
+    reason and the lines with their reason, most recent first. A line whose account gives no company or currency is
+    decided by nobody and carries no reason."""
     from bi_finance import bank_match_job
 
     reasons = {
@@ -611,6 +609,7 @@ def _decide_recent(lines):
             bank_match.SEVERAL,
             bank_match.SHARED,
             bank_match.NOT_BOOKED,
+            "matched",
             "none",
         )
     }
@@ -638,9 +637,9 @@ def _decide_recent(lines):
                 decision["line"]: decision
                 for decision in bank_match.decide(
                     account_lines,
-                    bank_match_job._open_documents(company, currency),
-                    bank_match_job._open_payments(company, currency, gl),
-                    bank_match_job._rules(company),
+                    bank_match_job._open_documents(company, currency, user=user),
+                    bank_match_job._open_payments(company, currency, gl, user=user),
+                    bank_match_job._rules(company, user=user),
                 )
             }
         )
@@ -650,6 +649,7 @@ def _decide_recent(lines):
             reason = None
         elif decision["state"] == "match":
             reason = "matched"
+            reasons[reason] += 1
         elif decision["state"] == "uncertain" and decision["reason"]:
             reason = decision["reason"]
             reasons[reason] += 1
