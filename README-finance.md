@@ -98,6 +98,23 @@ pre-commit lint runs only if `pre-commit` is installed.
 
 Not covered here: backups and upgrades. Those come in later beads.
 
+## Assistant (read part)
+
+The Assistant is a chat page on ERPNext's rail, next to Treasury. It answers "what is open
+for me" from fixed read-only collectors that run as the logged-in user (their own
+permissions decide what they see; counts and the first ten each) and sends the question
+plus that result to OpenRouter. Nothing is written; the answer comes back as text plus
+links (`/app/<doctype>/<name>`). Requests are routed only to OpenRouter endpoints that
+keep nothing (zero data retention, no training, no fallback); the key lives in
+`AI Assistant Settings` (Password field), is never logged and never reaches the browser.
+Payroll results include the Employee ID, counts, and status without employee names.
+
+Switching it on: enter the OpenRouter API key in `AI Assistant Settings`, tick Enabled.
+The page says what is missing when the assistant is off or the key is absent. Code:
+`finance/apps/bi_finance/bi_finance/assistant.py` (collectors, one registry) and
+`assistant_client.py` (the OpenRouter call); offline tests:
+`python3 -m unittest bi_finance.test_assistant`.
+
 ## Payslip (Lohnabrechnung)
 
 The payslip is bi_payroll's print format `Lohnabrechnung` on Salary Slip: a generic German A4

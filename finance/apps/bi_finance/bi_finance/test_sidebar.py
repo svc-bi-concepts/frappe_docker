@@ -129,8 +129,9 @@ class Sidebar(unittest.TestCase):
     def test_the_dock_mounts_the_rail_entry_on_erpnext_and_opens_the_module_sidebar(
         self,
     ):
-        # BI Finance is part of ERPNext: its one rail entry sits on ERPNext's rail (frappe's companion mount),
-        # and the entry opens the Sidebar above
+        # BI Finance is part of ERPNext: its rail entries sit on ERPNext's rail (frappe's companion mount).
+        # Treasury opens the Sidebar above; Assistant opens the chat page by its desk route (a URL row,
+        # the only kind that opens a Page, whose shell stays the one on screen)
         with open(DOCK, encoding="utf-8") as f:
             dock = json.load(f)
         self.assertEqual(dock["doctype"], "Dock")
@@ -143,7 +144,10 @@ class Sidebar(unittest.TestCase):
                 (item["link_type"], item["link_to"], item["title"])
                 for item in dock["items"]
             ],
-            [("Sidebar", "Treasury", "Treasury")],
+            [
+                ("Sidebar", "Treasury", "Treasury"),
+                ("URL", "/app/assistant", "Assistant"),
+            ],
         )
         self.assertEqual(self.doc["name"], dock["items"][0]["link_to"])
 
