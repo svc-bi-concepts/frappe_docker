@@ -45,14 +45,31 @@ KEPT = [
 ]
 
 USERS = {
-    "ada@example.com": {"enabled": 1, "user_type": "System User", "module_profile": None},
+    "Administrator": {
+        "enabled": 1,
+        "user_type": "System User",
+        "module_profile": None,
+    },
+    "ada@example.com": {
+        "enabled": 1,
+        "user_type": "System User",
+        "module_profile": None,
+    },
     "grace@example.com": {
         "enabled": 1,
         "user_type": "System User",
         "module_profile": "Own",
     },
-    "alan@example.com": {"enabled": 0, "user_type": "System User", "module_profile": None},
-    "web@example.com": {"enabled": 1, "user_type": "Website User", "module_profile": None},
+    "alan@example.com": {
+        "enabled": 0,
+        "user_type": "System User",
+        "module_profile": None,
+    },
+    "web@example.com": {
+        "enabled": 1,
+        "user_type": "Website User",
+        "module_profile": None,
+    },
 }
 
 
@@ -121,7 +138,9 @@ class Frappe(types.ModuleType):
 
     def __init__(self, profile=None):
         super().__init__("frappe")
-        self.profiles = {} if profile is None else {profile.pop("module_profile_name"): profile}
+        self.profiles = (
+            {} if profile is None else {profile.pop("module_profile_name"): profile}
+        )
         self.users = {k: dict(v) for k, v in USERS.items()}
         self.cache_clears = 0
         self.db = Db(self)
@@ -146,12 +165,23 @@ class Frappe(types.ModuleType):
         found = [
             name
             for name, row in self.users.items()
-            if all(
-                (row.get(k) == v) or (v == ("is", "not set") and not row.get(k))
-                for k, v in (filters or {}).items()
-            )
+            if self._matches(name, row, filters or {})
         ]
         return sorted(found) if pluck else [{"name": n} for n in sorted(found)]
+
+    @staticmethod
+    def _matches(name, row, filters):
+        # the filters the patch makes: plain equality, ("is", "not set") and ("!=", name)
+        for k, v in filters.items():
+            val = name if k == "name" else row.get(k)
+            if val == v:
+                continue
+            if v == ("is", "not set") and not val:
+                continue
+            if isinstance(v, tuple) and v[0] == "!=" and val != v[1]:
+                continue
+            return False
+        return True
 
     def clear_cache(self):
         self.cache_clears += 1
@@ -178,7 +208,9 @@ class TheList(Base, unittest.TestCase):
     def test_the_block_list_holds_distinct_public_module_names(self):
         self.assertTrue(patch.BLOCKED_MODULES)
         self.assertEqual(len(patch.BLOCKED_MODULES), len(set(patch.BLOCKED_MODULES)))
-        self.assertEqual(patch.BLOCKED_MODULES, sorted(patch.BLOCKED_MODULES, key=str.lower))
+        self.assertEqual(
+            patch.BLOCKED_MODULES, sorted(patch.BLOCKED_MODULES, key=str.lower)
+        )
         for m in patch.BLOCKED_MODULES:
             self.assertIsInstance(m, str)
 
@@ -192,8 +224,12 @@ class Upsert(Base, unittest.TestCase):
         out = self.run_patch()
         profile = self.frappe.profiles["Finance"]
         self.assertEqual(profile.saved, True)
-        self.assertEqual([r.module for r in profile.block_modules], patch.BLOCKED_MODULES)
-        self.assertEqual(out, "module_profile_finance: profile created, 1 users assigned\n")
+        self.assertEqual(
+            [r.module for r in profile.block_modules], patch.BLOCKED_MODULES
+        )
+        self.assertEqual(
+            out, "module_profile_finance: profile created, 1 users assigned\n"
+        )
 
     def test_a_profile_whose_rows_match_is_left_alone(self):
         self.frappe.profiles["Finance"] = Doc(
@@ -205,17 +241,24 @@ class Upsert(Base, unittest.TestCase):
         )
         out = self.run_patch()
         self.assertEqual(self.frappe.profiles["Finance"].saved, False)
-        self.assertEqual(out, "module_profile_finance: profile unchanged, 1 users assigned\n")
+        self.assertEqual(
+            out, "module_profile_finance: profile unchanged, 1 users assigned\n"
+        )
 
     def test_a_profile_whose_rows_differ_is_updated(self):
         self.frappe.profiles["Finance"] = Doc(
             "Module Profile",
-            {"module_profile_name": "Finance", "_block_modules": [Row(module="Accounts")]},
+            {
+                "module_profile_name": "Finance",
+                "_block_modules": [Row(module="Accounts")],
+            },
         )
         out = self.run_patch()
         profile = self.frappe.profiles["Finance"]
         self.assertEqual(profile.saved, True)
-        self.assertEqual([r.module for r in profile.block_modules], patch.BLOCKED_MODULES)
+        self.assertEqual(
+            [r.module for r in profile.block_modules], patch.BLOCKED_MODULES
+        )
         self.assertIn("profile updated", out)
 
 
@@ -226,8 +269,13 @@ class Users(Base, unittest.TestCase):
         self.assertEqual(ada["module_profile"], "Finance")
         doc = self.frappe.get_doc("User", "ada@example.com")
         self.assertEqual([r.module for r in doc.block_modules], patch.BLOCKED_MODULES)
+        # Administrator keeps the full view for repair: its block list is its own since
+        # frappe dropped the Administrator union, so the patch leaves it alone
+        self.assertIsNone(self.frappe.users["Administrator"]["module_profile"])
         # a user with a profile of their own, a disabled user, a website user: untouched
-        self.assertEqual(self.frappe.users["grace@example.com"]["module_profile"], "Own")
+        self.assertEqual(
+            self.frappe.users["grace@example.com"]["module_profile"], "Own"
+        )
         self.assertIsNone(self.frappe.users["alan@example.com"]["module_profile"])
         self.assertIsNone(self.frappe.users["web@example.com"]["module_profile"])
 

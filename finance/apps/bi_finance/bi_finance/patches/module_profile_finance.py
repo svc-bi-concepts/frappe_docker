@@ -5,7 +5,8 @@ frappe's module block is navigation reach only (frappe/utils/modules.py, is_modu
 "Hiding a module hides the way to a document, never the document itself"): a blocked module's
 workspace vanishes from the boot and the search bar, while its doctypes still open by route and
 link, so Item (a Stock doctype) stays reachable from a Sales Invoice. The profile is upserted from
-BLOCKED_MODULES and assigned only to enabled System Users that carry no profile of their own; a
+BLOCKED_MODULES and assigned only to enabled System Users that carry no profile of their own
+(Administrator keeps the full view for repair); a
 user with a profile, and a profile whose rows already match the constant, are left alone.
 Idempotent: a second run changes nothing and prints nothing.
 """
@@ -59,7 +60,11 @@ def upsert_profile():
     name = frappe.db.exists("Module Profile", PROFILE_NAME)
     if not name:
         doc = frappe.get_doc(
-            {"doctype": "Module Profile", "module_profile_name": PROFILE_NAME, "block_modules": rows}
+            {
+                "doctype": "Module Profile",
+                "module_profile_name": PROFILE_NAME,
+                "block_modules": rows,
+            }
         )
         doc.insert(ignore_permissions=True)
         return "created"
@@ -75,10 +80,18 @@ def upsert_profile():
 
 def assign_to_users():
     """The enabled System Users without a profile get PROFILE_NAME (its rows are copied onto the
-    user by User.validate_allowed_modules); users with a profile of their own are left alone."""
+    user by User.validate_allowed_modules); users with a profile of their own are left alone, and
+    so is Administrator (its block list is no longer unioned in site-wide, it keeps the full view
+    for repair). Guest is a Website User and never matches.
+    """
     names = frappe.get_all(
         "User",
-        filters={"enabled": 1, "user_type": "System User", "module_profile": ("is", "not set")},
+        filters={
+            "enabled": 1,
+            "user_type": "System User",
+            "name": ("!=", "Administrator"),
+            "module_profile": ("is", "not set"),
+        },
         pluck="name",
     )
     for name in names:
@@ -92,6 +105,8 @@ def execute():
     verb = upsert_profile()
     users = assign_to_users()
     if verb or users:
-        print(f"module_profile_finance: profile {verb or 'unchanged'}, {len(users)} users assigned")
+        print(
+            f"module_profile_finance: profile {verb or 'unchanged'}, {len(users)} users assigned"
+        )
         # the blocked modules ride in the boot, which is cached per user
         frappe.clear_cache()
