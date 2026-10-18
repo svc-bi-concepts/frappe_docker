@@ -7,3 +7,5 @@ bi_finance.patches.bank_transaction_rules
 bi_finance.patches.number_card_names
 # the erpnextswiss desk rows (icon, sidebar archive, five workspaces) the image no longer ships, deleted once (erpnextswiss_desk_records.py)
 bi_finance.patches.erpnextswiss_desk_records
+# the Module Profile "Finance" that hides the unused modules from every desk user's navigation (module_profile_finance.py)
+bi_finance.patches.module_profile_finance
