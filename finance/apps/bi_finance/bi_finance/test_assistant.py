@@ -272,7 +272,10 @@ class ClientParse(unittest.TestCase):
         for content in (
             "no json at all",
             '["a list"]',
+            '{"items": []}',
+            '{"text": "", "items": []}',
             '{"text": 5, "items": []}',
+            '{"text": "   ", "items": []}',
             '{"text": "hi", "items": "one"}',
         ):
             with self.assertRaises(assistant_client.AssistantError):

@@ -125,9 +125,10 @@ def parse_answer(content):
     items = parsed.get("items")
     if items is None:
         items = []
-    if not isinstance(items, list) or not isinstance(parsed.get("text") or "", str):
+    text = parsed.get("text")
+    if not isinstance(items, list) or not isinstance(text, str) or not text.strip():
         raise AssistantError("OpenRouter's answer was not the JSON asked for")
-    return {"text": parsed.get("text") or "", "items": items}
+    return {"text": text, "items": items}
 
 
 def _json_object(body):
