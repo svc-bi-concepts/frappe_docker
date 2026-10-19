@@ -1101,6 +1101,16 @@ class Collectors(unittest.TestCase):
             "Salary Slip": 1,
             "Exchange Rate Revaluation": 1,
         }
+        FRAPPE.count_of["Exchange Rate Revaluation"] = lambda kwargs: (
+            2
+            if kwargs["filters"]
+            == [
+                ["docstatus", "=", 0],
+                ["posting_date", ">=", date(2026, 9, 1)],
+                ["posting_date", "<=", date(2026, 9, 30)],
+            ]
+            else 1
+        )
         close = entry(self.collect(), "month.close")
         self.assertEqual(close["month"], "2026-09")
         self.assertEqual(close["lines_unreconciled"], 3)
@@ -1114,9 +1124,10 @@ class Collectors(unittest.TestCase):
                 "Payment Proposal": 1,
                 "Expense Claim": 0,
                 "Salary Slip": 1,
+                "Exchange Rate Revaluation": 2,
             },
         )
-        self.assertEqual(close["count"], 8)
+        self.assertEqual(close["count"], 10)
         self.assertTrue(close["revaluation_submitted"])
         bank_filters = [
             call["filters"]

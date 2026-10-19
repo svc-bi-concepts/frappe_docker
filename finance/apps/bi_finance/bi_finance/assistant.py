@@ -58,6 +58,7 @@ MONTH_DATED_DRAFTS = (
     ("Payment Proposal", "date"),
     ("Expense Claim", "posting_date"),
     ("Salary Slip", "start_date"),
+    ("Exchange Rate Revaluation", "posting_date"),
 )
 
 # the feeds whose sync_enabled and last_sync ERPNext holds (fields on the settings doctype); the user must be
