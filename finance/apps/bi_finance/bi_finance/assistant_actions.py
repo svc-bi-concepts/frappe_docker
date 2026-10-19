@@ -312,6 +312,7 @@ def _apply(doc, spec, payload, dry_run, done):
         doc.state = FAILED
         doc.error = _problem(err)
         return
+    doc.error = ""  # a refusal of an earlier attempt is not the reason of a done row
     if dry_run:
         doc.state = APPROVED_DRY_RUN
         doc.dry_run_result = _text(outcome)

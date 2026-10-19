@@ -508,6 +508,12 @@ class LevelTwoApproval(Base):
             )
         self.assertEqual(self.one_click_applied, [])
 
+    def test_an_approval_after_a_refusal_clears_the_refusal(self):
+        self.assertFalse(self.approve(OTHER, "4900.00")["ok"])
+        result = self.approve(OTHER)
+        self.assertEqual((result["ok"], result["message"]), (True, ""))
+        self.assertFalse(self.row(self.proposed).error)
+
     def test_the_amount_compares_in_rappen(self):
         self.assertTrue(self.approve(OTHER, "5000")["ok"])
 
@@ -1028,10 +1034,16 @@ class AutoLevelDefault(unittest.TestCase):
 class AuditLogPermissions(unittest.TestCase):
     def test_an_ai_approver_reads_the_log_but_cannot_write_it(self):
         path = os.path.join(
-            os.path.dirname(__file__), "bi_finance", "doctype", "ai_action", "ai_action.json"
+            os.path.dirname(__file__),
+            "bi_finance",
+            "doctype",
+            "ai_action",
+            "ai_action.json",
         )
         with open(path, encoding="utf-8") as f:
-            perms = [p for p in json.load(f)["permissions"] if p["role"] == "AI Approver"]
+            perms = [
+                p for p in json.load(f)["permissions"] if p["role"] == "AI Approver"
+            ]
         self.assertEqual(len(perms), 1)
         self.assertEqual(perms[0]["read"], 1)
         self.assertEqual(perms[0]["write"], 0)
