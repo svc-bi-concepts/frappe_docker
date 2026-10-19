@@ -16,6 +16,7 @@ import contextlib
 import datetime
 import io
 import json
+import os
 import sys
 import types
 import unittest
@@ -996,6 +997,44 @@ class Role(unittest.TestCase):
         self.assertEqual(out.getvalue().count("created"), 1)
         self.assertEqual(len(created), 1)
         self.assertEqual(created[0]["role_name"], "AI Approver")
+
+
+class AutoLevelDefault(unittest.TestCase):
+    def run_patch(self, stored):
+        frappe = Frappe()
+        frappe.db.sql = lambda query, values: [(field,) for field in stored]
+        frappe.db.set_single_value = lambda doctype, field, value: stored.__setitem__(
+            field, value
+        )
+        with mock.patch.dict(sys.modules, {"frappe": frappe}):
+            from bi_finance.patches import ai_auto_level_default
+        with contextlib.redirect_stdout(io.StringIO()):
+            ai_auto_level_default.execute()
+            ai_auto_level_default.execute()
+        return stored
+
+    def test_a_single_saved_before_the_field_gets_level_0_on(self):
+        stored = self.run_patch({"enabled": 1, "model": "m"})
+        self.assertEqual(stored["auto_level_enabled"], 1)
+
+    def test_a_stored_value_is_kept(self):
+        stored = self.run_patch({"enabled": 1, "auto_level_enabled": 0})
+        self.assertEqual(stored["auto_level_enabled"], 0)
+
+    def test_a_single_never_saved_keeps_its_defaults(self):
+        self.assertEqual(self.run_patch({}), {})
+
+
+class AuditLogPermissions(unittest.TestCase):
+    def test_an_ai_approver_reads_the_log_but_cannot_write_it(self):
+        path = os.path.join(
+            os.path.dirname(__file__), "bi_finance", "doctype", "ai_action", "ai_action.json"
+        )
+        with open(path, encoding="utf-8") as f:
+            perms = [p for p in json.load(f)["permissions"] if p["role"] == "AI Approver"]
+        self.assertEqual(len(perms), 1)
+        self.assertEqual(perms[0]["read"], 1)
+        self.assertEqual(perms[0]["write"], 0)
 
 
 if __name__ == "__main__":
