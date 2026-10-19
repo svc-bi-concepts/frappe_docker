@@ -101,6 +101,7 @@ class Frappe(types.ModuleType):
         self.counts = []
         self.calls = []
         self.deleted = []
+        self.locked = []  # (doctype, name, for_update) of every get_doc by name
         self.savepoints = []
         self.rolled_back = []
         self.utils = types.SimpleNamespace(getdate=lambda *a: TODAY)
@@ -119,9 +120,10 @@ class Frappe(types.ModuleType):
     def get_single(self, doctype):
         return self.settings
 
-    def get_doc(self, arg, name=None):
+    def get_doc(self, arg, name=None, for_update=False):
         if isinstance(arg, dict):
             return Doc(self, dict(arg))
+        self.locked.append((arg, name, for_update))
         return self.rows[arg][name]
 
     def parse_json(self, text):
@@ -144,8 +146,9 @@ class Frappe(types.ModuleType):
         found = self.matches.get(doctype, lambda f: [])(filters)
         return found[:limit_page_length] if limit_page_length else found
 
-    def delete_doc(self, doctype, name):
+    def delete_doc(self, doctype, name, ignore_permissions=False):
         self.deleted.append((doctype, name))
+        self.deleted_ignoring_permissions = ignore_permissions
         self.rows[doctype].pop(name)
 
     def _exists(self, doctype, name):
@@ -430,6 +433,15 @@ class LevelOneApproval(Base):
         self.assertFalse(result["ok"])
         self.assertEqual(self.row(proposed).state, "proposed")
 
+    def test_the_row_is_read_for_update_so_two_clicks_cannot_both_apply(self):
+        proposed = self.book()
+        actions.approve(proposed["name"], USER)
+        actions.reject(proposed["name"], USER)
+        actions.undo(proposed["name"], USER)
+        self.assertEqual(
+            self.frappe.locked, [("AI Action", proposed["name"], True)] * 3
+        )
+
     def test_an_approved_action_is_not_approved_twice(self):
         proposed = self.book()
         actions.approve(proposed["name"], USER)
@@ -709,6 +721,8 @@ class AutoLevel(Base):
         undone = actions.undo(result["name"], USER)
         self.assertEqual((undone["ok"], undone["state"]), (True, "undone"))
         self.assertEqual(self.frappe.deleted, [("Comment", name)])
+        # Comment is deletable by System Manager only, yet add_comment ignored permissions: so does its Undo
+        self.assertTrue(self.frappe.deleted_ignoring_permissions)
 
     def test_undo_is_refused_when_the_comment_changed(self):
         result = self.comment()

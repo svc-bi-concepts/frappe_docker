@@ -415,7 +415,10 @@ def _result(doc, ok, message=None):
 
 
 def _load(action):
-    return frappe.get_doc(DOCTYPE, action) if isinstance(action, str) else action
+    """The row by name, locked until the request ends: two clicks on Approve cannot both see "proposed" and apply."""
+    if isinstance(action, str):
+        return frappe.get_doc(DOCTYPE, action, for_update=True)
+    return action
 
 
 def _same_amount(typed, amount):
@@ -608,7 +611,9 @@ def _undo_comment(doctype, name, payload):
     )
     if found != ("Comment", payload["reference_doctype"], payload["reference_name"]):
         raise ValueError("the comment is not there as the action made it")
-    frappe.delete_doc("Comment", name)
+    # add_comment ignores permissions (the checks said the user may read the target), so its Undo does too: Comment
+    # can be deleted by System Manager only, and the row above is the one the action made
+    frappe.delete_doc("Comment", name, ignore_permissions=True)
 
 
 def _check_todo(payload, user, today):
