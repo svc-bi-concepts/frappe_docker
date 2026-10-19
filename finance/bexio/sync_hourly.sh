@@ -27,8 +27,13 @@
 # while one runs, and yields to a live monthly delta (which stays manual, outside the
 # window). ERPNext access is api-agent@finance.local (.erpnext-api), unchanged.
 #
+# Before the lock: the colima VM may be asleep (IT's colima idle-stop), and every docker call
+# in the run fails until it wakes. colima-wake (IT's shim) starts it and holds it up for the run;
+# COLIMA_WAKE overrides the path (the tests stub it), and a missing shim is skipped.
+#
 # Exit codes: 0 ok; 2 refused (usage, lock held, a monthly delta holds its lock);
-# 3 a step failed (mailed); 4 a surprise in the counts (mailed).
+# 3 a step failed (mailed), or the colima wake failed (one line on stderr, not mailed);
+# 4 a surprise in the counts (mailed).
 set -eu
 
 usage() {
@@ -160,6 +165,16 @@ acquire_lock() {
   acquire_lock
 }
 acquire_lock
+
+# ---- the colima VM: awake before the first docker call ---------------------------
+
+COLIMA_WAKE=${COLIMA_WAKE:-/Users/bsaladin/ws_yardr/integrations/bin/colima-wake}
+if [ -x "$COLIMA_WAKE" ]; then
+  if ! "$COLIMA_WAKE" --hold 15 --reason bexio-sync; then
+    echo "sync_hourly: colima-wake failed; the VM is not up, the run cannot work without it" >&2
+    exit 3
+  fi
+fi
 
 # ---- the run directory -----------------------------------------------------------
 
