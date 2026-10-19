@@ -310,10 +310,12 @@ def list_rows(graph, folder, top, from_who=None, since=None, search=None):
     if search and (from_who or since):
         raise MailError("--search does not combine with --from or --since", 2)
     filters = []
+    if from_who or since:
+        # Graph refuses a filter plus $orderby (InefficientFilter) unless the ordered property
+        # leads the filter, so receivedDateTime is always its first term.
+        filters.append("receivedDateTime ge %sT00:00:00Z" % (since or "1970-01-01"))
     if from_who:
         filters.append(from_filter(from_who))
-    if since:
-        filters.append("receivedDateTime ge %sT00:00:00Z" % since)
     return graph.messages(folder, top, filters, search_text(search) if search else None)
 
 
@@ -538,6 +540,8 @@ def draft_reply(graph, source, reply_all, draft):
     orig = (m.get("body") or {}).get("content")
     if orig is None:
         raise MailError("the reply draft has no body to keep the quoted original in")
+    if ((m.get("body") or {}).get("contentType") or "html").lower() != "html":
+        orig = body_html(orig, "text")  # a plain-text original, kept with its line breaks
     patched = graph.patch_draft(did, {"contentType": "HTML",
                                       "content": with_block(orig, compose(body_html(text, ctype), sig))})
     if patched.get("id") not in (None, did):

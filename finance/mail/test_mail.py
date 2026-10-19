@@ -258,6 +258,22 @@ class DraftReplyTest(unittest.TestCase):
             mail.draft_reply(g, "source-9", False, {"body": "x"})
         self.assertEqual(len(fake.calls), 1)  # nothing patched
 
+    def test_plain_text_original_is_kept_as_escaped_html_with_line_breaks(self):
+        created = {
+            "id": "reply-1",
+            "isDraft": True,
+            "body": {"contentType": "Text", "content": "Quoted <one>\nQuoted two"},
+        }
+        g, fake = graph_with(created, {"id": "reply-1"}, {})
+        mail.draft_reply(g, "source-9", False, {"body": "Our answer"})
+        patch = [c for c in fake.calls if c[0] == "PATCH"][0]
+        body = json.loads(patch[3])["body"]
+        self.assertEqual(body["contentType"], "HTML")
+        self.assertIn("Quoted &lt;one&gt;<br>\nQuoted two", body["content"])
+        self.assertLess(
+            body["content"].index(SIG_HTML), body["content"].index("Quoted")
+        )
+
     def test_reply_body_without_a_body_tag_puts_our_text_first(self):
         self.assertEqual(
             mail.with_block("<div>QUOTE</div>", "OURS"), "OURS<div>QUOTE</div>"
@@ -291,6 +307,15 @@ class ListTest(unittest.TestCase):
         url = fake.calls[0][1]
         self.assertIn("o%27%27brien", url)
         self.assertIn("receivedDateTime%20ge%202026-10-01T00%3A00%3A00Z", url)
+
+    def test_from_alone_still_leads_the_filter_with_the_ordered_property(self):
+        g, fake = graph_with({"value": []})
+        mail.list_rows(g, "inbox", 5, from_who="x@example.test")
+        url = fake.calls[0][1]
+        self.assertIn("%24orderby=receivedDateTime%20desc", url)
+        self.assertIn(
+            "filter=receivedDateTime%20ge%201970-01-01T00%3A00%3A00Z%20and%20from", url
+        )
 
     def test_search_does_not_combine_with_from(self):
         g, fake = graph_with()
