@@ -181,5 +181,14 @@ class SwitchShell(unittest.TestCase):
             self.assertEqual(run.returncode, 2, args)
 
 
+class LivePort(unittest.TestCase):
+    def test_ping_url_uses_the_host_port_finance_local_publishes(self):
+        # 8080 is the colima front door; the ping must hit the port the live stack publishes.
+        with open(os.path.join(ROOT, "finance-local.yml")) as f:
+            self.assertIn('"127.0.0.1:8082:8080"', f.read())
+        with open(SCRIPT) as f:
+            self.assertIn('PING_URL="http://127.0.0.1:8082/', f.read())
+
+
 if __name__ == "__main__":
     unittest.main()
