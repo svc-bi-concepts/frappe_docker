@@ -27,7 +27,7 @@
 # while one runs, and yields to a live monthly delta (which stays manual, outside the
 # window). ERPNext access is api-agent@finance.local (.erpnext-api), unchanged.
 #
-# Before the lock: the colima VM may be asleep (IT's colima idle-stop), and every docker call
+# After the lock: the colima VM may be asleep (IT's colima idle-stop), and every docker call
 # in the run fails until it wakes. colima-wake (IT's shim) starts it and holds it up for the run;
 # COLIMA_WAKE overrides the path (the tests stub it), and a missing shim is skipped.
 #
