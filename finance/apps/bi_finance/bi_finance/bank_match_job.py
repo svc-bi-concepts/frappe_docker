@@ -131,11 +131,11 @@ def _open_documents(company, currency, user=None):
     ):
         reader = frappe.get_list if user else frappe.get_all
         filters = {
-                "company": company,
-                "docstatus": 1,
-                "outstanding_amount": [">", 0],
-                "currency": currency,
-            }
+            "company": company,
+            "docstatus": 1,
+            "outstanding_amount": [">", 0],
+            "currency": currency,
+        }
         kwargs = {
             "filters": filters,
             "fields": [

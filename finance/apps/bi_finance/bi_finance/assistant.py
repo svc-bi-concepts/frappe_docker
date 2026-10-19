@@ -187,7 +187,10 @@ def _get_list(doctype, **kwargs):
 def _count(doctype, filters):
     """How many rows the filters give a user who may read the doctype: one aggregate row, never the table."""
     rows = _get_list(
-        doctype, filters=filters, fields=["count(name) as n"], limit_page_length=1
+        doctype,
+        filters=filters,
+        fields=[{"COUNT": "name", "as": "n"}],
+        limit_page_length=1,
     )
     return int(rows[0]["n"] or 0) if rows else 0
 
@@ -581,7 +584,7 @@ def _per_account_counts(base, first_of_last):
         rows = _get_list(
             "Bank Transaction",
             filters=filters,
-            fields=["bank_account", "count(name) as n"],
+            fields=["bank_account", {"COUNT": "name", "as": "n"}],
             group_by="bank_account",
             order_by="bank_account asc",
         )

@@ -28,6 +28,7 @@ import bi_finance
 
 USER = "tester@example.com"
 KEY = "invented-openrouter-key-0000"
+COUNT = {"COUNT": "name", "as": "n"}  # the aggregate field Frappe 16 accepts
 TODAY = date(2026, 10, 18)
 NOW = datetime(
     2026, 10, 18, 12, 0, 0
@@ -97,7 +98,7 @@ class Frappe:
         self.count_of = {}  # doctype -> callable(kwargs) -> n, when the filters decide
         self.groups = (
             {}
-        )  # doctype -> rows of a grouped read (fields with count(name) as n)
+        )  # doctype -> rows of a grouped read (fields with COUNT)
         self.groups_of = (
             {}
         )  # doctype -> callable(kwargs) -> grouped rows, when the filters decide
@@ -152,11 +153,17 @@ class Frappe:
         self.lists.append((doctype, kwargs))
         if doctype in self.denied:
             raise self.PermissionError(doctype)
-        if kwargs.get("fields") == ["count(name) as n"]:
+        for field in kwargs.get("fields") or []:
+            # Frappe 16 refuses SQL functions written as strings in SELECT
+            if isinstance(field, str) and "(" in field:
+                raise self.ValidationError(
+                    f"SQL functions are not allowed as strings: {field}"
+                )
+        if kwargs.get("fields") == [COUNT]:
             decide = self.count_of.get(doctype)
             return [{"n": decide(kwargs) if decide else self.counts.get(doctype, 0)}]
         fields = kwargs.get("fields") or []
-        if isinstance(fields, list) and "count(name) as n" in fields:
+        if isinstance(fields, list) and COUNT in fields:
             decide = self.groups_of.get(doctype)
             rows = [
                 dict(row)
@@ -1011,7 +1018,7 @@ class Collectors(unittest.TestCase):
         claim_call = next(
             kwargs
             for kwargs in last_calls("Expense Claim")
-            if kwargs.get("fields") == ["count(name) as n"]
+            if kwargs.get("fields") == [COUNT]
             and "status" in (kwargs.get("filters") or {})
         )
         self.assertEqual(claim_call["filters"], {"docstatus": 1, "status": "Unpaid"})
@@ -1254,7 +1261,7 @@ class Collectors(unittest.TestCase):
             if called == "Bank Transaction"
             and "limit_page_length" in kwargs
             and kwargs.get("fields")
-            != ["count(name) as n"]  # the count reads are capped too, but are not rows
+            != [COUNT]  # the count reads are capped too, but are not rows
         ]
         self.assertEqual(line_calls[0]["limit_page_length"], assistant.TOP)
         self.assertEqual(line_calls[0]["order_by"], "date desc")
@@ -1504,7 +1511,7 @@ class Collectors(unittest.TestCase):
         upload_call = next(
             kwargs
             for kwargs in last_calls("Bank Statement Upload")
-            if kwargs.get("fields") == ["count(name) as n"]
+            if kwargs.get("fields") == [COUNT]
         )
         self.assertEqual(
             upload_call["filters"],
