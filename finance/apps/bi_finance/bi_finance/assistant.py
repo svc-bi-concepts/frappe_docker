@@ -48,8 +48,7 @@ DRAFT_DOCTYPES = (
 # the table is there, as payment_run.create_payment_proposal reads Expense Claim (frappe.db.table_exists)
 OPTIONAL_DRAFT_DOCTYPES = ("Payment Proposal", "Expense Claim")
 
-# the drafts month.close counts by their date field: the transaction-dated ones only, so a period
-# document (VAT Declaration) stays with vat.quarter and month.revaluation reports itself
+# the drafts month.close counts by their date field; VAT Declaration stays with vat.quarter
 MONTH_DATED_DRAFTS = (
     ("Sales Invoice", "posting_date"),
     ("Purchase Invoice", "posting_date"),
