@@ -19,7 +19,7 @@ services:
   frontend:
     image: frappe-finance-custom:t-old
     ports: !override
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8082:8080"
   backend:
     image: frappe-finance-custom:t-old
   scheduler:
@@ -49,7 +49,7 @@ class Functions(unittest.TestCase):
         moved = switch_image.set_tag(COMPOSE, "t-new")
         self.assertEqual(switch_image.current_tag(moved), "t-new")
         self.assertEqual(moved.count("frappe-finance-custom:t-new"), 3)
-        self.assertIn('      - "127.0.0.1:8080:8080"', moved)
+        self.assertIn('      - "127.0.0.1:8082:8080"', moved)
         self.assertIn("ports: !override", moved)
 
     def test_remove_after_switch_lists_old_and_new_base_and_finance(self):

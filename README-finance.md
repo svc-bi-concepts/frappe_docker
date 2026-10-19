@@ -34,14 +34,15 @@ deletes them, so the site and its data are lost.
 
 ## Reaching it
 
-- http://127.0.0.1:8080, bound to loopback only (`finance-local.yml` replaces
-  the upstream port mapping with `127.0.0.1:8080:8080`).
+- http://127.0.0.1:8082, bound to loopback only (`finance-local.yml` replaces
+  the upstream port mapping with `127.0.0.1:8082:8080`). 8080 is the colima
+  front door's host port, so ERPNext moved to 8082 (container port unchanged).
 - From the tailnet: https://bsaladins-mac-mini-1.tail61fee9.ts.net:8448 (tailnet
-  only, not public). `tailscale serve` on the mini proxies it to 127.0.0.1:8080.
+  only, not public). `tailscale serve` on the mini proxies it to 127.0.0.1:8082.
 - To check or recreate the mapping on the mini, use the Homebrew binary:
   `/opt/homebrew/bin/tailscale serve status`. The `tailscale` wrapper in
   `~/.local/bin` points to a missing app, so do not use it.
-- On the mini itself, use the loopback URL http://127.0.0.1:8080.
+- On the mini itself, use the loopback URL http://127.0.0.1:8082.
 - Do not open the port on the LAN.
 
 ## Login
@@ -61,7 +62,7 @@ roles Accounts User, Sales User, Purchase User and Stock User.
 
 - Base URLs:
   - https://bsaladins-mac-mini-1.tail61fee9.ts.net:8448/api/ (tailnet)
-  - http://127.0.0.1:8080/api/ (on the mini)
+  - http://127.0.0.1:8082/api/ (on the mini)
 - Header: `Authorization: token <key>:<secret>`
 - Credentials: `~/ws_yardr_finance/.erpnext-api` (mode 600, lines `url=`,
   `api_key=`, `api_secret=`). Read them from there; never copy them into the

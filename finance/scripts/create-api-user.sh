@@ -22,7 +22,7 @@ esac
 cd "$(dirname "$0")/../.."
 
 PROJECT=frappe-finance
-API_URL=http://127.0.0.1:8080/api/
+API_URL=http://127.0.0.1:8082/api/
 OUT="$HOME/ws_yardr_finance/.erpnext-api"
 
 FORCE=0

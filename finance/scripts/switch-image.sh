@@ -33,7 +33,7 @@ cd "$(dirname "$0")/../.."
 # Pings tried after the restart, with a wait between them. Overridable for the tests.
 PING_TRIES="${SWITCH_PING_TRIES:-30}"
 PING_WAIT="${SWITCH_PING_WAIT:-10}"
-PING_URL="http://127.0.0.1:8080/api/method/ping"
+PING_URL="http://127.0.0.1:8082/api/method/ping"
 
 OLD=$(python3 finance/scripts/switch_image.py current finance-local.yml)
 if [ "$OLD" = "$NEW" ]; then
