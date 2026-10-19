@@ -94,6 +94,54 @@ planning_days) and Salary Certificate (Swiss Payroll, Year end: the Lohnausweis)
 claimed (its bank rows stay in ERPNext's shell). A new doctype or report of ours goes into the sidebar, and into the
 top level if it is daily work.
 
+## The desk assistant
+
+The assistant answers from the bookkeeper's open tasks (`bi_finance/assistant.py`, part 1, read only) and, since part 2a,
+can act through a ladder (`assistant_actions.py`, `assistant_levels.py`; erp-00z0). Part 2a is the core: no model call and
+no page yet. **Actions are off by default** (AI Assistant Settings, `actions_enabled`); the first live proof is erp-ss1j's.
+
+**Tasks.** Each task has an id; the collectors (part 1) and the actions (part 2) use it.
+
+| id                | When               | Proposes                                                       |
+| ----------------- | ------------------ | -------------------------------------------------------------- |
+| bank.lines        | daily              | `match_bank_transaction` (erp-9f7y)                            |
+| bank.feeds        | daily              | nothing: settings and uploads are the person's                 |
+| sales.overdue     | daily              | `create_todo`, `add_comment`                                   |
+| drafts            | daily              | `add_comment`; no generic submit                               |
+| bills.due         | weekly             | `create_payment_proposal` (draft)                              |
+| expenses.approve  | weekly             | nothing: HRMS approval, the claimant may not approve their own |
+| month.revaluation | 1st of month       | `submit_revaluation` (erp-9f7y)                                |
+| month.close       | month end          | nothing beyond the tasks above                                 |
+| vat.quarter       | after quarter end  | `create_vat_draft`, then `submit_vat_declaration` (erp-9f7y)   |
+| payroll.month     | monthly, from 2027 | nothing yet                                                    |
+
+**The ladder.** confidence = min(model score, check score); the check score is the strongest passed soft evidence of the
+action's checks. A failed hard check refuses the action when it is structural (wrong currency, direction or amount, target
+not open) and caps the confidence at 0.5 when it is a duplicate or the ledger date.
+
+| Level       | Who approves                                                                                                                            | Types                                                                                                                                                                                       |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0 Auto      | nobody; logged, with Undo                                                                                                               | `add_comment`, `create_todo` (for the user), `close_todo` (own), `create_payment_proposal` and `create_vat_draft` (drafts), at confidence >= 0.80, else level 1                             |
+| 1 One click | the user who asked                                                                                                                      | ledger types with confidence >= 0.90 and amount <= CHF 1,000, else level 2                                                                                                                  |
+| 2 Approver  | a user with the role AI Approver, on the AI Action form, typing the amount; the requester only when no other enabled AI Approver exists | level 1 types above their limits; always: `submit_vat_declaration`, `submit_payment_proposal`                                                                                               |
+| never       | refused and logged                                                                                                                      | delete, cancel, amend, users and permissions, settings, bank files, pain.001, ESTV upload, mail, bexio, backups, payroll, free-form drafts of invoices, bills, payments and journal entries |
+
+Every proposal, approval, refusal and undo writes or updates one **AI Action** row (state proposed, auto-done, approved,
+approved-dry-run, rejected, failed, undone) with its scores and its checks. A refusal does not throw: the row says why.
+The API user never approves. The role AI Approver is created by the patch `ai_approver_role`; give it to Benchi's user, not
+to the API user.
+
+**Settings** (AI Assistant Settings, Actions section): `actions_enabled` (the kill switch, off: reads only; Undo still
+works), `auto_level_enabled` (off: level 0 goes to 1), `auto_threshold` 0.80, `one_click_threshold` 0.90,
+`one_click_amount_limit` CHF 1,000, `auto_actions_per_day` 50 per user (above it level 0 goes to 1) and
+`ledger_actions_from`.
+
+**The ledger date.** bexio leads until `ledger_actions_from` (default 2027-01-01) and ERPNext gets every 2026 booking as
+a monthly delta, so an assistant booking in 2026 would be booked twice. An action with a ledger effect whose posting date
+is earlier fails the check "ledger date" (confidence capped at 0.5, so level 2) and, when approved, runs as a **dry run**:
+the row ends in `approved-dry-run` with what it would have booked in `dry_run_result`, and nothing is written. Every answer
+starts with the line "bexio leads until 1.1.2027 ..." while today is before that date.
+
 ## The setup script
 
 `finance/scripts/swiss-setup.sh [coa] [accounts] [vat] [fiscal] [fields] [currencies] [banks] [gebuev] [qrbill] [host] [payments] [hr]`

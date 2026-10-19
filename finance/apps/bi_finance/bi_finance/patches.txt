@@ -9,3 +9,5 @@ bi_finance.patches.number_card_names
 bi_finance.patches.erpnextswiss_desk_records
 # the Module Profile "Finance" that hides the unused modules from every desk user's navigation (module_profile_finance.py)
 bi_finance.patches.module_profile_finance
+# the Role "AI Approver" for the desk assistant's level 2 actions (ai_approver_role.py)
+bi_finance.patches.ai_approver_role
