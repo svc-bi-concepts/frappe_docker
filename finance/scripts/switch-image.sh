@@ -33,9 +33,9 @@ cd "$(dirname "$0")/../.."
 # Pings tried after the restart, with a wait between them. Overridable for the tests.
 PING_TRIES="${SWITCH_PING_TRIES:-30}"
 PING_WAIT="${SWITCH_PING_WAIT:-10}"
-PING_URL="http://127.0.0.1:8080/api/method/ping"
 
 OLD=$(python3 finance/scripts/switch_image.py current finance-local.yml)
+PING_URL="http://127.0.0.1:$(python3 finance/scripts/switch_image.py port finance-local.yml)/api/method/ping"
 if [ "$OLD" = "$NEW" ]; then
   echo "refused: the stack already runs frappe-finance-custom:$NEW" >&2
   exit 1

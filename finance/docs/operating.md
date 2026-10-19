@@ -200,7 +200,7 @@ ledgerdemain`: a minor move, not this procedure; it is a decision bead. erpnexts
 10. **Restart and ping** (yardmaster). The ping must print 200:
 
         docker compose -p frappe-finance restart frontend websocket
-        curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/api/method/ping
+        curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8082/api/method/ping
 
 11. **Checks** (yardmaster). Every one must hold:
     - trial balance: the Trial Balance report for the same period equals `private/d4-trial-balance-before.csv` per account;

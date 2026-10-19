@@ -3,6 +3,7 @@ what finance-local.yml says after a switch, and which images to remove so that o
 frappe-finance-custom image is at rest (finance/docs/erpnext-setup.md).
 
 usage: switch_image.py current <compose file>
+       switch_image.py port <compose file>   (the loopback host port the frontend publishes)
        switch_image.py set <compose file> <tag>
        switch_image.py remove <previous tag> <new tag>   (prints the image refs, one per line)
 """
@@ -12,6 +13,7 @@ import sys
 
 REPO = "frappe-finance-custom"
 IMAGE = re.compile(r"^(\s*image:\s*)" + re.escape(REPO) + r":(\S+)\s*$", re.M)
+FRONTEND_PORT = re.compile(r'^\s*-\s*"127\.0\.0\.1:(\d+):8080"\s*$', re.M)
 
 
 def current_tag(compose_text):
@@ -23,6 +25,17 @@ def current_tag(compose_text):
             f"expected one {REPO} tag in the compose file, found {sorted(tags) or 'none'}"
         )
     return tags.pop()
+
+
+def frontend_port(compose_text):
+    """The loopback host port that publishes the frontend's container port 8080: the port
+    the ping after a switch must hit."""
+    ports = set(FRONTEND_PORT.findall(compose_text))
+    if len(ports) != 1:
+        raise ValueError(
+            f"expected one 127.0.0.1:<port>:8080 mapping in the compose file, found {sorted(ports) or 'none'}"
+        )
+    return ports.pop()
 
 
 def set_tag(compose_text, tag):
@@ -48,6 +61,9 @@ def main(argv):
     if len(argv) >= 3 and argv[1] == "current":
         with open(argv[2]) as f:
             print(current_tag(f.read()))
+    elif len(argv) == 3 and argv[1] == "port":
+        with open(argv[2]) as f:
+            print(frontend_port(f.read()))
     elif len(argv) == 4 and argv[1] == "set":
         with open(argv[2]) as f:
             text = f.read()

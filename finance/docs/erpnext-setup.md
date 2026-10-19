@@ -374,7 +374,7 @@ recreate, restart `frontend` and `websocket` and check the ping:
 ```sh
 docker compose -p frappe-finance -f pwd.yml -f finance-local.yml up -d
 docker compose -p frappe-finance restart frontend websocket
-curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/api/method/ping   # must print 200
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8082/api/method/ping   # must print 200
 ```
 
 After a VM restart (colima, a reboot of the Mac mini) the containers come back on their own:

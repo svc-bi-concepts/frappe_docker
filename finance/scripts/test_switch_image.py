@@ -19,7 +19,7 @@ services:
   frontend:
     image: frappe-finance-custom:t-old
     ports: !override
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8082:8080"
   backend:
     image: frappe-finance-custom:t-old
   scheduler:
@@ -49,7 +49,7 @@ class Functions(unittest.TestCase):
         moved = switch_image.set_tag(COMPOSE, "t-new")
         self.assertEqual(switch_image.current_tag(moved), "t-new")
         self.assertEqual(moved.count("frappe-finance-custom:t-new"), 3)
-        self.assertIn('      - "127.0.0.1:8080:8080"', moved)
+        self.assertIn('      - "127.0.0.1:8082:8080"', moved)
         self.assertIn("ports: !override", moved)
 
     def test_remove_after_switch_lists_old_and_new_base_and_finance(self):
@@ -67,9 +67,20 @@ class Functions(unittest.TestCase):
         with self.assertRaises(ValueError):
             switch_image.remove_after_switch("t-old", "t-old")
 
+    def test_frontend_port_reads_the_published_host_port(self):
+        self.assertEqual(switch_image.frontend_port(COMPOSE), "8082")
+
+    def test_frontend_port_refuses_no_mapping(self):
+        with self.assertRaises(ValueError):
+            switch_image.frontend_port(COMPOSE.replace(":8082:8080", ":8082:80"))
+
     def test_live_compose_file_runs_one_tag(self):
         with open(os.path.join(ROOT, "finance-local.yml")) as f:
             switch_image.current_tag(f.read())
+
+    def test_live_compose_file_publishes_one_frontend_port(self):
+        with open(os.path.join(ROOT, "finance-local.yml")) as f:
+            switch_image.frontend_port(f.read())
 
 
 class SwitchShell(unittest.TestCase):
@@ -88,6 +99,7 @@ class SwitchShell(unittest.TestCase):
         with open(self.compose, "w") as f:
             f.write(COMPOSE)
         self.log = os.path.join(self.tmp, "calls.log")
+        self.curl_log = os.path.join(self.tmp, "curl.log")
 
     def stub(self, name, body):
         path = os.path.join(self.tmp, "bin", name)
@@ -104,7 +116,7 @@ class SwitchShell(unittest.TestCase):
             '  case " %s " in *" $3 "*) exit 0 ;; esac\n'
             "  exit 1\nfi\nexit 0\n" % (self.log, images),
         )
-        self.stub("curl", 'echo "%s"\n' % ping)
+        self.stub("curl", f'echo "$@" >> "{self.curl_log}"\necho "{ping}"\n')
         env = {
             "PATH": os.path.join(self.tmp, "bin") + os.pathsep + os.environ["PATH"],
             "SWITCH_PING_TRIES": "2",
@@ -145,6 +157,19 @@ class SwitchShell(unittest.TestCase):
         self.assertIn("rmi frappe-finance-custom:t-new-base\n", calls)
         self.assertIn("rmi frappe-finance-custom:t-new-finance\n", calls)
         self.assertNotIn("rmi frappe-finance-custom:t-new\n", calls)
+
+    def test_ping_hits_the_host_port_the_compose_file_publishes(self):
+        with open(self.compose, "w") as f:
+            f.write(COMPOSE.replace(":8082:8080", ":8099:8080"))
+        run, _, _ = self.run_switch(
+            ["t-new"],
+            existing=["frappe-finance-custom:t-old", "frappe-finance-custom:t-new"],
+            ping="200",
+        )
+        self.assertEqual(run.returncode, 0, run.stderr)
+        with open(self.curl_log) as f:
+            urls = {a for a in f.read().split() if a.startswith("http")}
+        self.assertEqual(urls, {"http://127.0.0.1:8099/api/method/ping"})
 
     def test_ping_failure_rolls_back_and_keeps_the_old_image(self):
         run, calls, compose = self.run_switch(
