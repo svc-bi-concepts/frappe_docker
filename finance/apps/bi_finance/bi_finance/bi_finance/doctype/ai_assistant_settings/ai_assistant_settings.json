@@ -8,7 +8,8 @@
     "enabled",
     "openrouter_api_key",
     "model",
-    "max_tokens_per_answer"
+    "max_tokens_per_answer",
+    "ledger_actions_from"
   ],
   "fields": [
     {
@@ -37,11 +38,18 @@
       "fieldname": "max_tokens_per_answer",
       "fieldtype": "Int",
       "label": "Max tokens per answer"
+    },
+    {
+      "default": "2027-01-01",
+      "description": "Until this day bexio leads and ERPNext is the parallel copy: every answer says so, and the assistant books nothing before it.",
+      "fieldname": "ledger_actions_from",
+      "fieldtype": "Date",
+      "label": "Ledger actions from"
     }
   ],
   "issingle": 1,
   "links": [],
-  "modified": "2026-10-18 21:54:00.000000",
+  "modified": "2026-10-18 23:10:00.000000",
   "modified_by": "Administrator",
   "module": "BI Finance",
   "name": "AI Assistant Settings",

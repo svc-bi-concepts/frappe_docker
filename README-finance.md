@@ -107,7 +107,10 @@ plus that result to OpenRouter. Nothing is written; the answer comes back as tex
 links (`/app/<doctype>/<name>`). Requests are routed only to OpenRouter endpoints that
 keep nothing (zero data retention, no training, no fallback); the key lives in
 `AI Assistant Settings` (Password field), is never logged and never reaches the browser.
-Payroll results include the Employee ID, counts, and status without employee names.
+Payroll results carry counts and Salary Slip names, Expense Claims counts, claim names and
+amounts; never the employee. While today is before `AI Assistant Settings`' ledger date (`ledger_actions_from`,
+default 2027-01-01) every answer starts with the line that bexio leads until that date. The
+collector keys and what each returns: the module docstring and each collector's docstring.
 
 Switching it on: enter the OpenRouter API key in `AI Assistant Settings`, tick Enabled.
 The page says what is missing when the assistant is off or the key is absent. Code:

@@ -21,12 +21,18 @@ import sys
 import types
 import unittest
 import urllib.error
-from datetime import date
+from datetime import date, datetime
 from unittest import mock
+
+import bi_finance
 
 USER = "tester@example.com"
 KEY = "invented-openrouter-key-0000"
+COUNT = {"COUNT": "name", "as": "n"}  # the aggregate field Frappe 16 accepts
 TODAY = date(2026, 10, 18)
+NOW = datetime(
+    2026, 10, 18, 12, 0, 0
+)  # the stub clock the staleness of a feed is measured against (assistant._now_utc)
 
 ANSWER = {
     "choices": [
@@ -50,12 +56,24 @@ ANSWER = {
 
 
 class Settings:
-    """AI Assistant Settings as a single, with the password read the way get_password reads it."""
+    """AI Assistant Settings as a single, with the password read the way get_password reads it.
 
-    def __init__(self, enabled=True, key=KEY, model="invented/model", max_tokens=777):
+    ledger_from defaults to a date in the past, so the ask tests pin the bare answer; the banner tests set the ledger
+    date (2027-01-01, the doctype's default) explicitly.
+    """
+
+    def __init__(
+        self,
+        enabled=True,
+        key=KEY,
+        model="invented/model",
+        max_tokens=777,
+        ledger_from="2026-01-01",
+    ):
         self.enabled = enabled
         self.model = model
         self.max_tokens_per_answer = max_tokens
+        self.ledger_actions_from = ledger_from
         self._key = key
 
     def get_password(self, fieldname, raise_exception=False):
@@ -78,12 +96,20 @@ class Frappe:
         self.rows = {}  # doctype -> rows of a plain get_list
         self.counts = {}  # doctype -> n the aggregate row returns
         self.count_of = {}  # doctype -> callable(kwargs) -> n, when the filters decide
+        self.groups = {}  # doctype -> rows of a grouped read (fields with COUNT)
+        self.groups_of = (
+            {}
+        )  # doctype -> callable(kwargs) -> grouped rows, when the filters decide
         self.denied = set()  # doctypes get_list refuses
         self.denied_rows = set()
         self.present = {}  # doctype -> names db.exists answers yes to
         self.singles = {}  # doctype -> field -> value
         self.readable = set()  # doctypes has_permission allows
         self.unreadable_docs = set()
+        self.values = (
+            {}
+        )  # (doctype, name) -> value or tuple of values, what db.get_value answers
+        self.tables = set()  # doctypes db.table_exists answers yes to
         self.settings = Settings()
         self.thrown = []
         self.utils = types.SimpleNamespace(
@@ -125,13 +151,30 @@ class Frappe:
         self.lists.append((doctype, kwargs))
         if doctype in self.denied:
             raise self.PermissionError(doctype)
-        if kwargs.get("fields") == ["count(name) as n"]:
+        for field in kwargs.get("fields") or []:
+            # Frappe 16 refuses SQL functions written as strings in SELECT
+            if isinstance(field, str) and "(" in field:
+                raise self.ValidationError(
+                    f"SQL functions are not allowed as strings: {field}"
+                )
+        if kwargs.get("fields") == [COUNT]:
             decide = self.count_of.get(doctype)
             return [{"n": decide(kwargs) if decide else self.counts.get(doctype, 0)}]
+        fields = kwargs.get("fields") or []
+        if isinstance(fields, list) and COUNT in fields:
+            decide = self.groups_of.get(doctype)
+            rows = [
+                dict(row)
+                for row in (decide(kwargs) if decide else self.groups.get(doctype, []))
+            ]
+            limit = kwargs.get("limit_page_length")
+            return rows[:limit] if limit else rows
         if doctype in self.denied_rows:
             raise self.PermissionError(doctype)
-        fields = kwargs.get("fields") or []
         rows = [dict(row) for row in self.rows.get(doctype, [])]
+        limit = kwargs.get("limit_page_length")
+        if limit:
+            rows = rows[:limit]
         if all(isinstance(field, str) and " " not in field for field in fields):
             rows = [{field: row.get(field) for field in fields} for row in rows]
         return rows
@@ -146,6 +189,15 @@ class Frappe:
         def get_single_value(self, doctype, fieldname):
             return self._frappe.singles.get(doctype, {}).get(fieldname)
 
+        def get_value(self, doctype, name, fieldnames=None):
+            value = self._frappe.values.get((doctype, name))
+            if isinstance(fieldnames, (list, tuple)):
+                return tuple(value) if value is not None else None
+            return value
+
+        def table_exists(self, doctype):
+            return doctype in self._frappe.tables
+
     def __getattr__(self, name):
         # frappe.db is read as an attribute of the module
         if name == "db":
@@ -157,8 +209,60 @@ class Frappe:
 FRAPPE = Frappe()
 sys.modules.setdefault("frappe", FRAPPE)
 
+
+class JobModule(types.ModuleType):
+    """Stands in for bi_finance.bank_match_job: the match job's own readers, recording their calls.
+
+    The real module pulls erpnext at its import, so assistant.py imports it lazily and the tests put this stub in its
+    place; the reads behind the answer are then exactly the ones the tests name.
+    """
+
+    LINE_FIELDS = [
+        "name",
+        "date",
+        "deposit",
+        "withdrawal",
+        "description",
+        "reference_number",
+        "transaction_id",
+        "end_to_end_id",
+        "currency",
+        "company",
+    ]
+
+    def __init__(self):
+        super().__init__("bi_finance.bank_match_job")
+        self.reset()
+
+    def reset(self):
+        self.docs = []
+        self.payments = []
+        self.rules = []
+        self.calls = []
+        self.users = []
+
+    def _open_documents(self, company, currency, user=None):
+        self.calls.append(("documents", company, currency))
+        self.users.append(user)
+        return [dict(row) for row in self.docs]
+
+    def _open_payments(self, company, currency, gl_account, user=None):
+        self.calls.append(("payments", company, currency, gl_account))
+        self.users.append(user)
+        return [dict(row) for row in self.payments]
+
+    def _rules(self, company, user=None):
+        self.calls.append(("rules", company))
+        self.users.append(user)
+        return list(self.rules)
+
+
+JOB = JobModule()
+sys.modules.setdefault("bi_finance.bank_match_job", JOB)
+
 # imported after the stub is in place: assistant.py does `import frappe` and gets it
-from bi_finance import assistant, assistant_client  # noqa: E402
+from bi_finance import assistant, assistant_client, bank_match  # noqa: E402
+from bi_finance.reference import creditor_reference  # noqa: E402
 
 
 def last_calls(doctype):
@@ -246,6 +350,23 @@ class ClientRequest(unittest.TestCase):
     def test_the_call_gives_up_after_thirty_seconds(self):
         self.assertEqual(assistant_client.TIMEOUT_SECONDS, 30)
         self.assertEqual(self.opener.timeouts, [30])
+
+    def test_a_banner_travels_in_the_system_prompt_of_the_request(self):
+        assistant_client.answer(
+            key=KEY,
+            model="invented/model",
+            max_tokens=777,
+            message="What is open for me?",
+            history=[],
+            data=[],
+            banner="invented banner line",
+            opener=self.opener,
+        )
+        system = json.loads(self.opener.requests[-1].data)["messages"][0]["content"]
+        self.assertIn(
+            'Start every answer with this exact first line: "invented banner line"',
+            system,
+        )
 
 
 class ClientParse(unittest.TestCase):
@@ -581,6 +702,64 @@ class Ask(unittest.TestCase):
         self.assertNotIn(KEY, str(raised.exception))
 
 
+# ---------------------------------------------------------------- the ledger banner
+
+
+class Banner(unittest.TestCase):
+    """The ledger line: before the ledger date every answer starts with it, from the date on it is gone."""
+
+    BANNER = (
+        "bexio leads until 1.1.2027; ERPNext is the parallel copy, "
+        "the assistant books nothing before then."
+    )
+
+    def setUp(self):
+        FRAPPE.__init__()
+        FRAPPE.present["DocType"] = {"Sales Invoice", "Purchase Invoice", "ToDo"}
+
+    def ask(self, text="two are overdue"):
+        with mock.patch.object(
+            assistant_client,
+            "answer",
+            return_value={"text": text, "items": []},
+        ) as client:
+            result = assistant.ask("What is open for me?")
+        return result, client
+
+    def test_before_the_ledger_date_every_answer_starts_with_the_line(self):
+        FRAPPE.settings = Settings(ledger_from="2027-01-01")
+        result, client = self.ask()
+        self.assertEqual(client.call_args.kwargs["banner"], self.BANNER)
+        self.assertTrue(result["text"].startswith(self.BANNER + "\n"))
+
+    def test_the_model_saying_the_line_does_not_duplicate_it(self):
+        FRAPPE.settings = Settings(ledger_from="2027-01-01")
+        result, _ = self.ask(self.BANNER + "\ntwo are overdue")
+        self.assertEqual(result["text"].count(self.BANNER), 1)
+        self.assertTrue(result["text"].endswith("two are overdue"))
+
+    def test_from_the_ledger_date_on_there_is_no_line(self):
+        # the stub clock says 2026-10-18, so the boundary itself pins: on the ledger date the line is gone
+        FRAPPE.settings = Settings(ledger_from=TODAY.isoformat())
+        result, client = self.ask()
+        self.assertIsNone(client.call_args.kwargs["banner"])
+        self.assertEqual(result["text"], "two are overdue")
+
+    def test_an_empty_setting_counts_as_the_default_date(self):
+        FRAPPE.settings = Settings(ledger_from="")
+        _, client = self.ask()
+        self.assertEqual(client.call_args.kwargs["banner"], self.BANNER)
+
+    def test_the_line_is_a_rule_of_the_system_prompt_too(self):
+        prompt = assistant_client.system_prompt([], banner=self.BANNER)
+        self.assertIn(
+            'Start every answer with this exact first line: "' + self.BANNER + '"',
+            prompt,
+        )
+        self.assertIn("DATA", prompt)
+        self.assertNotIn("Start every answer", assistant_client.system_prompt([]))
+
+
 # ---------------------------------------------------------------- the collectors
 
 
@@ -589,24 +768,79 @@ class Collectors(unittest.TestCase):
         FRAPPE.__init__()
         FRAPPE.present["DocType"] = {"Sales Invoice", "Purchase Invoice", "ToDo"}
         FRAPPE.readable = {"Wise Settings", "PayPal Settings"}
+        # the clock of the feed staleness: naive UTC, as wise.py and paypal.py write last_sync
+        clock = mock.patch.object(assistant, "_now_utc", return_value=NOW)
+        clock.start()
+        self.addCleanup(clock.stop)
+        JOB.reset()
+        self._saved_job = getattr(bi_finance, "bank_match_job", None)
+        bi_finance.bank_match_job = JOB
+        self.addCleanup(self._restore_job)
         self.result = None
+
+    def _restore_job(self):
+        if self._saved_job is None:
+            if hasattr(bi_finance, "bank_match_job"):
+                del bi_finance.bank_match_job
+        else:
+            bi_finance.bank_match_job = self._saved_job
 
     def collect(self, today=TODAY, registry=None):
         self.result = assistant.collect(today=today, registry=registry)
         return self.result
 
-    def test_the_registry_holds_the_beads_collectors_under_stable_keys(self):
+    def bank_line(self, name, day, amount, description="", reference=None):
+        """A Bank Transaction row as the line read returns it, before the collector sets currency and company."""
+        return {
+            "name": name,
+            "date": day,
+            "deposit": amount if amount > 0 else 0.0,
+            "withdrawal": -amount if amount < 0 else 0.0,
+            "description": description,
+            "reference_number": reference or "",
+            "transaction_id": None,
+            "end_to_end_id": None,
+            "currency": "CHF",
+            "company": "Invented Company AG",
+            "bank_account": "Invented Bank CHF",
+        }
+
+    def job_doc(
+        self,
+        name,
+        direction,
+        amount,
+        party="Invented Customer AG",
+        day=None,
+        reference=None,
+    ):
+        """An open invoice as the match job's reader returns it."""
+        return {
+            "doctype": "Sales Invoice",
+            "name": name,
+            "party_name": party,
+            "direction": direction,
+            "amount": amount,
+            "currency": "CHF",
+            "date": day or "2026-09-24",
+            "reference": reference,
+        }
+
+    def test_the_registry_holds_the_task_ids_as_stable_keys(self):
         self.assertEqual(
             [entry["key"] for entry in assistant.COLLECTORS],
             [
                 "todos",
                 "drafts",
-                "sales_overdue",
-                "purchase_due",
-                "bank_unreconciled",
-                "vat_declaration",
-                "payroll_month",
-                "syncs",
+                "sales.overdue",
+                "bills.due",
+                "bank.lines",
+                "vat.quarter",
+                "payroll.month",
+                "bank.feeds",
+                "expenses.approve",
+                "month.revaluation",
+                "month.close",
             ],
         )
 
@@ -733,14 +967,14 @@ class Collectors(unittest.TestCase):
                 "outstanding_amount": 417.29,
             }
         ]
-        overdue = entry(self.collect(), "sales_overdue")
+        overdue = entry(self.collect(), "sales.overdue")
         self.assertEqual(overdue["count"], 1)
         filters = last_calls("Sales Invoice")[-2]["filters"]
         self.assertEqual(filters["docstatus"], 1)
         self.assertEqual(filters["outstanding_amount"], [">", 0])
         self.assertEqual(filters["due_date"], ["<", TODAY])
 
-    def test_purchase_invoices_reach_fourteen_days_ahead(self):
+    def test_bills_due_reach_fourteen_days_ahead(self):
         FRAPPE.counts["Purchase Invoice"] = 1
         FRAPPE.rows["Purchase Invoice"] = [
             {
@@ -750,43 +984,467 @@ class Collectors(unittest.TestCase):
                 "outstanding_amount": 96.4,
             }
         ]
-        due = entry(self.collect(), "purchase_due")
+        due = entry(self.collect(), "bills.due")
         self.assertEqual(due["count"], 1)
+        self.assertEqual(due["by_doctype"], {"Purchase Invoice": 1})
         filters = last_calls("Purchase Invoice")[-2]["filters"]
         self.assertEqual(filters["due_date"], ["<=", date(2026, 11, 1)])
         self.assertEqual(filters["outstanding_amount"], [">", 0])
+        self.assertEqual(due["top"][0]["doctype"], "Purchase Invoice")
+        self.assertEqual(due["top"][0]["date"], "2026-10-30")
 
-    def test_unreconciled_bank_transactions_are_counted_per_account(self):
-        FRAPPE.counts["Bank Transaction"] = 4
-        FRAPPE.rows["Bank Transaction"] = [
-            {"bank_account": "Wise CHF - Invented Bank", "n": 3},
-            {"bank_account": "Post - Invented Bank", "n": 1},
+    def test_bills_due_add_the_unpaid_expense_claims_when_hrms_is_there(self):
+        FRAPPE.tables.add("Expense Claim")
+        FRAPPE.counts = {"Purchase Invoice": 1, "Expense Claim": 1}
+        FRAPPE.rows["Purchase Invoice"] = [
+            {
+                "name": "PINV-2026-0007",
+                "supplier": "Invented Supplier GmbH",
+                "due_date": "2026-10-30",
+                "outstanding_amount": 96.4,
+            }
         ]
-        bank = entry(self.collect(), "bank_unreconciled")
-        self.assertEqual(bank["count"], 4)
+        FRAPPE.rows["Expense Claim"] = [
+            {
+                "name": "EXP-2026-0004",
+                "posting_date": "2026-10-12",
+                "total_claimed_amount": 74.5,
+            }
+        ]
+        due = entry(self.collect(), "bills.due")
+        self.assertEqual(due["count"], 2)
+        self.assertEqual(due["by_doctype"], {"Purchase Invoice": 1, "Expense Claim": 1})
+        # the count read of bills.due: the aggregate read filtered by Unpaid status (drafts and
+        # expenses.approve count Expense Claims too, by other filters)
+        claim_call = next(
+            kwargs
+            for kwargs in last_calls("Expense Claim")
+            if kwargs.get("fields") == [COUNT]
+            and "status" in (kwargs.get("filters") or {})
+        )
+        self.assertEqual(claim_call["filters"], {"docstatus": 1, "status": "Unpaid"})
+        self.assertNotIn("employee", claim_call["fields"])
+        # the rows are the soonest first, whoever owes: the claim of the 12th before the bill of the 30th
+        self.assertEqual(
+            [row["doctype"] for row in due["top"]],
+            ["Expense Claim", "Purchase Invoice"],
+        )
+
+    def test_bills_due_without_hrms_count_the_purchase_invoices_only(self):
+        FRAPPE.counts["Purchase Invoice"] = 2
+        due = entry(self.collect(), "bills.due")
+        self.assertEqual(due["count"], 2)
+        self.assertEqual(last_calls("Expense Claim"), [])
+
+    def test_expenses_approve_list_the_claims_in_approval(self):
+        FRAPPE.tables.add("Expense Claim")
+        FRAPPE.counts["Expense Claim"] = 2
+        FRAPPE.rows["Expense Claim"] = [
+            {
+                "name": "EXP-2026-0004",
+                "approval_status": "Draft",
+                "total_claimed_amount": 74.5,
+                "posting_date": "2026-10-12",
+            },
+            {
+                "name": "EXP-2026-0005",
+                "approval_status": "Pending",
+                "total_claimed_amount": 180.0,
+                "posting_date": "2026-10-14",
+            },
+        ]
+        approve = entry(self.collect(), "expenses.approve")
+        self.assertEqual(approve["count"], 2)
+        self.assertEqual(approve["top"][0]["name"], "EXP-2026-0004")
+        call = last_calls("Expense Claim")[-2]
+        self.assertEqual(call["filters"]["docstatus"], 0)
+        self.assertEqual(
+            call["filters"]["approval_status"], ["in", ["Draft", "Pending"]]
+        )
+        self.assertNotIn("employee", call["fields"])
+
+    def test_expenses_approve_say_hrms_is_missing(self):
+        approve = entry(self.collect(), "expenses.approve")
+        self.assertEqual(approve["count"], 0)
+        self.assertEqual(approve["top"], [])
+        self.assertIn("HRMS", approve["note"])
+        self.assertEqual(last_calls("Expense Claim"), [])
+
+    def test_month_revaluation_lists_the_drafts(self):
+        FRAPPE.counts["Exchange Rate Revaluation"] = 1
+        FRAPPE.rows["Exchange Rate Revaluation"] = [
+            {
+                "name": "ERR-2026-0009",
+                "company": "Invented Company AG",
+                "posting_date": "2026-09-30",
+            }
+        ]
+        reval = entry(self.collect(), "month.revaluation")
+        self.assertEqual(reval["count"], 1)
+        self.assertEqual(reval["top"][0]["name"], "ERR-2026-0009")
+        self.assertEqual(
+            last_calls("Exchange Rate Revaluation")[0]["filters"], {"docstatus": 0}
+        )
+
+    def test_month_close_counts_the_last_full_month(self):
+        def bank_count(kwargs):
+            filters = [tuple(row) for row in kwargs["filters"] if isinstance(row, list)]
+            if ("date", ">=", date(2026, 9, 1)) in filters and (
+                "date",
+                "<=",
+                date(2026, 9, 30),
+            ) in filters:
+                return 3
+            return 12
+
+        FRAPPE.count_of["Bank Transaction"] = bank_count
+        FRAPPE.tables.update({"Payment Proposal", "Expense Claim"})
+        FRAPPE.counts = {
+            "Sales Invoice": 1,
+            "Purchase Invoice": 0,
+            "Payment Entry": 2,
+            "Journal Entry": 0,
+            "Payment Proposal": 1,
+            "Expense Claim": 0,
+            "Salary Slip": 1,
+            "Exchange Rate Revaluation": 1,
+        }
+        FRAPPE.count_of["Exchange Rate Revaluation"] = lambda kwargs: (
+            2
+            if kwargs["filters"]
+            == [
+                ["docstatus", "=", 0],
+                ["posting_date", ">=", date(2026, 9, 1)],
+                ["posting_date", "<=", date(2026, 9, 30)],
+            ]
+            else 1
+        )
+        close = entry(self.collect(), "month.close")
+        self.assertEqual(close["month"], "2026-09")
+        self.assertEqual(close["lines_unreconciled"], 3)
+        self.assertEqual(
+            close["drafts"],
+            {
+                "Sales Invoice": 1,
+                "Purchase Invoice": 0,
+                "Payment Entry": 2,
+                "Journal Entry": 0,
+                "Payment Proposal": 1,
+                "Expense Claim": 0,
+                "Salary Slip": 1,
+                "Exchange Rate Revaluation": 2,
+            },
+        )
+        self.assertEqual(close["count"], 10)
+        self.assertTrue(close["revaluation_submitted"])
+        bank_filters = [
+            call["filters"]
+            for doctype, call in FRAPPE.lists
+            if doctype == "Bank Transaction"
+        ]
+        self.assertEqual(bank_filters[0][0], ["docstatus", "=", 1])
+
+    def test_month_close_reports_a_missing_revaluation(self):
+        FRAPPE.counts["Bank Transaction"] = 0
+        FRAPPE.counts["Exchange Rate Revaluation"] = 0
+        close = entry(self.collect(), "month.close")
+        self.assertFalse(close["revaluation_submitted"])
+        self.assertEqual(close["count"], 0)
+
+    def test_month_close_skips_a_draft_doctype_the_user_may_not_read(self):
+        FRAPPE.counts["Bank Transaction"] = 0
+        FRAPPE.counts["Sales Invoice"] = 1
+        FRAPPE.denied.add("Sales Invoice")
+        close = entry(self.collect(), "month.close")
+        self.assertNotIn("Sales Invoice", close["drafts"])
+        self.assertEqual(close["count"], 0)
+
+    def test_bank_lines_decide_the_recent_lines_with_the_match_job(self):
+        FRAPPE.readable.update(set(assistant.BANK_LINE_DOCTYPES))
+
+        def bank_count(kwargs):
+            filters = [tuple(row) for row in kwargs["filters"] if isinstance(row, list)]
+            if ("date", ">=", date(2026, 9, 1)) in filters:
+                return 2
+            if ("date", "<", date(2026, 9, 1)) in filters:
+                return 3
+            return 5
+
+        def bank_groups(kwargs):
+            filters = [tuple(row) for row in kwargs["filters"] if isinstance(row, list)]
+            if ("date", "<", date(2026, 9, 1)) in filters:
+                return [{"bank_account": "Invented Bank CHF", "n": 3}]
+            return [{"bank_account": "Invented Bank CHF", "n": 2}]
+
+        FRAPPE.count_of["Bank Transaction"] = bank_count
+        FRAPPE.groups_of["Bank Transaction"] = bank_groups
+        FRAPPE.rows["Bank Transaction"] = [
+            {
+                "name": "BT-2026-0002",
+                "date": "2026-10-05",
+                "deposit": 100.0,
+                "withdrawal": 0.0,
+                "description": "Invented Customer AG",
+                "reference_number": creditor_reference("INV-2026-0042"),
+                "transaction_id": None,
+                "end_to_end_id": None,
+                "currency": "CHF",
+                "company": "Invented Company AG",
+                "bank_account": "Invented Bank CHF",
+            },
+            {
+                "name": "BT-2026-0001",
+                "date": "2026-09-20",
+                "deposit": 0.0,
+                "withdrawal": 50.0,
+                "description": "",
+                "reference_number": "",
+                "transaction_id": None,
+                "end_to_end_id": None,
+                "currency": "CHF",
+                "company": "Invented Company AG",
+                "bank_account": "Invented Bank CHF",
+            },
+        ]
+        FRAPPE.values[("Bank Account", "Invented Bank CHF")] = (
+            "Invented GL CHF",
+            "Invented Company AG",
+        )
+        FRAPPE.values[("Account", "Invented GL CHF")] = "CHF"
+        JOB.docs = [
+            {
+                "doctype": "Sales Invoice",
+                "name": "INV-2026-0042",
+                "party_name": "Invented Customer AG",
+                "direction": "in",
+                "amount": 100.0,
+                "currency": "CHF",
+                "date": "2026-10-04",
+                "reference": bank_match.key(creditor_reference("INV-2026-0042")),
+            }
+        ]
+        bank = entry(self.collect(), "bank.lines")
+        bank_filters = [
+            kwargs["filters"]
+            for doctype, kwargs in FRAPPE.lists
+            if doctype == "Bank Transaction"
+        ]
+        self.assertTrue(
+            all(["docstatus", "=", 1] in filters for filters in bank_filters)
+        )
+        self.assertEqual(bank["count"], 5)
+        self.assertEqual(bank["recent"], 2)
+        self.assertEqual(bank["older"], 3)
+        self.assertEqual(
+            bank["by_account"],
+            [{"bank_account": "Invented Bank CHF", "recent": 2, "older": 3}],
+        )
+        self.assertEqual(
+            bank["reasons"],
+            {"several": 0, "shared": 0, "not_booked": 0, "matched": 1, "none": 1},
+        )
+        self.assertEqual(
+            [row["name"] for row in bank["top"]], ["BT-2026-0002", "BT-2026-0001"]
+        )
+        self.assertEqual(bank["top"][0]["reason"], "matched")
+        self.assertEqual(bank["top"][0]["amount"], 100.0)
+        self.assertEqual(bank["top"][1]["reason"], "none")
+        # the job's own readers ran, with the account's company and currency
+        self.assertIn(("documents", "Invented Company AG", "CHF"), JOB.calls)
+        self.assertIn(
+            ("payments", "Invented Company AG", "CHF", "Invented GL CHF"), JOB.calls
+        )
+        self.assertIn(("rules", "Invented Company AG"), JOB.calls)
+        self.assertEqual(JOB.users, [USER, USER, USER])
+        line_calls = [
+            kwargs
+            for called, kwargs in FRAPPE.lists
+            if called == "Bank Transaction"
+            and "limit_page_length" in kwargs
+            and kwargs.get("fields")
+            != [COUNT]  # the count reads are capped too, but are not rows
+        ]
+        # every recent line is decided: date-bounded, not capped at the top ten
+        self.assertEqual(line_calls[0]["limit_page_length"], 0)
+        self.assertIn(["date", ">=", date(2026, 9, 1)], line_calls[0]["filters"])
+        self.assertEqual(line_calls[0]["order_by"], "date desc")
+        self.assertEqual(
+            bank["top"][0]["reference_number"], creditor_reference("INV-2026-0042")
+        )
+        for row in bank["top"]:
+            self.assertNotIn("description", row)
+
+    def test_bank_lines_send_no_description_to_the_model(self):
+        FRAPPE.readable.update(set(assistant.BANK_LINE_DOCTYPES))
+        FRAPPE.counts["Bank Transaction"] = 1
+        line = self.bank_line(
+            "BT-2026-0009",
+            "2026-10-05",
+            -4321.0,
+            description="Lohn Invented Person",
+            reference="RF185390",
+        )
+        line["end_to_end_id"] = "INVENTED-E2E-1"
+        FRAPPE.rows["Bank Transaction"] = [line]
+        FRAPPE.values[("Bank Account", "Invented Bank CHF")] = (
+            "Invented GL CHF",
+            "Invented Company AG",
+        )
+        FRAPPE.values[("Account", "Invented GL CHF")] = "CHF"
+        bank = entry(self.collect(), "bank.lines")
         self.assertEqual(
             bank["top"],
             [
-                {"bank_account": "Wise CHF - Invented Bank", "n": 3},
-                {"bank_account": "Post - Invented Bank", "n": 1},
+                {
+                    "doctype": "Bank Transaction",
+                    "bank_account": "Invented Bank CHF",
+                    "name": "BT-2026-0009",
+                    "date": "2026-10-05",
+                    "amount": -4321.0,
+                    "reference_number": "RF185390",
+                    "end_to_end_id": "INVENTED-E2E-1",
+                    "reason": "none",
+                }
             ],
         )
-        kwargs = last_calls("Bank Transaction")[0]
-        self.assertEqual(kwargs["filters"]["status"], "Unreconciled")
-        self.assertEqual(kwargs["group_by"], "bank_account")
+        self.assertNotIn("Invented Person", json.dumps(self.result, default=str))
 
-    def test_unreconciled_bank_accounts_are_capped_at_ten(self):
-        FRAPPE.counts["Bank Transaction"] = assistant.TOP + 2
-        FRAPPE.rows["Bank Transaction"] = [
-            {"bank_account": f"Invented Bank {index}", "n": 1}
-            for index in range(assistant.TOP + 2)
+    def test_bank_lines_reasons_cover_every_recent_line_and_top_stays_ten(self):
+        FRAPPE.readable.update(set(assistant.BANK_LINE_DOCTYPES))
+        FRAPPE.counts["Bank Transaction"] = 11
+        # the newest and the oldest of eleven recent lines name the same invoice; the nine between name nothing
+        lines = [
+            self.bank_line("BT-2026-0100", "2026-10-15", 100.0, reference="RF185390")
         ]
-        bank = entry(self.collect(), "bank_unreconciled")
-        self.assertEqual(bank["count"], assistant.TOP + 2)
-        self.assertEqual(len(bank["top"]), assistant.TOP)
-        self.assertEqual(
-            last_calls("Bank Transaction")[0]["limit_page_length"], assistant.TOP
+        lines += [
+            self.bank_line(
+                f"BT-2026-01{index:02d}", f"2026-10-{14 - index:02d}", -1.0 - index
+            )
+            for index in range(1, 10)
+        ]
+        lines.append(
+            self.bank_line("BT-2026-0110", "2026-09-02", 100.0, reference="RF185390")
         )
+        FRAPPE.rows["Bank Transaction"] = lines
+        FRAPPE.values[("Bank Account", "Invented Bank CHF")] = (
+            "Invented GL CHF",
+            "Invented Company AG",
+        )
+        FRAPPE.values[("Account", "Invented GL CHF")] = "CHF"
+        JOB.docs = [self.job_doc("INV-2026-0042", "in", 100.0, reference="RF185390")]
+        bank = entry(self.collect(), "bank.lines")
+        self.assertEqual(
+            bank["reasons"],
+            {"several": 0, "shared": 2, "not_booked": 0, "matched": 0, "none": 9},
+        )
+        self.assertEqual(len(bank["top"]), assistant.TOP)
+        self.assertEqual(bank["top"][0]["name"], "BT-2026-0100")
+        self.assertEqual(bank["top"][0]["reason"], "shared")
+        self.assertNotIn("BT-2026-0110", [row["name"] for row in bank["top"]])
+
+    def test_bank_lines_count_every_reason_the_job_knows(self):
+        FRAPPE.readable.update(set(assistant.BANK_LINE_DOCTYPES))
+
+        def bank_count(kwargs):
+            filters = [tuple(row) for row in kwargs["filters"] if isinstance(row, list)]
+            if ("date", "<", date(2026, 9, 1)) in filters:
+                return 0
+            return 5
+
+        FRAPPE.count_of["Bank Transaction"] = bank_count
+
+        def bank_groups(kwargs):
+            filters = [tuple(row) for row in kwargs["filters"] if isinstance(row, list)]
+            if ("date", ">=", date(2026, 9, 1)) in filters:
+                return [{"bank_account": "Invented Bank CHF", "n": 5}]
+            return []
+
+        FRAPPE.groups_of["Bank Transaction"] = bank_groups
+        FRAPPE.rows["Bank Transaction"] = [
+            self.bank_line("BT-2026-0002", "2026-10-05", 100.0, reference="RF185390"),
+            self.bank_line("BT-2026-0003", "2026-10-05", 100.0, reference="RF185390"),
+            self.bank_line(
+                "BT-2026-0004",
+                "2026-09-25",
+                60.0,
+                description="Invented Customer AG invoice",
+            ),
+            self.bank_line(
+                "BT-2026-0005",
+                "2026-09-22",
+                -30.0,
+                description="invented fee bank charge",
+            ),
+            self.bank_line("BT-2026-0006", "2026-09-20", -40.0),
+        ]
+        FRAPPE.values[("Bank Account", "Invented Bank CHF")] = (
+            "Invented GL CHF",
+            "Invented Company AG",
+        )
+        FRAPPE.values[("Account", "Invented GL CHF")] = "CHF"
+        JOB.docs = [
+            self.job_doc("INV-2026-0042", "in", 100.0, reference="RF185390"),
+            self.job_doc(
+                "INV-2026-0060",
+                "in",
+                60.0,
+                party="Invented Customer AG",
+                day="2026-09-24",
+            ),
+            self.job_doc(
+                "INV-2026-0061",
+                "in",
+                60.0,
+                party="Invented Customer AG",
+                day="2026-09-26",
+            ),
+        ]
+        JOB.rules = [
+            {
+                "name": "RULE-UNBOOKED",
+                "priority": 0,
+                "company": "Invented Company AG",
+                "transaction_type": "Withdrawal",
+                "min_amount": None,
+                "max_amount": None,
+                "classify_as": "Bank Entry",
+                "bank_entry_type": "Split Account",
+                "account": None,
+                "description_rules": [{"check": "Contains", "value": "invented fee"}],
+            }
+        ]
+        bank = entry(self.collect(), "bank.lines")
+        self.assertEqual(bank["recent"], 5)
+        self.assertEqual(bank["older"], 0)
+        # two lines claim the same bill (shared), one names two bills (several),
+        # one a rule this job does not book (not booked), one nothing at all (none)
+        self.assertEqual(
+            bank["reasons"],
+            {"several": 1, "shared": 2, "not_booked": 1, "matched": 0, "none": 1},
+        )
+        self.assertEqual(
+            [row["reason"] for row in bank["top"]],
+            ["shared", "shared", "several", "not_booked", "none"],
+        )
+
+    def test_bank_lines_report_nothing_when_a_match_read_is_not_permitted(self):
+        FRAPPE.readable = set()
+        FRAPPE.counts["Bank Transaction"] = 5
+        bank = entry(self.collect(), "bank.lines")
+        self.assertIsNone(bank["count"])
+        self.assertIn("note", bank)
+        self.assertEqual(JOB.calls, [])
+
+    def test_bank_lines_keeps_all_grouped_accounts(self):
+        FRAPPE.readable.update(set(assistant.BANK_LINE_DOCTYPES))
+        FRAPPE.counts["Bank Transaction"] = 0
+        FRAPPE.groups_of["Bank Transaction"] = lambda kwargs: [
+            {"bank_account": f"Invented Bank {index:02d}", "n": 1}
+            for index in range(12)
+        ]
+        bank = entry(self.collect(), "bank.lines")
+        self.assertEqual(len(bank["by_account"]), 12)
+        self.assertEqual(bank["by_account"][-1]["bank_account"], "Invented Bank 11")
 
     def test_the_last_closed_quarter_is_what_the_declaration_must_cover(self):
         self.assertEqual(
@@ -801,7 +1459,7 @@ class Collectors(unittest.TestCase):
     def test_a_covering_declaration_answers_the_vat_collector(self):
         FRAPPE.counts["VAT Declaration"] = 12
         FRAPPE.rows["VAT Declaration"] = [{"name": "MWST 2026Q3", "docstatus": 1}]
-        vat = entry(self.collect(), "vat_declaration")
+        vat = entry(self.collect(), "vat.quarter")
         self.assertEqual(vat["count"], 12)
         self.assertFalse(vat["missing"])
         self.assertEqual(vat["period"], "2026-07-01 to 2026-09-30")
@@ -810,7 +1468,7 @@ class Collectors(unittest.TestCase):
         self.assertEqual(filters["end_date"], [">=", date(2026, 9, 30)])
 
     def test_a_missing_declaration_is_reported_as_missing(self):
-        vat = entry(self.collect(), "vat_declaration")
+        vat = entry(self.collect(), "vat.quarter")
         self.assertEqual(vat["count"], 0)
         self.assertTrue(vat["missing"])
 
@@ -824,58 +1482,138 @@ class Collectors(unittest.TestCase):
             return 0
 
         FRAPPE.count_of["Salary Slip"] = slip_count
-        FRAPPE.rows["Salary Slip"] = [
-            {
-                "name": "SAL-2026-0003",
-                "employee": "HR-EMP-0003",
-                "employee_name": "Invented Person",
-                "docstatus": 0,
-            }
-        ]
-        payroll = entry(self.collect(), "payroll_month")
+        FRAPPE.rows["Salary Slip"] = [{"name": "SAL-2026-0003", "docstatus": 0}]
+        payroll = entry(self.collect(), "payroll.month")
         self.assertEqual(payroll["month"], "2026-10")
         self.assertEqual(payroll["submitted"], 2)
         self.assertEqual(payroll["drafts"], 1)
         self.assertEqual(payroll["count"], 3)
-        self.assertEqual(
-            last_calls("Salary Slip")[-1]["fields"],
-            ["name", "employee", "docstatus"],
+        self.assertIn(
+            ["name", "docstatus"],
+            [call["fields"] for call in last_calls("Salary Slip")],
         )
-        self.assertNotIn("employee_name", payroll["top"][0])
+        # no read of the slips ever asks for the employee (the review of erp-r6zb)
+        for call in last_calls("Salary Slip"):
+            self.assertNotIn("employee", call["fields"])
+        self.assertNotIn("employee", payroll["top"][0])
         bounds = last_calls("Salary Slip")[1]["filters"]
         self.assertIn(["start_date", ">=", date(2026, 10, 1)], bounds)
         self.assertIn(["start_date", "<=", date(2026, 10, 31)], bounds)
-        self.assertEqual(
-            last_calls("Salary Slip")[-1]["filters"][0], ["docstatus", "<", 2]
+        row_read = next(
+            kwargs
+            for kwargs in last_calls("Salary Slip")
+            if kwargs.get("fields") == ["name", "docstatus"]
         )
+        self.assertEqual(row_read["filters"][0], ["docstatus", "<", 2])
 
-    def test_the_sync_collector_reports_the_feeds_the_user_can_read(self):
+    def test_bank_feeds_flag_the_off_and_the_stale(self):
         FRAPPE.singles = {
-            "Wise Settings": {"last_sync": "2026-10-18 08:00:00"},
-            "PayPal Settings": {"last_sync": None},
+            "Wise Settings": {
+                "sync_enabled": 1,
+                "last_sync": "2026-10-18 08:00:00",  # four hours before the stub clock (12:00)
+            },
+            "PayPal Settings": {"sync_enabled": 0, "last_sync": None},
         }
-        syncs = entry(self.collect(), "syncs")
-        self.assertEqual(syncs["count"], 1)
-        self.assertEqual(
-            syncs["top"],
-            [
-                {"feed": "Wise", "last_sync": "2026-10-18 08:00:00"},
-                {"feed": "PayPal", "last_sync": None},
-            ],
+        FRAPPE.counts["Bank Statement Upload"] = 1  # the upload month has its own tests
+        feeds = entry(self.collect(), "bank.feeds")
+        self.assertEqual(feeds["count"], 2)
+        wise, paypal = feeds["top"]
+        self.assertEqual(wise["feed"], "Wise")
+        self.assertTrue(wise["sync_enabled"])
+        self.assertEqual(wise["hours_since"], 4.0)
+        self.assertEqual(wise["flag"], "last sync more than 3 h ago")
+        self.assertFalse(paypal["sync_enabled"])
+        self.assertEqual(paypal["flag"], "sync is off")
+
+    def test_bank_feeds_leave_a_fresh_sync_unflagged(self):
+        FRAPPE.singles = {
+            "Wise Settings": {
+                "sync_enabled": 1,
+                "last_sync": "2026-10-18 11:30:00",
+            },
+            "PayPal Settings": {
+                "sync_enabled": 1,
+                "last_sync": "2026-10-18 11:00:00",
+            },
+        }
+        FRAPPE.counts["Bank Statement Upload"] = 1
+        feeds = entry(self.collect(), "bank.feeds")
+        self.assertEqual(feeds["count"], 0)
+        self.assertEqual([row["flag"] for row in feeds["top"]], [None, None])
+
+    def test_bank_feeds_report_the_latest_upload_and_its_month(self):
+        FRAPPE.singles = {
+            "Wise Settings": {
+                "sync_enabled": 1,
+                "last_sync": "2026-10-18 11:30:00",
+            },
+            "PayPal Settings": {
+                "sync_enabled": 1,
+                "last_sync": "2026-10-18 11:30:00",
+            },
+        }
+        FRAPPE.counts["Bank Statement Upload"] = 2
+        FRAPPE.rows["Bank Statement Upload"] = [
+            {"name": "BSU-2026-0004", "imported_on": "2026-10-02 09:00:00"}
+        ]
+        feeds = entry(self.collect(), "bank.feeds")
+        self.assertEqual(feeds["count"], 0)
+        self.assertEqual(feeds["latest_upload"], "BSU-2026-0004")
+        self.assertEqual(feeds["upload_month"], "2026-10")
+        self.assertFalse(feeds["upload_month_missing"])
+
+    def test_bank_feeds_flag_a_last_full_month_without_upload(self):
+        FRAPPE.singles = {
+            "Wise Settings": {
+                "sync_enabled": 1,
+                "last_sync": "2026-10-18 11:30:00",
+            },
+            "PayPal Settings": {
+                "sync_enabled": 1,
+                "last_sync": "2026-10-18 11:30:00",
+            },
+        }
+        FRAPPE.counts["Bank Statement Upload"] = 0
+        feeds = entry(self.collect(), "bank.feeds")
+        self.assertEqual(feeds["count"], 1)
+        self.assertTrue(feeds["upload_month_missing"])
+        self.assertIsNone(feeds["latest_upload"])
+
+    def test_the_upload_month_is_counted_between_the_month_bounds(self):
+        # imported_on is a Datetime field: between extends the upper bound to the end of that day,
+        # while <= on a date stops at its midnight and would miss an import from the last day
+        FRAPPE.counts["Bank Statement Upload"] = 1
+        feeds = entry(self.collect(), "bank.feeds")
+        upload_call = next(
+            kwargs
+            for kwargs in last_calls("Bank Statement Upload")
+            if kwargs.get("fields") == [COUNT]
         )
-        self.assertIn("bexio", syncs["note"])
+        self.assertEqual(
+            upload_call["filters"],
+            [["imported_on", "between", [date(2026, 9, 1), date(2026, 9, 30)]]],
+        )
+        self.assertFalse(feeds["upload_month_missing"])
 
     def test_a_feed_the_user_cannot_read_is_skipped(self):
         FRAPPE.readable = set()
-        FRAPPE.singles = {"Wise Settings": {"last_sync": "2026-10-18 08:00:00"}}
-        syncs = entry(self.collect(), "syncs")
-        self.assertEqual(syncs["count"], 0)
-        self.assertEqual(syncs["top"], [])
+        FRAPPE.singles = {
+            "Wise Settings": {
+                "sync_enabled": 1,
+                "last_sync": "2026-10-18 08:00:00",
+            }
+        }
+        # the upload month has its own test: here an existing upload keeps it quiet, so only the
+        # unreadable feed is under test
+        FRAPPE.counts["Bank Statement Upload"] = 1
+        feeds = entry(self.collect(), "bank.feeds")
+        self.assertEqual(feeds["count"], 0)
+        self.assertEqual(feeds["top"], [])
 
     def test_a_doctype_the_user_may_not_read_is_left_out_not_fatal(self):
         FRAPPE.denied.add("Salary Slip")
         result = self.collect()
-        payroll = entry(result, "payroll_month")
+        payroll = entry(result, "payroll.month")
         self.assertIsNone(payroll["count"])
         self.assertEqual(payroll["top"], [])
         self.assertIn("note", payroll)

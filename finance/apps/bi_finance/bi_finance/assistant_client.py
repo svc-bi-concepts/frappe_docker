@@ -45,19 +45,27 @@ class AssistantError(Exception):
 
 
 def answer(
-    key, model, max_tokens, message, history, data, opener=urllib.request.urlopen
+    key,
+    model,
+    max_tokens,
+    message,
+    history,
+    data,
+    banner=None,
+    opener=urllib.request.urlopen,
 ):
     """One round trip: the question, the past turns and the collected data to OpenRouter, the parsed answer back.
 
     history: the earlier turns as [{"role", "content"}], already trimmed by the caller. data: the collectors' result,
-    read with the user's own permissions (assistant.collect). Raises AssistantError when the call or the answer fails;
-    the key stays in the request headers and in nothing raised.
+    read with the user's own permissions (assistant.collect). banner: the line every answer must start with while the
+    ledger date has not passed, else None. Raises AssistantError when the call or the answer fails; the key stays in
+    the request headers and in nothing raised.
     """
     request = urllib.request.Request(
         URL,
-        data=json.dumps(request_body(model, max_tokens, message, history, data)).encode(
-            "utf-8"
-        ),
+        data=json.dumps(
+            request_body(model, max_tokens, message, history, data, banner)
+        ).encode("utf-8"),
         headers={
             "Authorization": "Bearer " + key,
             "Content-Type": "application/json",
@@ -95,12 +103,12 @@ def answer(
     return parse_answer(message["content"])
 
 
-def request_body(model, max_tokens, message, history, data):
+def request_body(model, max_tokens, message, history, data, banner=None):
     """The request body: the model, the prompt with the DATA block, the past turns, the question, the privacy routing."""
     return {
         "model": model,
         "messages": (
-            [{"role": "system", "content": system_prompt(data)}]
+            [{"role": "system", "content": system_prompt(data, banner)}]
             + list(history)
             + [{"role": "user", "content": message}]
         ),
@@ -109,10 +117,13 @@ def request_body(model, max_tokens, message, history, data):
     }
 
 
-def system_prompt(data):
-    """The system prompt with the collectors' result as the DATA block."""
+def system_prompt(data, banner=None):
+    """The system prompt with the banner rule and the collectors' result as the DATA block."""
+    head = SYSTEM_PROMPT
+    if banner:
+        head += '\n\nStart every answer with this exact first line: "' + banner + '"'
     return (
-        SYSTEM_PROMPT
+        head
         + "\n\nDATA, read now with the user's own permissions:\n"
         + json.dumps(data, default=str)
     )
