@@ -7,7 +7,6 @@ value, set or cleared since, is left as it is.
 """
 
 import frappe
-
 from bi_finance import assistant_levels as levels
 
 SETTINGS = "AI Assistant Settings"
