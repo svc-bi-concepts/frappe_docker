@@ -116,7 +116,7 @@ class SwitchShell(unittest.TestCase):
             '  case " %s " in *" $3 "*) exit 0 ;; esac\n'
             "  exit 1\nfi\nexit 0\n" % (self.log, images),
         )
-        self.stub("curl", 'echo "$@" >> "%s"\necho "%s"\n' % (self.curl_log, ping))
+        self.stub("curl", f'echo "$@" >> "{self.curl_log}"\necho "{ping}"\n')
         env = {
             "PATH": os.path.join(self.tmp, "bin") + os.pathsep + os.environ["PATH"],
             "SWITCH_PING_TRIES": "2",
