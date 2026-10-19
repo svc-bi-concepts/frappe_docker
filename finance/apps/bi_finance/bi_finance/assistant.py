@@ -358,9 +358,11 @@ def bank_lines(user, today):
     """The Unreconciled Bank Transactions: per account the recent lines (this and last month) counted apart from the
     older history (most open lines are imported history), and for the recent ones only, why each stayed.
 
-    The why is bank_match.decide run read-only on the ten most recent lines with the match job's own readers, so the
-    reasons are the job's: several candidates, a document two lines claim, nothing the rules book, nothing found.
-    Recent lines only and capped, never the whole table and never a whole-table decide (mem-4v01). The job's readers
+    The why is bank_match.decide run read-only on every recent line of each account with the match job's own readers,
+    so the reasons are the job's and cover all recent lines: several candidates, a document two lines claim, nothing
+    the rules book, nothing found; the top are the ten most recent. Recent lines only, never the older history and
+    never a whole-table decide (mem-4v01). A top row carries the line's references (QR reference, EndToEndId), never
+    its free-text description, which can name a person. The job's readers
     read with frappe.get_all and ask no permissions, so every doctype behind the answer must be readable, or the
     collector reports nothing.
     """
@@ -378,7 +380,7 @@ def bank_lines(user, today):
         filters=recent_filters,
         fields=bank_match_job.LINE_FIELDS + ["bank_account"],
         order_by="date desc",
-        limit_page_length=TOP,
+        limit_page_length=0,
     )
     reasons, top = _decide_recent(lines, user)
     return {
@@ -602,8 +604,8 @@ def _per_account_counts(base, first_of_last):
 
 def _decide_recent(lines, user):
     """bank_match.decide read-only on recent lines, with the match job's readers scoped to the user: counts by
-    reason and the lines with their reason, most recent first. A line whose account gives no company or currency is
-    decided by nobody and carries no reason."""
+    reason over all lines and the TOP most recent with their reason. A line whose account gives no company or currency
+    is decided by nobody and carries no reason."""
     from bi_finance import bank_match_job
 
     reasons = {
@@ -659,17 +661,21 @@ def _decide_recent(lines, user):
         else:
             reason = "none"
             reasons["none"] += 1
-        top.append(
-            {
-                "doctype": "Bank Transaction",
-                "bank_account": line["bank_account"],
-                "name": line["name"],
-                "date": str(line["date"])[:10],
-                "amount": bank_match.signed(line),
-                "description": _text(line.get("description"), FIELD_CHARS),
-                "reason": reason,
-            }
-        )
+        if len(top) < TOP:
+            top.append(
+                {
+                    "doctype": "Bank Transaction",
+                    "bank_account": line["bank_account"],
+                    "name": line["name"],
+                    "date": str(line["date"])[:10],
+                    "amount": bank_match.signed(line),
+                    "reference_number": _text(
+                        line.get("reference_number"), FIELD_CHARS
+                    ),
+                    "end_to_end_id": _text(line.get("end_to_end_id"), FIELD_CHARS),
+                    "reason": reason,
+                }
+            )
     return reasons, top
 
 

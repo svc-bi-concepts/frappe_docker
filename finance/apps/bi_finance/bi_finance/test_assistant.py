@@ -172,6 +172,9 @@ class Frappe:
         if doctype in self.denied_rows:
             raise self.PermissionError(doctype)
         rows = [dict(row) for row in self.rows.get(doctype, [])]
+        limit = kwargs.get("limit_page_length")
+        if limit:
+            rows = rows[:limit]
         if all(isinstance(field, str) and " " not in field for field in fields):
             rows = [{field: row.get(field) for field in fields} for row in rows]
         return rows
@@ -1261,8 +1264,83 @@ class Collectors(unittest.TestCase):
             and kwargs.get("fields")
             != [COUNT]  # the count reads are capped too, but are not rows
         ]
-        self.assertEqual(line_calls[0]["limit_page_length"], assistant.TOP)
+        # every recent line is decided: date-bounded, not capped at the top ten
+        self.assertEqual(line_calls[0]["limit_page_length"], 0)
+        self.assertIn(["date", ">=", date(2026, 9, 1)], line_calls[0]["filters"])
         self.assertEqual(line_calls[0]["order_by"], "date desc")
+        self.assertEqual(
+            bank["top"][0]["reference_number"], creditor_reference("INV-2026-0042")
+        )
+        for row in bank["top"]:
+            self.assertNotIn("description", row)
+
+    def test_bank_lines_send_no_description_to_the_model(self):
+        FRAPPE.readable.update(set(assistant.BANK_LINE_DOCTYPES))
+        FRAPPE.counts["Bank Transaction"] = 1
+        line = self.bank_line(
+            "BT-2026-0009",
+            "2026-10-05",
+            -4321.0,
+            description="Lohn Invented Person",
+            reference="RF185390",
+        )
+        line["end_to_end_id"] = "INVENTED-E2E-1"
+        FRAPPE.rows["Bank Transaction"] = [line]
+        FRAPPE.values[("Bank Account", "Invented Bank CHF")] = (
+            "Invented GL CHF",
+            "Invented Company AG",
+        )
+        FRAPPE.values[("Account", "Invented GL CHF")] = "CHF"
+        bank = entry(self.collect(), "bank.lines")
+        self.assertEqual(
+            bank["top"],
+            [
+                {
+                    "doctype": "Bank Transaction",
+                    "bank_account": "Invented Bank CHF",
+                    "name": "BT-2026-0009",
+                    "date": "2026-10-05",
+                    "amount": -4321.0,
+                    "reference_number": "RF185390",
+                    "end_to_end_id": "INVENTED-E2E-1",
+                    "reason": "none",
+                }
+            ],
+        )
+        self.assertNotIn("Invented Person", json.dumps(self.result, default=str))
+
+    def test_bank_lines_reasons_cover_every_recent_line_and_top_stays_ten(self):
+        FRAPPE.readable.update(set(assistant.BANK_LINE_DOCTYPES))
+        FRAPPE.counts["Bank Transaction"] = 11
+        # the newest and the oldest of eleven recent lines name the same invoice; the nine between name nothing
+        lines = [
+            self.bank_line("BT-2026-0100", "2026-10-15", 100.0, reference="RF185390")
+        ]
+        lines += [
+            self.bank_line(
+                f"BT-2026-01{index:02d}", f"2026-10-{14 - index:02d}", -1.0 - index
+            )
+            for index in range(1, 10)
+        ]
+        lines.append(
+            self.bank_line("BT-2026-0110", "2026-09-02", 100.0, reference="RF185390")
+        )
+        FRAPPE.rows["Bank Transaction"] = lines
+        FRAPPE.values[("Bank Account", "Invented Bank CHF")] = (
+            "Invented GL CHF",
+            "Invented Company AG",
+        )
+        FRAPPE.values[("Account", "Invented GL CHF")] = "CHF"
+        JOB.docs = [self.job_doc("INV-2026-0042", "in", 100.0, reference="RF185390")]
+        bank = entry(self.collect(), "bank.lines")
+        self.assertEqual(
+            bank["reasons"],
+            {"several": 0, "shared": 2, "not_booked": 0, "matched": 0, "none": 9},
+        )
+        self.assertEqual(len(bank["top"]), assistant.TOP)
+        self.assertEqual(bank["top"][0]["name"], "BT-2026-0100")
+        self.assertEqual(bank["top"][0]["reason"], "shared")
+        self.assertNotIn("BT-2026-0110", [row["name"] for row in bank["top"]])
 
     def test_bank_lines_count_every_reason_the_job_knows(self):
         FRAPPE.readable.update(set(assistant.BANK_LINE_DOCTYPES))
