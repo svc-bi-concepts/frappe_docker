@@ -1023,9 +1023,20 @@ class AutoLevelDefault(unittest.TestCase):
         stored = self.run_patch({"enabled": 1, "model": "m"})
         self.assertEqual(stored["auto_level_enabled"], 1)
 
+    def test_a_single_saved_before_the_section_gets_the_ladder_defaults(self):
+        stored = self.run_patch({"enabled": 1, "model": "m"})
+        self.assertEqual(stored["auto_threshold"], 0.80)
+        self.assertEqual(stored["one_click_threshold"], 0.90)
+        self.assertEqual(stored["one_click_amount_limit"], 1000.0)
+        self.assertEqual(stored["auto_actions_per_day"], 50)
+        self.assertEqual(stored["ledger_actions_from"], date(2027, 1, 1))
+
     def test_a_stored_value_is_kept(self):
-        stored = self.run_patch({"enabled": 1, "auto_level_enabled": 0})
+        stored = self.run_patch(
+            {"enabled": 1, "auto_level_enabled": 0, "auto_actions_per_day": 3}
+        )
         self.assertEqual(stored["auto_level_enabled"], 0)
+        self.assertEqual(stored["auto_actions_per_day"], 3)
 
     def test_a_single_never_saved_keeps_its_defaults(self):
         self.assertEqual(self.run_patch({}), {})

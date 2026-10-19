@@ -11,5 +11,5 @@ bi_finance.patches.erpnextswiss_desk_records
 bi_finance.patches.module_profile_finance
 # the Role "AI Approver" for the desk assistant's level 2 actions (ai_approver_role.py)
 bi_finance.patches.ai_approver_role
-# auto_level_enabled = 1 on an AI Assistant Settings saved before the Actions section (ai_auto_level_default.py)
+# the Actions-section defaults on an AI Assistant Settings saved before that section (ai_auto_level_default.py)
 bi_finance.patches.ai_auto_level_default
