@@ -72,6 +72,15 @@ printf 'exporter %s\\n' "$*" >>"$SYNC_LOG"
 exit ${EXPORTER_RC:-0}
 """
 
+# colima-wake stands in for IT's shim: it logs its args to WAKE_LOG (not SYNC_LOG, so the
+# run's call order stays the run's own), notes if a step had already run (SYNC_LOG is
+# written by the first step), and exits WAKE_RC.
+WAKE_STUB = """#!/bin/sh
+printf '%s\\n' "$*" >>"$WAKE_LOG"
+[ -s "$SYNC_LOG" ] && printf 'after-steps\\n' >>"$WAKE_LOG"
+exit ${WAKE_RC:-0}
+"""
+
 YARDR_STUB = """#!/bin/sh
 # the text lands on one line, so the test can read recipient<TAB>text per line
 printf '%s\\t%s\\n' "$2" "$(printf '%s' "$3" | tr '\\n' ' ')" >>"$YARDR_MAIL_LOG"
@@ -100,6 +109,11 @@ class SyncHourlyTest(unittest.TestCase):
         with open(self.exporter, "w") as f:
             f.write(EXPORTER_STUB)
         os.chmod(self.exporter, 0o755)
+        self.wake = os.path.join(self.stubdir, "colima-wake-stub")
+        with open(self.wake, "w") as f:
+            f.write(WAKE_STUB)
+        os.chmod(self.wake, 0o755)
+        self.wakelog = os.path.join(self.temp, "wake.log")
         self.log = os.path.join(self.temp, "calls.log")
         self.maillog = os.path.join(self.temp, "mail.log")
         self.envlog = os.path.join(self.temp, "yardr-env.log")
@@ -121,6 +135,9 @@ class SyncHourlyTest(unittest.TestCase):
         env["COUNTS_SEQ_DIR"] = self.seqdir
         env["BEXIO_PRIVATE"] = self.private
         env["BEXIO_SYNC_EXPORTER"] = self.exporter
+        # Always a stub: the real colima-wake would start the VM on this machine.
+        env["COLIMA_WAKE"] = self.wake
+        env["WAKE_LOG"] = self.wakelog
         env["BEXIO_SYNC_YARDR"] = os.path.join(self.stubdir, "yardr")
         env["YARDR_MAIL_LOG"] = self.maillog
         env["YARDR_ENV_LOG"] = self.envlog
@@ -377,6 +394,55 @@ class SyncHourlyTest(unittest.TestCase):
         self.assertEqual(
             self.yardr_envs(), ["/Users/bsaladin/ws_yardr_finance/.yardr"] * 2
         )
+
+    # ---- the colima VM (the wake before the run) -------------------------------------
+
+    def wake_calls(self):
+        if not os.path.exists(self.wakelog):
+            return []
+        with open(self.wakelog) as f:
+            return f.read().splitlines()
+
+    def test_wake_runs_once_before_the_first_step(self):
+        """colima-wake --hold 15 --reason bexio-sync runs once, before the exporter (and so
+        before any docker call the loaders make)."""
+        self.counts_seq(COUNTS_BEFORE, COUNTS_BEFORE)
+        proc = self.run_script()
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        # one call, with the args, and no step had run when it was made (no "after-steps")
+        self.assertEqual(self.wake_calls(), ["--hold 15 --reason bexio-sync"])
+        self.assertTrue(self.calls()[0].startswith("exporter "))
+
+    def test_wake_failure_exits_before_any_step(self):
+        """A failing wake: exit 3, one line on stderr, no docker call, no run folder."""
+        self.counts_seq(COUNTS_BEFORE, COUNTS_BEFORE)
+        proc = self.run_script(WAKE_RC="1")
+        self.assertEqual(proc.returncode, 3, proc.stdout + proc.stderr)
+        self.assertIn("colima-wake failed", proc.stderr)
+        self.assertFalse(os.path.exists(self.log))  # no step ran, so no step logged
+        self.assertEqual(self.wake_calls(), ["--hold 15 --reason bexio-sync"])
+        self.assertEqual([d for d in os.listdir(self.syncdir) if d[0].isdigit()], [])
+        self.assertEqual(self.mails(), [])
+
+    def test_missing_wake_is_skipped(self):
+        """No shim on this machine (tests, other machines): the run goes on, silently."""
+        self.counts_seq(COUNTS_BEFORE, COUNTS_BEFORE)
+        proc = self.run_script(COLIMA_WAKE=os.path.join(self.temp, "no-such-wake"))
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertNotIn("colima-wake", proc.stderr)
+        self.assertEqual(self.wake_calls(), [])
+        self.assertTrue(self.calls()[0].startswith("exporter "))
+
+    def test_wake_is_skipped_for_a_refused_run(self):
+        """A refused run (a live lock holder) does not wake the VM for nothing."""
+        lock = os.path.join(self.private, ".bexio-sync.lock")
+        os.makedirs(lock)
+        self.addCleanup(shutil.rmtree, lock, True)
+        with open(os.path.join(lock, "holder"), "w") as f:
+            f.write(f"{os.getpid()} now\n")
+        proc = self.run_script()
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertEqual(self.wake_calls(), [])
 
     # ---- the locks -----------------------------------------------------------------
 

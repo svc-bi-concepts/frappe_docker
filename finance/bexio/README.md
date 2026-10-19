@@ -688,6 +688,10 @@ foreign-currency document against bexio's journal every hour, like every other d
   from PATH would resolve the default home and the mail would be lost (erp-xgpk). Both are overridable
   (`BEXIO_SYNC_YARDR`; a `YARDR_HOME` the caller set wins), and the wrapper sets them itself, so a manual
   run behaves the same.
+- The colima VM may be asleep (IT's nightly idle-stop), so after taking the lock and before the first step the
+  run calls IT's shim `/Users/bsaladin/ws_yardr/integrations/bin/colima-wake --hold 15 --reason bexio-sync`
+  (`COLIMA_WAKE` overrides the path; the tests stub it). A missing shim is skipped silently; a failing wake
+  prints one line on stderr and exits 3 before any step, without a mail.
 - Every run keeps `private/bexio-sync/<stamp>/` (mode 700): the step logs, the two snapshots, `gate.txt` and
   `summary.txt`. The last 48 run folders stay (`BEXIO_SYNC_KEEP`); launchd's own output lands in
   `private/bexio-sync/launchd.log`.
