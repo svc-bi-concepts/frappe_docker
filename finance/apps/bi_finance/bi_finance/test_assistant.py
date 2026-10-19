@@ -96,9 +96,7 @@ class Frappe:
         self.rows = {}  # doctype -> rows of a plain get_list
         self.counts = {}  # doctype -> n the aggregate row returns
         self.count_of = {}  # doctype -> callable(kwargs) -> n, when the filters decide
-        self.groups = (
-            {}
-        )  # doctype -> rows of a grouped read (fields with COUNT)
+        self.groups = {}  # doctype -> rows of a grouped read (fields with COUNT)
         self.groups_of = (
             {}
         )  # doctype -> callable(kwargs) -> grouped rows, when the filters decide
