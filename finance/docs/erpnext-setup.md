@@ -110,7 +110,7 @@ for me" is grouped under them (the user's own todos last).
 | bank.feeds        | daily              | nothing: settings and uploads are the person's                 |
 | sales.overdue     | daily              | `create_todo`, `add_comment`                                   |
 | drafts            | daily              | `add_comment`; no generic submit                               |
-| bills.due         | weekly             | `create_payment_proposal` (draft)                              |
+| bills.due         | weekly             | `create_payment_proposal` (draft), `submit_payment_proposal`   |
 | expenses.approve  | weekly             | nothing: HRMS approval, the claimant may not approve their own |
 | month.revaluation | 1st of month       | `submit_revaluation`                                           |
 | month.close       | month end          | nothing beyond the tasks above                                 |
@@ -174,7 +174,9 @@ refuses the action; a duplicate or the ledger date caps the confidence at 0.5 (l
 schema plus the required `task` id and `confidence` 0..1) and nothing else; with it off no tool is sent. Each tool call the
 model returns goes through `propose()` as the session user and leaves one AI Action row, an unknown type or a call that
 fails its schema included (refused, logged). A call that names no task, an unknown task or a type its task does not
-propose (the table above) is refused and logged too. The answer carries `actions[]`, one card each, and the page shows level,
+propose (the table above) is refused and logged too. DATA carries the user's AI Actions of the last 24 hours (`ai_actions`: at
+most 20, newest first, type, task, target and state), and the model is told not to propose again one listed as proposed
+or done. The answer carries `actions[]`, one card each, and the page shows level,
 confidence and each check: level 0 done with **Undo**, level 1 **Approve** / **Reject** (**Approve (dry run)** before the
 ledger date), level 2 a link to the AI Action form (approved there, erp-ss1j). The endpoints `approve_action`,
 `reject_action` and `undo_action` in `assistant.py` (POST only, as is `ask`) take the AI Action name and nothing else; `assistant_actions` checks the

@@ -54,7 +54,7 @@ MAX_CALLS = 10
 READ_ONLY_RULE = "- You can only read. Nothing here can create, change, submit or pay anything. If the user asks for that, say this assistant cannot act yet."
 
 # replaces READ_ONLY_RULE when tools are offered
-ACTION_RULE = """- You can read, and you can propose actions, only through the tools offered; there is nothing else you can do. The desk checks every proposal and decides alone whether it runs at once (with Undo), waits for the user's click or needs an approver, so never say an action is done: say it was proposed. Do not repeat an action DATA shows is already done.
+ACTION_RULE = """- You can read, and you can propose actions, only through the tools offered; there is nothing else you can do. The desk checks every proposal and decides alone whether it runs at once (with Undo), waits for the user's click or needs an approver, so never say an action is done: say it was proposed. DATA's ai_actions lists the user's AI Actions of the last 24 hours with their state: never propose again an action listed there as proposed, auto-done, approved or approved-dry-run (same type and target).
 - Each tool call must name the task it serves (task: one of the task ids of DATA) and give your confidence (confidence: 0 to 1) that the action is right and DATA backs it. A low confidence is better than a guess. Propose nothing the user did not ask for or the task does not call for. DATA lists, under proposals, the tools a task may use."""
 
 # added to the action rule while the ledger date has not passed

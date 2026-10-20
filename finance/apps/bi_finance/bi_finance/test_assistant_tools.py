@@ -619,12 +619,17 @@ class Proposals(unittest.TestCase):
             ["submit_revaluation"],
         )
         self.assertEqual(
-            self.run_collector("bills.due")["proposals"], ["create_payment_proposal"]
+            self.run_collector("bills.due")["proposals"],
+            ["create_payment_proposal", "submit_payment_proposal"],
         )
         self.assertEqual(
             self.run_collector("sales.overdue")["proposals"],
             ["create_todo", "add_comment"],
         )
+
+    def test_every_registered_type_serves_a_task(self):
+        served = {name for names in assistant.TASK_ACTIONS.values() for name in names}
+        self.assertLessEqual(set(assistant.assistant_actions.ACTIONS), served)
 
     def test_a_type_that_is_not_registered_is_left_out(self):
         registered = dict(assistant.assistant_actions.ACTIONS)

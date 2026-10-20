@@ -89,13 +89,15 @@ BANK_LINE_DOCTYPES = (
 
 DUE_SOON_DAYS = 14
 
+RECENT_ACTIONS_LIMIT = 20
+
 # what each task may propose, from the task table of erp-00z0; DATA names a task's types that are registered, so the
 # ledger types show up as soon as erp-9f7y registers them
 TASK_ACTIONS = {
     "bank.lines": ("match_bank_transaction",),
     "sales.overdue": ("create_todo", "add_comment"),
     "drafts": ("add_comment",),
-    "bills.due": ("create_payment_proposal",),
+    "bills.due": ("create_payment_proposal", "submit_payment_proposal"),
     "month.revaluation": ("submit_revaluation",),
     "vat.quarter": ("create_vat_draft", "submit_vat_declaration"),
     "todos": ("close_todo",),
@@ -320,8 +322,36 @@ def collect(today=None, user=None, registry=None):
     """
     today = today or frappe.utils.getdate()
     user = user or frappe.session.user
-    entries = COLLECTORS if registry is None else registry
+    entries = COLLECTORS + [RECENT_ACTIONS] if registry is None else registry
     return [_one(entry, user, today) for entry in entries]
+
+
+def recent_actions(user, today):
+    """The user's own AI Actions of the last 24 hours, newest first, so the model does not propose one twice."""
+    since = frappe.utils.now_datetime() - datetime.timedelta(hours=24)
+    rows = _get_list(
+        "AI Action",
+        filters={"requested_by": user, "creation": [">=", since]},
+        fields=[
+            "name",
+            "action_type",
+            "task",
+            "target_doctype",
+            "target_name",
+            "state",
+        ],
+        order_by="creation desc",
+        limit_page_length=RECENT_ACTIONS_LIMIT,
+    )
+    return {"count": len(rows), "top": rows}
+
+
+# not a task: the collect() of the built-in list adds it after the collectors
+RECENT_ACTIONS = {
+    "key": "ai_actions",
+    "label": "Your AI Actions of the last 24 hours",
+    "run": recent_actions,
+}
 
 
 def _one(entry, user, today):
