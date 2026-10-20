@@ -18,8 +18,8 @@ response, never in the browser. Counts and the top ten each, never whole tables 
 outside ERPNext and keep no sync log doctype, so the feed collector reports the feeds ERPNext holds only.
 
 The collector keys are the task ids of the bookkeeper's plan (erp-00z0): bank.lines, bank.feeds, sales.overdue,
-drafts, bills.due, expenses.approve, month.revaluation, month.close, vat.quarter, payroll.month; todos has no id,
-it is the user's own list. While today is before the ledger date (AI Assistant Settings.ledger_actions_from,
+drafts, bills.due, expenses.approve, month.revaluation, month.close, vat.quarter, payroll.month; todos is the user's own
+list, not a task of the plan, yet a tool call may name it to close one of them. While today is before the ledger date (AI Assistant Settings.ledger_actions_from,
 default 2027-01-01) every answer starts with one line: bexio leads, ERPNext is the parallel copy, nothing is
 booked before then.
 """

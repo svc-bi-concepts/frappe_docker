@@ -115,6 +115,7 @@ lets the model propose through OpenRouter tool calling and shows the proposals o
 | month.close       | month end          | nothing beyond the tasks above                                 |
 | vat.quarter       | after quarter end  | `create_vat_draft`, then `submit_vat_declaration`              |
 | payroll.month     | monthly, from 2027 | nothing yet                                                    |
+| todos             | any time           | `close_todo`: the user's own list, not a task of the plan      |
 
 **The ladder.** confidence = min(model score, check score); the check score is the strongest passed soft evidence of the
 action's checks. A failed hard check refuses the action when it is structural (wrong currency, direction or amount, target
@@ -171,7 +172,8 @@ refuses the action; a duplicate or the ledger date caps the confidence at 0.5 (l
 **The model proposes (part 2b).** With `actions_enabled` on, `ask()` offers one tool per registered action type (its own
 schema plus the required `task` id and `confidence` 0..1) and nothing else; with it off no tool is sent. Each tool call the
 model returns goes through `propose()` as the session user and leaves one AI Action row, an unknown type or a call that
-fails its schema included (refused, logged). The answer carries `actions[]`, one card each, and the page shows level,
+fails its schema included (refused, logged). A call that names no task, an unknown task or a type its task does not
+propose (the table above) is refused and logged too. The answer carries `actions[]`, one card each, and the page shows level,
 confidence and each check: level 0 done with **Undo**, level 1 **Approve** / **Reject** (**Approve (dry run)** before the
 ledger date), level 2 a link to the AI Action form (approved there, erp-ss1j). The endpoints `approve_action`,
 `reject_action` and `undo_action` in `assistant.py` take the AI Action name and nothing else; `assistant_actions` checks the
