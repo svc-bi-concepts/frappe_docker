@@ -642,6 +642,19 @@ class RevaluationBase(LedgerBase):
             posting_date=date(2027, 1, 31),
             accounts=self.accounts,
         )
+        self.made = {"revaluation_jv": "JV-1", "zero_balance_jv": None}
+        self.made_calls = 0
+        self.draft.make_jv_entries = self.make_jv_entries
+        self.add("Journal Entry", "JV-1")
+        self.add("Journal Entry", "JV-2")
+
+    def make_jv_entries(self):
+        """ERPNext's: the entries exist as drafts and their names come back; nothing is booked until they are submitted."""
+        self.assertEqual(
+            self.frappe.submitted[-1], ("Exchange Rate Revaluation", "ERR-1")
+        )
+        self.made_calls += 1
+        return self.made
 
     def revalue(self, **kw):
         return self.propose(
@@ -755,22 +768,56 @@ class RevaluationLedgerDate(RevaluationBase):
         result = actions.approve(proposed["name"], OTHER, confirmed_amount="10.00")
         self.assertEqual(result["state"], "approved-dry-run")
         self.assertIn(
-            "Submit Exchange Rate Revaluation ERR-1 dated 2026-12-31 for 2 accounts",
+            "Submit Exchange Rate Revaluation ERR-1 dated 2026-12-31 for 2 accounts and book its Journal Entry",
             self.row(result).dry_run_result,
         )
+        self.assertIn("1050 Wise EUR (EUR) gain 40.00", self.row(result).dry_run_result)
+        self.assertIn("1051 Wise USD (USD) loss 30.00", self.row(result).dry_run_result)
         self.assertEqual(self.applied(), ([], [], []))
 
-    def test_after_the_ledger_date_the_approval_submits_the_draft(self):
+    def test_after_the_ledger_date_the_approval_submits_the_draft_and_books_its_entry(
+        self,
+    ):
         proposed = self.revalue()
         result = actions.approve(proposed["name"], USER)
         self.assertEqual((result["ok"], result["state"]), (True, "approved"))
         self.assertEqual(
-            self.frappe.submitted, [("Exchange Rate Revaluation", "ERR-1")]
+            self.frappe.submitted,
+            [("Exchange Rate Revaluation", "ERR-1"), ("Journal Entry", "JV-1")],
         )
         self.assertEqual(
             (self.row(result).result_doctype, self.row(result).result_name),
-            ("Exchange Rate Revaluation", "ERR-1"),
+            ("Journal Entry", "JV-1"),
         )
+        self.assertEqual(self.made_calls, 1)
+
+    def test_both_entries_are_submitted_and_named_when_ERPNext_makes_two(self):
+        self.made = {"revaluation_jv": "JV-1", "zero_balance_jv": "JV-2"}
+        result = actions.approve(self.revalue()["name"], USER)
+        self.assertEqual(
+            self.frappe.submitted[1:],
+            [("Journal Entry", "JV-1"), ("Journal Entry", "JV-2")],
+        )
+        self.assertEqual(self.row(result).result_name, "JV-1, JV-2")
+
+    def test_a_revaluation_that_makes_no_entry_fails_and_rolls_back(self):
+        self.made = {"revaluation_jv": None, "zero_balance_jv": None}
+        result = actions.approve(self.revalue()["name"], USER)
+        self.assertEqual(self.row(result).state, "failed")
+        self.assertIn("nothing would be booked", self.row(result).error)
+        self.assertEqual(len(self.frappe.rolled_back), 1)
+
+    def test_a_failing_entry_fails_the_action_and_rolls_the_submit_back(self):
+        def failing():
+            raise self.frappe.ValidationError("Account is closed")
+
+        self.draft.make_jv_entries = failing
+        result = actions.approve(self.revalue()["name"], USER)
+        self.assertEqual(self.row(result).state, "failed")
+        self.assertIn("Account is closed", self.row(result).error)
+        # the submit was made and is undone with the savepoint, as frappe's request does for one transaction
+        self.assertEqual(self.frappe.rolled_back, [actions.SAVEPOINT])
+        self.assertFalse(self.row(result).result_name)
 
     def test_a_draft_whose_rates_moved_since_the_proposal_is_refused_at_the_approval(
         self,

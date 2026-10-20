@@ -1,7 +1,7 @@
 """The desk assistant's four actions with a ledger effect (erp-9f7y, part 2a2), registered in assistant_actions.ACTIONS.
 
     match_bank_transaction      a bank line is the payment of one open invoice, bill or Payment Entry     level 1 or 2
-    submit_revaluation          the month's Exchange Rate Revaluation draft is submitted                  level 1 or 2
+    submit_revaluation          the month's Exchange Rate Revaluation draft is submitted and booked       level 1 or 2
     submit_payment_proposal     a draft Payment Proposal is submitted (its Payment Entries follow)        always 2
     submit_vat_declaration      a draft VAT Declaration is submitted                                      always 2
 
@@ -517,17 +517,36 @@ def _revaluation_date(payload):
 
 
 def _apply_revaluation(payload, dry_run):
+    """Submit and book: ERPNext's submit of the revaluation posts nothing, its Journal Entries do (make_jv_entries, the
+    form's Create Journal Entry button: one for the gain or loss and one for the zero-balance accounts, both saved as
+    drafts). The apply submits the revaluation and those entries together; a failure of any step rolls the whole apply
+    back (assistant_actions._apply), so no submitted revaluation stays without its entries.
+    """
     doc = frappe.get_doc(
         "Exchange Rate Revaluation", payload["exchange_rate_revaluation"]
     )
     if dry_run:
-        accounts = sum(1 for row in doc.accounts if row.get("gain_loss"))
+        rows = _gain_loss_rows(doc.accounts)
+        lines = "; ".join(
+            f"{account} ({currency}) {'gain' if cents > 0 else 'loss'} {abs(cents) / 100:.2f}"
+            for account, currency, cents in rows
+        )
         return (
             f"Submit Exchange Rate Revaluation {doc.name} dated {_date(doc.posting_date)} "
-            f"for {accounts} accounts."
+            f"for {len(rows)} accounts and book its Journal Entry: {lines}."
         )
     doc.submit()
-    return "Exchange Rate Revaluation", doc.name
+    made = doc.make_jv_entries()
+    names = [
+        made[key] for key in ("revaluation_jv", "zero_balance_jv") if made.get(key)
+    ]
+    if not names:
+        raise frappe.ValidationError(
+            f"Exchange Rate Revaluation {doc.name} made no Journal Entry, so nothing would be booked"
+        )
+    for name in names:
+        frappe.get_doc("Journal Entry", name).submit()
+    return "Journal Entry", ", ".join(names)
 
 
 # ---------------------------------------------------------------- submit_payment_proposal
