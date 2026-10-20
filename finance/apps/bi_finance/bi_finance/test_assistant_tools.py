@@ -444,8 +444,11 @@ class LevelOne(AskBase):
         name = self.book()["name"]
         self.switch(OTHER)
         self.frappe.roles[OTHER] = []
-        refused = assistant.reject_action(name)
-        self.assertEqual((refused["ok"], refused["state"]), (False, "proposed"))
+        with self.assertRaises(self.frappe.ValidationError):
+            assistant.reject_action(name)
+        row = self.frappe.rows["AI Action"][name]
+        self.assertEqual(row.state, "proposed")
+        self.assertFalse(row.error)
 
     def test_reject_by_the_one_who_asked(self):
         name = self.book()["name"]
@@ -476,9 +479,21 @@ class LevelOne(AskBase):
         )["actions"][0]
         self.switch(OTHER)
         self.frappe.roles[OTHER] = []
-        refused = assistant.undo_action(card["name"])
-        self.assertEqual((refused["ok"], refused["state"]), (False, "auto-done"))
+        with self.assertRaises(self.frappe.ValidationError):
+            assistant.undo_action(card["name"])
         self.assertEqual(self.frappe.deleted, [])
+
+    def test_a_stranger_gets_no_card_and_leaves_no_trace_on_the_row(self):
+        name = self.book()["name"]
+        self.switch(OTHER)
+        self.frappe.roles[OTHER] = []
+        for step in (assistant.approve_action, assistant.reject_action):
+            with self.assertRaises(self.frappe.ValidationError):
+                step(name)
+        row = self.frappe.rows["AI Action"][name]
+        self.assertEqual(row.state, "proposed")
+        self.assertFalse(row.error)
+        self.assertEqual(self.one_click_applied, [])
 
 
 class Endpoints(AskBase):

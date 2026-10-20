@@ -175,7 +175,7 @@ fails its schema included (refused, logged). The answer carries `actions[]`, one
 confidence and each check: level 0 done with **Undo**, level 1 **Approve** / **Reject** (**Approve (dry run)** before the
 ledger date), level 2 a link to the AI Action form (approved there, erp-ss1j). The endpoints `approve_action`,
 `reject_action` and `undo_action` in `assistant.py` take the AI Action name and nothing else; `assistant_actions` checks the
-session user. Every request keeps the zero-retention routing. With the default ladder, a ledger action whose posting date is
+session user, and a user who neither asked nor is an AI Approver is turned away before it (no card, no write). Every request keeps the zero-retention routing. With the default ladder, a ledger action whose posting date is
 before the ledger date lands on level 2 (the ledger date check caps its confidence at 0.5); level 1 needs a lowered
 `one_click_threshold`.
 

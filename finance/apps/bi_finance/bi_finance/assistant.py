@@ -198,8 +198,15 @@ def _decide(action, step):
     """Run approve, reject or undo for the named AI Action as the session user and answer with its card."""
     if not isinstance(action, str) or not action.strip():
         frappe.throw(_("Name the AI Action."))
-    result = step(action.strip(), frappe.session.user)
-    return _card(result)
+    name = action.strip()
+    user = frappe.session.user
+    # the names run in sequence, so a stranger is turned away before the step: it would answer with the card (checks,
+    # target, dry run text) and write its refusal into a row that is not theirs
+    if frappe.get_doc("AI Action", name).requested_by != user and (
+        assistant_actions.APPROVER_ROLE not in frappe.get_roles(user)
+    ):
+        frappe.throw(_("This AI Action is not yours."))
+    return _card(step(name, user))
 
 
 def build_tools(registry=None):
