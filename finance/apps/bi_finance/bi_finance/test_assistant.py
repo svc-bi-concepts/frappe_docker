@@ -114,6 +114,7 @@ class Frappe:
         self.thrown = []
         self.utils = types.SimpleNamespace(
             getdate=lambda *args: TODAY,
+            now_datetime=lambda: NOW,
             strip_html=lambda text: re.sub(r"<[^>]*>", " ", text or ""),
         )
 
@@ -123,9 +124,11 @@ class Frappe:
     def parse_json(self, text):
         return json.loads(text) if isinstance(text, str) else text
 
-    def whitelist(self, *args, **kwargs):
+    def whitelist(self, *args, methods=None, **kwargs):
         def wrap(function):
             function.is_whitelisted = True
+            # frappe's own default: a whitelisted method answers every verb unless methods narrows it
+            function.allowed_methods = methods or ["GET", "POST", "PUT", "DELETE"]
             return function
 
         return wrap
@@ -856,6 +859,40 @@ class Collectors(unittest.TestCase):
         )
         self.assertEqual([entry["key"] for entry in subset], ["extra"])
         self.assertEqual(registered, extra)
+
+    def test_the_users_ai_actions_of_the_last_day_are_in_data_newest_first(self):
+        FRAPPE.rows["AI Action"] = [
+            {
+                "name": "AIA-0002",
+                "action_type": "add_comment",
+                "task": "sales.overdue",
+                "target_doctype": "Sales Invoice",
+                "target_name": "INV-2026-0042",
+                "state": "auto-done",
+                "payload": "{}",
+            }
+        ]
+        recent = entry(self.collect(), "ai_actions")
+        self.assertEqual(recent["count"], 1)
+        self.assertEqual(
+            recent["top"][0],
+            {
+                "name": "AIA-0002",
+                "action_type": "add_comment",
+                "task": "sales.overdue",
+                "target_doctype": "Sales Invoice",
+                "target_name": "INV-2026-0042",
+                "state": "auto-done",
+            },
+        )
+        (kwargs,) = last_calls("AI Action")
+        self.assertEqual(
+            kwargs["filters"],
+            {"requested_by": USER, "creation": [">=", datetime(2026, 10, 17, 12, 0)]},
+        )
+        self.assertEqual(
+            (kwargs["order_by"], kwargs["limit_page_length"]), ("creation desc", 20)
+        )
 
     def test_todos_are_read_as_the_session_user(self):
         FRAPPE.counts["ToDo"] = 2
@@ -1617,7 +1654,7 @@ class Collectors(unittest.TestCase):
         self.assertIsNone(payroll["count"])
         self.assertEqual(payroll["top"], [])
         self.assertIn("note", payroll)
-        self.assertEqual(len(result), len(assistant.COLLECTORS))
+        self.assertEqual(len(result), len(assistant.COLLECTORS) + 1)
 
     def test_the_data_block_is_json_serializable(self):
         FRAPPE.counts["ToDo"] = 1

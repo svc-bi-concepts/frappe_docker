@@ -97,10 +97,12 @@ top level if it is daily work.
 ## The desk assistant
 
 The assistant answers from the bookkeeper's open tasks (`bi_finance/assistant.py`, part 1, read only) and, since part 2a,
-can act through a ladder (`assistant_actions.py`, `assistant_levels.py`; erp-00z0). Part 2a is the core: no model call and
-no page yet. **Actions are off by default** (AI Assistant Settings, `actions_enabled`); the first live proof is erp-ss1j's.
+can act through a ladder (`assistant_actions.py`, `assistant_levels.py`; erp-00z0). Part 2a is the core; part 2b (erp-wcf3)
+lets the model propose through OpenRouter tool calling and shows the proposals on the Assistant page.
+**Actions are off by default** (AI Assistant Settings, `actions_enabled`); the first live proof is erp-ss1j's.
 
-**Tasks.** Each task has an id; the collectors (part 1) and the actions (part 2) use it.
+**Tasks.** Each task has an id; the collectors (part 1) and the actions (part 2) use it, and the answer to "What is open
+for me" is grouped under them (the user's own todos last).
 
 | id                | When               | Proposes                                                       |
 | ----------------- | ------------------ | -------------------------------------------------------------- |
@@ -108,12 +110,13 @@ no page yet. **Actions are off by default** (AI Assistant Settings, `actions_ena
 | bank.feeds        | daily              | nothing: settings and uploads are the person's                 |
 | sales.overdue     | daily              | `create_todo`, `add_comment`                                   |
 | drafts            | daily              | `add_comment`; no generic submit                               |
-| bills.due         | weekly             | `create_payment_proposal` (draft)                              |
+| bills.due         | weekly             | `create_payment_proposal` (draft), `submit_payment_proposal`   |
 | expenses.approve  | weekly             | nothing: HRMS approval, the claimant may not approve their own |
 | month.revaluation | 1st of month       | `submit_revaluation`                                           |
 | month.close       | month end          | nothing beyond the tasks above                                 |
 | vat.quarter       | after quarter end  | `create_vat_draft`, then `submit_vat_declaration`              |
 | payroll.month     | monthly, from 2027 | nothing yet                                                    |
+| todos             | any time           | `close_todo`: the user's own list, not a task of the plan      |
 
 **The ladder.** confidence = min(model score, check score); the check score is the strongest passed soft evidence of the
 action's checks. A failed hard check refuses the action when it is structural (wrong currency, direction or amount, target
@@ -166,6 +169,20 @@ refuses the action; a duplicate or the ledger date caps the confidence at 0.5 (l
   for a 2026 quarter MWST pro Quartal equals bexio's figures (the rows the report cannot compute yet are left out; a quarter
   without bexio figures is refused); ledger date on the period end (capped). The transfer file and the ESTV upload stay
   Benchi's.
+
+**The model proposes (part 2b).** With `actions_enabled` on, `ask()` offers one tool per registered action type (its own
+schema plus the required `task` id and `confidence` 0..1) and nothing else; with it off no tool is sent. Each tool call the
+model returns goes through `propose()` as the session user and leaves one AI Action row, an unknown type or a call that
+fails its schema included (refused, logged). A call that names no task, an unknown task or a type its task does not
+propose (the table above) is refused and logged too. DATA carries the user's AI Actions of the last 24 hours (`ai_actions`: at
+most 20, newest first, type, task, target and state), and the model is told not to propose again one listed as proposed
+or done. The answer carries `actions[]`, one card each, and the page shows level,
+confidence and each check: level 0 done with **Undo**, level 1 **Approve** / **Reject** (**Approve (dry run)** before the
+ledger date), level 2 a link to the AI Action form (approved there, erp-ss1j). The endpoints `approve_action`,
+`reject_action` and `undo_action` in `assistant.py` (POST only, as is `ask`) take the AI Action name and nothing else; `assistant_actions` checks the
+session user, and a user who neither asked nor is an AI Approver is turned away before it (no card, no write). Every request keeps the zero-retention routing. With the default ladder, a ledger action whose posting date is
+before the ledger date lands on level 2 (the ledger date check caps its confidence at 0.5); level 1 needs a lowered
+`one_click_threshold`.
 
 ## The setup script
 
