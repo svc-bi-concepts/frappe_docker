@@ -608,7 +608,15 @@ class Proposals(unittest.TestCase):
 
     def test_a_task_names_the_registered_types_it_may_use(self):
         self.assertEqual(
-            self.run_collector("vat.quarter")["proposals"], ["create_vat_draft"]
+            self.run_collector("vat.quarter")["proposals"],
+            ["create_vat_draft", "submit_vat_declaration"],
+        )
+        self.assertEqual(
+            self.run_collector("bank.lines")["proposals"], ["match_bank_transaction"]
+        )
+        self.assertEqual(
+            self.run_collector("month.revaluation")["proposals"],
+            ["submit_revaluation"],
         )
         self.assertEqual(
             self.run_collector("bills.due")["proposals"], ["create_payment_proposal"]
@@ -618,9 +626,14 @@ class Proposals(unittest.TestCase):
             ["create_todo", "add_comment"],
         )
 
-    def test_a_type_that_is_not_registered_yet_is_left_out(self):
-        for key in ("bank.lines", "month.revaluation"):
-            self.assertNotIn("proposals", self.run_collector(key))
+    def test_a_type_that_is_not_registered_is_left_out(self):
+        registered = dict(assistant.assistant_actions.ACTIONS)
+        del registered["submit_vat_declaration"], registered["submit_revaluation"]
+        with mock.patch.object(assistant.assistant_actions, "ACTIONS", registered):
+            self.assertEqual(
+                self.run_collector("vat.quarter")["proposals"], ["create_vat_draft"]
+            )
+            self.assertNotIn("proposals", self.run_collector("month.revaluation"))
 
     def test_a_task_without_a_proposal_has_none(self):
         for key in ("bank.feeds", "expenses.approve", "month.close", "payroll.month"):
