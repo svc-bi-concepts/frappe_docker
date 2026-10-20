@@ -572,7 +572,13 @@ class Endpoints(AskBase):
             assistant.undo_action,
         ):
             self.assertTrue(function.is_whitelisted)
+        for function in (assistant.reject_action, assistant.undo_action):
             self.assertEqual(list(inspect.signature(function).parameters), ["action"])
+        # the AI Action form's level 2 approval sends the amount the approver typed
+        self.assertEqual(
+            list(inspect.signature(assistant.approve_action).parameters),
+            ["action", "confirmed_amount"],
+        )
 
     def test_get_is_refused_on_every_endpoint_that_changes_state(self):
         for function in (
@@ -594,11 +600,21 @@ class Endpoints(AskBase):
         with mock.patch.object(
             assistant.assistant_actions,
             "approve",
-            side_effect=lambda action, user: seen.append((action, user))
+            side_effect=lambda action, user, amount=None: seen.append((action, user))
             or {"name": name, "ok": True},
         ):
             assistant.approve_action(name)
         self.assertEqual(seen, [(name, USER)])
+
+    def test_the_typed_amount_reaches_approve(self):
+        name = self.book()["name"]
+        with mock.patch.object(
+            assistant.assistant_actions,
+            "approve",
+            return_value={"name": name, "ok": True},
+        ) as approve:
+            assistant.approve_action(name, "5000.00")
+        approve.assert_called_once_with(name, USER, "5000.00")
 
 
 class Proposals(unittest.TestCase):

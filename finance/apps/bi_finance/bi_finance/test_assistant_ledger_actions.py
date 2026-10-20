@@ -194,8 +194,8 @@ class LedgerBase(unittest.TestCase):
         self.frappe.session.user = user
 
     def applied(self):
-        """Everything that wrote or submitted, apart from the AI Action rows themselves."""
-        writes = [w for w in self.frappe.writes if w[0] != "AI Action"]
+        """Everything that wrote or submitted, apart from the AI Action rows and the ToDos of a level 2 request."""
+        writes = [w for w in self.frappe.writes if w[0] not in ("AI Action", "ToDo")]
         return writes, self.frappe.submitted, self.job.booked
 
 

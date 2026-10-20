@@ -552,6 +552,120 @@ class LevelTwoApproval(Base):
         self.assertTrue(actions.reject(self.proposed["name"], OTHER)["ok"])
 
 
+class LevelTwoTodos(Base):
+    """A level 2 proposal puts a ToDo on each enabled AI Approver; deciding the action closes them (erp-ss1j)."""
+
+    THIRD = "third@example.com"
+
+    def setUp(self):
+        super().setUp()
+        self.frappe.matches["ToDo"] = lambda f: [
+            name
+            for name, todo in self.todos().items()
+            if todo.reference_name == f["reference_name"] and todo.status == f["status"]
+        ]
+
+    def todos(self):
+        return self.frappe.rows.get("ToDo", {})
+
+    def owners(self):
+        return sorted(todo.allocated_to for todo in self.todos().values())
+
+    def level_two(self):
+        return self.book(amount="5000.00", day="2027-03-01")
+
+    def test_the_todos_go_to_the_approvers_but_not_the_requester(self):
+        self.frappe.has_role = [(USER, 1), (OTHER, 1), (self.THIRD, 1)]
+        self.level_two()
+        self.assertEqual(self.owners(), [OTHER, self.THIRD])
+
+    def test_the_todo_points_at_the_action_and_names_no_amount(self):
+        self.frappe.has_role = [(OTHER, 1)]
+        proposed = self.level_two()
+        todo = next(iter(self.todos().values()))
+        self.assertEqual(
+            (todo.reference_type, todo.reference_name, todo.status),
+            ("AI Action", proposed["name"], "Open"),
+        )
+        self.assertIn("stub_book", todo.description)
+        self.assertNotIn("5000", todo.description)
+
+    def test_the_requester_gets_the_todo_when_the_only_approver(self):
+        self.frappe.has_role = [(USER, 1)]
+        self.level_two()
+        self.assertEqual(self.owners(), [USER])
+
+    def test_a_disabled_approver_and_the_api_user_get_none(self):
+        self.frappe.has_role = [(OTHER, 0), (API, 1), (self.THIRD, 1)]
+        self.level_two()
+        self.assertEqual(self.owners(), [self.THIRD])
+
+    def test_no_approver_means_no_todo(self):
+        self.level_two()
+        self.assertEqual(self.owners(), [])
+
+    def test_levels_0_and_1_make_no_todo(self):
+        self.frappe.has_role = [(OTHER, 1)]
+        self.book()  # 250.00: level 1
+        self.assertEqual(self.owners(), [])
+
+    def test_approving_closes_the_todos(self):
+        self.frappe.has_role = [(OTHER, 1), (self.THIRD, 1)]
+        proposed = self.level_two()
+        self.frappe.roles[OTHER] = ["AI Approver"]
+        self.switch(OTHER)
+        self.assertTrue(actions.approve(proposed["name"], OTHER, "5000.00")["ok"])
+        self.assertEqual({t.status for t in self.todos().values()}, {"Closed"})
+
+    def test_a_wrong_amount_keeps_the_todos_open(self):
+        self.frappe.has_role = [(OTHER, 1)]
+        proposed = self.level_two()
+        self.frappe.roles[OTHER] = ["AI Approver"]
+        self.switch(OTHER)
+        self.assertFalse(actions.approve(proposed["name"], OTHER, "4900.00")["ok"])
+        self.assertEqual({t.status for t in self.todos().values()}, {"Open"})
+
+    def test_rejecting_closes_the_todos(self):
+        self.frappe.has_role = [(OTHER, 1)]
+        proposed = self.level_two()
+        self.frappe.roles[OTHER] = ["AI Approver"]
+        self.switch(OTHER)
+        self.assertTrue(actions.reject(proposed["name"], OTHER)["ok"])
+        self.assertEqual({t.status for t in self.todos().values()}, {"Closed"})
+
+
+class FormButtons(Base):
+    """can_decide is the rule the AI Action form's onload hands the Approve / Reject buttons (erp-ss1j)."""
+
+    def setUp(self):
+        super().setUp()
+        self.frappe.roles[USER] = ["AI Approver"]
+        self.frappe.roles[API] = ["AI Approver"]
+        self.doc = self.row(self.book(amount="5000.00", day="2027-03-01"))
+
+    def test_an_approver_sees_them_on_a_proposed_level_2_action(self):
+        self.assertTrue(actions.can_decide(self.doc, OTHER))
+
+    def test_the_requester_sees_them_only_as_the_sole_approver(self):
+        self.frappe.has_role = [(USER, 1)]
+        self.assertTrue(actions.can_decide(self.doc, USER))
+        self.frappe.has_role = [(USER, 1), (OTHER, 1)]
+        self.assertFalse(actions.can_decide(self.doc, USER))
+
+    def test_a_user_without_the_role_and_the_api_user_do_not(self):
+        self.assertFalse(actions.can_decide(self.doc, "nobody@example.com"))
+        self.assertFalse(actions.can_decide(self.doc, API))
+
+    def test_nobody_sees_them_once_decided(self):
+        self.switch(OTHER)
+        actions.approve(self.doc.name, OTHER, "5000.00")
+        self.assertFalse(actions.can_decide(self.doc, OTHER))
+
+    def test_nobody_sees_them_on_a_level_1_action(self):
+        level_one = self.row(self.book())
+        self.assertFalse(actions.can_decide(level_one, OTHER))
+
+
 class BeforeTheLedgerDate(Base):
     def test_a_ledger_action_ends_approved_dry_run_and_writes_nothing(self):
         proposed = self.book(amount="5000.00", day="2026-12-31")
