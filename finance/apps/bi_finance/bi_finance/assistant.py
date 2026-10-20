@@ -24,6 +24,7 @@ import urllib.parse
 
 import frappe
 from bi_finance import assistant_client, bank_match
+from bi_finance.assistant_levels import LEDGER_ACTIONS_FROM_DEFAULT
 from frappe import _
 
 DEFAULT_MODEL = "anthropic/claude-sonnet-5.5"  # the id as OpenRouter lists it (dot, not dash: -5-5 is a 400)
@@ -82,7 +83,6 @@ BANK_LINE_DOCTYPES = (
 DUE_SOON_DAYS = 14
 
 # bexio leads until the ledger date (the bookkeeper's D1); the line every answer starts with before it
-LEDGER_ACTIONS_FROM_DEFAULT = datetime.date(2027, 1, 1)
 BANNER_TEXT = (
     "bexio leads until {date}; ERPNext is the parallel copy, "
     "the assistant books nothing before then."

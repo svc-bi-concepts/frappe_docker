@@ -1,0 +1,257 @@
+{
+  "actions": [],
+  "autoname": "format:AIA-{YYYY}-{#####}",
+  "creation": "2026-10-20 10:00:00.000000",
+  "doctype": "DocType",
+  "editable_grid": 0,
+  "engine": "InnoDB",
+  "field_order": [
+    "requested_by",
+    "task",
+    "action_type",
+    "state",
+    "level",
+    "column_break_a",
+    "target_doctype",
+    "target_name",
+    "amount",
+    "section_scores",
+    "model_score",
+    "check_score",
+    "column_break_b",
+    "confidence",
+    "section_checks",
+    "checks",
+    "section_payload",
+    "payload",
+    "section_outcome",
+    "approver",
+    "confirmed_amount",
+    "column_break_c",
+    "result_doctype",
+    "result_name",
+    "dry_run_result",
+    "error"
+  ],
+  "fields": [
+    {
+      "fieldname": "requested_by",
+      "fieldtype": "Link",
+      "label": "Requested by",
+      "options": "User",
+      "in_list_view": 1,
+      "search_index": 1,
+      "read_only": 1
+    },
+    {
+      "fieldname": "task",
+      "fieldtype": "Data",
+      "label": "Task",
+      "description": "The id of the bookkeeper's task: bank.lines, drafts, vat.quarter ...",
+      "in_list_view": 1,
+      "read_only": 1
+    },
+    {
+      "fieldname": "action_type",
+      "fieldtype": "Data",
+      "label": "Action",
+      "in_list_view": 1,
+      "search_index": 1,
+      "read_only": 1
+    },
+    {
+      "fieldname": "state",
+      "fieldtype": "Select",
+      "label": "State",
+      "options": "proposed\nauto-done\napproved\napproved-dry-run\nrejected\nfailed\nundone",
+      "default": "proposed",
+      "in_list_view": 1,
+      "search_index": 1,
+      "read_only": 1
+    },
+    {
+      "fieldname": "level",
+      "fieldtype": "Select",
+      "label": "Level",
+      "options": "0\n1\n2\nnever",
+      "in_list_view": 1,
+      "read_only": 1
+    },
+    {
+      "fieldname": "column_break_a",
+      "fieldtype": "Column Break",
+      "label": ""
+    },
+    {
+      "fieldname": "target_doctype",
+      "fieldtype": "Data",
+      "label": "Target document type",
+      "read_only": 1
+    },
+    {
+      "fieldname": "target_name",
+      "fieldtype": "Data",
+      "label": "Target",
+      "read_only": 1
+    },
+    {
+      "fieldname": "amount",
+      "fieldtype": "Currency",
+      "label": "Amount",
+      "description": "What the action moves; a level 2 approver types it to confirm.",
+      "read_only": 1
+    },
+    {
+      "fieldname": "section_scores",
+      "fieldtype": "Section Break",
+      "label": "Confidence"
+    },
+    {
+      "fieldname": "model_score",
+      "fieldtype": "Float",
+      "label": "Model score",
+      "precision": "2",
+      "read_only": 1
+    },
+    {
+      "fieldname": "check_score",
+      "fieldtype": "Float",
+      "label": "Check score",
+      "precision": "2",
+      "read_only": 1
+    },
+    {
+      "fieldname": "column_break_b",
+      "fieldtype": "Column Break",
+      "label": ""
+    },
+    {
+      "fieldname": "confidence",
+      "fieldtype": "Float",
+      "label": "Confidence",
+      "description": "The lower of the two scores.",
+      "precision": "2",
+      "read_only": 1
+    },
+    {
+      "fieldname": "section_checks",
+      "fieldtype": "Section Break",
+      "label": "Checks"
+    },
+    {
+      "fieldname": "checks",
+      "fieldtype": "Table",
+      "label": "Checks",
+      "options": "AI Action Check",
+      "read_only": 1
+    },
+    {
+      "fieldname": "section_payload",
+      "fieldtype": "Section Break",
+      "label": "Proposal"
+    },
+    {
+      "fieldname": "payload",
+      "fieldtype": "JSON",
+      "label": "Payload",
+      "read_only": 1
+    },
+    {
+      "fieldname": "section_outcome",
+      "fieldtype": "Section Break",
+      "label": "Outcome"
+    },
+    {
+      "fieldname": "approver",
+      "fieldtype": "Link",
+      "label": "Approver",
+      "options": "User",
+      "read_only": 1
+    },
+    {
+      "fieldname": "confirmed_amount",
+      "fieldtype": "Currency",
+      "label": "Confirmed amount",
+      "read_only": 1
+    },
+    {
+      "fieldname": "column_break_c",
+      "fieldtype": "Column Break",
+      "label": ""
+    },
+    {
+      "fieldname": "result_doctype",
+      "fieldtype": "Data",
+      "label": "Result document type",
+      "read_only": 1
+    },
+    {
+      "fieldname": "result_name",
+      "fieldtype": "Data",
+      "label": "Result",
+      "read_only": 1
+    },
+    {
+      "fieldname": "dry_run_result",
+      "fieldtype": "Small Text",
+      "label": "Dry run result",
+      "description": "What the action would have booked; before the ledger date nothing is.",
+      "read_only": 1
+    },
+    {
+      "fieldname": "error",
+      "fieldtype": "Small Text",
+      "label": "Error or reason",
+      "read_only": 1
+    }
+  ],
+  "links": [],
+  "modified": "2026-10-20 12:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "BI Finance",
+  "name": "AI Action",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "create": 1,
+      "delete": 1,
+      "email": 1,
+      "export": 1,
+      "print": 1,
+      "read": 1,
+      "report": 1,
+      "role": "System Manager",
+      "share": 1,
+      "write": 1
+    },
+    {
+      "create": 0,
+      "delete": 0,
+      "email": 0,
+      "export": 0,
+      "print": 0,
+      "read": 1,
+      "report": 1,
+      "role": "AI Approver",
+      "share": 0,
+      "write": 0
+    },
+    {
+      "create": 0,
+      "delete": 0,
+      "email": 0,
+      "export": 0,
+      "print": 0,
+      "read": 1,
+      "report": 0,
+      "role": "All",
+      "share": 0,
+      "write": 0,
+      "if_owner": 1
+    }
+  ],
+  "sort_field": "creation",
+  "sort_order": "DESC",
+  "states": [],
+  "title_field": "action_type"
+}

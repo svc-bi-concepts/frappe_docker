@@ -7,9 +7,17 @@
     "modified": "2026-10-11 23:57:00.000000",
     "sha": "2bd0924fa67d8fb7cfeab53b84bbf9dce7139ec29e6f685b55f45c284370fc03"
   },
+  "bi_finance/doctype/ai_action/ai_action.json": {
+    "modified": "2026-10-20 12:00:00.000000",
+    "sha": "bc17be04242826b524cf49c651733249607865841f1a52f09b191213e1b7ce20"
+  },
+  "bi_finance/doctype/ai_action_check/ai_action_check.json": {
+    "modified": "2026-10-20 10:00:00.000000",
+    "sha": "17a4c94e4eb00c221b81f331585bde68346d0878e794ea08c1231119fb0e1af2"
+  },
   "bi_finance/doctype/ai_assistant_settings/ai_assistant_settings.json": {
-    "modified": "2026-10-18 21:54:00.000000",
-    "sha": "91edb455b61650c78f7104012636c4ff5e41f271c91591bafc7651dcda572577"
+    "modified": "2026-10-20 10:00:00.000000",
+    "sha": "b3294eb4e3f3bf76d4c3a628bb145763639404dd7be0b3288ebc38fa3d945864"
   },
   "bi_finance/doctype/bank_matching_settings/bank_matching_settings.json": {
     "modified": "2026-10-12 12:00:00.000000",

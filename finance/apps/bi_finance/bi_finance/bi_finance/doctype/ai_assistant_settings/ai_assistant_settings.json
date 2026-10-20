@@ -9,6 +9,14 @@
     "openrouter_api_key",
     "model",
     "max_tokens_per_answer",
+    "section_actions",
+    "actions_enabled",
+    "auto_level_enabled",
+    "auto_threshold",
+    "auto_actions_per_day",
+    "column_break_actions",
+    "one_click_threshold",
+    "one_click_amount_limit",
     "ledger_actions_from"
   ],
   "fields": [
@@ -40,6 +48,60 @@
       "label": "Max tokens per answer"
     },
     {
+      "fieldname": "section_actions",
+      "fieldtype": "Section Break",
+      "label": "Actions"
+    },
+    {
+      "fieldname": "actions_enabled",
+      "fieldtype": "Check",
+      "label": "Actions enabled",
+      "default": "0",
+      "description": "The kill switch. Off: the assistant reads and answers only, and every proposed action is refused and logged."
+    },
+    {
+      "fieldname": "auto_level_enabled",
+      "fieldtype": "Check",
+      "label": "Level 0 (auto) enabled",
+      "default": "1",
+      "description": "Off: what would apply on its own waits for one click instead."
+    },
+    {
+      "fieldname": "auto_threshold",
+      "fieldtype": "Float",
+      "label": "Auto threshold",
+      "default": "0.8",
+      "precision": "2",
+      "description": "Level 0: confidence at or above this applies at once, logged, with Undo."
+    },
+    {
+      "fieldname": "auto_actions_per_day",
+      "fieldtype": "Int",
+      "label": "Auto actions per user and day",
+      "default": "50",
+      "description": "Above this a level 0 action waits for one click."
+    },
+    {
+      "fieldname": "column_break_actions",
+      "fieldtype": "Column Break",
+      "label": ""
+    },
+    {
+      "fieldname": "one_click_threshold",
+      "fieldtype": "Float",
+      "label": "One-click threshold",
+      "default": "0.9",
+      "precision": "2",
+      "description": "Level 1: confidence at or above this, and within the amount limit, needs one click of the user who asked."
+    },
+    {
+      "fieldname": "one_click_amount_limit",
+      "fieldtype": "Currency",
+      "label": "One-click amount limit",
+      "default": "1000",
+      "description": "Above this a ledger action needs an AI Approver (level 2)."
+    },
+    {
       "default": "2027-01-01",
       "description": "Until this day bexio leads and ERPNext is the parallel copy: every answer says so, and the assistant books nothing before it.",
       "fieldname": "ledger_actions_from",
@@ -49,7 +111,7 @@
   ],
   "issingle": 1,
   "links": [],
-  "modified": "2026-10-18 23:10:00.000000",
+  "modified": "2026-10-20 10:00:00.000000",
   "modified_by": "Administrator",
   "module": "BI Finance",
   "name": "AI Assistant Settings",
