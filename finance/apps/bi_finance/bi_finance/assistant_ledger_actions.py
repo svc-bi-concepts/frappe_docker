@@ -561,9 +561,7 @@ def _apply_revaluation(payload, dry_run):
             f"for {len(rows)} accounts and book its Journal Entry: {lines}."
         )
         if not _unrealized_account(doc.company):
-            text += (
-                f" Booking fails until Unrealized Exchange Gain/Loss Account is set on Company {doc.company}."
-            )
+            text += f" Booking fails until Unrealized Exchange Gain/Loss Account is set on Company {doc.company}."
         return text
     doc.submit()
     made = doc.make_jv_entries()
