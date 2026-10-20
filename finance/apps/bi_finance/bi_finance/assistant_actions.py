@@ -16,8 +16,9 @@ the session user must be the user named, so a caller cannot approve as somebody 
 
 bexio leads until AI Assistant Settings.ledger_actions_from (default 2027-01-01): an action with a ledger effect whose
 posting date is earlier can be proposed, levelled and approved, but apply() runs as a dry run and the row ends in
-approved-dry-run. The ledger types (bank match, revaluation, payment proposal submit, VAT submit) come in erp-9f7y;
-the ledger effect flag, the ledger date check and the dry run path here are generic and tested with a stub type.
+approved-dry-run. The ledger effect flag, the ledger date check and the dry run path here are generic and tested with
+a stub type; the four ledger types (bank match, revaluation, payment proposal submit, VAT submit) are in
+assistant_ledger_actions.py (erp-9f7y) and register themselves at the end of this module.
 """
 
 import datetime
@@ -897,3 +898,8 @@ register(
         undo=lambda doctype, name, payload: _delete_draft(doctype, name, payload),
     )
 )
+
+
+# the four ledger types (erp-9f7y) register themselves on import; they import this module for the registry, so the
+# import stands at the end, where everything they use is defined
+from bi_finance import assistant_ledger_actions  # noqa: E402,F401  # isort: skip

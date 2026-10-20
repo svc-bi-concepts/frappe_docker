@@ -118,10 +118,11 @@ def by_payment_reference(line, payments):
     ]
 
 
-def by_party(line, docs):
+def by_party(line, docs, anchor_days=ANCHOR_DAYS):
     """Pass 3: the open invoices and bills whose party the description names, that fit the line and are within the anchor.
 
-    The line's date and the invoice's date are compared, so a bill paid months later is left for a person.
+    The line's date and the invoice's date are compared, so a bill paid months later is left for a person. The job uses
+    the default anchor; the assistant's match action asks again with a wider one to tell a weaker proof (erp-9f7y).
     """
     described = words(line.get("description"))
     if not described:
@@ -132,7 +133,7 @@ def by_party(line, docs):
             continue
         if not described & words(doc.get("party_name")):
             continue
-        if abs((_day(line["date"]) - _day(doc["date"])).days) <= ANCHOR_DAYS:
+        if abs((_day(line["date"]) - _day(doc["date"])).days) <= anchor_days:
             found.append(doc)
     return found
 

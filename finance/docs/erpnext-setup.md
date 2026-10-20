@@ -104,15 +104,15 @@ no page yet. **Actions are off by default** (AI Assistant Settings, `actions_ena
 
 | id                | When               | Proposes                                                       |
 | ----------------- | ------------------ | -------------------------------------------------------------- |
-| bank.lines        | daily              | `match_bank_transaction` (erp-9f7y)                            |
+| bank.lines        | daily              | `match_bank_transaction`                                       |
 | bank.feeds        | daily              | nothing: settings and uploads are the person's                 |
 | sales.overdue     | daily              | `create_todo`, `add_comment`                                   |
 | drafts            | daily              | `add_comment`; no generic submit                               |
 | bills.due         | weekly             | `create_payment_proposal` (draft)                              |
 | expenses.approve  | weekly             | nothing: HRMS approval, the claimant may not approve their own |
-| month.revaluation | 1st of month       | `submit_revaluation` (erp-9f7y)                                |
+| month.revaluation | 1st of month       | `submit_revaluation`                                           |
 | month.close       | month end          | nothing beyond the tasks above                                 |
-| vat.quarter       | after quarter end  | `create_vat_draft`, then `submit_vat_declaration` (erp-9f7y)   |
+| vat.quarter       | after quarter end  | `create_vat_draft`, then `submit_vat_declaration`              |
 | payroll.month     | monthly, from 2027 | nothing yet                                                    |
 
 **The ladder.** confidence = min(model score, check score); the check score is the strongest passed soft evidence of the
@@ -141,6 +141,31 @@ a monthly delta, so an assistant booking in 2026 would be booked twice. An actio
 is earlier fails the check "ledger date" (confidence capped at 0.5, so level 2) and, when approved, runs as a **dry run**:
 the row ends in `approved-dry-run` with what it would have booked in `dry_run_result`, and nothing is written. Every answer
 starts with the line "bexio leads until 1.1.2027 ..." while today is before that date.
+
+**The four ledger actions** (`assistant_ledger_actions.py`, erp-9f7y). They call the mechanisms that exist and book nothing
+of their own; before the ledger date each runs as a dry run and returns what it would do as text. A failed structural check
+refuses the action; a duplicate or the ledger date caps the confidence at 0.5 (level 2).
+
+- `match_bank_transaction(bank_transaction, doctype, name)`: a bank line pays one open Sales Invoice or Purchase Invoice
+  (or belongs to one unallocated Payment Entry); apply books through `bank_match_job._book` (Payment Entry, then reconcile),
+  as the job does. Level 1 at score >= 0.90 and amount <= CHF 1,000, else 2. Hard: line unreconciled; target open; same
+  currency, direction and the whole outstanding amount (no partials); no other unreconciled line of the account names the
+  target (bank_match's passes; capped); ledger date on the line's date (capped). Score: 1.00 creditor reference, 0.95
+  EndToEndId of a payment run, 0.90 party named within 5 days, 0.80 within 30 days, 0.60 amount only.
+- `submit_revaluation(exchange_rate_revaluation)`: submits the monthly job's draft. Level 1 within the limit, else 2; the
+  amount is the draft's total gain or loss, absolute. Hard: a draft; posting date a month end; a fresh
+  `revaluation_preview` equals the draft to the rappen; on 31 December a Currency Exchange row dated that day per foreign currency;
+  ledger date (capped). Score 1.00. Submitting does not make the Journal Entry: that stays the form's button.
+- `submit_payment_proposal(payment_proposal)`: submits a draft Payment Proposal, whose Payment Entries erpnextswiss then makes
+  as drafts. Always level 2; the amount is the proposal's total. Hard: a draft with bills or claims and no salary rows; a
+  pay-from account; every IBAN (supplier, employee, pay-from account) passes `payment_run.iban_is_valid`; no bill or claim
+  already paid; every row in the account's currency; ledger date on the proposal's date (capped). The bank file download and
+  upload stay the person's.
+- `submit_vat_declaration(vat_declaration)`: submits a draft VAT Declaration. Always level 2; the amount is the payable tax,
+  absolute. Hard: a draft of one quarter or half year; its figures equal a fresh `fill_payment_basis` dry run to the rappen;
+  for a 2026 quarter MWST pro Quartal equals bexio's figures (the rows the report cannot compute yet are left out; a quarter
+  without bexio figures is refused); ledger date on the period end (capped). The transfer file and the ESTV upload stay
+  Benchi's.
 
 ## The setup script
 

@@ -123,7 +123,10 @@ def match_after_import(bank_account):
     }
 
 
-def _open_documents(company, currency, user=None):
+def _open_documents(company, currency, user=None, name=None):
+    """The open invoices and bills of the company in the currency (any currency when none is given). name reads that one
+    document only, which is how the assistant's match action looks at its target (erp-9f7y).
+    """
     docs = []
     for doctype, party_field, direction in (
         ("Sales Invoice", "customer_name", "in"),
@@ -134,8 +137,11 @@ def _open_documents(company, currency, user=None):
             "company": company,
             "docstatus": 1,
             "outstanding_amount": [">", 0],
-            "currency": currency,
         }
+        if currency:
+            filters["currency"] = currency
+        if name:
+            filters["name"] = name
         kwargs = {
             "filters": filters,
             "fields": [
@@ -146,6 +152,8 @@ def _open_documents(company, currency, user=None):
                 "currency",
             ],
         }
+        if name:
+            kwargs["limit_page_length"] = 1
         if user:
             kwargs["user"] = user
         for inv in reader(doctype, **kwargs):
@@ -168,8 +176,9 @@ def _open_documents(company, currency, user=None):
     return docs
 
 
-def _open_payments(company, currency, gl_account, user=None):
-    # a Payment Entry with a clearance date is already reconciled with a line: it names no second one
+def _open_payments(company, currency, gl_account, user=None, name=None):
+    # a Payment Entry with a clearance date is already reconciled with a line: it names no second one; name reads that
+    # one entry only, any currency when none is given (the assistant's match action, erp-9f7y)
     payments = []
     reader = frappe.get_list if user else frappe.get_all
     kwargs = {
@@ -178,6 +187,7 @@ def _open_payments(company, currency, gl_account, user=None):
             "docstatus": 1,
             "unallocated_amount": [">", 0],
             "clearance_date": ["is", "not set"],
+            **({"name": name} if name else {}),
         },
         "fields": [
             "name",
@@ -192,6 +202,8 @@ def _open_payments(company, currency, gl_account, user=None):
             "paid_to_account_currency",
         ],
     }
+    if name:
+        kwargs["limit_page_length"] = 1
     if user:
         kwargs["user"] = user
     for pe in reader("Payment Entry", **kwargs):
@@ -201,7 +213,7 @@ def _open_payments(company, currency, gl_account, user=None):
             direction, pe_currency = "in", pe.paid_to_account_currency
         else:
             continue
-        if pe_currency != currency:
+        if currency and pe_currency != currency:
             continue
         payments.append(
             {
@@ -246,14 +258,17 @@ def _rules(company, user=None):
 
 
 def _book(line, decision, gl_account):
+    """Books one decided line. Returns the Payment Entry the line is reconciled with, None for a rule's Journal Entry."""
     if decision["pass"] == "rule":
         return _book_rule(line, decision["target"], gl_account)
     doctype, name = decision["target"]
     amount = abs(float(line["deposit"] or 0) - float(line["withdrawal"] or 0))
     if doctype == "Payment Entry":
-        return _reconcile(line["name"], "Payment Entry", name, amount)
+        _reconcile(line["name"], "Payment Entry", name, amount)
+        return name
     entry = _payment_entry_for(doctype, name, line, amount, gl_account)
-    return _reconcile(line["name"], "Payment Entry", entry.name, amount)
+    _reconcile(line["name"], "Payment Entry", entry.name, amount)
+    return entry.name
 
 
 def _payment_entry_for(doctype, name, line, amount, gl_account):
