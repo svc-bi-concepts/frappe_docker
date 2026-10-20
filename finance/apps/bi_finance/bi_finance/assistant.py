@@ -255,18 +255,18 @@ def build_tools(registry=None):
 
 
 def _propose(call):
-    """One tool call of the model as one AI Action: the task and the confidence come off the arguments, the rest are
-    the action's own, and propose() decides, refusing and logging what it does not know or what fails its schema. A
-registered type the named task does not call for (TASK_ACTIONS), or a call naming no task, is refused and logged here.
+    """One tool call of the model as one AI Action: the task and the confidence come off the arguments.
+
+    The rest are the action's own, and propose() decides, refusing and logging what it does not know or what fails its
+    schema. A registered type the named task does not call for (TASK_ACTIONS), or a call naming no task, is refused and
+    logged here.
     """
     arguments = dict(call.get("arguments") or {})
     task = _text(arguments.pop("task", ""), 140)
     confidence = arguments.pop("confidence", None)
     name = _text(call.get("name"), 140)
     proposal = (frappe.session.user, task, name, arguments, confidence)
-    if name in assistant_actions.ACTIONS and name not in TASK_ACTIONS.get(
-        task, ()
-    ):
+    if name in assistant_actions.ACTIONS and name not in TASK_ACTIONS.get(task, ()):
         reason = (
             _("The task {0} does not call for {1}.").format(task, name)
             if task
