@@ -1,8 +1,9 @@
 """The desk assistant's action core: the registry, propose / approve / reject / undo and the AI Action rows.
 
 Invented users, documents and round amounts only. frappe is a stub in the module itself (rows in memory, recorded
-calls), and the ledger types of erp-9f7y are not here yet, so the ledger effect, the ledger date and the dry run are
-tested with two stub types (a one-click and an always-approver ledger type). Runs on the host, in the light gate:
+calls). The ledger effect, the ledger date and the dry run are tested here with two stub types (a one-click and an
+always-approver ledger type); the four real ledger types are in test_assistant_ledger_actions. Runs on the host, in
+the light gate:
 
     python3 -m unittest bi_finance.test_assistant_actions
 
