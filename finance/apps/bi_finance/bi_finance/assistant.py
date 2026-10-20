@@ -315,7 +315,7 @@ def _card(result):
 
 
 def collect(today=None, user=None, registry=None):
-    """Every collector's result, read as the session user: the DATA block the prompt carries.
+    """Every collector's result, then the user's recent AI Actions, read as the session user: the DATA block the prompt carries.
 
     today and user are the clock and the person of the run; a test passes both so the reads are pinned. registry
     replaces the built-in list when given (an empty list means none), so part 2 can run a subset.
