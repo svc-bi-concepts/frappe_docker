@@ -144,19 +144,7 @@ def propose(user, task, action_type, payload, model_score):
     settings = _settings()
     today = _today()
     payload = dict(payload) if isinstance(payload, dict) else {}
-    doc = frappe.get_doc(
-        {
-            "doctype": DOCTYPE,
-            "requested_by": user,
-            "task": task,
-            "action_type": action_type,
-            "payload": json.dumps(payload, sort_keys=True, default=str),
-            "model_score": unit_score(model_score),
-            "state": PROPOSED,
-            "level": NEVER,
-            "checks": [],
-        }
-    )
+    doc = _proposal(user, task, action_type, payload, model_score)
     if user != frappe.session.user:
         return _refused_new(
             doc, "The action is proposed in the session of the user it is for."
@@ -390,6 +378,30 @@ def _schema_problems(payload, schema):
         elif "enum" in spec and value is not None and value not in spec["enum"]:
             problems.append(f"{key} must be one of {', '.join(spec['enum'])}")
     return problems
+
+
+def refuse(user, task, action_type, payload, model_score, reason):
+    """A proposal the caller turns away before propose: logged as rejected, level never, like an unknown type."""
+    payload = dict(payload) if isinstance(payload, dict) else {}
+    return _refused_new(
+        _proposal(user, task, action_type, payload, model_score), reason
+    )
+
+
+def _proposal(user, task, action_type, payload, model_score):
+    return frappe.get_doc(
+        {
+            "doctype": DOCTYPE,
+            "requested_by": user,
+            "task": task,
+            "action_type": action_type,
+            "payload": json.dumps(payload, sort_keys=True, default=str),
+            "model_score": unit_score(model_score),
+            "state": PROPOSED,
+            "level": NEVER,
+            "checks": [],
+        }
+    )
 
 
 def _refused_new(doc, reason):

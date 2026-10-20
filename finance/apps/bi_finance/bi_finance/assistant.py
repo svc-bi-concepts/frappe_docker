@@ -125,7 +125,7 @@ class NotPermitted(Exception):
     """The session user may not read a doctype a collector looks at: the collector reports nothing."""
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def ask(message, history=None):
     """One answer for the session user: {"text", "items": [{"doctype", "name", "link"}], "actions": [card]}.
 
@@ -172,7 +172,7 @@ def ask(message, history=None):
     return {"text": text, "items": _items(answer["items"], data), "actions": cards}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def approve_action(action):
     """Level 1: approve one AI Action as the session user; the card as it is afterwards.
 
@@ -182,13 +182,13 @@ def approve_action(action):
     return _decide(action, assistant_actions.approve)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def reject_action(action):
     """Turn down a proposed AI Action as the session user (who asked, or an AI Approver); the card afterwards."""
     return _decide(action, assistant_actions.reject)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def undo_action(action):
     """Take back an auto-done AI Action as the session user; the card afterwards."""
     return _decide(action, assistant_actions.undo)
@@ -202,9 +202,7 @@ def _decide(action, step):
     user = frappe.session.user
     # the names run in sequence, so a stranger is turned away before the step: it would answer with the card (checks,
     # target, dry run text) and write its refusal into a row that is not theirs
-    if frappe.get_doc("AI Action", name).requested_by != user and (
-        assistant_actions.APPROVER_ROLE not in frappe.get_roles(user)
-    ):
+    if not assistant_actions._may_manage(frappe.get_doc("AI Action", name), user):
         frappe.throw(_("This AI Action is not yours."))
     return _card(step(name, user))
 
@@ -254,19 +252,24 @@ def build_tools(registry=None):
 
 def _propose(call):
     """One tool call of the model as one AI Action: the task and the confidence come off the arguments, the rest are
-    the action's own, and propose() decides, refusing and logging what it does not know or what fails its schema.
+    the action's own, and propose() decides, refusing and logging what it does not know or what fails its schema. A
+registered type the named task does not call for (TASK_ACTIONS), or a call naming no task, is refused and logged here.
     """
     arguments = dict(call.get("arguments") or {})
     task = _text(arguments.pop("task", ""), 140)
     confidence = arguments.pop("confidence", None)
-    result = assistant_actions.propose(
-        frappe.session.user,
-        task,
-        _text(call.get("name"), 140),
-        arguments,
-        confidence,
-    )
-    return _card(result)
+    name = _text(call.get("name"), 140)
+    proposal = (frappe.session.user, task, name, arguments, confidence)
+    if name in assistant_actions.ACTIONS and name not in TASK_ACTIONS.get(
+        task, ()
+    ):
+        reason = (
+            _("The task {0} does not call for {1}.").format(task, name)
+            if task
+            else _("The call names no task.")
+        )
+        return _card(assistant_actions.refuse(*proposal, reason))
+    return _card(assistant_actions.propose(*proposal))
 
 
 def _card(result):

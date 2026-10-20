@@ -123,9 +123,11 @@ class Frappe:
     def parse_json(self, text):
         return json.loads(text) if isinstance(text, str) else text
 
-    def whitelist(self, *args, **kwargs):
+    def whitelist(self, *args, methods=None, **kwargs):
         def wrap(function):
             function.is_whitelisted = True
+            # frappe's own default: a whitelisted method answers every verb unless methods narrows it
+            function.allowed_methods = methods or ["GET", "POST", "PUT", "DELETE"]
             return function
 
         return wrap

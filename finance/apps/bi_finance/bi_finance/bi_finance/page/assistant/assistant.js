@@ -152,6 +152,7 @@ frappe.pages["assistant"].on_page_load = function (wrapper) {
       frappe
         .call({
           method: "bi_finance.assistant." + method,
+          type: "POST",
           args: { action: card.name },
           freeze: true,
         })
@@ -184,6 +185,7 @@ frappe.pages["assistant"].on_page_load = function (wrapper) {
     frappe
       .call({
         method: "bi_finance.assistant.ask",
+        type: "POST",
         args: { message: text, history: history },
         freeze: true,
         freeze_message: __("Reading what is open"),

@@ -84,6 +84,13 @@ class AskBase(Base):
         patcher = mock.patch.object(assistant, "frappe", frappe)
         patcher.start()
         self.addCleanup(patcher.stop)
+        # the test's ledger stubs serve bank.lines, as the ledger types will once registered
+        patcher = mock.patch.dict(
+            assistant.TASK_ACTIONS,
+            {"bank.lines": ("match_bank_transaction", "stub_book", "stub_submit")},
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
         patcher = mock.patch.object(assistant, "collect", return_value=[])
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -218,6 +225,17 @@ class Request(AskBase):
         ):
             self.assertNotIn(KEY, seen)
 
+    def test_the_request_asks_for_the_answer_grouped_by_task_id_with_and_without_tools(
+        self,
+    ):
+        for enabled in (1, 0):
+            self.frappe.settings.actions_enabled = enabled
+            self.ask(message="What is open for me?")
+            system = self.body()["messages"][0]["content"]
+            self.assertIn("group the answer under the task ids", system)
+            for task in assistant_client.TASK_IDS:
+                self.assertIn(task, system)
+
     def test_the_banner_adds_the_dry_run_rule_to_the_action_prompt(self):
         self.frappe.settings.ledger_actions_from = "2027-06-01"
         self.ask()
@@ -315,6 +333,29 @@ class ToolCalls(AskBase):
             card = self.ask(("add_comment", raw))["actions"][-1]
             self.assertEqual((card["state"], card["level"]), ("rejected", "never"), raw)
         self.assertEqual(len(self.rows()), 3)
+
+    def assert_refused_for_task(self, arguments, reason):
+        card = self.ask(("add_comment", arguments))["actions"][0]
+        self.assertEqual(
+            (card["state"], card["level"], card["ok"]), ("rejected", "never", False)
+        )
+        self.assertIn(reason, card["message"])
+        row = self.rows()[card["name"]]
+        self.assertEqual((row.action_type, row.state), ("add_comment", "rejected"))
+        self.assertEqual(len(self.rows()), 1)
+
+    def test_a_call_naming_no_task_is_refused_and_logged(self):
+        self.assert_refused_for_task(dict(COMMENT_ARGS, confidence=1), "names no task")
+
+    def test_an_unknown_task_is_refused_and_logged(self):
+        self.assert_refused_for_task(
+            dict(COMMENT_ARGS, task="foo", confidence=1), "does not call for"
+        )
+
+    def test_a_task_that_does_not_call_for_the_type_is_refused_and_logged(self):
+        self.assert_refused_for_task(
+            dict(COMMENT_ARGS, task="bills.due", confidence=1), "does not call for"
+        )
 
     def test_a_missing_confidence_is_no_confidence(self):
         card = self.ask(("add_comment", dict(COMMENT_ARGS, task="drafts")))["actions"][
@@ -506,6 +547,15 @@ class Endpoints(AskBase):
             self.assertTrue(function.is_whitelisted)
             self.assertEqual(list(inspect.signature(function).parameters), ["action"])
 
+    def test_get_is_refused_on_every_endpoint_that_changes_state(self):
+        for function in (
+            assistant.ask,
+            assistant.approve_action,
+            assistant.reject_action,
+            assistant.undo_action,
+        ):
+            self.assertEqual(function.allowed_methods, ["POST"], function.__name__)
+
     def test_a_name_that_is_no_text_is_refused(self):
         for bad in (None, "", "   ", {"name": "x"}, ["x"]):
             with self.assertRaises(self.frappe.ValidationError):
@@ -640,7 +690,7 @@ class Client(unittest.TestCase):
     def test_the_prompt_without_tools_is_the_read_only_one(self):
         prompt = assistant_client.system_prompt([])
         self.assertIn(assistant_client.READ_ONLY_RULE, prompt)
-        self.assertNotIn("task ids", prompt)
+        self.assertNotIn(assistant_client.ACTION_RULE, prompt)
 
 
 if __name__ == "__main__":

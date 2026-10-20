@@ -68,6 +68,9 @@ Rules:
     + READ_ONLY_RULE
     + """
 - Say what is open only from the DATA below. It was read from ERPNext with the user's own permissions; what it does not list, they cannot see or it does not exist. Never invent a document name or a figure.
+- When the user asks what is open for them, group the answer under the task ids of the task table (DATA's key of each entry: """
+    + ", ".join(TASK_IDS)
+    + """): one group per task id with something open, headed by the task id, in that order; the user's own todos come last.
 - DATA counts are complete; DATA top lists hold at most the first ten of each. Say "at least" when a count is larger than its list.
 - Answer in JSON, exactly this shape and nothing else:
   {"text": "...", "items": [{"doctype": "...", "name": "..."}]}
@@ -210,12 +213,11 @@ def system_prompt(data, banner=None, tools=False):
     """The system prompt with the banner rule and the collectors' result as the DATA block.
 
     tools: actions are offered, so the read-only rule gives way to the action rules (and, before the ledger date, to
-    the dry run rule); the task ids are listed so a call can name the one it serves.
+    the dry run rule).
     """
     head = SYSTEM_PROMPT
     if tools:
         head = head.replace(READ_ONLY_RULE, ACTION_RULE)
-        head += "\n- The task ids: " + ", ".join(TASK_IDS) + "."
         if banner:
             head += "\n" + DRY_RUN_RULE
     if banner:
