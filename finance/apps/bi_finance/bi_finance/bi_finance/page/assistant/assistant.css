@@ -64,3 +64,55 @@
   margin-top: 8px;
   font-size: var(--text-xs, 12px);
 }
+
+.assistant-card {
+  border: 1px solid var(--border-color);
+  border-left-width: 4px;
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 10px;
+  background: var(--card-bg);
+}
+
+.assistant-card--l0 {
+  border-left-color: var(--green-500, #30a66d);
+}
+
+.assistant-card--l1 {
+  border-left-color: var(--orange-500, #f2994a);
+}
+
+.assistant-card--l2,
+.assistant-card--lnever {
+  border-left-color: var(--red-500, #e24c4c);
+}
+
+.assistant-badge {
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--control-bg);
+  font-size: var(--text-xs, 12px);
+}
+
+.assistant-checks {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+  font-size: var(--text-sm, 13px);
+}
+
+.assistant-check--fail {
+  color: var(--red-600, #c0392b);
+}
+
+.assistant-status--no {
+  color: var(--red-600, #c0392b);
+}
+
+.assistant-dry {
+  margin-top: 4px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: var(--text-sm, 13px);
+}

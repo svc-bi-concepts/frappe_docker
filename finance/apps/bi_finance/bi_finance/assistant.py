@@ -7,6 +7,12 @@ answer as structured JSON: the text and the documents to link as /app/<doctype>/
 this bead reads. Part 2 (erp-00z0, actions with an approval ladder) registers more collectors with the same
 decorator and takes its proposals from the same shape.
 
+Part 2b (erp-wcf3) lets the model propose: with actions_enabled on, ask() offers the registry's types as tools
+(build_tools: the types' own schemas plus task and confidence, nothing else), sends every tool call the model returns
+through assistant_actions.propose as the session user, and returns the resulting AI Actions as actions[] cards. The
+whitelisted approve_action, reject_action and undo_action take an AI Action name and nothing else; the user is always
+the session's, and assistant_actions decides whether that user may.
+
 The key is read with get_password, travels in the request header and nowhere else: never logged, never in a
 response, never in the browser. Counts and the top ten each, never whole tables (mem-4v01). bexio imports run
 outside ERPNext and keep no sync log doctype, so the feed collector reports the feeds ERPNext holds only.
@@ -20,10 +26,11 @@ booked before then.
 
 import collections
 import datetime
+import json
 import urllib.parse
 
 import frappe
-from bi_finance import assistant_client, bank_match
+from bi_finance import assistant_actions, assistant_client, bank_match
 from bi_finance.assistant_levels import LEDGER_ACTIONS_FROM_DEFAULT
 from frappe import _
 
@@ -82,6 +89,17 @@ BANK_LINE_DOCTYPES = (
 
 DUE_SOON_DAYS = 14
 
+# what each task may propose, from the task table of erp-00z0; DATA names a task's types that are registered, so the
+# ledger types show up as soon as erp-9f7y registers them
+TASK_ACTIONS = {
+    "bank.lines": ("match_bank_transaction",),
+    "sales.overdue": ("create_todo", "add_comment"),
+    "drafts": ("add_comment",),
+    "bills.due": ("create_payment_proposal",),
+    "month.revaluation": ("submit_revaluation",),
+    "vat.quarter": ("create_vat_draft", "submit_vat_declaration"),
+}
+
 # bexio leads until the ledger date (the bookkeeper's D1); the line every answer starts with before it
 BANNER_TEXT = (
     "bexio leads until {date}; ERPNext is the parallel copy, "
@@ -109,7 +127,9 @@ class NotPermitted(Exception):
 
 @frappe.whitelist()
 def ask(message, history=None):
-    """One answer for the session user: {"text", "items": [{"doctype", "name", "link"}]}.
+    """One answer for the session user: {"text", "items": [{"doctype", "name", "link"}], "actions": [card]}.
+
+    actions holds one card per tool call the model made (see _card); it is empty unless actions_enabled is on.
 
     Throws a message that says what to do when the assistant is off, when the key is missing and when OpenRouter
     fails; the thrown text is the only thing the page sees of a failure. The collectors' result and the question are
@@ -127,6 +147,7 @@ def ask(message, history=None):
             _("There is no OpenRouter API key yet. Enter it in AI Assistant Settings.")
         )
     banner = _ledger_banner(settings)
+    tools = build_tools() if getattr(settings, "actions_enabled", 0) else None
     try:
         data = collect()
         answer = assistant_client.answer(
@@ -137,14 +158,144 @@ def ask(message, history=None):
             history=_history(history),
             data=data,
             banner=banner,
+            tools=tools,
         )
     except assistant_client.AssistantError as err:
         frappe.throw(str(err))
+    cards = [_propose(call) for call in (answer.get("calls") or [])] if tools else []
     text = answer["text"]
+    if not text.strip() and cards:
+        text = _("I proposed {0} action(s). They are below.").format(len(cards))
     # the model is told the line; should it drop or change it, it is put in front here, never twice
     if banner and not text.startswith(banner):
         text = banner + "\n" + text
-    return {"text": text, "items": _items(answer["items"], data)}
+    return {"text": text, "items": _items(answer["items"], data), "actions": cards}
+
+
+@frappe.whitelist()
+def approve_action(action):
+    """Level 1: approve one AI Action as the session user; the card as it is afterwards.
+
+    No user name comes from the client: assistant_actions refuses unless the session user is the one who asked.
+    Level 2 is approved on the AI Action form (erp-ss1j), where the amount is typed; here it is refused.
+    """
+    return _decide(action, assistant_actions.approve)
+
+
+@frappe.whitelist()
+def reject_action(action):
+    """Turn down a proposed AI Action as the session user (who asked, or an AI Approver); the card afterwards."""
+    return _decide(action, assistant_actions.reject)
+
+
+@frappe.whitelist()
+def undo_action(action):
+    """Take back an auto-done AI Action as the session user; the card afterwards."""
+    return _decide(action, assistant_actions.undo)
+
+
+def _decide(action, step):
+    """Run approve, reject or undo for the named AI Action as the session user and answer with its card."""
+    if not isinstance(action, str) or not action.strip():
+        frappe.throw(_("Name the AI Action."))
+    result = step(action.strip(), frappe.session.user)
+    return _card(result)
+
+
+def build_tools(registry=None):
+    """The tools the model is offered: one function per registered action type, nothing else.
+
+    Each takes the type's own argument schema plus task (the task id it serves) and confidence (the model's score
+    from 0 to 1), both required. registry replaces ACTIONS when given, so a test can pin the list.
+    """
+    tools = []
+    for name, spec in (
+        assistant_actions.ACTIONS if registry is None else registry
+    ).items():
+        parameters = json.loads(
+            json.dumps(spec.schema)
+        )  # a copy: the registry's schema stays as registered
+        properties = parameters.setdefault("properties", {})
+        properties["task"] = {
+            "type": "string",
+            "enum": list(assistant_client.TASK_IDS),
+            "description": "The id of the task this action serves.",
+        }
+        properties["confidence"] = {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "How sure you are that this action is right, 0 to 1.",
+        }
+        parameters["required"] = list(parameters.get("required", [])) + [
+            "task",
+            "confidence",
+        ]
+        tools.append(
+            {
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "description": spec.schema.get("description")
+                    or "Propose the action " + name.replace("_", " ") + ".",
+                    "parameters": parameters,
+                },
+            }
+        )
+    return tools
+
+
+def _propose(call):
+    """One tool call of the model as one AI Action: the task and the confidence come off the arguments, the rest are
+    the action's own, and propose() decides, refusing and logging what it does not know or what fails its schema.
+    """
+    arguments = dict(call.get("arguments") or {})
+    task = _text(arguments.pop("task", ""), 140)
+    confidence = arguments.pop("confidence", None)
+    result = assistant_actions.propose(
+        frappe.session.user,
+        task,
+        _text(call.get("name"), 140),
+        arguments,
+        confidence,
+    )
+    return _card(result)
+
+
+def _card(result):
+    """An AI Action as the page shows it, from the result of propose, approve, reject or undo.
+
+    dry_run: approving it books nothing (its ledger date check failed). undoable: the type has an Undo.
+    """
+    doc = frappe.get_doc("AI Action", result["name"])
+    spec = assistant_actions.ACTIONS.get(doc.action_type)
+    checks = [
+        {
+            "check": row.get("check"),
+            "passed": bool(row.get("passed")),
+            "detail": row.get("detail") or "",
+        }
+        for row in doc.checks or []
+    ]
+    return {
+        "name": doc.name,
+        "type": doc.action_type,
+        "task": doc.task,
+        "target_doctype": doc.target_doctype or "",
+        "target_name": doc.target_name or "",
+        "level": str(doc.level),
+        "confidence": doc.confidence,
+        "checks": checks,
+        "state": doc.state,
+        "ok": bool(result.get("ok")),
+        "message": result.get("message") or doc.error or "",
+        "dry_run": any(
+            row["check"] == "ledger date" and not row["passed"] for row in checks
+        ),
+        "dry_run_result": doc.dry_run_result or "",
+        "undoable": bool(spec and spec.undo),
+        "form": _link("AI Action", doc.name),
+    }
 
 
 def collect(today=None, user=None, registry=None):
@@ -167,13 +318,21 @@ def _one(entry, user, today):
         result = {
             "note": "you may not read everything this looks at, so it is left out"
         }
-    return {
+    out = {
         "key": entry["key"],
         "label": entry["label"],
         "count": result.get("count"),
         "top": result.get("top", []),
         **{k: v for k, v in result.items() if k not in ("count", "top")},
     }
+    proposals = [
+        name
+        for name in TASK_ACTIONS.get(entry["key"], ())
+        if name in assistant_actions.ACTIONS
+    ]
+    if proposals:
+        out["proposals"] = proposals
+    return out
 
 
 def _get_list(doctype, **kwargs):

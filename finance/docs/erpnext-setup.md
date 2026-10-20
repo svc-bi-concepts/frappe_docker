@@ -97,8 +97,9 @@ top level if it is daily work.
 ## The desk assistant
 
 The assistant answers from the bookkeeper's open tasks (`bi_finance/assistant.py`, part 1, read only) and, since part 2a,
-can act through a ladder (`assistant_actions.py`, `assistant_levels.py`; erp-00z0). Part 2a is the core: no model call and
-no page yet. **Actions are off by default** (AI Assistant Settings, `actions_enabled`); the first live proof is erp-ss1j's.
+can act through a ladder (`assistant_actions.py`, `assistant_levels.py`; erp-00z0). Part 2a is the core; part 2b (erp-wcf3)
+lets the model propose through OpenRouter tool calling and shows the proposals on the Assistant page.
+**Actions are off by default** (AI Assistant Settings, `actions_enabled`); the first live proof is erp-ss1j's.
 
 **Tasks.** Each task has an id; the collectors (part 1) and the actions (part 2) use it.
 
@@ -166,6 +167,17 @@ refuses the action; a duplicate or the ledger date caps the confidence at 0.5 (l
   for a 2026 quarter MWST pro Quartal equals bexio's figures (the rows the report cannot compute yet are left out; a quarter
   without bexio figures is refused); ledger date on the period end (capped). The transfer file and the ESTV upload stay
   Benchi's.
+
+**The model proposes (part 2b).** With `actions_enabled` on, `ask()` offers one tool per registered action type (its own
+schema plus the required `task` id and `confidence` 0..1) and nothing else; with it off no tool is sent. Each tool call the
+model returns goes through `propose()` as the session user and leaves one AI Action row, an unknown type or a call that
+fails its schema included (refused, logged). The answer carries `actions[]`, one card each, and the page shows level,
+confidence and each check: level 0 done with **Undo**, level 1 **Approve** / **Reject** (**Approve (dry run)** before the
+ledger date), level 2 a link to the AI Action form (approved there, erp-ss1j). The endpoints `approve_action`,
+`reject_action` and `undo_action` in `assistant.py` take the AI Action name and nothing else; `assistant_actions` checks the
+session user. Every request keeps the zero-retention routing. With the default ladder, a ledger action whose posting date is
+before the ledger date lands on level 2 (the ledger date check caps its confidence at 0.5); level 1 needs a lowered
+`one_click_threshold`.
 
 ## The setup script
 
