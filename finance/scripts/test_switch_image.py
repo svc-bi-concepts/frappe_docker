@@ -52,6 +52,34 @@ class Functions(unittest.TestCase):
         self.assertIn('      - "127.0.0.1:8082:8080"', moved)
         self.assertIn("ports: !override", moved)
 
+    def test_set_tag_keeps_the_newline_after_a_last_image_line(self):
+        # The trailing \s* of IMAGE took the file's final newline when an image line ended it.
+        self.assertTrue(COMPOSE.endswith("t-old\n"))
+        self.assertTrue(switch_image.set_tag(COMPOSE, "t-new").endswith("t-new\n"))
+        self.assertEqual(
+            switch_image.set_tag("a\n  image: frappe-finance-custom:t-old", "t-new"),
+            "a\n  image: frappe-finance-custom:t-new",
+        )
+
+    def test_set_tag_changes_only_the_tags_byte_for_byte(self):
+        text = (
+            "services:\n"
+            "  frontend:\n"
+            "    image: frappe-finance-custom:t-old\n"
+            "\n"
+            '    ports: !override\n      - "127.0.0.1:8082:8080"\n'
+            "\n"
+            "  backend:\n"
+            "\timage: frappe-finance-custom:t-old\n"
+            "\n"
+            "  scheduler:\n"
+            "    image: frappe-finance-custom:t-old\n"
+        )
+        self.assertEqual(
+            switch_image.set_tag(text, "t-new"),
+            text.replace("t-old", "t-new"),
+        )
+
     def test_remove_after_switch_lists_old_and_new_base_and_finance(self):
         self.assertEqual(
             switch_image.remove_after_switch("t-old", "t-new"),

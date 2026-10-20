@@ -12,8 +12,10 @@ import re
 import sys
 
 REPO = "frappe-finance-custom"
-IMAGE = re.compile(r"^(\s*image:\s*)" + re.escape(REPO) + r":(\S+)\s*$", re.M)
-FRONTEND_PORT = re.compile(r'^\s*-\s*"127\.0\.0\.1:(\d+):8080"\s*$', re.M)
+# [ \t]* before $, never \s*: under re.M \s* also takes the newline that ends the line (and any
+# blank lines after it), which set_tag would then drop from the file.
+IMAGE = re.compile(r"^(\s*image:\s*)" + re.escape(REPO) + r":(\S+)[ \t]*$", re.M)
+FRONTEND_PORT = re.compile(r'^\s*-\s*"127\.0\.0\.1:(\d+):8080"[ \t]*$', re.M)
 
 
 def current_tag(compose_text):
