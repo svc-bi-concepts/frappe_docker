@@ -2,7 +2,7 @@
 
 Part 1 (assistant.py) reads and answers. This module is what acts, and every path through it writes or updates one AI
 Action row, the refused ones too, so the log is the whole story. No model call and no UI here: erp-wcf3 (2b) hands the
-model the schemas below and calls propose(); erp-ss1j (2c) routes level 2 to the AI Action form. The ladder itself is
+model the schemas below and calls propose(); erp-ss1j (2c) routes level 2 to the AI Action form, with a ToDo for each AI Approver. The ladder itself is
 the pure function in assistant_levels.py.
 
     propose(user, task, action_type, payload, model_score)   level 0 applies at once, 1 and 2 wait as "proposed"
@@ -191,6 +191,8 @@ def propose(user, task, action_type, payload, model_score):
         _apply(doc, spec, payload, dry_run=False, done=AUTO_DONE)
         doc.save(ignore_permissions=True)
         return _result(doc, doc.state == AUTO_DONE)
+    if level == 2:
+        _open_todos(doc)
     return _result(doc, True)
 
 
@@ -233,6 +235,7 @@ def approve(action, user, confirmed_amount=None):
         doc.state = REJECTED
         doc.error = _text("; ".join(row["detail"] for row in failed_hard(rows)))
         doc.save(ignore_permissions=True)
+        _close_todos(doc)
         return _result(doc, False)
     doc.approver = user
     doc.confirmed_amount = confirmed_amount
@@ -240,6 +243,7 @@ def approve(action, user, confirmed_amount=None):
     dry_run = spec.ledger_effect and not (posting and posting >= _ledger_from(settings))
     _apply(doc, spec, payload, dry_run=dry_run, done=APPROVED)
     doc.save(ignore_permissions=True)
+    _close_todos(doc)
     return _result(doc, doc.state in (APPROVED, APPROVED_DRY_RUN))
 
 
@@ -258,6 +262,7 @@ def reject(action, user):
     doc.approver = user
     doc.error = f"Rejected by {user}."
     doc.save(ignore_permissions=True)
+    _close_todos(doc)
     return _result(doc, True)
 
 
@@ -465,6 +470,72 @@ def _other_approver_exists(requester):
             limit_page_length=1,
         )
     )
+
+
+def can_decide(doc, user):
+    """Whether the AI Action form offers Approve and Reject to this user: a proposed level 2 action, an AI Approver who
+    is not the API user, and the requester only when no other enabled AI Approver exists (approve() enforces the same)."""
+    return (
+        doc.state == PROPOSED
+        and str(doc.level) == "2"
+        and user != API_USER
+        and APPROVER_ROLE in frappe.get_roles(user)
+        and not (user == doc.requested_by and _other_approver_exists(user))
+    )
+
+
+def _todo_recipients(requester):
+    """The enabled AI Approvers a level 2 request goes to: all but the requester and the API user, or the requester
+    alone when they are the only one (Benchi is the only desk user)."""
+    names = frappe.get_all(
+        "Has Role",
+        filters={"role": APPROVER_ROLE, "parenttype": "User"},
+        pluck="parent",
+        limit_page_length=50,
+    )
+    names = [name for name in dict.fromkeys(names) if name != API_USER]
+    if not names:
+        return []
+    enabled = frappe.get_all(
+        "User",
+        filters={"name": ["in", names], "enabled": 1},
+        pluck="name",
+        limit_page_length=50,
+    )
+    others = [name for name in enabled if name != requester]
+    return others or [name for name in enabled if name == requester]
+
+
+def _open_todos(doc):
+    """One ToDo per recipient of a level 2 proposal, on the AI Action; type and target only, never an amount."""
+    description = _text(
+        f"Approve AI Action {doc.name}: {doc.action_type} {doc.target_doctype} {doc.target_name}"
+    )
+    for user in _todo_recipients(doc.requested_by):
+        frappe.get_doc(
+            {
+                "doctype": "ToDo",
+                "allocated_to": user,
+                "description": description,
+                "priority": "Medium",
+                "reference_type": DOCTYPE,
+                "reference_name": doc.name,
+                "status": "Open",
+            }
+        ).insert(ignore_permissions=True)
+
+
+def _close_todos(doc):
+    """The open ToDos of an action that was decided: nobody has to look at it any more."""
+    for name in frappe.get_all(
+        "ToDo",
+        filters={"reference_type": DOCTYPE, "reference_name": doc.name, "status": "Open"},
+        pluck="name",
+        limit_page_length=50,
+    ):
+        todo = frappe.get_doc("ToDo", name)
+        todo.status = "Closed"
+        todo.save(ignore_permissions=True)
 
 
 def _auto_used_today(user, today):

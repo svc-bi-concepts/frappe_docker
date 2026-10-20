@@ -179,13 +179,17 @@ def ask(message, history=None):
 
 
 @frappe.whitelist(methods=["POST"])
-def approve_action(action):
-    """Level 1: approve one AI Action as the session user; the card as it is afterwards.
+def approve_action(action, confirmed_amount=None):
+    """Approve one AI Action as the session user; the card as it is afterwards.
 
-    No user name comes from the client: assistant_actions refuses unless the session user is the one who asked.
-    Level 2 is approved on the AI Action form (erp-ss1j), where the amount is typed; here it is refused.
+    No user name comes from the client: assistant_actions refuses unless the session user is the one who asked
+    (level 1) or an AI Approver (level 2). Level 2 is approved on the AI Action form (erp-ss1j), which sends the
+    amount the approver typed as confirmed_amount; the Assistant page sends none, so a level 2 card is refused there.
     """
-    return _decide(action, assistant_actions.approve)
+    return _decide(
+        action,
+        lambda name, user: assistant_actions.approve(name, user, confirmed_amount),
+    )
 
 
 @frappe.whitelist(methods=["POST"])

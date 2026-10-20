@@ -179,10 +179,19 @@ most 20, newest first, type, task, target and state), and the model is told not 
 or done. The answer carries `actions[]`, one card each, and the page shows level,
 confidence and each check: level 0 done with **Undo**, level 1 **Approve** / **Reject** (**Approve (dry run)** before the
 ledger date), level 2 a link to the AI Action form (approved there, erp-ss1j). The endpoints `approve_action`,
-`reject_action` and `undo_action` in `assistant.py` (POST only, as is `ask`) take the AI Action name and nothing else; `assistant_actions` checks the
+`reject_action` and `undo_action` in `assistant.py` (POST only, as is `ask`) take the AI Action name (`approve_action` also the typed amount, `confirmed_amount`); `assistant_actions` checks the
 session user, and a user who neither asked nor is an AI Approver is turned away before it (no card, no write). Every request keeps the zero-retention routing. With the default ladder, a ledger action whose posting date is
 before the ledger date lands on level 2 (the ledger date check caps its confidence at 0.5); level 1 needs a lowered
 `one_click_threshold`.
+
+**Level 2 approval (erp-ss1j).** Give someone the role AI Approver in User > Roles (never the API user, which never approves).
+When the assistant proposes a level 2 action, every enabled AI Approver except the requester gets a ToDo (shown in their ToDo
+list and on the Home page, "Approve AI Action ...: type and target", no amount); the requester gets it only when they are the
+only AI Approver, which is Benchi's case today. The ToDo opens the AI Action form: the checks table, the payload and, for a
+ledger action before the ledger date, the dry run text are read only there, and **Approve** / **Reject** show only to an
+approver allowed by the rule (`can_decide` in `assistant_actions.py`) while the action is proposed. **Approve** asks for the
+amount; a wrong amount is refused and the action stays proposed. Approving or rejecting closes the ToDos. The same rule runs on the server,
+so the buttons are a convenience, not the check.
 
 ## The setup script
 
