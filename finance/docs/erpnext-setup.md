@@ -101,7 +101,8 @@ can act through a ladder (`assistant_actions.py`, `assistant_levels.py`; erp-00z
 lets the model propose through OpenRouter tool calling and shows the proposals on the Assistant page.
 **Actions are off by default** (AI Assistant Settings, `actions_enabled`); the first live proof is erp-ss1j's.
 
-**Tasks.** Each task has an id; the collectors (part 1) and the actions (part 2) use it.
+**Tasks.** Each task has an id; the collectors (part 1) and the actions (part 2) use it, and the answer to "What is open
+for me" is grouped under them (the user's own todos last).
 
 | id                | When               | Proposes                                                       |
 | ----------------- | ------------------ | -------------------------------------------------------------- |
@@ -176,7 +177,7 @@ fails its schema included (refused, logged). A call that names no task, an unkno
 propose (the table above) is refused and logged too. The answer carries `actions[]`, one card each, and the page shows level,
 confidence and each check: level 0 done with **Undo**, level 1 **Approve** / **Reject** (**Approve (dry run)** before the
 ledger date), level 2 a link to the AI Action form (approved there, erp-ss1j). The endpoints `approve_action`,
-`reject_action` and `undo_action` in `assistant.py` take the AI Action name and nothing else; `assistant_actions` checks the
+`reject_action` and `undo_action` in `assistant.py` (POST only, as is `ask`) take the AI Action name and nothing else; `assistant_actions` checks the
 session user, and a user who neither asked nor is an AI Approver is turned away before it (no card, no write). Every request keeps the zero-retention routing. With the default ladder, a ledger action whose posting date is
 before the ledger date lands on level 2 (the ledger date check caps its confidence at 0.5); level 1 needs a lowered
 `one_click_threshold`.
