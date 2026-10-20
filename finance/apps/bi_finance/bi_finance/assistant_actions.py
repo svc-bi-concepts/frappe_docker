@@ -474,7 +474,8 @@ def _other_approver_exists(requester):
 
 def can_decide(doc, user):
     """Whether the AI Action form offers Approve and Reject to this user: a proposed level 2 action, an AI Approver who
-    is not the API user, and the requester only when no other enabled AI Approver exists (approve() enforces the same)."""
+    is not the API user, and the requester only when no other enabled AI Approver exists (approve() enforces the same).
+    """
     return (
         doc.state == PROPOSED
         and str(doc.level) == "2"
@@ -529,7 +530,11 @@ def _close_todos(doc):
     """The open ToDos of an action that was decided: nobody has to look at it any more."""
     for name in frappe.get_all(
         "ToDo",
-        filters={"reference_type": DOCTYPE, "reference_name": doc.name, "status": "Open"},
+        filters={
+            "reference_type": DOCTYPE,
+            "reference_name": doc.name,
+            "status": "Open",
+        },
         pluck="name",
         limit_page_length=50,
     ):
