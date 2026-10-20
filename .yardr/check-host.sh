@@ -54,6 +54,8 @@ assert all(s[n].get('restart') != 'unless-stopped' for n in ['configurator', 'cr
 (cd finance/bexio && python3 -m unittest discover -s . -p "test_*.py")
 # The SharePoint reader's tests on a fake Graph (no network), with openssl for the signing check.
 (cd finance/sharepoint && python3 -m unittest discover -s . -p "test_*.py")
+# The mailbox tool's tests on a stubbed HTTP layer (invented mail, no network), with openssl for the assertion check.
+(cd finance/mail && python3 -m unittest discover -s . -p "test_*.py")
 # The image app lists (live without hrms, copy with it) and build-image.sh's modes; no docker.
 # switch-image.sh's decisions (which tag runs, which images go at rest) with stub docker and curl.
 # gate-image.sh's choice of the gate's image (main's pin, the branch's, the one at rest) with stub git and docker.
