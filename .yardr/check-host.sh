@@ -44,8 +44,8 @@ assert all(s[n].get('restart') != 'unless-stopped' for n in ['configurator', 'cr
 "
 # The bi_finance layout and stamp guard, stdlib only (no frappe), so it runs on the host.
 # A synced JSON changed without a newer 'modified' fails here; see test_layout.py.
-# test_assistant, test_assistant_levels and test_assistant_actions run on the host too: their frappe is a stub in the module itself.
-(cd finance/apps/bi_finance && python3 -m unittest bi_finance.test_layout bi_finance.test_wise_client bi_finance.test_estv_vat_xml bi_finance.test_mwst_payment bi_finance.test_treasury_card bi_finance.test_vat_declaration_client bi_finance.test_bank_match bi_finance.test_camt bi_finance.test_mwst_quarterly bi_finance.test_sidebar bi_finance.test_erpnextswiss_desk_records bi_finance.test_module_profile_finance bi_finance.test_cash_conversion bi_finance.test_cash_forecast bi_finance.test_assistant bi_finance.test_assistant_levels bi_finance.test_assistant_actions)
+# test_assistant, test_assistant_levels, test_assistant_actions and test_assistant_ledger_actions run on the host too: their frappe is a stub in the module itself.
+(cd finance/apps/bi_finance && python3 -m unittest bi_finance.test_layout bi_finance.test_wise_client bi_finance.test_estv_vat_xml bi_finance.test_mwst_payment bi_finance.test_treasury_card bi_finance.test_vat_declaration_client bi_finance.test_bank_match bi_finance.test_camt bi_finance.test_mwst_quarterly bi_finance.test_sidebar bi_finance.test_erpnextswiss_desk_records bi_finance.test_module_profile_finance bi_finance.test_cash_conversion bi_finance.test_cash_forecast bi_finance.test_assistant bi_finance.test_assistant_levels bi_finance.test_assistant_actions bi_finance.test_assistant_ledger_actions)
 # The bi_payroll formulas (invented employees), the ESTV withholding tariffs (invented rows), the payroll hand-over rows
 # (invented employees), the payslip data and the Lohnabrechnung template's render (invented employee), the Quellensteuer
 # tariff codes (invented rows) and its layout and stamp guard, stdlib only (test_payslip's render needs jinja2).
