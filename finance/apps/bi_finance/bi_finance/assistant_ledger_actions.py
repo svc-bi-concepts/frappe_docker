@@ -520,16 +520,20 @@ def _apply_revaluation(payload, dry_run):
     """Submit and book: ERPNext's submit of the revaluation posts nothing, its Journal Entries do (make_jv_entries, the
     form's Create Journal Entry button: one for the gain or loss and one for the zero-balance accounts, both saved as
     drafts). The apply submits the revaluation and those entries together; a failure of any step rolls the whole apply
-    back (assistant_actions._apply), so no submitted revaluation stays without its entries.
+    back (assistant_actions._apply), so no submitted revaluation stays without its entries. The dry run lists each row's
+    gain or loss in the company currency, which is the currency of gain_loss (the account's own is in its name).
     """
     doc = frappe.get_doc(
         "Exchange Rate Revaluation", payload["exchange_rate_revaluation"]
     )
     if dry_run:
         rows = _gain_loss_rows(doc.accounts)
+        company_currency = frappe.db.get_value(
+            "Company", doc.company, "default_currency"
+        )
         lines = "; ".join(
-            f"{account} ({currency}) {'gain' if cents > 0 else 'loss'} {abs(cents) / 100:.2f}"
-            for account, currency, cents in rows
+            f"{account} {'gain' if cents > 0 else 'loss'} {abs(cents) / 100:.2f} {company_currency}"
+            for account, _currency, cents in rows
         )
         return (
             f"Submit Exchange Rate Revaluation {doc.name} dated {_date(doc.posting_date)} "

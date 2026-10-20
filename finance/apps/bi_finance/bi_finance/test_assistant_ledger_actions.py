@@ -635,6 +635,7 @@ class RevaluationBase(LedgerBase):
             {"account": "1050 Wise EUR", "account_currency": "EUR", "gain_loss": 40.0},
             {"account": "1051 Wise USD", "account_currency": "USD", "gain_loss": -30.0},
         ]
+        self.add("Company", "Invented Co", default_currency="CHF")
         self.draft = self.add(
             "Exchange Rate Revaluation",
             "ERR-1",
@@ -771,8 +772,9 @@ class RevaluationLedgerDate(RevaluationBase):
             "Submit Exchange Rate Revaluation ERR-1 dated 2026-12-31 for 2 accounts and book its Journal Entry",
             self.row(result).dry_run_result,
         )
-        self.assertIn("1050 Wise EUR (EUR) gain 40.00", self.row(result).dry_run_result)
-        self.assertIn("1051 Wise USD (USD) loss 30.00", self.row(result).dry_run_result)
+        self.assertIn("1050 Wise EUR gain 40.00 CHF", self.row(result).dry_run_result)
+        self.assertIn("1051 Wise USD loss 30.00 CHF", self.row(result).dry_run_result)
+        self.assertNotIn("(EUR)", self.row(result).dry_run_result)
         self.assertEqual(self.applied(), ([], [], []))
 
     def test_after_the_ledger_date_the_approval_submits_the_draft_and_books_its_entry(
