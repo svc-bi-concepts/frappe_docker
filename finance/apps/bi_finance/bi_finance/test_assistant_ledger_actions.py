@@ -635,7 +635,12 @@ class RevaluationBase(LedgerBase):
             {"account": "1050 Wise EUR", "account_currency": "EUR", "gain_loss": 40.0},
             {"account": "1051 Wise USD", "account_currency": "USD", "gain_loss": -30.0},
         ]
-        self.add("Company", "Invented Co", default_currency="CHF")
+        self.company = self.add(
+            "Company",
+            "Invented Co",
+            default_currency="CHF",
+            unrealized_exchange_gain_loss_account="Invented Unrealized FX",
+        )
         self.draft = self.add(
             "Exchange Rate Revaluation",
             "ERR-1",
@@ -735,6 +740,29 @@ class RevaluationChecks(RevaluationBase):
         self.frappe.unreadable.add(("Exchange Rate Revaluation", "ERR-1"))
         self.refused(self.revalue(), "target readable")
 
+    def test_a_company_without_the_unrealized_account_is_refused_and_nothing_is_submitted(
+        self,
+    ):
+        self.company.unrealized_exchange_gain_loss_account = None
+        result = self.revalue()
+        self.refused(result, "unrealized gain/loss account")
+        self.assertIn(
+            "Unrealized Exchange Gain/Loss Account",
+            self.check(result, "unrealized gain/loss account")["detail"],
+        )
+        self.assertIn("Unrealized Exchange Gain/Loss Account", self.row(result).error)
+        self.assertEqual(self.applied(), ([], [], []))
+
+    def test_the_unrealized_account_emptied_after_the_proposal_refuses_the_approval(
+        self,
+    ):
+        proposed = self.revalue()
+        self.company.unrealized_exchange_gain_loss_account = ""
+        result = actions.approve(proposed["name"], USER)
+        self.assertEqual((result["ok"], result["state"]), (False, "rejected"))
+        self.assertIn("Unrealized Exchange Gain/Loss Account", self.row(result).error)
+        self.assertEqual((self.frappe.submitted, self.made_calls), ([], 0))
+
     def test_the_year_end_needs_a_currency_exchange_row_per_currency(self):
         self.draft.posting_date = date(2026, 12, 31)
         self.frappe.matches["Currency Exchange"] = lambda filters: (
@@ -776,6 +804,34 @@ class RevaluationLedgerDate(RevaluationBase):
         self.assertIn("1051 Wise USD loss 30.00 CHF", self.row(result).dry_run_result)
         self.assertNotIn("(EUR)", self.row(result).dry_run_result)
         self.assertEqual(self.applied(), ([], [], []))
+
+    def test_before_the_ledger_date_a_missing_unrealized_account_only_warns_in_the_dry_run(
+        self,
+    ):
+        self.draft.posting_date = date(2026, 12, 31)
+        self.frappe.matches["Currency Exchange"] = lambda filters: ["CE-1"]
+        self.company.unrealized_exchange_gain_loss_account = None
+        proposed = self.revalue()
+        self.assertEqual(self.row(proposed).state, "proposed")
+        warning = self.check(proposed, "unrealized gain/loss account")
+        self.assertEqual((warning["passed"], warning["hard"]), (0, 0))
+        self.switch(OTHER)
+        result = actions.approve(proposed["name"], OTHER, confirmed_amount="10.00")
+        self.assertEqual(result["state"], "approved-dry-run")
+        self.assertIn(
+            "Booking fails until Unrealized Exchange Gain/Loss Account is set on Company Invented Co",
+            self.row(result).dry_run_result,
+        )
+        self.assertEqual(self.applied(), ([], [], []))
+
+    def test_the_dry_run_of_a_company_with_the_account_set_carries_no_warning(self):
+        self.draft.posting_date = date(2026, 12, 31)
+        self.frappe.matches["Currency Exchange"] = lambda filters: ["CE-1"]
+        proposed = self.revalue()
+        self.switch(OTHER)
+        result = actions.approve(proposed["name"], OTHER, confirmed_amount="10.00")
+        self.assertEqual(result["state"], "approved-dry-run")
+        self.assertNotIn("Booking fails", self.row(result).dry_run_result)
 
     def test_after_the_ledger_date_the_approval_submits_the_draft_and_books_its_entry(
         self,

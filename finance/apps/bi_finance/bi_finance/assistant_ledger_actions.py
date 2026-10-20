@@ -472,6 +472,20 @@ def _check_revaluation(payload, user, today):
             ),
         )
     )
+    account = _unrealized_account(doc.company)
+    books = posting >= base._ledger_from(base._settings())
+    rows.append(
+        base._row(
+            "unrealized gain/loss account",
+            bool(account),
+            hard=books,
+            detail=(
+                "the Company's Unrealized Exchange Gain/Loss Account is set"
+                if account
+                else f"Company {doc.company} has no Unrealized Exchange Gain/Loss Account; booking fails until it is set"
+            ),
+        )
+    )
     if (posting.month, posting.day) == (12, 31):
         # the year-end revaluation takes the ESTV Jahresendkurs, entered as a Currency Exchange row dated 31 December
         currencies = sorted({currency for _, currency, _ in drafted})
@@ -495,6 +509,12 @@ def _check_revaluation(payload, user, today):
             )
         )
     return rows
+
+
+def _unrealized_account(company):
+    return frappe.db.get_value(
+        "Company", company, "unrealized_exchange_gain_loss_account"
+    )
 
 
 def _revaluation_amount(payload):
@@ -521,7 +541,8 @@ def _apply_revaluation(payload, dry_run):
     form's Create Journal Entry button: one for the gain or loss and one for the zero-balance accounts, both saved as
     drafts). The apply submits the revaluation and those entries together; a failure of any step rolls the whole apply
     back (assistant_actions._apply), so no submitted revaluation stays without its entries. The dry run lists each row's
-    gain or loss in the company currency, which is the currency of gain_loss (the account's own is in its name).
+    gain or loss in the company currency, which is the currency of gain_loss (the account's own is in its name), and
+    warns when the Company's Unrealized Exchange Gain/Loss Account, which make_jv_entries needs, is still empty.
     """
     doc = frappe.get_doc(
         "Exchange Rate Revaluation", payload["exchange_rate_revaluation"]
@@ -535,10 +556,15 @@ def _apply_revaluation(payload, dry_run):
             f"{account} {'gain' if cents > 0 else 'loss'} {abs(cents) / 100:.2f} {company_currency}"
             for account, _currency, cents in rows
         )
-        return (
+        text = (
             f"Submit Exchange Rate Revaluation {doc.name} dated {_date(doc.posting_date)} "
             f"for {len(rows)} accounts and book its Journal Entry: {lines}."
         )
+        if not _unrealized_account(doc.company):
+            text += (
+                f" Booking fails until Unrealized Exchange Gain/Loss Account is set on Company {doc.company}."
+            )
+        return text
     doc.submit()
     made = doc.make_jv_entries()
     names = [

@@ -160,7 +160,9 @@ refuses the action; a duplicate or the ledger date caps the confidence at 0.5 (l
   `revaluation_preview` equals the draft to the rappen; on 31 December a Currency Exchange row dated that day per foreign currency;
   ledger date (capped). Score 1.00. Submitting posts nothing, so the apply also makes the Journal Entry(ies) with
   `make_jv_entries` (the form's Create Journal Entry) and submits them in the same transaction; a failure undoes the submit
-  too. Before the ledger date it is a dry run that lists the gain or loss rows.
+  too. Before the ledger date it is a dry run that lists the gain or loss rows. `make_jv_entries` books against the
+  Company's **Unrealized Exchange Gain/Loss Account**, which ERPNext leaves empty: it must be set on the Company before the
+  ledger date 2027-01-01 (the check "unrealized gain/loss account" refuses a booking without it; the dry run only warns).
 - `submit_payment_proposal(payment_proposal)`: submits a draft Payment Proposal, whose Payment Entries erpnextswiss then makes
   as drafts. Always level 2; the amount is the proposal's total. Hard: a draft with bills or claims and no salary rows; a
   pay-from account; every IBAN (supplier, employee, pay-from account) passes `payment_run.iban_is_valid`; no bill or claim
