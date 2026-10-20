@@ -397,6 +397,40 @@ class ReadTest(unittest.TestCase):
         with self.assertRaises(MailError):
             mail.save_attachment(g, "m1", "note.txt", os.path.join(tmp, "out"))
 
+    def test_read_prints_headers_body_text_and_attachment_sizes(self):
+        g, fake = graph_with(
+            {
+                "subject": "Invented invoice",
+                "from": {"emailAddress": {"address": "s@example.test"}},
+                "toRecipients": [{"emailAddress": {"address": "p@example.test"}}],
+                "ccRecipients": [{"emailAddress": {"address": "c@example.test"}}],
+                "receivedDateTime": "2026-10-19T08:30:00Z",
+                "hasAttachments": True,
+                "body": {"contentType": "html", "content": "<p>Hello &amp; thanks</p>"},
+            },
+            {
+                "value": [
+                    {"id": "a1", "name": "bill.pdf", "size": 1234, "isInline": False},
+                    {"id": "a2", "name": "logo.png", "size": 56, "isInline": True},
+                ]
+            },
+        )
+        out = io.StringIO()
+        args = types.SimpleNamespace(id="m1", attachment=None, out=None)
+        mail.cmd_read(g, args, out)
+        lines = out.getvalue().split("\n")
+        self.assertIn("Subject: Invented invoice", lines)
+        self.assertIn("Date: 2026-10-19 08:30", lines)
+        self.assertIn("From: s@example.test", lines)
+        self.assertIn("To: p@example.test", lines)
+        self.assertIn("Cc: c@example.test", lines)
+        self.assertIn("Hello & thanks", lines)
+        self.assertNotIn("<p>", out.getvalue())
+        self.assertIn("Attachments:", lines)
+        self.assertIn("  bill.pdf  1234 bytes  attached", lines)
+        self.assertIn("  logo.png  56 bytes  inline", lines)
+        self.assertEqual([c[0] for c in fake.calls], ["GET", "GET"])
+
     def test_a_name_that_could_leave_the_directory_is_refused(self):
         g, fake = graph_with()
         with self.assertRaises(MailError):

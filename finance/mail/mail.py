@@ -19,7 +19,7 @@ else: no send, no delete, no move, no other mailbox.
     finance/mail/mail.py read <id> [--attachment NAME --out DIR]
     finance/mail/mail.py draft-new          < {"subject", "to", "cc"?, "body", "contentType"?}
     finance/mail/mail.py draft-reply <id> [--all]  < {"body", "contentType"?}
-    finance/mail/mail.py contacts [--search X]
+    finance/mail/mail.py contacts
 
 The mailbox, client id and tenant come from private/graph-cert/mail.json, which must be mode 600.
 The private key comes from FINANCE_SP_CERT_KEY (Automic Vault) and reaches openssl through a
@@ -275,11 +275,9 @@ class Graph:
     def attachment(self, mid, aid):
         return self.call("GET", self.url("messages/%s/attachments/%s" % (quote_id(mid), quote_id(aid))))
 
-    def contacts(self, search):
+    def contacts(self):
         query = {"$top": str(TOP_MAX), "$select": "displayName,emailAddresses"}
-        if search:
-            query["$search"] = '"%s"' % search
-        return self.call("GET", self.url("contacts", query), search=bool(search)).get("value") or []
+        return self.call("GET", self.url("contacts", query)).get("value") or []
 
     def create_draft(self, message):
         return self.call("POST", self.url("messages"), message)
@@ -403,10 +401,10 @@ def save_attachment(graph, mid, name, out_dir):
     return path, len(data)
 
 
-def contact_rows(graph, search=None):
+def contact_rows(graph):
     """The contacts as (name, address) pairs. A 403 is exit 3: Contacts.Read is not granted yet."""
     try:
-        rows = graph.contacts(search_text(search) if search else None)
+        rows = graph.contacts()
     except GraphError as err:
         if err.status == 403:
             raise MailError("Contacts.Read is not granted to yardr-finance yet (queued at IT); "
@@ -620,7 +618,7 @@ def cmd_draft_reply(graph, args, out):
 
 
 def cmd_contacts(graph, args, out):
-    for name, mails in contact_rows(graph, args.search):
+    for name, mails in contact_rows(graph):
         out.write("%s\t%s\n" % (name, mails))
 
 
@@ -644,9 +642,7 @@ def parser():
     dr.add_argument("id")
     dr.add_argument("--all", action="store_true", help="reply to all")
     dr.set_defaults(run=cmd_draft_reply)
-    ct = sub.add_parser("contacts", help="the top 25 contacts (needs Contacts.Read)")
-    ct.add_argument("--search")
-    ct.set_defaults(run=cmd_contacts)
+    sub.add_parser("contacts", help="the top 25 contacts (needs Contacts.Read)").set_defaults(run=cmd_contacts)
     return p
 
 
