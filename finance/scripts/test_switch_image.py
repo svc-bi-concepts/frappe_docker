@@ -56,8 +56,10 @@ class Functions(unittest.TestCase):
         # The trailing \s* of IMAGE took the file's final newline when an image line ended it.
         self.assertTrue(COMPOSE.endswith("t-old\n"))
         self.assertTrue(switch_image.set_tag(COMPOSE, "t-new").endswith("t-new\n"))
-        self.assertEqual(switch_image.set_tag("a\n  image: frappe-finance-custom:t-old", "t-new"),
-                         "a\n  image: frappe-finance-custom:t-new")
+        self.assertEqual(
+            switch_image.set_tag("a\n  image: frappe-finance-custom:t-old", "t-new"),
+            "a\n  image: frappe-finance-custom:t-new",
+        )
 
     def test_set_tag_changes_only_the_tags_byte_for_byte(self):
         text = (
