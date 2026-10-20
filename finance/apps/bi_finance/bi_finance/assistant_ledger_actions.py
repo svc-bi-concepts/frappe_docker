@@ -1,7 +1,7 @@
 """The desk assistant's four actions with a ledger effect (erp-9f7y, part 2a2), registered in assistant_actions.ACTIONS.
 
     match_bank_transaction      a bank line is the payment of one open invoice, bill or Payment Entry     level 1 or 2
-    submit_revaluation          the month's Exchange Rate Revaluation draft is submitted                  level 1 or 2
+    submit_revaluation          the month's Exchange Rate Revaluation draft is submitted and booked       level 1 or 2
     submit_payment_proposal     a draft Payment Proposal is submitted (its Payment Entries follow)        always 2
     submit_vat_declaration      a draft VAT Declaration is submitted                                      always 2
 
@@ -472,6 +472,20 @@ def _check_revaluation(payload, user, today):
             ),
         )
     )
+    account = _unrealized_account(doc.company)
+    books = posting >= base._ledger_from(base._settings())
+    rows.append(
+        base._row(
+            "unrealized gain/loss account",
+            bool(account),
+            hard=books,
+            detail=(
+                "the Company's Unrealized Exchange Gain/Loss Account is set"
+                if account
+                else f"Company {doc.company} has no Unrealized Exchange Gain/Loss Account; booking fails until it is set"
+            ),
+        )
+    )
     if (posting.month, posting.day) == (12, 31):
         # the year-end revaluation takes the ESTV Jahresendkurs, entered as a Currency Exchange row dated 31 December
         currencies = sorted({currency for _, currency, _ in drafted})
@@ -497,6 +511,12 @@ def _check_revaluation(payload, user, today):
     return rows
 
 
+def _unrealized_account(company):
+    return frappe.db.get_value(
+        "Company", company, "unrealized_exchange_gain_loss_account"
+    )
+
+
 def _revaluation_amount(payload):
     """The draft's total gain or loss, absolute: the sum of its rows' gain or loss, which is its total_gain_loss."""
     name = payload["exchange_rate_revaluation"]
@@ -517,17 +537,44 @@ def _revaluation_date(payload):
 
 
 def _apply_revaluation(payload, dry_run):
+    """Submit and book: ERPNext's submit of the revaluation posts nothing, its Journal Entries do (make_jv_entries, the
+    form's Create Journal Entry button: one for the gain or loss and one for the zero-balance accounts, both saved as
+    drafts). The apply submits the revaluation and those entries together; a failure of any step rolls the whole apply
+    back (assistant_actions._apply), so no submitted revaluation stays without its entries. The dry run lists each row's
+    gain or loss in the company currency, which is the currency of gain_loss (the account's own is in its name), and
+    warns when the Company's Unrealized Exchange Gain/Loss Account, which make_jv_entries needs, is still empty.
+    """
     doc = frappe.get_doc(
         "Exchange Rate Revaluation", payload["exchange_rate_revaluation"]
     )
     if dry_run:
-        accounts = sum(1 for row in doc.accounts if row.get("gain_loss"))
-        return (
-            f"Submit Exchange Rate Revaluation {doc.name} dated {_date(doc.posting_date)} "
-            f"for {accounts} accounts."
+        rows = _gain_loss_rows(doc.accounts)
+        company_currency = frappe.db.get_value(
+            "Company", doc.company, "default_currency"
         )
+        lines = "; ".join(
+            f"{account} {'gain' if cents > 0 else 'loss'} {abs(cents) / 100:.2f} {company_currency}"
+            for account, _currency, cents in rows
+        )
+        text = (
+            f"Submit Exchange Rate Revaluation {doc.name} dated {_date(doc.posting_date)} "
+            f"for {len(rows)} accounts and book its Journal Entry: {lines}."
+        )
+        if not _unrealized_account(doc.company):
+            text += f" Booking fails until Unrealized Exchange Gain/Loss Account is set on Company {doc.company}."
+        return text
     doc.submit()
-    return "Exchange Rate Revaluation", doc.name
+    made = doc.make_jv_entries()
+    names = [
+        made[key] for key in ("revaluation_jv", "zero_balance_jv") if made.get(key)
+    ]
+    if not names:
+        raise frappe.ValidationError(
+            f"Exchange Rate Revaluation {doc.name} made no Journal Entry, so nothing would be booked"
+        )
+    for name in names:
+        frappe.get_doc("Journal Entry", name).submit()
+    return "Journal Entry", ", ".join(names)
 
 
 # ---------------------------------------------------------------- submit_payment_proposal

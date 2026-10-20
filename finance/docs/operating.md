@@ -21,7 +21,11 @@ document that explains the step is in brackets. Conventions for labels and butto
    A payment run of several invoices to one supplier writes their numbers joined into one EndToEndId, so
    that line is not matched by it and stays for the Bank Reconciliation Tool. The month-end Exchange Rate
    Revaluation arrives as a draft on the 1st (only when an account has a gain or loss): review and submit
-   it; the 31.12 one needs the ESTV year-end rate entered as a Currency Exchange row dated 31.12 first.
+   it, then press Create Journal Entry on the submitted form and submit that entry (the submit alone books
+   nothing). Until 2027-01-01 bexio books the revaluation, so the draft is only compared with bexio and no
+   Journal Entry is made in ERPNext. The Journal Entry books against the Company's **Unrealized Exchange
+   Gain/Loss Account**, which must be set on the Company before 2027-01-01. The 31 December one needs the
+   ESTV year-end rate entered as a Currency Exchange row dated 31 December first.
 4. **Bank Reconciliation Tool:** match the remaining lines to Payment Entries (Banking card).
 5. **Payment Proposal:** create for the due bills and the unpaid expense claims (Payments
    card), check the list and the total, submit, then **Download bank file**. Upload that file in
