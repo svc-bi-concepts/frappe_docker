@@ -155,10 +155,12 @@ refuses the action; a duplicate or the ledger date caps the confidence at 0.5 (l
   currency, direction and the whole outstanding amount (no partials); no other unreconciled line of the account names the
   target (bank_match's passes; capped); ledger date on the line's date (capped). Score: 1.00 creditor reference, 0.95
   EndToEndId of a payment run, 0.90 party named within 5 days, 0.80 within 30 days, 0.60 amount only.
-- `submit_revaluation(exchange_rate_revaluation)`: submits the monthly job's draft and books it. Level 1 within the limit, else 2; the
-  amount is the draft's total gain or loss, absolute. Hard: a draft; posting date a month end; a fresh
+- `submit_revaluation(exchange_rate_revaluation)`: submits the monthly job's draft and books it. Level 1 within the limit,
+  else 2; the amount is the draft's total gain or loss, absolute. Hard: a draft; posting date a month end; a fresh
   `revaluation_preview` equals the draft to the rappen; on 31 December a Currency Exchange row dated that day per foreign currency;
-  ledger date (capped). Score 1.00. Submitting posts nothing, so the apply also makes the Journal Entry(ies) with `make_jv_entries` (the form's Create Journal Entry) and submits them in the same transaction; a failure undoes the submit too. Before the ledger date it is a dry run that lists the gain or loss rows.
+  ledger date (capped). Score 1.00. Submitting posts nothing, so the apply also makes the Journal Entry(ies) with
+  `make_jv_entries` (the form's Create Journal Entry) and submits them in the same transaction; a failure undoes the submit
+  too. Before the ledger date it is a dry run that lists the gain or loss rows.
 - `submit_payment_proposal(payment_proposal)`: submits a draft Payment Proposal, whose Payment Entries erpnextswiss then makes
   as drafts. Always level 2; the amount is the proposal's total. Hard: a draft with bills or claims and no salary rows; a
   pay-from account; every IBAN (supplier, employee, pay-from account) passes `payment_run.iban_is_valid`; no bill or claim
