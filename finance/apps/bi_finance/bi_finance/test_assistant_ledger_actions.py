@@ -58,6 +58,13 @@ class Row(dict):
         return self.get(name)
 
 
+class Child(Row):
+    """A child row of a stored document: get() and attributes but no [], as frappe's Document has no __getitem__."""
+
+    def __getitem__(self, key):
+        raise TypeError(f"'{type(self).__name__}' object is not subscriptable")
+
+
 class Record(Doc):
     """A stored document of the ledger types: get() as frappe's Document has it, and a submit that is recorded."""
 
@@ -606,21 +613,21 @@ class RevaluationBase(LedgerBase):
     def setUp(self):
         super().setUp()
         self.accounts = [
-            Row(
+            Child(
                 {
                     "account": "1050 Wise EUR",
                     "account_currency": "EUR",
                     "gain_loss": 40.0,
                 }
             ),
-            Row(
+            Child(
                 {
                     "account": "1051 Wise USD",
                     "account_currency": "USD",
                     "gain_loss": -30.0,
                 }
             ),
-            Row(
+            Child(
                 {"account": "1052 Wise GBP", "account_currency": "GBP", "gain_loss": 0}
             ),
         ]
@@ -688,7 +695,7 @@ class RevaluationChecks(RevaluationBase):
 
     def test_a_draft_edited_by_hand_is_refused(self):
         self.accounts.append(
-            Row(
+            Child(
                 {
                     "account": "1053 Wise CAD",
                     "account_currency": "CAD",
@@ -799,7 +806,7 @@ class PaymentProposalBase(LedgerBase):
             pay_from_account="1020 Bank",
             total=1500.0,
             purchase_invoices=[
-                Row(
+                Child(
                     {
                         "purchase_invoice": "PI-1",
                         "supplier": "SUP-1",
@@ -808,7 +815,7 @@ class PaymentProposalBase(LedgerBase):
                     }
                 )
             ],
-            expenses=[Row({"expense_claim": "EC-1", "employee": "EMP-1"})],
+            expenses=[Child({"expense_claim": "EC-1", "employee": "EMP-1"})],
             salaries=[],
         )
 

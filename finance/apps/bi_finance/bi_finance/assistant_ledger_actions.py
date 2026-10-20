@@ -426,7 +426,7 @@ def _gain_loss_rows(rows):
         (
             row.get("account") or "",
             row.get("account_currency") or "",
-            _cents(row["gain_loss"]),
+            _cents(row.get("gain_loss")),
         )
         for row in rows
         if row.get("gain_loss")
