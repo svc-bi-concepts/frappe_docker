@@ -147,7 +147,7 @@ class Tools(AskBase):
             )
             self.assertEqual(
                 parameters["properties"]["task"]["enum"],
-                list(assistant_client.TASK_IDS),
+                list(assistant_client.TASK_IDS) + ["todos"],
             )
             confidence = parameters["properties"]["confidence"]
             self.assertEqual(
@@ -356,6 +356,33 @@ class ToolCalls(AskBase):
         self.assert_refused_for_task(
             dict(COMMENT_ARGS, task="bills.due", confidence=1), "does not call for"
         )
+
+    def open_todo(self):
+        todo = Doc(
+            self.frappe,
+            {"doctype": "ToDo", "name": "TD-7", "status": "Open", "allocated_to": USER},
+        )
+        self.frappe.rows.setdefault("ToDo", {})["TD-7"] = todo
+        return todo
+
+    def test_close_todo_naming_the_todos_task_closes_the_todo_with_undo(self):
+        todo = self.open_todo()
+        call = ("close_todo", {"todo": "TD-7", "task": "todos", "confidence": 1})
+        card = self.ask(call)["actions"][0]
+        self.assertEqual(
+            (card["level"], card["state"], card["undoable"], todo.status),
+            ("0", "auto-done", True, "Closed"),
+        )
+
+    def test_close_todo_naming_another_task_is_refused_and_logged(self):
+        todo = self.open_todo()
+        call = ("close_todo", {"todo": "TD-7", "task": "drafts", "confidence": 1})
+        card = self.ask(call)["actions"][0]
+        self.assertEqual(
+            (card["state"], card["level"], todo.status), ("rejected", "never", "Open")
+        )
+        self.assertIn("does not call for", card["message"])
+        self.assertEqual(len(self.rows()), 1)
 
     def test_a_missing_confidence_is_no_confidence(self):
         card = self.ask(("add_comment", dict(COMMENT_ARGS, task="drafts")))["actions"][
@@ -602,9 +629,11 @@ class Proposals(unittest.TestCase):
     def test_the_task_ids_are_the_collector_keys(self):
         keys = {entry["key"] for entry in assistant.COLLECTORS} - {"todos"}
         self.assertEqual(keys, set(assistant_client.TASK_IDS))
-        self.assertLessEqual(
-            set(assistant.TASK_ACTIONS), set(assistant_client.TASK_IDS)
+        self.assertEqual(
+            {entry["key"] for entry in assistant.COLLECTORS},
+            set(assistant.TOOL_TASKS),
         )
+        self.assertLessEqual(set(assistant.TASK_ACTIONS), set(assistant.TOOL_TASKS))
 
 
 class Client(unittest.TestCase):

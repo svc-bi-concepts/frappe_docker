@@ -98,7 +98,11 @@ TASK_ACTIONS = {
     "bills.due": ("create_payment_proposal",),
     "month.revaluation": ("submit_revaluation",),
     "vat.quarter": ("create_vat_draft", "submit_vat_declaration"),
+    "todos": ("close_todo",),
 }
+
+# the tasks a tool call may name: the task table's ids and the user's own todos
+TOOL_TASKS = assistant_client.TASK_IDS + ("todos",)
 
 # bexio leads until the ledger date (the bookkeeper's D1); the line every answer starts with before it
 BANNER_TEXT = (
@@ -223,7 +227,7 @@ def build_tools(registry=None):
         properties = parameters.setdefault("properties", {})
         properties["task"] = {
             "type": "string",
-            "enum": list(assistant_client.TASK_IDS),
+            "enum": list(TOOL_TASKS),
             "description": "The id of the task this action serves.",
         }
         properties["confidence"] = {
