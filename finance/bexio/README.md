@@ -35,7 +35,7 @@ the mini's screen, use Screen Sharing for that one step.
 
 ## Log in from the MacBook (tailnet login page)
 
-Instead of the Mac mini's desktop Terminal, the login can be started from the MacBook
+Instead of the ssh tunnel, the login can be started from the MacBook
 through a page on the tailnet. `finance/bexio/login_helper.py` serves it on
 127.0.0.1:8814, as an av launcher, so the client id and secret come from the Automic Vault
 and never from a file. `tailscale serve` puts it on the tailnet over https. Never Funnel:
