@@ -18,7 +18,8 @@
 #   3. reads delta_counts.py before and after: the gate. Only bexio_id-keyed documents
 #      move, and only by what the loaders report as created; a dry run moves nothing.
 #   4. on failure or surprise, mails yardmaster AND Benchi (yardr mail, through the
-#      yard's own binary and home, so it reaches this yard under launchd too), and
+#      yard's own binary and home, speaking as Benchi, so it reaches this yard under
+#      launchd too), and
 #   5. keeps every step's log in private/bexio-sync/<stamp>/ (mode 700), the last
 #      BEXIO_SYNC_KEEP run folders (48, about two working days).
 #
@@ -76,6 +77,8 @@ EXPORTER=${BEXIO_SYNC_EXPORTER:-"$BEXIO/export.py"}
 # the same. Each is overridable: BEXIO_SYNC_YARDR; a YARDR_HOME the caller set wins.
 YARDR_BIN=${BEXIO_SYNC_YARDR:-/Users/bsaladin/ws_yardr/yardr}
 YARDR_HOME=${YARDR_HOME:-/Users/bsaladin/ws_yardr_finance/.yardr}
+# The actor too: launchd's $USER (bsaladin) is no yard name, so the mail speaks as Benchi (erp-xwht).
+YARDR_ACTOR=${BEXIO_SYNC_ACTOR:-Benchi}
 # What the sales and purchase loaders read (import_sales.DOCUMENTS and APPLY_FILES,
 # import_purchase's bills and expenses, the currencies and the accounts for their
 # lookups and the booked check, and the journal both loaders check a foreign-currency
@@ -343,7 +346,7 @@ The step logs and the counts table are in the run dir."
   MAIL_LOG="$RUNDIR/mail.log"
   : >"$MAIL_LOG"
   for who in yardmaster Benchi; do
-    if (cd "$YARD" && YARDR_HOME="$YARDR_HOME" "$YARDR_BIN" mail "$who" "$TEXT") >>"$MAIL_LOG" 2>&1; then
+    if (cd "$YARD" && YARDR_HOME="$YARDR_HOME" YARDR_ACTOR="$YARDR_ACTOR" "$YARDR_BIN" mail "$who" "$TEXT") >>"$MAIL_LOG" 2>&1; then
       echo "mailed $who" | tee -a "$MAIL_LOG"
     else
       echo "mail to $who FAILED" | tee -a "$MAIL_LOG"

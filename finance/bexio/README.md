@@ -703,9 +703,10 @@ foreign-currency document against bexio's journal every hour, like every other d
 - On failure or surprise the run mails yardmaster AND Benchi through `yardr mail` (from the yard root, where
   the plist's WorkingDirectory puts it), and exits 3 or 4; 2 is a refusal, 0 ok. The mail goes through the
   yard's own binary and pins the yard's `YARDR_HOME`: launchd's bare env has neither, and a plain `yardr`
-  from PATH would resolve the default home and the mail would be lost (erp-xgpk). Both are overridable
-  (`BEXIO_SYNC_YARDR`; a `YARDR_HOME` the caller set wins), and the wrapper sets them itself, so a manual
-  run behaves the same.
+  from PATH would resolve the default home and the mail would be lost (erp-xgpk). It also names the
+  acting identity, `YARDR_ACTOR=Benchi`: launchd's `$USER` is no yard name, and yardr refuses a mail
+  call from an unknown actor (erp-xwht). All three are overridable (`BEXIO_SYNC_YARDR`, `BEXIO_SYNC_ACTOR`;
+  a `YARDR_HOME` the caller set wins), and the wrapper sets them itself, so a manual run behaves the same.
 - The colima VM may be asleep (IT's nightly idle-stop), so after taking the lock and before the first step the
   run calls IT's shim `/Users/bsaladin/ws_yardr/integrations/bin/colima-wake --hold 15 --reason bexio-sync`
   (`COLIMA_WAKE` overrides the path; the tests stub it). A missing shim is skipped silently; a failing wake
@@ -725,8 +726,9 @@ only on the calendar (no RunAtLoad, no KeepAlive). `launchctl kickstart gui/$(id
 runs one interval by hand.
 
 The failure mail is pinned in the wrapper, not in the plist: `sync_hourly.sh` calls the yard's binary
-(`/Users/bsaladin/ws_yardr/yardr`) with the yard's `YARDR_HOME` (`/Users/bsaladin/ws_yardr_finance/.yardr`),
-so the mail reaches this yard under launchd's bare env as well as by hand (erp-xgpk).
+(`/Users/bsaladin/ws_yardr/yardr`) with the yard's `YARDR_HOME` (`/Users/bsaladin/ws_yardr_finance/.yardr`)
+and `YARDR_ACTOR=Benchi`, so the mail reaches this yard under launchd's bare env as well as by hand
+(erp-xgpk, erp-xwht).
 
 ## Uploading a bill (the only write to bexio)
 

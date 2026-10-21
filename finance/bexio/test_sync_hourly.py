@@ -86,6 +86,8 @@ YARDR_STUB = """#!/bin/sh
 printf '%s\\t%s\\n' "$2" "$(printf '%s' "$3" | tr '\\n' ' ')" >>"$YARDR_MAIL_LOG"
 # the env the wrapper handed the binary: the yard's YARDR_HOME must ride along (erp-xgpk)
 printf '%s\\n' "${YARDR_HOME-UNSET}" >>"$YARDR_ENV_LOG"
+# and the actor: launchd's $USER is no yard name, so the wrapper must name one (erp-xwht)
+printf '%s\\n' "${YARDR_ACTOR-UNSET}" >>"$YARDR_ACTOR_LOG"
 exit ${YARDR_RC:-0}
 """
 
@@ -117,6 +119,7 @@ class SyncHourlyTest(unittest.TestCase):
         self.log = os.path.join(self.temp, "calls.log")
         self.maillog = os.path.join(self.temp, "mail.log")
         self.envlog = os.path.join(self.temp, "yardr-env.log")
+        self.actorlog = os.path.join(self.temp, "yardr-actor.log")
         self.seqdir = os.path.join(self.temp, "counts-seq")
         os.makedirs(self.seqdir)
         # Each test gets its own private folder (the guard's shared one would carry run
@@ -141,9 +144,13 @@ class SyncHourlyTest(unittest.TestCase):
         env["BEXIO_SYNC_YARDR"] = os.path.join(self.stubdir, "yardr")
         env["YARDR_MAIL_LOG"] = self.maillog
         env["YARDR_ENV_LOG"] = self.envlog
+        env["YARDR_ACTOR_LOG"] = self.actorlog
         env.pop("BEXIO_SYNC_KEEP", None)
-        # launchd's bare env has no YARDR_HOME; the tests run like that unless one sets it.
+        # launchd's bare env has no YARDR_HOME or YARDR_ACTOR; the tests run like that unless
+        # one sets it. The outer session's YARDR_ACTOR (a builder's own name) must not leak in.
         env.pop("YARDR_HOME", None)
+        env.pop("YARDR_ACTOR", None)
+        env.pop("BEXIO_SYNC_ACTOR", None)
         env.update(extra)
         return env
 
@@ -344,6 +351,31 @@ class SyncHourlyTest(unittest.TestCase):
         self.assertIn("delta_counts.py failed after the loaders", self.mails()[0][1])
         with open(os.path.join(self.run_dir(), "counts-after.rc")) as f:
             self.assertEqual(f.read().strip(), "3")
+
+    def yardr_actors(self):
+        """The YARDR_ACTOR each mail call saw, in order (the stub logs one line per call)."""
+        if not os.path.exists(self.actorlog):
+            return []
+        with open(self.actorlog) as f:
+            return f.read().splitlines()
+
+    # ---- the mail's actor (erp-xwht) -------------------------------------------------
+
+    def test_mail_speaks_as_benchi_in_a_bare_env(self):
+        """Launchd's bare env (no YARDR_ACTOR, $USER bsaladin): a failing run's two mails
+        both go out as Benchi, the yard user whose job runs the sync."""
+        self.counts_seq(COUNTS_BEFORE, COUNTS_BEFORE)
+        proc = self.run_script(EXPORTER_RC="3")
+        self.assertEqual(proc.returncode, 3, proc.stdout + proc.stderr)
+        self.assertEqual([m[0] for m in self.mails()], ["yardmaster", "Benchi"])
+        self.assertEqual(self.yardr_actors(), ["Benchi"] * 2)
+
+    def test_mail_actor_honors_the_override(self):
+        """BEXIO_SYNC_ACTOR (for tests) wins over the Benchi default."""
+        self.counts_seq(COUNTS_BEFORE, COUNTS_BEFORE)
+        proc = self.run_script(EXPORTER_RC="3", BEXIO_SYNC_ACTOR="Someone")
+        self.assertEqual(proc.returncode, 3, proc.stdout + proc.stderr)
+        self.assertEqual(self.yardr_actors(), ["Someone"] * 2)
 
     # ---- the mail's yard (erp-xgpk) --------------------------------------------------
 
