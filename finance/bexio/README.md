@@ -50,7 +50,7 @@ the page starts logins and must not be public.
   Nothing is logged; the page and the terminal print only the outcome.
 
 Once installed, this page is the alternative to the tunnel login above. Its install needs
-Benchi in the bexio developer portal (step 1).
+Benchi in the bexio developer portal (install step 1 below).
 
 Install on the Mac mini (once):
 
