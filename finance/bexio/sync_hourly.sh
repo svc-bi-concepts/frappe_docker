@@ -18,7 +18,8 @@
 #   3. reads delta_counts.py before and after: the gate. Only bexio_id-keyed documents
 #      move, and only by what the loaders report as created; a dry run moves nothing.
 #   4. on failure or surprise, mails yardmaster AND Benchi (yardr mail, through the
-#      yard's own binary and home, so it reaches this yard under launchd too), and
+#      yard's own binary and home, speaking as Benchi, so it reaches this yard under
+#      launchd too), and
 #   5. keeps every step's log in private/bexio-sync/<stamp>/ (mode 700), the last
 #      BEXIO_SYNC_KEEP run folders (48, about two working days).
 #
