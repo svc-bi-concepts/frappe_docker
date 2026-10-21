@@ -5,18 +5,33 @@ bexio enforces the scopes, so the token cannot change the account, whatever the 
 
 ## Log in once
 
-On the Mac mini's desktop Terminal:
+The Mac mini is headless, so the login runs from the MacBook through an ssh tunnel. The
+browser on the MacBook returns to `http://localhost:8765/callback`; the tunnel hands that
+redirect to the listener on 127.0.0.1:8765 on the mini.
 
-```sh
-finance/bexio/oauth.py login
-```
+1. On the MacBook, open the tunnel and keep it open until the login is done. Port 8765
+   must be free on the MacBook:
 
-The command is an av launcher (its first line injects the client id and secret from the
-Automic Vault). It prints the bexio authorize URL and opens it in the browser. Approve the
-login there. The browser then returns to `http://localhost:8765/callback`, the local
-listener on 127.0.0.1:8765 takes the code, and the refresh token is saved in the
-Automic Vault as `BEXIO_REFRESH_TOKEN` (`av save`; Benchi approves the save in the vault app).
-The token itself is never printed.
+   ```sh
+   ssh -L 8765:127.0.0.1:8765 <user>@<mac-mini>
+   ```
+
+2. In that ssh session, run the login from the depot checkout on the mini:
+
+   ```sh
+   finance/bexio/oauth.py login
+   ```
+
+   The command is an av launcher (its first line injects the client id and secret from the
+   Automic Vault). It prints the bexio authorize URL. `webbrowser.open()` does nothing on the
+   headless mini, which is expected: the URL is printed for the MacBook.
+
+3. Open the printed URL in the MacBook's browser and approve the login at bexio.
+4. The terminal says that the refresh token was saved as `BEXIO_REFRESH_TOKEN` in the
+   Automic Vault. The token itself is never printed. Then close the ssh session.
+
+The save (`av save`) waits for Benchi's approval in the vault app. If the vault app asks on
+the mini's screen, use Screen Sharing for that one step.
 
 ## Log in from the MacBook (tailnet login page)
 
@@ -33,6 +48,9 @@ the page starts logins and must not be public.
 - Only Benchi's tailnet login gets in: every request must carry the `Tailscale-User-Login`
   header that `tailscale serve` adds, and it must equal `--tailnet-user`. Anything else is 403.
   Nothing is logged; the page and the terminal print only the outcome.
+
+Once installed, this page is the alternative to the tunnel login above. Its install needs
+Benchi in the bexio developer portal (step 1).
 
 Install on the Mac mini (once):
 
@@ -51,7 +69,7 @@ Install on the Mac mini (once):
 Then open `https://<mac-mini>.<tailnet>.ts.net:<https-port>/login` on the MacBook
 and approve the login at bexio. The page must say `logged in`.
 
-The desktop-Terminal login above (`oauth.py login`) stays the fallback.
+The tunnel login above (`oauth.py login`) stays the fallback.
 
 ## What the scopes allow
 
