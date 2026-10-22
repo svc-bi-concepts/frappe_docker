@@ -537,9 +537,12 @@ public sources only. No employee, salary or private/ data is used here.
 | Formular: "Nur ganze Frankenbeträge"                      | Formular, page 2                             | all Currency fields                                                | none: no precision and no rounding in the print format      | **differs**: rounding is in bi_payroll's view and export only (`certificate_rounding`)     |
 
 **Print format.** `605.040.18N Form. 11` draws the form as a background image, `605_040_18N_Form_11.png` from
-erpnextswiss, and places the values on it in the form's order. The Wegleitung allows the official form or one
-whose content is equivalent (Vorinformationen, Rz 2). The image is not compared pixel by pixel with the ESTV
-PDF: check the first printed PDF by eye (erp-rqxs proof).
+erpnextswiss, and places the values on it in the form's order. The Wegleitung makes Formular 11 and its rules
+binding for the Lohnausweis (Rz 1) and names printing it from payroll software on white paper as the normal way
+(Rz 75). Its "own form with equivalent content" (Rz 2) is for pension funds issuing a Rentenbescheinigung, so the
+employer's certificate keeps the official layout. Our patch 0007 (`form11-fits-a4`) scales the sheet
+(`zoom: 0.69`) so it fits A4; the values keep their places on the image. The image is not compared pixel by
+pixel with the ESTV PDF: check the first printed PDF by eye (erp-rqxs proof).
 
 **Verdict: usable with gaps.** Every numbered line and box maps to a field. Two gaps change the printed
 certificate: whole francs, and the KTG remark on line 15. Both are fixable in a later bead, not here.
