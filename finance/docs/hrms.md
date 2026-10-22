@@ -189,7 +189,7 @@ name that Payroll Entry (`payroll_entry`) and have an empty `journal_entry`
 (`payroll_entry.py`, `get_sal_slip_list`). The rule for history: leave `payroll_entry`
 empty. That alone excludes them. Setting `journal_entry` as well is optional: it is one Link,
 and `import_payroll.py` loads one Journal Entry per bexio journal line (`journal-<id>`), so a
-month can have several. Link it only when a month has a single entry; otherwise leave it empty. This is the design to test. It is not yet run.
+month can have several. Link it only when a month has a single entry; otherwise leave it empty. This is the design to test. The pin test `bi_finance.test_hrms_accrual_filter` checks the two conditions in the installed hrms on every gate run; the live proof stays with the load itself.
 
 The check after the load is the one `import_payroll.py --check` already does: the GL per
 account and year against bexio's lines, with counts and totals only in the notes.

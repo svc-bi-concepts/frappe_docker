@@ -32,7 +32,7 @@ sh .yardr/check-host.sh
 # A flake that depends on the clock (erp-c7wk) blocks a landing here instead of hiding in the how-to.
 IMAGE=$(sh finance/scripts/gate-image.sh)
 docker run --rm -v "$PWD/finance/apps/bi_finance:/home/frappe/frappe-bench/apps/bi_finance:ro" "$IMAGE" \
-  sh -c 'mkdir -p /home/frappe/logs /home/frappe/frappe-bench/apps/logs && cd /home/frappe/frappe-bench/apps/bi_finance && ../../env/bin/python -m unittest bi_finance.test_payment_run bi_finance.test_treasury bi_finance.test_bank_list bi_finance.test_bank_statement_upload bi_finance.test_cash_flow_forecast bi_finance.test_cash_position bi_finance.test_paypal bi_finance.test_paypal_sync bi_finance.test_qrbill bi_finance.test_setup bi_finance.test_wise'
+  sh -c 'mkdir -p /home/frappe/logs /home/frappe/frappe-bench/apps/logs && cd /home/frappe/frappe-bench/apps/bi_finance && ../../env/bin/python -m unittest bi_finance.test_payment_run bi_finance.test_treasury bi_finance.test_bank_list bi_finance.test_bank_statement_upload bi_finance.test_cash_flow_forecast bi_finance.test_cash_position bi_finance.test_paypal bi_finance.test_paypal_sync bi_finance.test_qrbill bi_finance.test_setup bi_finance.test_wise bi_finance.test_hrms_accrual_filter'
 # The checkout guard above, offline: a stub docker stands in for the real one (erp-e71y).
 (cd finance/scripts && python3 -m unittest test_gate_check)
 # Upstream's own lint, required: a red lint must stop the landing here, not pass unseen (erp-jmmz).
