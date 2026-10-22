@@ -29,8 +29,9 @@ migrate on any site. Its Desk is the Swiss Payroll shell: a Sidebar (`bi_payroll
   (map: `finance/docs/hrms.md`): line 1 is every earning row of the slips (Basic Salary, Commission, any Zulage),
   line 11 is line 8 less lines 9 and 10.1 — not the slips' net pay, which also deducts Quellensteuer and KTG — and
   the KTG employee share goes into line 15 as the remark "KTG-Beitrag Arbeitnehmer CHF …" (KTG has no line of its
-  own). The view keeps rappen; the flag 'Whole francs' rounds the lines for the printed certificate or the export
-  (round half up, `certificate_rounding`), so the printed form's arithmetic holds on its own francs.
+  own). The view keeps rappen; the flag 'Whole francs' rounds the lines for the export (round half up,
+  `certificate_rounding`). The certificate print format still prints rappen; see the full field check in
+  `finance/docs/hrms.md`.
   Two more views, for the Swiss declarations (`qst_rows` and `annual_rows` in `hand_over.py`, tests in `test_hand_over.py`):
   - `Quellensteuer Abrechnung`: per canton, per month or per quarter (filter Period), one row per employee and code with
     the slip's QST base (gross), the tax, the rate (tax over gross, the effective rate of the slips) and the canton's total.
