@@ -365,8 +365,8 @@ The report `Payroll hand-over` (bi_payroll) has a view `Lohnausweis` that sums t
 Form 11 lines (column in brackets). The line numbers and labels are the fields of erpnextswiss's Salary
 Certificate, which the settings step `lohnausweis` (`finance/scripts/swiss-setup.py`) maps to our components.
 Lines 1, 11 and 15 follow the ESTV Wegleitung 2026 (read for erp-hx7s: Ziffer 1, 10.1, 11 and 15), with
-tests (erp-4yyn): line 1 carries every earning row of the slips, line 11 is line 8 less lines 9 and 10.1
-(not the slips' net pay, which also deducts Quellensteuer and KTG), and the KTG employee share goes into
+tests (erp-4yyn): line 1 carries every earning row of the slips; on the certificate, line 11 is line 8 less
+lines 9, 10.1 and 10.2 (not the slips' net pay, which also deducts Quellensteuer and KTG); and the KTG employee share goes into
 line 15 as a remark. The view keeps rappen; the flag 'Whole francs' rounds it for the export; the certificate itself does not round yet (see "Lohnausweis: field check")
 (round half up). The full line-by-line check on the copy stays step 6 of the plan. erpnextswiss's Salary
 Certificate gets the same net rule through our patches (`finance/patches/erpnextswiss`, 0002-0004).
