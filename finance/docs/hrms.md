@@ -316,8 +316,8 @@ Risks:
 - **Install is a schema change.** HRMS adds many doctypes and custom fields on install and
   migrate. Install on a copy first; the rollback is the backup.
 - **Image size and build time** grow with HRMS. Measure on the copy build, not from this study.
-- **Lohnausweis is unchecked.** The erpnextswiss doctype was written for its own sample
-  companies. Its field mapping is a config, not proof.
+- **Lohnausweis: field check done, two gaps open.** The erpnextswiss doctype was written for its own sample
+  companies. Each numbered line is checked against the 2026 Wegleitung in "Lohnausweis: field check". The gaps there (whole francs on the certificate, the KTG remark on line 15) are open.
 - **ELM and certification.** A payroll that is not Swissdec-certified cannot send ELM data.
   This is a decision, not a build step.
 - **Double booking.** Before loading history live, follow the history rule above and confirm
@@ -362,9 +362,9 @@ The report `Payroll hand-over` (bi_payroll) has a view `Lohnausweis` that sums t
 Form 11 lines (column in brackets). The line numbers and labels are the fields of erpnextswiss's Salary
 Certificate, which the settings step `lohnausweis` (`finance/scripts/swiss-setup.py`) maps to our components.
 Lines 1, 11 and 15 follow the ESTV Wegleitung 2026 (read for erp-hx7s: Ziffer 1, 10.1, 11 and 15), with
-tests (erp-4yyn): line 1 carries every earning row of the slips, line 11 is line 8 less lines 9 and 10.1
-(not the slips' net pay, which also deducts Quellensteuer and KTG), and the KTG employee share goes into
-line 15 as a remark. The view keeps rappen; the flag 'Whole francs' rounds it for the print or the export
+tests (erp-4yyn): line 1 carries every earning row of the slips; on the certificate, line 11 is line 8 less
+lines 9, 10.1 and 10.2 (not the slips' net pay, which also deducts Quellensteuer and KTG); and the KTG employee share goes into
+line 15 as a remark. The view keeps rappen; the flag 'Whole francs' rounds it for the export; the certificate itself does not round yet (see "Lohnausweis: field check")
 (round half up). The full line-by-line check on the copy stays step 6 of the plan. erpnextswiss's Salary
 Certificate gets the same net rule through our patches (`finance/patches/erpnextswiss`, 0002-0004).
 
@@ -427,7 +427,7 @@ The ESTV PDF is kept under `private/payroll/forms/` (not in the repo).
 | 9. Beiträge AHV/IV/EO/ALV/NBUV                            | `AHV/IV/EO Employee`, `ALV Employee`, `NBU Employee` (abbr AHV, ALV, NBUV) | `deduction_ahv`                     | yes         | Employee shares only; employer shares are not on the form                                                                                                                                                                                                                                                                                                  |
 | 10.1 Ordentliche Beiträge BVG                             | `BVG Employee` (abbr PK)                                                   | `deduction_pension`                 | yes         | Ordinary contributions, as deducted from the gross                                                                                                                                                                                                                                                                                                         |
 | 10.2 Beiträge Einkauf BVG                                 | none                                                                       | `deduction_pension_additional`      | heading     | not in payroll; trustee (buy-ins are paid by the employee outside payroll, Rz 46)                                                                                                                                                                                                                                                                          |
-| 11. Nettolohn / Rente                                     | Line 8 less lines 9 and 10.1 (patch 0002; upstream: net pay of the slips)  | `net_salary`                        | **patched** | Upstream differs from the Wegleitung, which defines line 11 as line 8 less lines 9 and 10 (Ziffer 11): `net_pay` also subtracts Quellensteuer and any KTG or other deduction. Our patch 0002 computes it as line 8 less 9 and 10.1 (erp-4yyn, below)                                                                                                       |
+| 11. Nettolohn / Rente                                     | Line 8 less lines 9 and 10 (patch 0002; upstream: net pay of the slips)    | `net_salary`                        | **patched** | Upstream differs from the Wegleitung, which defines line 11 as line 8 less 9 and 10 (Ziffer 11): `net_pay` also subtracts Quellensteuer and any KTG or other deduction. Our patch 0002 computes it as line 8 less 9, 10.1 and 10.2 (erp-4yyn, below)                                                                                                       |
 | 12. Quellensteuerabzug                                    | `Quellensteuer Employee` (abbr QST), gross tax                             | `source_tax_deduction`              | yes         | Only for foreign employees with the tax at source; the tax is set on the slip from the gross per canton tariff (erp-6rrh)                                                                                                                                                                                                                                  |
 | 13.1.1 Effektive Reise-/Verpflegungs-/Übernachtungsspesen | none                                                                       | `effective_expenses_travel`         | heading     | not in payroll; trustee. Its box (`effective_expenses_travel_check`) is **no** unless a Spesenreglement is approved (Rz 52)                                                                                                                                                                                                                                |
 | 13.1.2 Effektive übrige Spesen                            | none                                                                       | `effective_other_expenses`          | heading     | not in payroll; trustee                                                                                                                                                                                                                                                                                                                                    |
@@ -448,7 +448,7 @@ hand-over view only.
 1. **Line 11** = line 8 less lines 9 and 10.1 (Wegleitung Ziffer 11), not the slip's `net_pay`: the fetch (erpnextswiss `fetch_dynamic`, patch 0002) and the view `Lohnausweis` both follow it.
 2. **Line 1** = every taxable earning on the slip (Basic Salary, Commission, Zulagen), not `Basic Salary` alone. The view sums every earning row; the settings table `salary` names Basic Salary and Commission.
 3. **KTG**: the employee's share goes into line 15 as a remark, not onto a line.
-4. **Rounding**: the certificate prints whole francs (round half up); the view keeps rappen.
+4. **Rounding**: the view and the export round to whole francs (round half up); the view keeps rappen. The certificate itself still prints rappen (gap, see "Lohnausweis: field check").
 
 ### Lohnausweis at year end (operating)
 
@@ -474,6 +474,95 @@ Each January, for the year that just closed (the first is 2027, the 2026 certifi
 
 An employee who left mid-year gets a certificate for the part of the year paid by us, with the exit date in the
 period. A certificate created in error is cancelled and amended, never deleted.
+
+## Lohnausweis: field check
+
+Read-only check (erp-8tgp, 2026-10-22) of erpnextswiss' Salary Certificate against the official Form 11, from
+public sources only. No employee, salary or private/ data is used here.
+
+**Sources**
+
+- Form and Wegleitung: ESTV and SSK, _Wegleitung zum Ausfüllen des Lohnausweises bzw. der Rentenbescheinigung
+  (Formular 11)_, Wegleitung 605.040.18.1d, gültig ab 1. Januar 2026:
+  <https://www.estv.admin.ch/dam/de/sd-web/afP1GDFr8gE3/dbst-form-lohna-wegleitung-2026-de.pdf>.
+  "Rz" below is the Randziffer of this edition. The Formular is 605.040.18 (its page 2 carries the code
+  `605.040.18N 01.21`). The 2027 edition is not published yet; check again when it is.
+- erpnextswiss at the pin in `finance/apps.json` (`libracore/erpnextswiss`, branch `v16`, commit `5d85c45`):
+  `erpnextswiss/doctype/salary_certificate/salary_certificate.json` and `.py`, and the print format
+  `print_format/605.040.18n_form._11/`. Our patches on top: `finance/patches/erpnextswiss` 0002 (line 11), 0003
+  (component SQL) and 0004 (import).
+
+**Map.** Field names are those of the upstream doctype. "Settings" means the Salary Certificate Settings step
+`lohnausweis` (`finance/scripts/swiss-setup.py`).
+
+| Form line                                                 | Wegleitung                                   | Salary Certificate field                                           | Filled from                                                 | Result                                                                                     |
+| --------------------------------------------------------- | -------------------------------------------- | ------------------------------------------------------------------ | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| A Lohnausweis (box)                                       | Rz 4                                         | `certificate_type` = Salary                                        | default                                                     | yes                                                                                        |
+| B Rentenbescheinigung (box)                               | Rz 5                                         | `certificate_type` = Pension                                       | by hand                                                     | not used                                                                                   |
+| C AHV-Nr. / Geburtsdatum                                  | Rz 6                                         | none (print format)                                                | Employee AHV number and birth date                          | yes                                                                                        |
+| D Kalenderjahr                                            | Rz 7                                         | `year`                                                             | by hand                                                     | yes; several certificates: remark, Rz 66                                                   |
+| E Lohnperiode                                             | Rz 8                                         | `start_date`, `end_date`                                           | by hand                                                     | yes                                                                                        |
+| F Unentgeltliche Beförderung (box)                        | Rz 9                                         | `free_transport`                                                   | default 0                                                   | yes; stays 0 (not in payroll)                                                              |
+| G Kantinenverpflegung / Lunch-Checks (box)                | Rz 10                                        | `lunch_checks`                                                     | default 0                                                   | yes; stays 0 (not in payroll)                                                              |
+| H Name und Adresse                                        | Rz 11                                        | print format: `employee_name`, `permanent_address`                 | Employee                                                    | yes; check the address is the current one                                                  |
+| I Ort, Datum, Unterschrift                                | Rz 12                                        | none (on the form image)                                           | by hand                                                     | yes                                                                                        |
+| 1 Lohn                                                    | Rz 13–18                                     | `salary`                                                           | Settings: the Earning components (Basic Salary, Commission) | yes; a new Earning component must join the settings list (a test guards it)                |
+| 2 Lohnnebenleistungen                                     | Rz 19                                        | heading, see 2.1–2.3                                               | see subfields                                               | heading only                                                                               |
+| 2.1 Verpflegung und Unterkunft                            | Rz 20                                        | `catering`                                                         | Settings                                                    | heading only: no component                                                                 |
+| 2.2 Privatanteil Geschäftsfahrzeug                        | Rz 21–25                                     | `car`                                                              | Settings                                                    | heading only: no company car                                                               |
+| 2.3 Weitere Gehaltsnebenleistungen                        | Rz 26 (commute refund Rz 17)                 | `other_salary`, `other_salary_description`                         | Settings                                                    | heading only                                                                               |
+| 3 Unregelmässige Leistungen                               | Rz 27                                        | `irregular`, `irregular_description`                               | Settings                                                    | heading only: bonuses belong in line 1 (Rz 27)                                             |
+| 4 Kapitalleistungen                                       | Rz 28                                        | `capital`, `capital_description`                                   | Settings                                                    | heading only                                                                               |
+| 5 Beteiligungsrechte                                      | Rz 29                                        | `participation`                                                    | Settings                                                    | heading only                                                                               |
+| 6 Verwaltungsratsentschädigungen                          | Rz 30                                        | `board`                                                            | Settings                                                    | heading only                                                                               |
+| 7 Andere Leistungen                                       | Rz 31–40                                     | `other`, `other_description`                                       | Settings; by hand                                           | **differs**: employer-paid Quellensteuer (Rz 39, 48) has no component; typed by hand       |
+| 8 Bruttolohn total                                        | Rz 41                                        | `gross_salary`                                                     | `gross_pay` of the submitted slips                          | yes; equal to line 1 while Basic Salary and Commission are the only earnings               |
+| 9 Beiträge AHV/IV/EO/ALV/NBUV                             | Rz 42                                        | `deduction_ahv`                                                    | Settings: employee shares of AHV/IV/EO, ALV, NBU            | yes                                                                                        |
+| 10.1 Ordentliche Beiträge BVG                             | Rz 44                                        | `deduction_pension`                                                | Settings: BVG Employee                                      | yes                                                                                        |
+| 10.2 Beiträge Einkauf BVG                                 | Rz 45–46                                     | `deduction_pension_additional`                                     | Settings                                                    | heading only: buy-ins are outside payroll (Rz 46)                                          |
+| 11 Nettolohn                                              | Rz 47 (line 8 less Ziffer 9 and 10)          | `net_salary`                                                       | patch 0002: gross less 9, 10.1 and 10.2                     | yes, patched: upstream uses the slip's `net_pay`, which also deducts Quellensteuer and KTG |
+| 12 Quellensteuerabzug (brutto)                            | Rz 48                                        | `source_tax_deduction`                                             | Settings: Quellensteuer Employee                            | yes                                                                                        |
+| 13 Spesenvergütungen                                      | Rz 49–51                                     | heading, see 13.1.1–13.3                                           | see subfields                                               | heading only                                                                               |
+| 13.1 Effektive Spesen                                     | Rz 51                                        | heading, see 13.1.1–13.1.2                                         | see subfields                                               | heading only                                                                               |
+| 13.1.1 Effektive Reise-/Verpflegungs-/Übernachtungsspesen | Rz 52–53                                     | `effective_expenses_travel`, `effective_expenses_travel_check`     | Settings; by hand (check box)                               | heading only; check box stays 0 without an approved Spesenreglement (Rz 52)                |
+| 13.1.2 Übrige effektive Spesen                            | Rz 54                                        | `effective_other_expenses`, `effective_other_expenses_description` | Settings                                                    | heading only                                                                               |
+| 13.2 Pauschalspesen                                       | Rz 55                                        | heading, see 13.2.1–13.2.3                                         | see subfields                                               | heading only                                                                               |
+| 13.2.1 Pauschalspesen Repräsentation                      | Rz 56                                        | `representation_expenses`                                          | Settings                                                    | heading only                                                                               |
+| 13.2.2 Pauschalspesen Auto                                | Rz 57                                        | `car_expenses`                                                     | Settings                                                    | heading only                                                                               |
+| 13.2.3 Übrige Pauschalspesen                              | Rz 58                                        | `other_net_expenses`, `other_net_expenses_description`             | Settings                                                    | heading only                                                                               |
+| 13.3 Beiträge Weiterbildung                               | Rz 61                                        | `education`                                                        | Settings                                                    | heading only                                                                               |
+| 14 Weitere Gehaltsnebenleistungen (no amount)             | Rz 62                                        | `other_salary_sides`                                               | by hand                                                     | heading only                                                                               |
+| 15 Bemerkungen                                            | Rz 63; KTG Rz 42; several certificates Rz 66 | `remarks`                                                          | Settings remark table (empty) and prefix                    | **differs**: the KTG remark is not on the certificate (see below)                          |
+| (no line) KTG Arbeitnehmeranteil                          | Rz 42 (Rz 42 allows it in line 15)           | not a field                                                        | bi_payroll view only (`hand_over.py`)                       | **differs**: the certificate omits the remark                                              |
+| Formular: "Nur ganze Frankenbeträge"                      | Formular, page 2                             | all Currency fields                                                | none: no precision and no rounding in the print format      | **differs**: rounding is in bi_payroll's view and export only (`certificate_rounding`)     |
+
+**Print format.** `605.040.18N Form. 11` draws the form as a background image, `605_040_18N_Form_11.png` from
+erpnextswiss, and places the values on it in the form's order. The Wegleitung makes Formular 11 and its rules
+binding for the Lohnausweis (Rz 1) and names printing it from payroll software on white paper as the normal way
+(Rz 75). Its "own form with equivalent content" (Rz 2) is for pension funds issuing a Rentenbescheinigung.
+Our patch 0007 (`form11-fits-a4`) scales the sheet (`zoom: 0.69`) so it fits A4. Whether the print format
+reproduces the official layout is unverified until the first printed PDF is compared with the ESTV form
+(erp-rqxs proof).
+
+**Verdict: usable with gaps; layout unverified.** Every numbered line and box maps to a field. Two gaps change the
+printed certificate: whole francs, and the KTG remark on line 15. Whether the print format reproduces the official
+layout remains unverified until the first printed PDF is compared with the ESTV form. Both gaps are fixable in a
+later bead, not here.
+
+**Gaps (for ledgerdemain to file)**
+
+1. Whole francs: the certificate prints rappen. Form 11 asks for whole francs only (`certificate_rounding`
+   exists in bi_payroll's view and export, not on the certificate). Decide: round on the certificate, or
+   require the export.
+2. Line 15: the KTG employee share is in the view only. The certificate gets the prefix, not the remark. Fill
+   the settings remark table, or add the remark to the certificate.
+3. Line 7: employer-paid Quellensteuer (Rz 39, 48) has no component. Typed by hand today; a component only if
+   the company ever pays it.
+4. Line 11 in the view: `bi_payroll` subtracts lines 9 and 10.1 only; patch 0002 and Rz 47 subtract 10.2 too.
+   The two agree while 10.2 is empty (it is outside payroll); align the view before any buy-in reaches payroll.
+5. Check, not a gap: box H uses the Employee's `permanent_address`, which must be the current residential address
+   (Rz 11). Check it on the first certificate.
+6. Check, not a gap: re-read the Wegleitung when the 2027 edition is published.
 
 ## Copy site
 
