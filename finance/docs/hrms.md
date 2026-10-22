@@ -510,6 +510,7 @@ public sources only. No employee, salary or private/ data is used here.
 | H Name und Adresse                                        | Rz 11                                        | print format: `employee_name`, `permanent_address`                 | Employee                                                    | yes; check the address is the current one                                                  |
 | I Ort, Datum, Unterschrift                                | Rz 12                                        | none (on the form image)                                           | by hand                                                     | yes                                                                                        |
 | 1 Lohn                                                    | Rz 13–18                                     | `salary`                                                           | Settings: the Earning components (Basic Salary, Commission) | yes; a new Earning component must join the settings list (a test guards it)                |
+| 2 Lohnnebenleistungen                                     | Rz 19                                        | heading, see 2.1–2.3                                               | see subfields                                               | heading only                                                                               |
 | 2.1 Verpflegung und Unterkunft                            | Rz 20                                        | `catering`                                                         | Settings                                                    | heading only: no component                                                                 |
 | 2.2 Privatanteil Geschäftsfahrzeug                        | Rz 21–25                                     | `car`                                                              | Settings                                                    | heading only: no company car                                                               |
 | 2.3 Weitere Gehaltsnebenleistungen                        | Rz 26 (commute refund Rz 17)                 | `other_salary`, `other_salary_description`                         | Settings                                                    | heading only                                                                               |
@@ -524,7 +525,7 @@ public sources only. No employee, salary or private/ data is used here.
 | 10.2 Beiträge Einkauf BVG                                 | Rz 45–46                                     | `deduction_pension_additional`                                     | Settings                                                    | heading only: buy-ins are outside payroll (Rz 46)                                          |
 | 11 Nettolohn                                              | Rz 47 (line 8 less Ziffer 9 and 10)          | `net_salary`                                                       | patch 0002: gross less 9, 10.1 and 10.2                     | yes, patched: upstream uses the slip's `net_pay`, which also deducts Quellensteuer and KTG |
 | 12 Quellensteuerabzug (brutto)                            | Rz 48                                        | `source_tax_deduction`                                             | Settings: Quellensteuer Employee                            | yes                                                                                        |
-| 13 Spesenvergütungen                                      | Rz 49–51                                     | none                                                               | not in payroll                                              | heading only                                                                               |
+| 13 Spesenvergütungen                                      | Rz 49–51                                     | heading, see 13.1.1–13.3                                           | see subfields                                               | heading only                                                                               |
 | 13.1.1 Effektive Reise-/Verpflegungs-/Übernachtungsspesen | Rz 52–53                                     | `effective_expenses_travel`, `effective_expenses_travel_check`     | Settings; by hand (check box)                               | heading only; check box stays 0 without an approved Spesenreglement (Rz 52)                |
 | 13.1.2 Übrige effektive Spesen                            | Rz 54                                        | `effective_other_expenses`, `effective_other_expenses_description` | Settings                                                    | heading only                                                                               |
 | 13.2.1 Pauschalspesen Repräsentation                      | Rz 56                                        | `representation_expenses`                                          | Settings                                                    | heading only                                                                               |
@@ -539,13 +540,15 @@ public sources only. No employee, salary or private/ data is used here.
 **Print format.** `605.040.18N Form. 11` draws the form as a background image, `605_040_18N_Form_11.png` from
 erpnextswiss, and places the values on it in the form's order. The Wegleitung makes Formular 11 and its rules
 binding for the Lohnausweis (Rz 1) and names printing it from payroll software on white paper as the normal way
-(Rz 75). Its "own form with equivalent content" (Rz 2) is for pension funds issuing a Rentenbescheinigung, so the
-employer's certificate keeps the official layout. Our patch 0007 (`form11-fits-a4`) scales the sheet
-(`zoom: 0.69`) so it fits A4; the values keep their places on the image. The image is not compared pixel by
-pixel with the ESTV PDF: check the first printed PDF by eye (erp-rqxs proof).
+(Rz 75). Its "own form with equivalent content" (Rz 2) is for pension funds issuing a Rentenbescheinigung.
+Our patch 0007 (`form11-fits-a4`) scales the sheet (`zoom: 0.69`) so it fits A4. Whether the print format
+reproduces the official layout is unverified until the first printed PDF is compared with the ESTV form
+(erp-rqxs proof).
 
-**Verdict: usable with gaps.** Every numbered line and box maps to a field. Two gaps change the printed
-certificate: whole francs, and the KTG remark on line 15. Both are fixable in a later bead, not here.
+**Verdict: usable with gaps; layout unverified.** Every numbered line and box maps to a field. Two gaps change the
+printed certificate: whole francs, and the KTG remark on line 15. Whether the print format reproduces the official
+layout remains unverified until the first printed PDF is compared with the ESTV form. Both gaps are fixable in a
+later bead, not here.
 
 **Gaps (for ledgerdemain to file)**
 
