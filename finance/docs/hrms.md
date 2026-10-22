@@ -320,9 +320,8 @@ Risks:
   companies. Its field mapping is a config, not proof.
 - **ELM and certification.** A payroll that is not Swissdec-certified cannot send ELM data.
   This is a decision, not a build step.
-- **Double booking.** The history rule above depends on the accrual filter in
-  `get_sal_slip_list`. The check in step 5 is the test of it, and must pass before any
-  history is loaded live.
+- **Double booking.** Before loading history live, follow the history rule above and confirm
+  its gate pin test passes.
 
 ## Recommendation
 
