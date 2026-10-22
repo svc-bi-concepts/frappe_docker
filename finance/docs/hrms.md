@@ -82,10 +82,8 @@ Source: `hrms/hr/doctype` (119 doctypes) and `hrms/payroll/doctype` on `version-
 - **Expenses:** `expense_claim` and its details and taxes (the table that `payment-runs.md`
   says the site lacks until HRMS is in).
 - **Accounting:** a Salary Slip submit makes no GL entry (`salary_slip.py`, `on_submit`).
-  The GL comes from `Payroll Entry`: the accrual Journal Entry (`make_accrual_jv_entry`),
-  which takes only the submitted slips of that Payroll Entry (`payroll_entry.py`,
-  `get_sal_slip_list`, lines 311 to 327: `payroll_entry` set to it, and an empty
-  `journal_entry`), and the bank entry for the net pay (`make_bank_entry`).
+  The GL comes from `Payroll Entry`; its accrual and bank entries are described in
+  [History: Salary Slips, not new GL](#history-salary-slips-not-new-gl).
 - **Employee:** not in HRMS. It is in ERPNext core (`erpnext/setup/doctype/employee`).
 
 Regional code: `hrms/regional` has `india` and `united_arab_emirates` only. There is no
@@ -189,7 +187,7 @@ name that Payroll Entry (`payroll_entry`) and have an empty `journal_entry`
 (`payroll_entry.py`, `get_sal_slip_list`). The rule for history: leave `payroll_entry`
 empty. That alone excludes them. Setting `journal_entry` as well is optional: it is one Link,
 and `import_payroll.py` loads one Journal Entry per bexio journal line (`journal-<id>`), so a
-month can have several. Link it only when a month has a single entry; otherwise leave it empty. This is the design to test. The pin test `bi_finance.test_hrms_accrual_filter` checks the two conditions in the installed hrms on every gate run; the live proof stays with the load itself.
+month can have several. Link it only when a month has a single entry; otherwise leave it empty. The pin test `bi_finance.test_hrms_accrual_filter` checks the two conditions in the installed hrms on every gate run; the live proof stays with the load itself.
 
 The check after the load is the one `import_payroll.py --check` already does: the GL per
 account and year against bexio's lines, with counts and totals only in the notes.
@@ -286,16 +284,10 @@ slot that ledgerdemain gives (`erpnext-setup.md`).
    of `leave-defaults.txt` (Benchi's H3: 0 days for those 2) were cancelled afterwards, kept as cancelled for the
    audit trail, so live holds 1 submitted allocation. A rerun plans those 2 defaults again: do not rerun until
    erp-tn1a (an explicit 0 in an overrides list wins) has landed.
-5. **Payslip history as reference** (erp-2c3a, `finance/bexio/import_paystubs.py`). Replaces the
-   earlier plan of one submitted Salary Slip per employee and month (Decision, ledgerdemain, 2026-10-10).
-   No Salary Slips for the history: the export holds no figures per slip (bexio's paystub overview
-   answers 401, erp-fxa7), and a slip with invented or zero amounts would feed the payroll hand-over
-   report and the Lohnausweis with wrong numbers. The 89 paystub PDFs are private Files on their
-   Employees, named `<year>-<month>-paystub.pdf` and keyed `paystub-<employee>-<year>-<month>`, so a rerun
-   attaches nothing twice. The monthly payroll totals stay in the GL (`import_payroll.py`). The Lohnausweis
-   for years before ERPNext payroll stays bexio's. Check: no Salary Slip exists for these months, and the
-   Files post no GL. Figures per month, should they be wanted later, are a separate decision (every wage
-   type would need a component first).
+5. **Payslip history.** Historical Salary Slips keep `payroll_entry` empty so a Payroll Entry
+   accrual cannot book them again; see [History: Salary Slips, not new GL](#history-salary-slips-not-new-gl)
+   for the authoritative rule and pin test. The post-load check remains `import_payroll.py --check`,
+   comparing GL per account and year against bexio's lines.
 6. **Lohnausweis check.** Compare the erpnextswiss Salary Certificate layout with the 2026
    Form 11. Compare one year's output with the bexio paystub totals (counts and totals in
    the note).
@@ -323,8 +315,8 @@ Risks:
 - **ELM and certification.** A payroll that is not Swissdec-certified cannot send ELM data.
   This is a decision, not a build step.
 - **Double booking.** The history rule above depends on the accrual filter in
-  `get_sal_slip_list`. The check in step 5 is the test of it, and must pass before any
-  history is loaded live.
+  `get_sal_slip_list`. The installed-filter pin test is named in the history section, and the
+  post-load GL check must pass before any history is loaded live.
 
 ## Recommendation
 
