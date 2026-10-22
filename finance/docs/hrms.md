@@ -82,10 +82,8 @@ Source: `hrms/hr/doctype` (119 doctypes) and `hrms/payroll/doctype` on `version-
 - **Expenses:** `expense_claim` and its details and taxes (the table that `payment-runs.md`
   says the site lacks until HRMS is in).
 - **Accounting:** a Salary Slip submit makes no GL entry (`salary_slip.py`, `on_submit`).
-  The GL comes from `Payroll Entry`: the accrual Journal Entry (`make_accrual_jv_entry`),
-  which takes only the submitted slips of that Payroll Entry (`payroll_entry.py`,
-  `get_sal_slip_list`, lines 311 to 327: `payroll_entry` set to it, and an empty
-  `journal_entry`), and the bank entry for the net pay (`make_bank_entry`).
+  The GL comes from `Payroll Entry`; its accrual and bank entries are described in
+  [History: Salary Slips, not new GL](#history-salary-slips-not-new-gl).
 - **Employee:** not in HRMS. It is in ERPNext core (`erpnext/setup/doctype/employee`).
 
 Regional code: `hrms/regional` has `india` and `united_arab_emirates` only. There is no
@@ -189,7 +187,7 @@ name that Payroll Entry (`payroll_entry`) and have an empty `journal_entry`
 (`payroll_entry.py`, `get_sal_slip_list`). The rule for history: leave `payroll_entry`
 empty. That alone excludes them. Setting `journal_entry` as well is optional: it is one Link,
 and `import_payroll.py` loads one Journal Entry per bexio journal line (`journal-<id>`), so a
-month can have several. Link it only when a month has a single entry; otherwise leave it empty. This is the design to test. It is not yet run.
+month can have several. Link it only when a month has a single entry; otherwise leave it empty. The pin test `bi_finance.test_hrms_accrual_filter` checks the two conditions in the installed hrms on every gate run; the live proof stays with the load itself.
 
 The check after the load is the one `import_payroll.py --check` already does: the GL per
 account and year against bexio's lines, with counts and totals only in the notes.
@@ -322,9 +320,8 @@ Risks:
   companies. Its field mapping is a config, not proof.
 - **ELM and certification.** A payroll that is not Swissdec-certified cannot send ELM data.
   This is a decision, not a build step.
-- **Double booking.** The history rule above depends on the accrual filter in
-  `get_sal_slip_list`. The check in step 5 is the test of it, and must pass before any
-  history is loaded live.
+- **Double booking.** Before loading history live, follow the history rule above and confirm
+  its gate pin test passes.
 
 ## Recommendation
 
