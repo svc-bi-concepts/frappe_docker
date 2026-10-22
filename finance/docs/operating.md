@@ -108,8 +108,12 @@ Abschlussbuchungen, when bexio's business year is closed:**
 
        finance/bexio/export.py --complete --year 2026
 
-   (`--year 2026` keeps the payroll export on 2026 when the closing export is run in 2027; the run needs both
-   logins, the read-only one and the export one — see `finance/bexio/README.md`).
+   (`--year 2026` keeps the payroll export on 2026 when the closing export is run in 2027. The run reads with
+   the read token through its av line, so there is no login step: see `finance/bexio/README.md`, "Which login
+   reads what".)
+
+   If the export shows HTTP 403 on every entity, bexio refuses the read token (seen 2026-10-21, 12:00 to the
+   next morning). A re-login does not help: Benchi checks the token in bexio and the vault.
 
 2. Take a backup with the files, the way `finance/docs/archiving.md` says:
    `docker compose -p frappe-finance exec -T backend bench --site frontend backup --with-files`. The
