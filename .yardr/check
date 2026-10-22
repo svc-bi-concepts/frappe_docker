@@ -3,6 +3,21 @@
 # a bead lands only when it exits 0. yardr reads this file from the base
 # branch (main), so an edit here counts once it has landed there.
 set -e
+# erp-e71y, after the quiet run of 2026-10-21 (main 68cc5207): a checkout outside $HOME bind-mounted an empty
+# bi_finance into the image, and the tests failed with 'No module named bi_finance'. Colima on the mini mounts
+# only the home folder, so stop here, before any docker call, and name the cause. GATE_ANY_PATH=1 skips the
+# guard, for a host whose docker can see other paths.
+if [ "${GATE_ANY_PATH:-}" != 1 ]; then
+  CHECKOUT=$(pwd -P)
+  HOME_REAL=$(cd "$HOME" && pwd -P)
+  case "$CHECKOUT/" in
+  "$HOME_REAL"/*) ;;
+  *)
+    echo "gate: checkout $CHECKOUT is not under \$HOME $HOME_REAL: Colima mounts only the home folder, so docker sees an empty bi_finance (GATE_ANY_PATH=1 skips this guard)" >&2
+    exit 2
+    ;;
+  esac
+fi
 # The host part (the erp-5x04 guard, the compose config checks and the stdlib unittest lines)
 # lives in .yardr/check-host.sh, and GitHub CI (.github/workflows/finance-tests.yml) calls the
 # same file, so the two callers cannot drift apart. What stays here is what a GitHub runner
@@ -18,6 +33,8 @@ sh .yardr/check-host.sh
 IMAGE=$(sh finance/scripts/gate-image.sh)
 docker run --rm -v "$PWD/finance/apps/bi_finance:/home/frappe/frappe-bench/apps/bi_finance:ro" "$IMAGE" \
   sh -c 'mkdir -p /home/frappe/logs /home/frappe/frappe-bench/apps/logs && cd /home/frappe/frappe-bench/apps/bi_finance && ../../env/bin/python -m unittest bi_finance.test_payment_run bi_finance.test_treasury bi_finance.test_bank_list bi_finance.test_bank_statement_upload bi_finance.test_cash_flow_forecast bi_finance.test_cash_position bi_finance.test_paypal bi_finance.test_paypal_sync bi_finance.test_qrbill bi_finance.test_setup bi_finance.test_wise'
+# The checkout guard above, offline: a stub docker stands in for the real one (erp-e71y).
+(cd finance/scripts && python3 -m unittest test_gate_check)
 # Upstream's own lint, required: a red lint must stop the landing here, not pass unseen (erp-jmmz).
 if ! command -v pre-commit >/dev/null; then
   echo "pre-commit not installed" >&2
