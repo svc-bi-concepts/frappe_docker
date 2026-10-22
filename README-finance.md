@@ -90,12 +90,15 @@ roles Accounts User, Sales User, Purchase User and Stock User.
 
 ## The gate
 
-`.yardr/check` is the merge gate for this depot. It runs
-`docker compose -f pwd.yml -f finance-local.yml config -q`, so the two compose
-files must parse together. It disables Python bytecode and uses a fresh cache
-directory because Python keys cached bytecode by source mtime and size; reviewers
-probing mutations no longer need to purge the user cache manually. Upstream's
-pre-commit lint runs only if `pre-commit` is installed.
+`.yardr/check` is the merge gate for this depot. It runs the host checks in
+`.yardr/check-host.sh`, the finance tests that need the custom image, and upstream's
+pre-commit lint when `pre-commit` is installed. The host checks validate both
+compose configurations and run the tests that do not need the image.
+
+Before calling Docker, `.yardr/check` checks that the physical checkout path is
+under `$HOME`. Colima on the Mac mini mounts only the home folder, so an outside
+checkout would otherwise appear empty in the container. Set `GATE_ANY_PATH=1` to
+skip this guard on a host whose Docker can access other paths.
 
 Not covered here: backups and upgrades. Those come in later beads.
 
