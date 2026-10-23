@@ -1399,6 +1399,28 @@ class ClaimTest(unittest.TestCase):
             ["Bank Transaction 9001: differs (status Unreconciled, submitted True)"],
         )
 
+    def test_a_claimed_line_is_grouped_under_the_bexio_year(self):
+        results = ib.plan([CHF_IN], LOOKUPS)
+        results[0]["year"] = "2026"
+        results[0]["doc"]["date"] = "2026-01-01"
+        matches = {"9001": (None, [], "no voucher of that amount on the account")}
+        row = {
+            "name": "BTN-F1",
+            "bexio_id": "9001",
+            "bank_account": "Hauptkonto - Testbank AG",
+            "date": "2025-12-31",
+            "deposit": 1500.0,
+            "withdrawal": 0.0,
+            "status": "Unreconciled",
+            "docstatus": 1,
+        }
+        claimed = {"9001": file_line(status="Unreconciled")}
+        table, differences = ib.live_check([row], results, matches, LOOKUPS, claimed)
+        year_2026 = next(line for line in table if "2026" in line and "1 / 1" in line)
+        self.assertIn("2026", year_2026)
+        self.assertIn("1 / 1", year_2026)
+        self.assertEqual(differences, [])
+
 
 class ClaimMainTest(unittest.TestCase):
     class Erp(FakeErp):

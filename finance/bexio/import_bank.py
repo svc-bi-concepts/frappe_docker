@@ -833,9 +833,10 @@ def live_check(erp_rows, results, matches, lookups, claimed=None):
                 "Bank Transaction {}: not in ERPNext".format(r["bexio_id"])
             )
             continue
+        year = r["year"] if r["bexio_id"] in claimed else row["date"][:4]
         _add(
             found,
-            (names.get(row["bank_account"], "?"), row["date"][:4]),
+            (names.get(row["bank_account"], "?"), year),
             cents(row["deposit"]),
             cents(row["withdrawal"]),
             row["status"] == "Reconciled",
