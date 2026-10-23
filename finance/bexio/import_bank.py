@@ -66,6 +66,8 @@ WINDOW_DAYS = 5
 
 # the shortest name from a voucher's text that counts as a mention in a bank line's title (pass text)
 TEXT_MIN = 4
+# read_allocated's mark for a voucher a bank file line holds before any bexio record claims it: no bexio_id equals it
+FILE_LINE = "file:"
 
 # the passes a transaction is reconciled by, in the order they run; each is counted apart
 PASS_ONE = "one voucher"
@@ -287,12 +289,17 @@ def read_vouchers(erp, gl_accounts):
 def read_allocated(erp):
     """The vouchers already allocated to a Bank Transaction in ERPNext: {(doctype, name): bexio_id of that transaction}.
 
+    A reconciled bank file line that no bexio record has claimed yet (transaction_id set, no bexio_id) holds its vouchers
+    under FILE_LINE and its name, so no bexio record can take them. Cancelled transactions hold nothing.
     Read per reconciled transaction, since the allocation is a child table of the Bank Transaction.
     """
     allocated = {}
     for row in erp.list(
         "Bank Transaction",
-        [["bexio_id", "is", "set"], ["status", "!=", "Unreconciled"]],
+        [
+            ["bexio_id", "is", "set"],
+            ["status", "not in", ["Unreconciled", "Cancelled"]],
+        ],
         ["name", "bexio_id"],
     ):
         for payment in (
@@ -301,6 +308,21 @@ def read_allocated(erp):
             allocated[(payment["payment_document"], payment["payment_entry"])] = row[
                 "bexio_id"
             ]
+    for row in erp.list(
+        "Bank Transaction",
+        [
+            ["transaction_id", "is", "set"],
+            ["bexio_id", "is", "not set"],
+            ["status", "not in", ["Unreconciled", "Cancelled"]],
+        ],
+        ["name"],
+    ):
+        for payment in (
+            erp.get("Bank Transaction", row["name"]).get("payment_entries") or []
+        ):
+            allocated[(payment["payment_document"], payment["payment_entry"])] = (
+                FILE_LINE + row["name"]
+            )
     return allocated
 
 
@@ -352,8 +374,8 @@ def _named(voucher, title):
 def match(transactions, vouchers, allocated=None):
     """The candidate transactions and the vouchers each reconciles against: {bexio_id: (pass, vouchers, reason)}.
 
-    A voucher allocated in ERPNext to another transaction is no candidate (allocated: {(doctype, name): bexio_id}); the
-    transaction it is allocated to keeps it. The passes, each only on a unique match, in this order:
+    A voucher allocated in ERPNext to another transaction is no candidate (allocated: {(doctype, name): bexio_id}, or
+    FILE_LINE and the name for a bank file line); the transaction it is allocated to keeps it. The passes, each only on a unique match, in this order:
     one voucher of the transaction's GL account, date and amount; then the only voucher of the account and amount within
     WINDOW_DAYS of its value or book date, and near no other open transaction of that account and amount; then, among
     several of the same day, the only one whose name appears in the bank line's title; then the only combination of the
@@ -484,6 +506,18 @@ def match(transactions, vouchers, allocated=None):
                 f"{len(window)} candidates within {WINDOW_DAYS} days",
             )
         elif any(
+            v["account"] == t["account"]
+            and v["amount"] == t["amount"]
+            and _near(v, t)
+            and allocated.get(_key(v), "").startswith(FILE_LINE)
+            for v in vouchers
+        ):
+            result[t["bexio_id"]] = (
+                None,
+                [],
+                f"voucher within {WINDOW_DAYS} days already allocated to a bank file line",
+            )
+        elif any(
             v["account"] == t["account"] and v["amount"] == t["amount"] for v in pool
         ):
             result[t["bexio_id"]] = (
@@ -512,10 +546,14 @@ def match(transactions, vouchers, allocated=None):
 
 
 def kept_allocations(matches, allocated):
-    """The Bank Transactions already reconciled in ERPNext whose match does not name the same vouchers, by bexio id."""
+    """The Bank Transactions already reconciled in ERPNext whose match does not name the same vouchers, by bexio id.
+
+    A bank file line that no bexio record has claimed is not one of them: its vouchers are FILE_LINE marks.
+    """
     owned = collections.defaultdict(set)
     for key, bexio_id in allocated.items():
-        owned[bexio_id].add(key)
+        if not bexio_id.startswith(FILE_LINE):
+            owned[bexio_id].add(key)
     return sorted(
         bexio_id
         for bexio_id, keys in owned.items()
@@ -1134,7 +1172,11 @@ def main(argv):
         {"bexio_id": bexio_id, "name": line["name"]}
         for bexio_id, line in sorted(claimed.items())
     ]
-    done = set(allocated.values())
+    done = {
+        bexio_id
+        for bexio_id in allocated.values()
+        if not bexio_id.startswith(FILE_LINE)
+    }
     kept = kept_allocations(matches, allocated)
     print(f"bank transactions from {export_dir}")
     print(summary(results))
