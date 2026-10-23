@@ -1,4 +1,4 @@
-"""A UBS camt file uploaded for import: the record of what entered the bank ledger from it.
+"""A UBS camt or MT940 file uploaded for import: the record of what entered the bank ledger from it.
 
 Dry run reads the attached file with camt_import.dry_run and writes nothing; the record keeps the summary.
 Import needs a dry run on the same file, and runs once: the record then stays Imported with its count.

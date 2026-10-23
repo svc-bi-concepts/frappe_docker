@@ -35,7 +35,7 @@ Invoice prints, with the QR code drawn on our own server (no external host, see
   reference, booking date and amount, with '-2', '-3' for a repeat in the file (the camt NtryRef idea), so the
   same line in an overlapping later file keeps its reference. Zero-amount lines are skipped and counted.
   The end-to-end id is the customer reference unless NONREF; not yet proven on a real payment run (erp-mfr3).
-- `bi_finance/test_camt.py`: offline tests of both, with invented files: `python3 -m unittest bi_finance.test_camt`
+- `bi_finance/test_camt.py`: offline tests of camt.py, with invented files: `python3 -m unittest bi_finance.test_camt`
   from this directory, or in the image as in `finance/docs/erpnext-setup.md`.
 - `bi_finance/test_mt940.py`: offline tests of mt940.py with invented files: `python3 -m unittest bi_finance.test_mt940`
   from this directory.
