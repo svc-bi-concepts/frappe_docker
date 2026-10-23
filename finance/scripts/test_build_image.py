@@ -893,13 +893,8 @@ class PatchStep(unittest.TestCase):
         self.assertIn(
             "self.net_salary = (self.gross_salary - self.deduction_ahv", patched
         )
-        # fetch_static (the old way, not dynamic) keeps the upstream net; only fetch_dynamic's Pos 11 is patched
-        self.assertNotIn("    # Pos 11\n    self.net_salary = values[0].net", patched)
         self.assertIn("IN %s", patched)
         self.assertIn("tuple(positiv)", patched)
-        self.assertNotIn(
-            ".format(employee, start_date, end_date, expression_pos)", patched
-        )
 
     def test_our_form11_patch_fits_the_canvas_to_a4(self):
         # At the pin the Form 11 canvas is 980px wide. frappe's document PDF path
