@@ -175,8 +175,8 @@ def payment_behaviour(history, open_items, as_of):
 
     history: {customer: [(due, paid)]} of the invoices paid in the period, as paid_history gives it.
     open_items: {invoice: (customer, amount owed, due)} of the invoices unpaid on as_of, as open_documents gives it.
-    Days late are paid less due, negative when paid early; on time is paid on or before the due date. mean_days_late
-    is average_days_late, so the report and the forecast agree. An open invoice is overdue when it is due before as_of;
+    Days late are paid less due, negative when paid early; on time is paid on or before the due date. An open invoice
+    is overdue when it is due before as_of;
     the oldest is the one due longest ago. A customer with open items only has paid 0 and no days.
     Sorted by the open overdue amount, then the median days late, both largest first.
     """
@@ -201,7 +201,6 @@ def payment_behaviour(history, open_items, as_of):
                 ),
                 "median_days_late": statistics.median(late) if late else None,
                 "max_days_late": max(late) if late else None,
-                "mean_days_late": average_days_late(pairs) if pairs else None,
                 "open_overdue_count": len(open_late),
                 "open_overdue_amount": sum(amount for _due, amount in open_late),
                 "oldest_overdue_days": (
