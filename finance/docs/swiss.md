@@ -1,21 +1,21 @@
 # Swiss compliance: erpnextswiss on ERPNext v16
 
-Decision on whether libracore's erpnextswiss can carry the Swiss compliance of
-the finance site (ERPNext v16.50.0), and the build path for a custom image that
-includes it. The running stack is unchanged; the app is not installed on site
-`frontend`. That is a later bead, after a backup.
+Record of the decision to use libracore's erpnextswiss for the Swiss compliance
+of the finance site (ERPNext v16.50.0), and the build path for a custom image
+that includes it. The app is now installed on site `frontend`; see
+`erpnext-setup.md` for the live site configuration.
 
 ## Verdict
 
 **Fit, with one condition.** erpnextswiss covers the scope we need. Before any
 real invoice carries a QR-bill, the QR rendering must move off libracore's
-server (see Risks). Until then the app can be built and installed on a copy,
-not used for live invoices.
+server (see Risks). This decision originally allowed building and installing
+the app on a copy; it is now installed on the live site.
 
 Pinned in `finance/apps.json`:
 
 - ERPNext `v16.50.0` (tag, commit `7474d9e`, the same tag the running stack uses)
-- Frappe `v16.51.0` (tag, commit `6b450a1`, passed as `FRAPPE_BRANCH`; bi13, live since 2026-10-11)
+- Frappe `v16.51.0` (tag, commit `6b450a1`, passed as `FRAPPE_BRANCH`)
 - erpnextswiss branch `v16` at commit `5d85c45b48f4774cda6ba84ab75f138ad45a55c3`
   (2026-10-07)
 
