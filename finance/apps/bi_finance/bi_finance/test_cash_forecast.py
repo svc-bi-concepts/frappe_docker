@@ -80,7 +80,9 @@ class PaymentBehaviour(unittest.TestCase):
         self.assertAlmostEqual(row["on_time_share"], 2 / 3)
         self.assertEqual(row["median_days_late"], 0)
         self.assertEqual(row["max_days_late"], 10)
-        self.assertEqual(row["mean_days_late"], cf.average_days_late(history["Customer A"]))
+        self.assertEqual(
+            row["mean_days_late"], cf.average_days_late(history["Customer A"])
+        )
 
     def test_the_median_of_an_even_count_is_the_mean_of_the_two_middle_values(self):
         history = {

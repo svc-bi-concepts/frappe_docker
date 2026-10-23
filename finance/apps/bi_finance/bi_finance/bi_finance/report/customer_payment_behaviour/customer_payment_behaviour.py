@@ -17,7 +17,9 @@ from frappe.utils import escape_html, getdate, nowdate
 
 
 def columns(currency):
-    def col(label, fieldname, fieldtype="Float", precision=None, width=120, options=None):
+    def col(
+        label, fieldname, fieldtype="Float", precision=None, width=120, options=None
+    ):
         column = {
             "label": _(label),
             "fieldname": fieldname,
@@ -38,7 +40,13 @@ def columns(currency):
         col("Max days late", "max_days_late", "Int", width=110),
         col("Mean days late", "mean_days_late", "Int", width=120),
         col("Open overdue invoices", "open_overdue_count", "Int", width=150),
-        col("Open overdue amount", "open_overdue_amount", "Currency", width=160, options=currency),
+        col(
+            "Open overdue amount",
+            "open_overdue_amount",
+            "Currency",
+            width=160,
+            options=currency,
+        ),
         col("Oldest overdue (days)", "oldest_overdue_days", "Int", width=160),
     ]
 
@@ -47,13 +55,17 @@ def execute(filters=None):
     filters = frappe._dict(filters or {})
     company = filters.company or frappe.defaults.get_user_default("company")
     to_date = getdate(filters.to_date or nowdate())
-    from_date = getdate(filters.from_date or to_date - datetime.timedelta(days=cff.LOOKBACK_DAYS))
+    from_date = getdate(
+        filters.from_date or to_date - datetime.timedelta(days=cff.LOOKBACK_DAYS)
+    )
     if from_date > to_date:
         frappe.throw(_("From Date must be before To Date"))
     currency = frappe.get_cached_value("Company", company, "default_currency")
 
     open_items = cff.open_documents(company, to_date, "Sales Invoice")
-    history = cff.paid_history(company, to_date, "Sales Invoice", set(open_items), from_date, to_date)
+    history = cff.paid_history(
+        company, to_date, "Sales Invoice", set(open_items), from_date, to_date
+    )
     rows = cf.payment_behaviour(history, open_items, to_date)
     if filters.customer:
         rows = [row for row in rows if row["customer"] == filters.customer]
@@ -66,9 +78,9 @@ def execute(filters=None):
                 "Days late: from the due date to that date; negative is paid early. Mean days late is the figure the "
                 "cash forecast moves a customer's receipts by."
             ).format(from_date.isoformat(), to_date.isoformat()),
-            _("Open overdue: Sales Invoices unpaid on {0} and due before it, oldest first in days.").format(
-                to_date.isoformat()
-            ),
+            _(
+                "Open overdue: Sales Invoices unpaid on {0} and due before it; the oldest overdue is counted in days."
+            ).format(to_date.isoformat()),
         ]
     )
     return columns(currency), rows, message, None

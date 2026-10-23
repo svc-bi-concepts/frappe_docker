@@ -184,7 +184,9 @@ def payment_behaviour(history, open_items, as_of):
     for customer, amount, due in open_items.values():
         if due < as_of:
             overdue[customer].append((due, amount))
-    customers = set(history) | {customer for customer, _amount, _due in open_items.values()}
+    customers = set(history) | {
+        customer for customer, _amount, _due in open_items.values()
+    }
     rows = []
     for customer in customers:
         pairs = history.get(customer, [])
@@ -194,16 +196,28 @@ def payment_behaviour(history, open_items, as_of):
             {
                 "customer": customer,
                 "paid": len(pairs),
-                "on_time_share": sum(1 for days in late if days <= 0) / len(late) if late else None,
+                "on_time_share": (
+                    sum(1 for days in late if days <= 0) / len(late) if late else None
+                ),
                 "median_days_late": statistics.median(late) if late else None,
                 "max_days_late": max(late) if late else None,
                 "mean_days_late": average_days_late(pairs) if pairs else None,
                 "open_overdue_count": len(open_late),
                 "open_overdue_amount": sum(amount for _due, amount in open_late),
-                "oldest_overdue_days": (as_of - min(due for due, _amount in open_late)).days if open_late else None,
+                "oldest_overdue_days": (
+                    (as_of - min(due for due, _amount in open_late)).days
+                    if open_late
+                    else None
+                ),
             }
         )
-    rows.sort(key=lambda row: (-row["open_overdue_amount"], -(row["median_days_late"] or 0), row["customer"]))
+    rows.sort(
+        key=lambda row: (
+            -row["open_overdue_amount"],
+            -(row["median_days_late"] or 0),
+            row["customer"],
+        )
+    )
     return rows
 
 
