@@ -70,7 +70,8 @@ class Unmapped(Exception):
 
 class Lookups:
     """What the mapping reads from ERPNext: the submitted Purchase Invoices by bexio_id, the accounts by number, the cost
-    center, and the bexio ids of the submitted Payment Entries already loaded (a rerun leaves them as they are).
+    center, and the bexio ids of the Payment Entries already loaded (a rerun leaves them as they are; an amended one
+    counts, see import_master.taken_bexio_ids).
     """
 
     def __init__(self, invoices, gl, cost_center, loaded=frozenset()):
@@ -79,7 +80,7 @@ class Lookups:
         self.cost_center = cost_center  # the one Cost Center of the company; None when there is not exactly one
         self.loaded = set(
             loaded
-        )  # bexio ids (bill payment group uuids) of the submitted Payment Entries of an earlier run
+        )  # bexio ids (bill payment group uuids) of the Payment Entries of an earlier run, amended ones included
 
     @classmethod
     def from_erp(cls, erp):
@@ -110,21 +111,16 @@ class Lookups:
             [["company", "=", im.COMPANY], ["is_group", "=", 0]],
             ["name"],
         )
-        loaded = erp.list(
+        loaded = im.taken_bexio_ids(
+            erp,
             "Payment Entry",
-            [
-                ["company", "=", im.COMPANY],
-                ["payment_type", "=", "Pay"],
-                ["docstatus", "=", 1],
-                ["bexio_id", "is", "set"],
-            ],
-            ["bexio_id"],
+            [["company", "=", im.COMPANY], ["payment_type", "=", "Pay"]],
         )
         return cls(
             invoices={r["bexio_id"]: r for r in invoices},
             gl={r["account_number"]: r["name"] for r in accounts},
             cost_center=centers[0]["name"] if len(centers) == 1 else None,
-            loaded={r["bexio_id"] for r in loaded},
+            loaded=loaded,
         )
 
 
@@ -297,7 +293,7 @@ def plan(data, lookups):
 
     A result has the group's uuid, its day and year, the payable, the bank amount, the bill it is paired with, the
     Payment Entry (doc) or the reason it is unmapped (error), and the VAT lines it moves (not booked here). A payment
-    whose submitted Payment Entry an earlier run loaded has no doc: it is counted as loaded, and not checked again.
+    whose Payment Entry (submitted, or its amendment) an earlier run loaded has no doc: it is counted as loaded, and not checked again.
     """
     numbers = {a["id"]: str(a["account_no"]) for a in data["accounts"]}
     settled, results = [], []

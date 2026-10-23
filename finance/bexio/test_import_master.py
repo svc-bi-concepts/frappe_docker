@@ -799,5 +799,72 @@ class HelpersTest(unittest.TestCase):
         )
 
 
+class TakenBexioIdsTest(unittest.TestCase):
+    """Invented payment entries: a submitted one with its bexio id, a cancelled one and its amendments."""
+
+    FILTERS = [["company", "=", im.COMPANY], ["payment_type", "=", "Pay"]]
+
+    def doc(self, name, docstatus, bexio_id=None, amended_from=None, **extra):
+        return dict(
+            {
+                "name": name,
+                "docstatus": docstatus,
+                "bexio_id": bexio_id,
+                "amended_from": amended_from,
+                "company": im.COMPANY,
+                "payment_type": "Pay",
+            },
+            **extra,
+        )
+
+    def taken(self, *docs):
+        erp = FakeErp({"Payment Entry": list(docs)})
+        return im.taken_bexio_ids(erp, "Payment Entry", self.FILTERS)
+
+    def test_a_submitted_document_with_a_bexio_id_is_taken(self):
+        self.assertEqual(self.taken(self.doc("PE-1", 1, "b-1")), {"b-1": "PE-1"})
+
+    def test_an_amended_document_takes_the_bexio_id_of_its_cancelled_original(self):
+        taken = self.taken(
+            self.doc("PE-1", 2, "b-1"),
+            self.doc("PE-1-1", 1, None, amended_from="PE-1"),
+        )
+        self.assertEqual(taken, {"b-1": "PE-1-1"})
+
+    def test_a_cancelled_document_without_an_amendment_is_not_taken(self):
+        self.assertEqual(self.taken(self.doc("PE-1", 2, "b-1")), {})
+
+    def test_a_cancelled_document_whose_amendment_is_a_draft_is_not_taken(self):
+        taken = self.taken(
+            self.doc("PE-1", 2, "b-1"),
+            self.doc("PE-1-1", 0, None, amended_from="PE-1"),
+        )
+        self.assertEqual(taken, {})
+
+    def test_a_chain_of_two_amendments_resolves_to_the_submitted_one(self):
+        taken = self.taken(
+            self.doc("PE-1", 2, "b-1"),
+            self.doc("PE-1-1", 2, None, amended_from="PE-1"),
+            self.doc("PE-1-2", 1, None, amended_from="PE-1-1"),
+        )
+        self.assertEqual(taken, {"b-1": "PE-1-2"})
+
+    def test_a_submitted_document_with_its_own_bexio_id_is_taken_as_before(self):
+        taken = self.taken(
+            self.doc("PE-1", 2, "b-1"),
+            self.doc("PE-1-1", 1, "b-2", amended_from="PE-1"),
+        )
+        self.assertEqual(taken, {"b-1": "PE-1-1", "b-2": "PE-1-1"})
+
+    def test_the_filters_narrow_both_lists(self):
+        taken = self.taken(
+            self.doc("PE-1", 1, "b-1", payment_type="Receive"),
+            self.doc("PE-2", 2, "b-2", payment_type="Receive"),
+            self.doc("PE-3", 2, "b-3"),
+            self.doc("PE-3-1", 1, None, amended_from="PE-3"),
+        )
+        self.assertEqual(taken, {"b-3": "PE-3-1"})
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -746,11 +746,17 @@ class Rerun(unittest.TestCase):
 
 
 class FakeErp:
-    """Stands in for the ERPNext client: two submitted receipts, one with an invoice reference and one an advance."""
+    """Stands in for the ERPNext client: two submitted receipts, one with an invoice reference and one an advance;
+    a receipt cancelled and amended (the amendment is submitted and has no bexio id, its original keeps it).
+    """
 
     ENTRIES = [
-        {"name": "ACC-PAY-0001", "bexio_id": "811"},
-        {"name": "ACC-PAY-0002", "bexio_id": "734"},
+        {"name": "ACC-PAY-0001", "bexio_id": "811", "amended_from": None},
+        {"name": "ACC-PAY-0002", "bexio_id": "734", "amended_from": None},
+        {"name": "ACC-PAY-0004", "bexio_id": None, "amended_from": "ACC-PAY-0003"},
+    ]
+    CANCELLED = [
+        {"name": "ACC-PAY-0003", "bexio_id": "905", "amended_from": None},
     ]
     DOCS = {
         "ACC-PAY-0001": {
@@ -763,10 +769,22 @@ class FakeErp:
             ]
         },
         "ACC-PAY-0002": {"references": []},
+        "ACC-PAY-0004": {
+            "references": [
+                {
+                    "reference_doctype": "Sales Invoice",
+                    "reference_name": "ACC-SINV-0003",
+                    "allocated_amount": 50.0,
+                }
+            ]
+        },
     }
 
     def list(self, doctype, filters=None, fields=()):
         self.filters = filters
+        self.calls = getattr(self, "calls", []) + [filters]
+        if ["docstatus", "=", 2] in filters:
+            return self.CANCELLED
         return self.ENTRIES
 
     def get(self, doctype, name):
@@ -779,11 +797,18 @@ class LoadedAllocations(unittest.TestCase):
     ):
         erp = FakeErp()
         self.assertEqual(
-            ipi.loaded_allocations(erp),
-            {"811": [("ACC-SINV-0002", Decimal("180.0"))], "734": []},
+            ipi.loaded_allocations(erp)["811"],
+            [("ACC-SINV-0002", Decimal("180.0"))],
         )
-        self.assertIn(["docstatus", "=", 1], erp.filters)
-        self.assertIn(["payment_type", "=", "Receive"], erp.filters)
+        self.assertEqual(ipi.loaded_allocations(FakeErp())["734"], [])
+        self.assertTrue(all(["payment_type", "=", "Receive"] in c for c in erp.calls))
+
+    def test_an_amended_receipt_is_loaded_under_the_bexio_id_of_its_cancelled_original(
+        self,
+    ):
+        loaded = ipi.loaded_allocations(FakeErp())
+        self.assertEqual(loaded["905"], [("ACC-SINV-0003", Decimal("50.0"))])
+        self.assertNotIn(None, loaded)
 
 
 if __name__ == "__main__":

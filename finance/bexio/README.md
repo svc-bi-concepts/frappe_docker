@@ -595,6 +595,10 @@ name is never written to the repository or to a bead note.
 The history goes into ERPNext in this order. Each loader is keyed by `bexio_id` and is meant to insert nothing on a
 second run; the dry run of each step is the rerun check (it reads ERPNext and writes nothing).
 
+A bexio document corrected in ERPNext by cancel and amend stays imported: the amendment has no `bexio_id`, and its
+cancelled original keeps the bexio uuid. The payment importers count it as loaded (`import_master.taken_bexio_ids`), so
+a rerun does not plan it again.
+
 1. Master data: `import_master.py` (see the master-data pipeline above).
 2. Documents: `import_sales.py --apply` (invoices as drafts), `import_credit_note.py --write FILE` (the one
    credit voucher), `import_purchase.py --apply` (bills as drafts). Then submit the drafts:

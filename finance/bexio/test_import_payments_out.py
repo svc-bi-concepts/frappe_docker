@@ -482,6 +482,50 @@ class LookupsTest(unittest.TestCase):
         self.assertEqual(found.gl, {"1020": "1020 - UBS Test - bic"})
         self.assertEqual(found.cost_center, "Main - Test")
 
+    def test_from_erp_counts_an_amended_payment_as_loaded_and_a_cancelled_one_without_amendment_as_not(
+        self,
+    ):
+        # invented: g-1 cancelled and amended as PE-1-1, g-2 cancelled and not amended, g-3 submitted
+        erp = FakeErp(
+            {
+                "Payment Entry": [
+                    {
+                        "name": "PE-1",
+                        "bexio_id": "g-1",
+                        "amended_from": None,
+                        "docstatus": 2,
+                        "company": im.COMPANY,
+                        "payment_type": "Pay",
+                    },
+                    {
+                        "name": "PE-1-1",
+                        "bexio_id": None,
+                        "amended_from": "PE-1",
+                        "docstatus": 1,
+                        "company": im.COMPANY,
+                        "payment_type": "Pay",
+                    },
+                    {
+                        "name": "PE-2",
+                        "bexio_id": "g-2",
+                        "amended_from": None,
+                        "docstatus": 2,
+                        "company": im.COMPANY,
+                        "payment_type": "Pay",
+                    },
+                    {
+                        "name": "PE-3",
+                        "bexio_id": "g-3",
+                        "amended_from": None,
+                        "docstatus": 1,
+                        "company": im.COMPANY,
+                        "payment_type": "Pay",
+                    },
+                ]
+            }
+        )
+        self.assertEqual(po.Lookups.from_erp(erp).loaded, {"g-1", "g-3"})
+
 
 class MainTest(unittest.TestCase):
     def test_main_takes_exactly_one_of_the_dry_run_and_the_write(self):
