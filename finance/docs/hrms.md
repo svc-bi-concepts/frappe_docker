@@ -13,7 +13,7 @@ Those stay in `private/`.
 
 ## Verdict
 
-**Fit for the payroll core; four Swiss gaps, two of them need a decision before go-live.**
+**Fit for the payroll core; one Swiss gap remains.**
 
 - Frappe HRMS `v16.50.0` gives what the payroll needs underneath: Salary Components with
   formulas, Salary Structures, Salary Slips, Payroll Entry for accruals and bank entries,
@@ -316,8 +316,8 @@ Risks:
 - **Install is a schema change.** HRMS adds many doctypes and custom fields on install and
   migrate. Install on a copy first; the rollback is the backup.
 - **Image size and build time** grow with HRMS. Measure on the copy build, not from this study.
-- **Lohnausweis: field check done; the two certificate gaps are closed by patch 0009 (erp-va7t), one gap left.** The erpnextswiss doctype was written for its own sample
-  companies. Each numbered line is checked against the 2026 Wegleitung in "Lohnausweis: field check". The certificate now prints whole francs and the KTG remark on line 15; the next image deploy carries it. Line 7 (employer-paid Quellensteuer) stays open: typed by hand, no bead.
+- **Lohnausweis: field check done; one gap remains.** The erpnextswiss doctype was written for its own sample
+  companies. Each numbered line is checked against the 2026 Wegleitung in "Lohnausweis: field check". Patch 0009 (erp-va7t) closes the certificate's whole-franc and KTG-remark gaps; the next image deploy carries it. Line 7 (employer-paid Quellensteuer) stays open: typed by hand, no bead.
 - **ELM and certification.** A payroll that is not Swissdec-certified cannot send ELM data.
   This is a decision, not a build step.
 - **Double booking.** Before loading history live, follow the history rule above and confirm
@@ -330,8 +330,8 @@ with formulas (AHV, ALV, BVG, UVG/NBU, KTG, FAK) as settings, in the `bi_payroll
 Use erpnextswiss's Salary Certificate for the Lohnausweis, after its field layout is checked
 against the 2026 Form 11. Load the bexio history as submitted Salary Slips with no
 `payroll_entry`, so no GL is posted twice. Do not start the live site
-until the two gaps have a decision: how ELM is transmitted, and how Quellensteuer is
-calculated.
+until the remaining Quellensteuer gap has a decision: build the calculation, or enter
+the amount calculated outside ERPNext.
 
 ## Questions for Benchi
 
@@ -544,10 +544,9 @@ Our patch 0007 (`form11-fits-a4`) scales the sheet (`zoom: 0.69`) so it fits A4.
 reproduces the official layout is unverified until the first printed PDF is compared with the ESTV form
 (erp-rqxs proof).
 
-**Verdict: usable; one gap, layout unverified.** Every numbered line and box maps to a field. The two gaps that
-changed the printed certificate, whole francs and the KTG remark on line 15, are closed by patch 0009 (erp-va7t);
-the printed PDF is not yet compared with the ESTV form. Whether the print format reproduces the official layout
-remains unverified until the first printed PDF is compared with the ESTV form.
+**Verdict: usable; one gap, layout unverified.** Every numbered line and box maps to a field. Patch 0009 (erp-va7t)
+closes the whole-franc and KTG-remark gaps; the printed PDF is not yet compared with the ESTV form. Whether the
+print format reproduces the official layout remains unverified until the first printed PDF is compared with the ESTV form.
 
 **Gaps (for ledgerdemain to file)**
 
