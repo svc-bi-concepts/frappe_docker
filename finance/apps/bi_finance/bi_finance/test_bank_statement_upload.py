@@ -92,6 +92,47 @@ class SummaryText(unittest.TestCase):
         result = dict(RESULT, counts=dict(RESULT["counts"], by_month={}))
         self.assertNotIn("By booking month", record.summary_text(result))
 
+    def test_an_mt940_file_counts_its_zero_lines(self):
+        skipped = {"not booked": 0, "covered": 0, "zero": 3}
+        result = dict(
+            RESULT, version="mt940", counts=dict(RESULT["counts"], skipped=skipped)
+        )
+        self.assertIn(
+            "Skipped: 0 not booked, 0 covered by a details entry, 3 zero amount",
+            record.summary_text(result).split("\n"),
+        )
+
+
+class ParseDispatch(unittest.TestCase):
+    """_run reads a file that is not XML with mt940.parse, and XML with camt.parse (a byte order mark allowed)."""
+
+    def setUp(self):
+        self.addCleanup(mock.patch.stopall)
+        self.stop = RuntimeError("stop after the parse")
+        mock.patch.object(camt_import, "_account", side_effect=self.stop).start()
+        self.camt = mock.patch.object(camt_import.camt, "parse").start()
+        self.mt940 = mock.patch.object(camt_import.mt940, "parse").start()
+
+    def run_on(self, content):
+        with mock.patch.object(camt_import, "_file_content", return_value=content):
+            with self.assertRaises(RuntimeError):
+                camt_import._run("/private/files/invented-statement", None, write=False)
+
+    def test_an_mt940_file_goes_to_mt940_parse(self):
+        self.run_on(b":20:INV-0001\r\n:25:CH5604835012345678009\r\n")
+        self.mt940.assert_called_once()
+        self.camt.assert_not_called()
+
+    def test_an_xml_file_goes_to_camt_parse(self):
+        self.run_on(b"<?xml version='1.0'?><Document/>")
+        self.camt.assert_called_once()
+        self.mt940.assert_not_called()
+
+    def test_an_xml_file_with_a_byte_order_mark_goes_to_camt_parse(self):
+        self.run_on(b"\xef\xbb\xbf\r\n<Document/>")
+        self.camt.assert_called_once()
+        self.mt940.assert_not_called()
+
 
 class DryRun(unittest.TestCase):
     def setUp(self):
@@ -319,7 +360,7 @@ class DefaultAccount(unittest.TestCase):
     def setUp(self):
         self.addCleanup(mock.patch.stopall)
         mock.patch.object(frappe, "has_permission").start()
-        mock.patch.object(camt_import, "_file_content", return_value=b"x").start()
+        mock.patch.object(camt_import, "_file_content", return_value=b"<camt/>").start()
         mock.patch.object(
             camt_import.camt, "parse", return_value={"iban": "CH5604835012345678009"}
         ).start()
@@ -353,6 +394,20 @@ class DefaultAccount(unittest.TestCase):
             self.assertIsNone(
                 camt_import.account_for_file("/private/files/invented-camt.xml")
             )
+
+    def test_an_mt940_file_proposes_the_account_of_its_iban(self):
+        mock.patch.object(
+            camt_import, "_file_content", return_value=b":20:INV-0001\r\n:25:CH56\r\n"
+        ).start()
+        mock.patch.object(
+            camt_import.mt940, "parse", return_value={"iban": "CH5604835012345678009"}
+        ).start()
+        with self.accounts("CH56 0483 5012 3456 7800 9"):
+            self.assertEqual(
+                camt_import.account_for_file("/private/files/invented-mt940.mt940"),
+                "Account 0",
+            )
+        camt_import.camt.parse.assert_not_called()
 
 
 class StampComment(unittest.TestCase):

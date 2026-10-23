@@ -1,4 +1,4 @@
-"""A UBS camt file uploaded for import: the record of what entered the bank ledger from it.
+"""A UBS camt or MT940 file uploaded for import: the record of what entered the bank ledger from it.
 
 Dry run reads the attached file with camt_import.dry_run and writes nothing; the record keeps the summary.
 Import needs a dry run on the same file, and runs once: the record then stays Imported with its count.
@@ -78,6 +78,13 @@ class BankStatementUpload(Document):
 def summary_text(result):
     """The dry run's (or import's) result as the record's summary: plain lines, one per count."""
     counts = result["counts"]
+    skipped = counts["skipped"]
+    skipped_line = "Skipped: {} not booked, {} covered by a details entry".format(
+        skipped["not booked"], skipped["covered"]
+    )
+    if "zero" in skipped:
+        # MT940 only: its zero-amount lines (a service charge line of 0.00 and the like)
+        skipped_line += ", {} zero amount".format(skipped["zero"])
     lines = [
         "Bank Account {} (IBAN {}, {})".format(
             result["bank_account"], result["iban"], result["currency"]
@@ -86,9 +93,7 @@ def summary_text(result):
         "Transactions: {} new, {} already on the account, {} matched to bexio lines".format(
             counts["new"], counts["id"], counts["bexio"]
         ),
-        "Skipped: {} not booked, {} covered by a details entry".format(
-            counts["skipped"]["not booked"], counts["skipped"]["covered"]
-        ),
+        skipped_line,
     ]
     if counts["by_month"]:
         lines.append("By booking month:")
