@@ -3,11 +3,14 @@
 Run with: cd finance/scripts && python3 -m unittest test_build_image
 """
 
+import importlib.util
 import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
+import types
 import unittest
 from unittest import mock
 
@@ -310,89 +313,191 @@ COMMON_FUNCTIONS = (
 )
 
 
-# The lines of erpnextswiss salary_certificate.py at the pin (5d85c45) around the three hunks of the
-# patches 0002-0004: the imports (0004), Pos 11 in fetch_dynamic (0002) and get_component_dynamic (0003).
-# The bodies are the upstream ones, the untouched middle is cut: git apply needs a hunk's context, not its
-# line numbers. The file at the pin ends without a newline, at `return pos - neg`.
+# erpnextswiss salary_certificate.py at the pin (5d85c45), whole: patches 0002-0004 and 0009 change its
+# fetch_dynamic and get_component_dynamic, and git apply needs each hunk's context. The file at the pin ends
+# without a newline, at `return pos - neg`. Trailing spaces are written as \x20: the trailing-whitespace hook
+# would strip them, and the copy must match the pin byte for byte.
 SALARY_CERTIFICATE_PATH = (
     "erpnextswiss/erpnextswiss/doctype/salary_certificate/salary_certificate.py"
 )
-SALARY_CERTIFICATE = "\n".join(
-    [
-        "# -*- coding: utf-8 -*-",
-        "# Copyright (c) 2018-2024, libracore (https://www.libracore.com) and contributors",
-        "# For license information, please see license.txt",
-        "",
-        "from __future__ import unicode_literals",
-        "import frappe",
-        "from frappe.model.document import Document",
-        "",
-        "class SalaryCertificate(Document):",
-        "    pass",
-        "",
-        "",
-        "    # Pos 10.1",
-        "    self.deduction_pension = get_component_dynamic(self.employee, self.start_date, self.end_date, frappe.get_doc('Salary Certificate Settings').deduction_pension)",
-        "    # Pos 10.2",
-        "    self.deduction_pension_additional = get_component_dynamic(self.employee, self.start_date, self.end_date, frappe.get_doc('Salary Certificate Settings').deduction_pension_additional)",
-        "    # Pos 11",
-        "    self.net_salary = values[0].net",
-        "    # Pos 12",
-        "    self.source_tax_deduction = get_component_dynamic(self.employee, self.start_date, self.end_date, frappe.get_doc('Salary Certificate Settings').source_tax_deduction)",
-        "    # Pos 13.1.1",
-        "",
-        "",
-        "def get_component_dynamic(employee, start_date, end_date, componentlist):",
-        "    ",
-        "    if len(componentlist) == 0:",
-        "        return 0.0;",
-        "",
-        '    expression = "";',
-        "    ",
-        "    positiv = []",
-        "    negativ = []",
-        "    for item in componentlist:",
-        '        comp = frappe.get_doc("Salary Component", item.component)',
-        "        if item.is_negativ == 1:",
-        "            negativ.append(comp.name)",
-        "        else:",
-        "            positiv.append(comp.name)",
-        "",
-        "    expression = \"' OR `tabSalary Detail`.`salary_component` = '\"",
-        "",
-        "    pos = 0.0",
-        "    neg = 0.0",
-        "",
-        "    if len(positiv) > 0:",
-        "        expression_pos = expression.join(positiv)",
-        "",
-        '        sql_query_pos = """SELECT `tabSalary Slip`.`employee`, IFNULL(SUM(`tabSalary Detail`.`amount`), 0) AS `amount`',
-        "            FROM `tabSalary Slip` ",
-        "            INNER JOIN `tabSalary Detail` ON `tabSalary Slip`.`name` = `tabSalary Detail`.`parent`",
-        "            WHERE `tabSalary Slip`.`employee` = '{0}'",
-        "            AND `tabSalary Slip`.`posting_date` >= '{1}'",
-        "            AND `tabSalary Slip`.`posting_date` <= '{2}'",
-        "            AND `tabSalary Slip`.`docstatus` = 1",
-        '            AND (`tabSalary Detail`.`salary_component` = \'{3}\');""".format(employee, start_date, end_date, expression_pos)',
-        "        values = frappe.db.sql(sql_query_pos, as_dict=True)",
-        "        pos = values[0].amount",
-        "    ",
-        "    if len(negativ) > 0:",
-        "        expression_neg = expression.join(negativ)",
-        "",
-        '        sql_query_neg = """SELECT `tabSalary Slip`.`employee`, IFNULL(SUM(`tabSalary Detail`.`amount`), 0) AS `amount`',
-        "            FROM `tabSalary Slip` ",
-        "            INNER JOIN `tabSalary Detail` ON `tabSalary Slip`.`name` = `tabSalary Detail`.`parent`",
-        "            WHERE `tabSalary Slip`.`employee` = '{0}'",
-        "            AND `tabSalary Slip`.`posting_date` >= '{1}'",
-        "            AND `tabSalary Slip`.`posting_date` <= '{2}'",
-        "            AND `tabSalary Slip`.`docstatus` = 1",
-        '            AND (`tabSalary Detail`.`salary_component` = \'{3}\');""".format(employee, start_date, end_date, expression_neg)',
-        "        values = frappe.db.sql(sql_query_neg, as_dict=True)",
-        "        neg = values[0].amount",
-        "    return pos - neg",
-    ]
-)
+SALARY_CERTIFICATE = '''# -*- coding: utf-8 -*-
+# Copyright (c) 2018-2024, libracore (https://www.libracore.com) and contributors
+# For license information, please see license.txt
+
+from __future__ import unicode_literals
+import frappe
+from frappe.model.document import Document
+
+class SalaryCertificate(Document):
+    # this function gathers values from the database (whitelist required in v15 due to new permission model)
+    @frappe.whitelist()
+    def fetch_values(self):
+        if not self.employee:
+            frappe.msgprint( _("Please select a valid employee.") )
+            return
+\x20\x20\x20\x20\x20\x20\x20\x20
+        if frappe.get_doc('Salary Certificate Settings').dynamic_config == 1:
+            fetch_dynamic(self)
+        else:
+            fetch_static(self)
+
+        return
+\x20
+# Old way for compatiblity\x20\x20
+def fetch_static(self):
+    sql_query = """SELECT IFNULL(SUM(`tabSalary Slip`.`gross_pay`), 0) AS `gross`, IFNULL(SUM(`tabSalary Slip`.`net_pay`), 0) AS `net`\x20
+        FROM `tabSalary Slip`\x20
+        WHERE `tabSalary Slip`.`employee` = '{0}'
+        AND `tabSalary Slip`.`posting_date` >= '{1}'
+        AND `tabSalary Slip`.`posting_date` <= '{2}'
+        AND `tabSalary Slip`.`docstatus` = 1;""".format(self.employee, self.start_date, self.end_date)
+    values = frappe.db.sql(sql_query, as_dict=True)
+    self.salary = get_component(self.employee, self.start_date, self.end_date, "B")
+    self.gross_salary = values[0].gross
+    self.net_salary = values[0].net
+    self.deduction_ahv = (get_component(self.employee, self.start_date, self.end_date, "AHV") +\x20
+        get_component(self.employee, self.start_date, self.end_date, "ALV") +
+        get_component(self.employee, self.start_date, self.end_date, "NBUV"))
+    self.deduction_pension = get_component(self.employee, self.start_date, self.end_date, "PK")\x20\x20\x20
+\x20\x20\x20\x20\x20\x20\x20\x20
+    self.save()
+
+
+def get_component(employee, start_date, end_date, component):
+    sql_query = """SELECT `tabSalary Slip`.`employee`, IFNULL(SUM(`tabSalary Detail`.`amount`), 0) AS `amount`
+        FROM `tabSalary Slip`\x20
+        INNER JOIN `tabSalary Detail` ON `tabSalary Slip`.`name` = `tabSalary Detail`.`parent`
+        WHERE `tabSalary Slip`.`employee` = '{0}'
+        AND `tabSalary Slip`.`posting_date` >= '{1}'
+        AND `tabSalary Slip`.`posting_date` <= '{2}'
+        AND `tabSalary Slip`.`docstatus` = 1
+        AND `tabSalary Detail`.`abbr` = '{3}';""".format(employee, start_date, end_date, component)
+    values = frappe.db.sql(sql_query, as_dict=True)
+    return values[0].amount
+
+# new way to configure witch salary component is witch field in salary certificate
+
+def fetch_dynamic(self):
+    sql_query = """SELECT IFNULL(SUM(`tabSalary Slip`.`gross_pay`), 0) AS `gross`, IFNULL(SUM(`tabSalary Slip`.`net_pay`), 0) AS `net`\x20
+        FROM `tabSalary Slip`\x20
+        WHERE `tabSalary Slip`.`employee` = '{0}'
+        AND `tabSalary Slip`.`posting_date` >= '{1}'
+        AND `tabSalary Slip`.`posting_date` <= '{2}'
+        AND `tabSalary Slip`.`docstatus` = 1;""".format(self.employee, self.start_date, self.end_date)
+    values = frappe.db.sql(sql_query, as_dict=True)
+\x20\x20\x20
+    # Pos 1
+    self.salary = get_component_dynamic(self.employee, self.start_date, self.end_date, frappe.get_doc('Salary Certificate Settings').salary)
+    # Pos 2.1
+    self.catering = get_component_dynamic(self.employee, self.start_date, self.end_date, frappe.get_doc('Salary Certificate Settings').catering)
+    # Pos 2.2
+    self.car = get_component_dynamic(self.employee, self.start_date, self.end_date, frappe.get_doc('Salary Certificate Settings').car)
+    # Pos 2.3
+    self.other_salary = get_component_dynamic(self.employee, self.start_date, self.end_date, frappe.get_doc('Salary Certificate Settings').other_salary)
+    self.other_salary_description = frappe.get_doc('Salary Certificate Settings').other_salary_description
+    # Pos 3
+    self.irregular = get_component_dynamic(self.employee, self.start_date, self.end_date, frappe.get_doc('Salary Certificate Settings').irregular)
+    self.irregular_description = frappe.get_doc('Salary Certificate Settings').irregular_description
+    # Pos 4
+    self.capital = get_component_dynamic(self.employee, self.start_date, self.end_date, frappe.get_doc('Salary Certificate Settings').capital)
+    self.capital_description = frappe.get_doc('Salary Certificate Settings').capital_description
+    # Pos 5
+    self.participation = get_component_dynamic(self.employee, self.start_date, self.end_date, frappe.get_doc('Salary Certificate Settings').participation)
+    # Pos 6
+    self.board = get_component_dynamic(self.employee, self.start_date, self.end_date, frappe.get_doc('Salary Certificate Settings').board)
+    # Pos 7
+    self.other = get_component_dynamic(self.employee, self.start_date, self.end_date, frappe.get_doc('Salary Certificate Settings').other)
+    self.other_description = frappe.get_doc('Salary Certificate Settings').other_description
+    # Pos 8
+    self.gross_salary = values[0].gross
+    # Pos 9
+    self.deduction_ahv = get_component_dynamic(self.employee, self.start_date, self.end_date, frappe.get_doc('Salary Certificate Settings').deduction_ahv)
+    # Pos 10.1
+    self.deduction_pension = get_component_dynamic(self.employee, self.start_date, self.end_date, frappe.get_doc('Salary Certificate Settings').deduction_pension)
+    # Pos 10.2
+    self.deduction_pension_additional = get_component_dynamic(self.employee, self.start_date, self.end_date, frappe.get_doc('Salary Certificate Settings').deduction_pension_additional)
+    # Pos 11
+    self.net_salary = values[0].net
+    # Pos 12
+    self.source_tax_deduction = get_component_dynamic(self.employee, self.start_date, self.end_date, frappe.get_doc('Salary Certificate Settings').source_tax_deduction)
+    # Pos 13.1.1
+    self.effective_expenses_travel = get_component_dynamic(self.employee, self.start_date, self.end_date, frappe.get_doc('Salary Certificate Settings').effective_expenses_travel)
+    self.effective_expenses_travel_check = frappe.get_doc('Salary Certificate Settings').effective_expenses_travel_check
+    # Pos 13.1.2
+    self.effective_other_expenses = get_component_dynamic(self.employee, self.start_date, self.end_date, frappe.get_doc('Salary Certificate Settings').effective_other_expenses)
+    self.effective_other_expenses_description = frappe.get_doc('Salary Certificate Settings').effective_other_expenses_description
+    # Pos 13.2.1
+    self.representation_expenses = get_component_dynamic(self.employee, self.start_date, self.end_date, frappe.get_doc('Salary Certificate Settings').representation_expenses)
+    # Pos 13.2.2
+    self.car_expenses = get_component_dynamic(self.employee, self.start_date, self.end_date, frappe.get_doc('Salary Certificate Settings').car_expenses)
+    # Pos 13.2.3
+    self.other_net_expenses = get_component_dynamic(self.employee, self.start_date, self.end_date, frappe.get_doc('Salary Certificate Settings').other_net_expenses)
+    self.other_net_expenses_description = frappe.get_doc('Salary Certificate Settings').other_net_expenses_description
+    # Pos 13
+    self.education = get_component_dynamic(self.employee, self.start_date, self.end_date, frappe.get_doc('Salary Certificate Settings').education)
+    # Pos 14
+    self.other_salary_sides = frappe.get_doc('Salary Certificate Settings').other_salary_sides
+    # Pos 15
+    value = get_component_dynamic(self.employee, self.start_date, self.end_date, frappe.get_doc('Salary Certificate Settings').remarks)
+    if value != 0.00:
+        self.remarks = frappe.get_doc('Salary Certificate Settings').remark_prefix + "{:12.2f}".format(value)
+    else:
+        self.remarks = frappe.get_doc('Salary Certificate Settings').remark_prefix
+
+
+    self.save()
+
+\x20
+
+def get_component_dynamic(employee, start_date, end_date, componentlist):
+\x20\x20\x20\x20
+    if len(componentlist) == 0:
+        return 0.0;
+
+    expression = "";
+\x20\x20\x20\x20
+    positiv = []
+    negativ = []
+    for item in componentlist:
+        comp = frappe.get_doc("Salary Component", item.component)
+        if item.is_negativ == 1:
+            negativ.append(comp.name)
+        else:
+            positiv.append(comp.name)
+
+    expression = "' OR `tabSalary Detail`.`salary_component` = '"
+
+    pos = 0.0
+    neg = 0.0
+
+    if len(positiv) > 0:
+        expression_pos = expression.join(positiv)
+
+        sql_query_pos = """SELECT `tabSalary Slip`.`employee`, IFNULL(SUM(`tabSalary Detail`.`amount`), 0) AS `amount`
+            FROM `tabSalary Slip`\x20
+            INNER JOIN `tabSalary Detail` ON `tabSalary Slip`.`name` = `tabSalary Detail`.`parent`
+            WHERE `tabSalary Slip`.`employee` = '{0}'
+            AND `tabSalary Slip`.`posting_date` >= '{1}'
+            AND `tabSalary Slip`.`posting_date` <= '{2}'
+            AND `tabSalary Slip`.`docstatus` = 1
+            AND (`tabSalary Detail`.`salary_component` = '{3}');""".format(employee, start_date, end_date, expression_pos)
+        values = frappe.db.sql(sql_query_pos, as_dict=True)
+        pos = values[0].amount
+\x20\x20\x20\x20
+    if len(negativ) > 0:
+        expression_neg = expression.join(negativ)
+
+        sql_query_neg = """SELECT `tabSalary Slip`.`employee`, IFNULL(SUM(`tabSalary Detail`.`amount`), 0) AS `amount`
+            FROM `tabSalary Slip`\x20
+            INNER JOIN `tabSalary Detail` ON `tabSalary Slip`.`name` = `tabSalary Detail`.`parent`
+            WHERE `tabSalary Slip`.`employee` = '{0}'
+            AND `tabSalary Slip`.`posting_date` >= '{1}'
+            AND `tabSalary Slip`.`posting_date` <= '{2}'
+            AND `tabSalary Slip`.`docstatus` = 1
+            AND (`tabSalary Detail`.`salary_component` = '{3}');""".format(employee, start_date, end_date, expression_neg)
+        values = frappe.db.sql(sql_query_neg, as_dict=True)
+        neg = values[0].amount
+    return pos - neg'''
 
 
 # The first lines of erpnextswiss print format 605.040.18n_form._11.json at the pin (5d85c45):
@@ -788,10 +893,8 @@ class PatchStep(unittest.TestCase):
         self.assertIn(
             "self.net_salary = (self.gross_salary - self.deduction_ahv", patched
         )
-        self.assertNotIn("self.net_salary = values[0].net", patched)
         self.assertIn("IN %s", patched)
         self.assertIn("tuple(positiv)", patched)
-        self.assertNotIn(".format(employee, start_date, end_date", patched)
 
     def test_our_form11_patch_fits_the_canvas_to_a4(self):
         # At the pin the Form 11 canvas is 980px wide. frappe's document PDF path
@@ -939,6 +1042,230 @@ class PatchStep(unittest.TestCase):
             text.index("apply-patches.sh /home/frappe/patches/hrms apps/hrms"), removed
         )
         self.assertLess(removed, text.index("bench build --production"))
+
+
+def invented_year(ktg=(11.47, 17.47)):
+    # An invented employee, two months: basic 8111.25 each, so the year's gross is 16222.50 (printed 16223, half up);
+    # AHV/ALV/NBU 553.52 a month (1107.04 for the year) and BVG 300.15 a month (600.30, printed 600); KTG 11.47 and
+    # 17.47 (together 28.94, printed 29). The unrounded line 11 is 14515.16 and would print 14515; the printed lines give 14516.
+    slips = []
+    for month, ktg_month in zip((1, 2), ktg):
+        components = {
+            "Basic Salary": 8111.25,
+            "AHV/IV/EO Employee": 428.75,
+            "ALV Employee": 88.5,
+            "NBU Employee": 36.27,
+            "BVG Employee": 300.15,
+            "Quellensteuer Employee": 251.4,
+        }
+        if ktg_month:
+            components["KTG Employee"] = ktg_month
+        deductions = sum(v for k, v in components.items() if k != "Basic Salary")
+        slips.append(
+            dict(
+                name=f"SAL-{month}",
+                employee="EMP-1",
+                employee_name="Test Employee",
+                ahv_number="000.0000.0000.00",
+                month=month,
+                gross_pay=8111.25,
+                net_pay=round(8000.2 - deductions, 2),
+                components=components,
+            )
+        )
+    return slips
+
+
+class FakeRow(types.SimpleNamespace):
+    pass
+
+
+class FakeSettings:
+    # The Salary Certificate Settings tables of the Form 11 mapping (swiss-setup.py's LOHNAUSWEIS, by name)
+    TABLES = {
+        "salary": ["Basic Salary", "Commission"],
+        "deduction_ahv": ["AHV/IV/EO Employee", "ALV Employee", "NBU Employee"],
+        "deduction_pension": ["BVG Employee"],
+        "source_tax_deduction": ["Quellensteuer Employee"],
+    }
+
+    def __getattr__(self, field):
+        if field.endswith(("description", "prefix", "sides", "check")):
+            return ""
+        return [FakeRow(component=n, is_negativ=0) for n in self.TABLES.get(field, [])]
+
+
+class FakeDB:
+    # Answers the three queries of the patched salary_certificate.py for one employee: the slips' gross and net, and the
+    # Salary Detail amounts of a list of components (IN %s) or of one component (= %s, the KTG query).
+    def __init__(self, slips):
+        self.slips = slips
+
+    def sql(self, query, values=None, as_dict=False):
+        if "AS `gross`" in query:
+            return [
+                FakeRow(
+                    gross=sum(s["gross_pay"] for s in self.slips),
+                    net=sum(s["net_pay"] for s in self.slips),
+                )
+            ]
+        if "`salary_component` IN %s" in query:
+            names = set(values[3])
+        elif "`salary_component` = %s" in query:
+            names = {values[3]}
+        else:
+            raise AssertionError(f"unexpected query: {query}")
+        return [
+            FakeRow(
+                amount=sum(
+                    amount
+                    for s in self.slips
+                    for component, amount in s["components"].items()
+                    if component in names
+                )
+            )
+        ]
+
+
+class FakeCertificate:
+    def __init__(self, remarks=""):
+        self.employee = "EMP-1"
+        self.start_date = "2027-01-01"
+        self.end_date = "2027-12-31"
+        self.remarks = remarks
+        self.saved = 0
+
+    def save(self):
+        self.saved += 1
+
+
+class WholeFrancsCertificate(unittest.TestCase):
+    """Patch 0009 on the pinned salary_certificate.py, run with frappe faked, on an invented year (no network, no
+    frappe): the printed lines are whole francs and equal bi_payroll's Lohnausweis view with 'Whole francs'.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp)
+        self.app = os.path.join(self.tmp, "app")
+        os.makedirs(os.path.dirname(os.path.join(self.app, SALARY_CERTIFICATE_PATH)))
+        git(self.app, "init", "-q")
+        with open(os.path.join(self.app, SALARY_CERTIFICATE_PATH), "w") as f:
+            f.write(SALARY_CERTIFICATE)
+        git(self.app, "add", SALARY_CERTIFICATE_PATH)
+        git(self.app, "commit", "-q", "-m", "pin")
+        # the patches in their order: 0002-0004 are the ones 0009 sits on
+        for name in sorted(os.listdir(PATCH_DIR)):
+            if name[:4] in ("0002", "0003", "0004", "0009"):
+                git(self.app, "apply", os.path.join(PATCH_DIR, name))
+        with open(os.path.join(self.app, SALARY_CERTIFICATE_PATH)) as f:
+            self.source = f.read()
+        self.view = load_hand_over()
+
+    def fetch(self, remarks="", slips=None):
+        """Runs the patched fetch_dynamic on a fresh certificate; returns the certificate."""
+        slips = invented_year() if slips is None else slips
+        fake_frappe = types.ModuleType("frappe")
+        fake_frappe._ = lambda text: text
+        fake_frappe.whitelist = lambda *args, **kwargs: (lambda fn: fn)
+        fake_frappe.db = FakeDB(slips)
+        fake_frappe.get_doc = lambda doctype, name=None: (
+            FakeRow(name=name) if doctype == "Salary Component" else FakeSettings()
+        )
+        model = types.ModuleType("frappe.model")
+        document = types.ModuleType("frappe.model.document")
+        document.Document = type("Document", (), {})
+        modules = {
+            "frappe": fake_frappe,
+            "frappe.model": model,
+            "frappe.model.document": document,
+        }
+        with mock.patch.dict(sys.modules, modules):
+            namespace = {}
+            exec(compile(self.source, SALARY_CERTIFICATE_PATH, "exec"), namespace)
+        cert = FakeCertificate(remarks)
+        namespace["fetch_dynamic"](cert)
+        self.namespace = namespace
+        return cert
+
+    def test_whole_francs_round_half_up(self):
+        self.fetch()
+        whole_francs = self.namespace["whole_francs"]
+        self.assertEqual(whole_francs(7148.5), 7149)
+        self.assertEqual(whole_francs(7148.4), 7148)
+        self.assertEqual(whole_francs(16222.5), 16223)
+        self.assertEqual(whole_francs(0.0), 0)
+
+    def test_every_amount_of_the_certificate_is_whole_francs(self):
+        cert = self.fetch()
+        for field in self.namespace["CURRENCY_FIELDS"]:
+            self.assertIsInstance(getattr(cert, field), int, field)
+
+    def test_the_certificate_lines_equal_the_view_with_whole_francs(self):
+        slips = invented_year()
+        cert = self.fetch(slips=slips)
+        lines = {s["name"]: s["components"] for s in slips}
+        rows = self.view.hand_over(
+            slips,
+            lines,
+            by_month=False,
+            earnings={s["name"]: {"Basic Salary"} for s in slips},
+        )
+        (line,) = self.view.lohnausweis(rows, francs=True)
+        self.assertEqual(cert.salary, line["line_1"])
+        self.assertEqual(cert.gross_salary, line["line_8"])
+        self.assertEqual(cert.deduction_ahv, line["line_9"])
+        self.assertEqual(cert.deduction_pension, line["line_10_1"])
+        self.assertEqual(cert.net_salary, line["line_11"])
+        self.assertEqual(cert.source_tax_deduction, line["line_12"])
+        self.assertEqual(cert.remarks, line["line_15"])
+        self.assertEqual(
+            (
+                cert.gross_salary,
+                cert.deduction_ahv,
+                cert.deduction_pension,
+                cert.net_salary,
+            ),
+            (16223, 1107, 600, 14516),
+        )
+        self.assertEqual(cert.remarks, "KTG-Beitrag Arbeitnehmer CHF 29")
+
+    def test_typed_remarks_are_kept_and_the_ktg_remark_is_not_doubled(self):
+        cert = self.fetch(
+            remarks="Zweites Zertifikat 2027; KTG-Beitrag Arbeitnehmer CHF 12"
+        )
+        self.assertEqual(
+            cert.remarks, "Zweites Zertifikat 2027; KTG-Beitrag Arbeitnehmer CHF 29"
+        )
+        again = self.fetch(remarks=cert.remarks)
+        self.assertEqual(again.remarks, cert.remarks)
+
+    def test_the_settings_remark_prefix_is_kept_once(self):
+        with mock.patch.object(FakeSettings, "remark_prefix", "Hinweis", create=True):
+            cert = self.fetch(remarks="Zweites Zertifikat 2027")
+            self.assertEqual(
+                cert.remarks,
+                "Zweites Zertifikat 2027; Hinweis; KTG-Beitrag Arbeitnehmer CHF 29",
+            )
+            again = self.fetch(remarks=cert.remarks)
+        self.assertEqual(again.remarks, cert.remarks)
+
+    def test_without_a_ktg_employee_only_the_typed_remarks_stay(self):
+        cert = self.fetch(
+            remarks="Zweites Zertifikat 2027", slips=invented_year(ktg=(None, None))
+        )
+        self.assertEqual(cert.remarks, "Zweites Zertifikat 2027")
+
+
+def load_hand_over():
+    # The view's module, loaded by path: it is pure Python, so bi_payroll's package (and frappe) stay out of it
+    path = os.path.join(
+        ROOT, "finance", "apps", "bi_payroll", "bi_payroll", "hand_over.py"
+    )
+    spec = importlib.util.spec_from_file_location("hand_over", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 if __name__ == "__main__":

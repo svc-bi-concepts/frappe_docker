@@ -1,0 +1,73 @@
+diff --git a/erpnextswiss/erpnextswiss/doctype/salary_certificate/salary_certificate.py b/erpnextswiss/erpnextswiss/doctype/salary_certificate/salary_certificate.py
+index fc02374..a352183 100644
+--- a/erpnextswiss/erpnextswiss/doctype/salary_certificate/salary_certificate.py
++++ b/erpnextswiss/erpnextswiss/doctype/salary_certificate/salary_certificate.py
+@@ -6,6 +6,7 @@ from __future__ import unicode_literals
+ import frappe
+ from frappe import _
+ from frappe.model.document import Document
++from decimal import ROUND_HALF_UP, Decimal
+ 
+ class SalaryCertificate(Document):
+     # this function gathers values from the database (whitelist required in v15 due to new permission model)
+@@ -56,7 +57,36 @@ def get_component(employee, start_date, end_date, component):
+ 
+ # new way to configure witch salary component is witch field in salary certificate
+ 
++# The amount fields of the form (patch 0009): the printed certificate holds whole francs, so each is rounded
++CURRENCY_FIELDS = [
++    "salary", "catering", "car", "other_salary", "irregular", "capital", "participation", "board", "other",
++    "gross_salary", "deduction_ahv", "deduction_pension", "deduction_pension_additional", "source_tax_deduction",
++    "effective_expenses_travel", "effective_other_expenses", "representation_expenses", "car_expenses",
++    "other_net_expenses", "education",
++]
++# The line-15 remark of the KTG employee share, as bi_payroll's view writes it (hand_over.KTG_REMARK)
++KTG_REMARK = "KTG-Beitrag Arbeitnehmer CHF {0}"
++KTG_REMARK_START = "KTG-Beitrag Arbeitnehmer CHF "
++
++def whole_francs(amount):
++    # Round half up, as bi_payroll's certificate_rounding: Python's round() rounds half to even
++    return int(Decimal(str(amount)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
++
++def ktg_employee_amount(self):
++    # The KTG Employee rows of the period's submitted slips: the view's ktg_employee column
++    values = frappe.db.sql("""SELECT IFNULL(SUM(`tabSalary Detail`.`amount`), 0) AS `amount`
++        FROM `tabSalary Slip`
++        INNER JOIN `tabSalary Detail` ON `tabSalary Slip`.`name` = `tabSalary Detail`.`parent`
++        WHERE `tabSalary Slip`.`employee` = %s
++        AND `tabSalary Slip`.`posting_date` >= %s
++        AND `tabSalary Slip`.`posting_date` <= %s
++        AND `tabSalary Slip`.`docstatus` = 1
++        AND `tabSalary Detail`.`salary_component` = %s;""", (self.employee, self.start_date, self.end_date, "KTG Employee"), as_dict=True)
++    return values[0].amount
++
+ def fetch_dynamic(self):
++    # The trustee's own remarks: the Pos 15 lines below overwrite the field, so they are read first (patch 0009)
++    typed_remarks = self.remarks
+     sql_query = """SELECT IFNULL(SUM(`tabSalary Slip`.`gross_pay`), 0) AS `gross`, IFNULL(SUM(`tabSalary Slip`.`net_pay`), 0) AS `net` 
+         FROM `tabSalary Slip` 
+         WHERE `tabSalary Slip`.`employee` = '{0}'
+@@ -125,6 +155,23 @@ def fetch_dynamic(self):
+     else:
+         self.remarks = frappe.get_doc('Salary Certificate Settings').remark_prefix
+ 
++    # Whole francs (patch 0009): every amount is rounded half up, and Pos 11 is computed again from the rounded
++    # lines, so the printed form adds up on its own francs, as bi_payroll's Lohnausweis view does
++    for field in CURRENCY_FIELDS:
++        setattr(self, field, whole_francs(getattr(self, field)))
++    self.net_salary = (self.gross_salary - self.deduction_ahv
++        - self.deduction_pension - self.deduction_pension_additional)
++    # Pos 15 (patch 0009): the KTG employee share as the remark, after the trustee's own remarks. A fetch replaces
++    # the KTG remark from before, and keeps any other remark the trustee typed
++    remarks = [part for part in (typed_remarks or "").split("; ") if part and not part.startswith(KTG_REMARK_START)]
++    # upstream's own Pos 15 line (the settings' remark prefix) is not dropped either, and not doubled by a second fetch
++    if self.remarks and self.remarks not in remarks:
++        remarks.append(self.remarks)
++    ktg = ktg_employee_amount(self)
++    if ktg:
++        remarks.append(KTG_REMARK.format(whole_francs(ktg)))
++    self.remarks = "; ".join(remarks)
++
+ 
+     self.save()
+ 
