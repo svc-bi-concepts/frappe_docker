@@ -232,6 +232,42 @@ def load_export(path):
     return data
 
 
+def taken_bexio_ids(erp, doctype, filters):
+    """The bexio ids already loaded for a doctype, as bexio id -> the submitted document that carries it.
+
+    Taken: the bexio_id of a submitted document, and the bexio_id of a cancelled document whose amendment chain ends in
+    a submitted one. A document cancelled and amended in ERPNext keeps its bexio_id, and the amendment has none (its
+    amended_from names the cancelled one), so counting only submitted documents with a bexio_id would plan the bexio
+    document again. A cancelled document with no submitted amendment is not taken: it is planned as before. A chain of
+    amendments (-1, -2) resolves through each cancelled one. `filters` narrows both lists, e.g. the company and the
+    payment_type of a Payment Entry.
+    """
+    submitted = erp.list(
+        doctype,
+        filters + [["docstatus", "=", 1]],
+        ["name", "bexio_id", "amended_from"],
+    )
+    cancelled = {
+        r["name"]: r
+        for r in erp.list(
+            doctype,
+            filters + [["docstatus", "=", 2]],
+            ["name", "bexio_id", "amended_from"],
+        )
+    }
+    taken = {}
+    for doc in submitted:
+        if doc["bexio_id"]:
+            taken[str(doc["bexio_id"])] = doc["name"]
+        ancestor = doc["amended_from"]
+        while ancestor in cancelled:
+            old = cancelled[ancestor]
+            if old["bexio_id"]:
+                taken.setdefault(str(old["bexio_id"]), doc["name"])
+            ancestor = old["amended_from"]
+    return taken
+
+
 def booked_chf(journal, accounts, account_no):
     """What bexio's journal books in CHF on an account, per document: {(ref_class, ref): Decimal}, a debit positive.
 

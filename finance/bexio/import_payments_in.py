@@ -547,19 +547,13 @@ def loaded_allocations(erp):
     An advance has no reference, so its list is empty; it is still a receipt already loaded. One GET per entry: the
     references are a child table of the Payment Entry.
     """
-    entries = erp.list(
-        "Payment Entry",
-        [
-            ["docstatus", "=", 1],
-            ["payment_type", "=", "Receive"],
-            ["bexio_id", "is", "set"],
-        ],
-        ["name", "bexio_id"],
-    )
     loaded = {}
-    for entry in entries:
-        refs = erp.get("Payment Entry", entry["name"]).get("references", [])
-        loaded[entry["bexio_id"]] = [
+    # an amended receipt counts under the bexio id its cancelled original kept; its references are the amendment's
+    for bexio_id, name in im.taken_bexio_ids(
+        erp, "Payment Entry", [["payment_type", "=", "Receive"]]
+    ).items():
+        refs = erp.get("Payment Entry", name).get("references", [])
+        loaded[bexio_id] = [
             (ref["reference_name"], _dec(ref["allocated_amount"]))
             for ref in refs
             if ref["reference_doctype"] == "Sales Invoice"
