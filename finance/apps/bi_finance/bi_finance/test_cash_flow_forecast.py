@@ -1526,7 +1526,22 @@ class Message(unittest.TestCase):
         self.assertNotIn("<b>", message)
 
 
-class PaidHistoryWindow(LedgerFixture):
+class DatesAsDatabase(LedgerFixture):
+    """The ledger fixture, with the dates a query returns as dates, as MariaDB gives them (SQLite gives text)."""
+
+    def sql(self, query, args=()):
+        return [
+            tuple(
+                datetime.date.fromisoformat(value)
+                if isinstance(value, str) and len(value) == 10 and value[4] == "-"
+                else value
+                for value in row
+            )
+            for row in super().sql(query, args)
+        ]
+
+
+class PaidHistoryWindow(DatesAsDatabase):
     """paid_history reads the payments between its dates, and the default is the last year up to the as-of date.
     Invented names, amounts and dates."""
 
@@ -1556,7 +1571,7 @@ class PaidHistoryWindow(LedgerFixture):
         self.assertEqual(self.history(D(2025, 1, 1), D(2025, 12, 31)), {})
 
 
-class CustomerPaymentBehaviourReport(LedgerFixture):
+class CustomerPaymentBehaviourReport(DatesAsDatabase):
     """The report over the Payment Ledger: the dates reach paid_history, the customer filter, the open overdue.
     Invented customers, invoices and amounts."""
 
@@ -1613,8 +1628,11 @@ class CustomerPaymentBehaviourReport(LedgerFixture):
     def test_a_from_date_after_the_to_date_is_refused(self):
         import frappe
 
-        with self.assertRaises(frappe.ValidationError):
-            self.run_report(from_date="2026-01-01", to_date="2025-12-31")
+        # frappe.throw needs a site to show its message; the stand-in raises what it would
+        with mock.patch("frappe.throw", side_effect=frappe.ValidationError) as throw:
+            with self.assertRaises(frappe.ValidationError):
+                self.run_report(from_date="2026-01-01", to_date="2025-12-31")
+        throw.assert_called_once()
 
 
 if __name__ == "__main__":
