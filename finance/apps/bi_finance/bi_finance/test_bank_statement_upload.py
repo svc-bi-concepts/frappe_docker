@@ -94,7 +94,9 @@ class SummaryText(unittest.TestCase):
 
     def test_an_mt940_file_counts_its_zero_lines(self):
         skipped = {"not booked": 0, "covered": 0, "zero": 3}
-        result = dict(RESULT, version="mt940", counts=dict(RESULT["counts"], skipped=skipped))
+        result = dict(
+            RESULT, version="mt940", counts=dict(RESULT["counts"], skipped=skipped)
+        )
         self.assertIn(
             "Skipped: 0 not booked, 0 covered by a details entry, 3 zero amount",
             record.summary_text(result).split("\n"),

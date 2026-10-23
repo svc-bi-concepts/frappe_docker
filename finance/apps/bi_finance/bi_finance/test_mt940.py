@@ -70,7 +70,15 @@ class Envelope(unittest.TestCase):
         out = mt940.parse(statement(LINES))
         self.assertEqual(
             set(out),
-            {"version", "kind", "iban", "currency", "balances", "transactions", "skipped"},
+            {
+                "version",
+                "kind",
+                "iban",
+                "currency",
+                "balances",
+                "transactions",
+                "skipped",
+            },
         )
         self.assertEqual((out["version"], out["kind"]), ("mt940", "mt940"))
         self.assertEqual(out["iban"], "CH5604835012345678009")
@@ -133,13 +141,17 @@ class Lines(unittest.TestCase):
             ":86:",
         ]
         out = mt940.parse(statement(lines, closing=":62F:C261012CHF1250,00"))
-        self.assertEqual(out["transactions"][0]["description"], "Invented supplementary text")
+        self.assertEqual(
+            out["transactions"][0]["description"], "Invented supplementary text"
+        )
 
     def test_the_description_is_cut_to_camts_length(self):
         long = "x" * (camt.DESCRIPTION_LENGTH + 20)
         lines = [":61:261012C1,00NTRFNONREF//BANK-L", f":86:{long}"]
         out = mt940.parse(statement(lines, closing=":62F:C261012CHF1001,00"))
-        self.assertEqual(len(out["transactions"][0]["description"]), camt.DESCRIPTION_LENGTH)
+        self.assertEqual(
+            len(out["transactions"][0]["description"]), camt.DESCRIPTION_LENGTH
+        )
 
     def test_the_booking_date_is_the_entry_date_else_the_value_date(self):
         self.assertEqual(self.tx[0]["value_date"], "2026-10-05")
@@ -161,10 +173,12 @@ class Lines(unittest.TestCase):
         ]
         out = mt940.parse(statement(lines, closing=":62F:C261230CHF1005,00"))
         self.assertEqual(
-            [tx["booking_date"] for tx in out["transactions"]], ["2027-01-01", "2026-12-29"]
+            [tx["booking_date"] for tx in out["transactions"]],
+            ["2027-01-01", "2026-12-29"],
         )
         self.assertEqual(
-            [tx["value_date"] for tx in out["transactions"]], ["2026-12-30", "2027-01-02"]
+            [tx["value_date"] for tx in out["transactions"]],
+            ["2026-12-30", "2027-01-02"],
         )
 
     def test_the_customer_reference_is_the_end_to_end_id_unless_nonref(self):
@@ -181,7 +195,8 @@ class Balances(unittest.TestCase):
     def test_opening_plus_the_lines_is_the_closing(self):
         out = mt940.parse(envelope(statement(LINES)))
         total = sum(
-            (tx["deposit"] - tx["withdrawal"] for tx in out["transactions"]), Decimal("0")
+            (tx["deposit"] - tx["withdrawal"] for tx in out["transactions"]),
+            Decimal("0"),
         )
         self.assertEqual(
             out["balances"]["OPBD"]["amount"] + total, out["balances"]["CLBD"]["amount"]
@@ -202,7 +217,9 @@ class Balances(unittest.TestCase):
 class References(unittest.TestCase):
     def test_the_reference_is_bank_reference_date_and_amount(self):
         out = mt940.parse(statement(LINES))
-        self.assertEqual(out["transactions"][0]["reference"], "BANK-A-2026-10-05-100.00")
+        self.assertEqual(
+            out["transactions"][0]["reference"], "BANK-A-2026-10-05-100.00"
+        )
 
     def test_a_repeated_bank_reference_with_other_amounts_is_distinct(self):
         lines = [
@@ -211,7 +228,12 @@ class References(unittest.TestCase):
             ":61:2610051005D100,50NTRFNONREF//SAME",
             ":86:",
         ]
-        refs = [tx["reference"] for tx in mt940.parse(statement(lines, closing=":62F:C261005CHF999,50"))["transactions"]]
+        refs = [
+            tx["reference"]
+            for tx in mt940.parse(statement(lines, closing=":62F:C261005CHF999,50"))[
+                "transactions"
+            ]
+        ]
         self.assertEqual(len(set(refs)), 2)
 
     def test_two_identical_lines_get_a_running_number(self):
@@ -221,7 +243,12 @@ class References(unittest.TestCase):
             ":61:2610051005C100,00NTRFNONREF//SAME",
             ":86:",
         ]
-        refs = [tx["reference"] for tx in mt940.parse(statement(lines, closing=":62F:C261005CHF1200,00"))["transactions"]]
+        refs = [
+            tx["reference"]
+            for tx in mt940.parse(statement(lines, closing=":62F:C261005CHF1200,00"))[
+                "transactions"
+            ]
+        ]
         self.assertEqual(refs, ["SAME-2026-10-05-100.00", "SAME-2026-10-05-100.00-2"])
 
     def test_the_same_line_in_an_overlapping_later_file_has_the_same_reference(self):
@@ -235,7 +262,9 @@ class References(unittest.TestCase):
         ref_first = mt940.parse(statement(first))["transactions"][0]["reference"]
         ref_later = [
             tx["reference"]
-            for tx in mt940.parse(statement(later, closing=":62F:C261006CHF1091,90"))["transactions"]
+            for tx in mt940.parse(statement(later, closing=":62F:C261006CHF1091,90"))[
+                "transactions"
+            ]
             if tx["booking_date"] == "2026-10-05"
         ]
         self.assertEqual(ref_later, [ref_first])
@@ -246,7 +275,9 @@ class Skipped(unittest.TestCase):
         out = mt940.parse(statement(LINES))
         self.assertEqual(out["skipped"], {"not booked": 0, "covered": 0, "zero": 1})
         self.assertEqual(len(out["transactions"]), 5)
-        self.assertNotIn("BANK-E", " ".join(tx["reference"] for tx in out["transactions"]))
+        self.assertNotIn(
+            "BANK-E", " ".join(tx["reference"] for tx in out["transactions"])
+        )
 
 
 class Refusals(unittest.TestCase):
@@ -259,7 +290,9 @@ class Refusals(unittest.TestCase):
             mt940.parse(b"<Document/>")
 
     def test_two_accounts_are_refused(self):
-        text = statement(LINES).replace(":28C:", ":25:CH9300762011623852957\r\n:28C:", 1)
+        text = statement(LINES).replace(
+            ":28C:", ":25:CH9300762011623852957\r\n:28C:", 1
+        )
         with self.assertRaises(camt.CamtError):
             mt940.parse(text)
 
@@ -283,12 +316,20 @@ class Refusals(unittest.TestCase):
 
 class Encoding(unittest.TestCase):
     def test_latin1_bytes_are_read_when_they_are_not_utf8(self):
-        content = statement([":61:2610051005C1,00NTRFNONREF//BANK-Q", ":86:Müller"]).encode("latin-1")
-        self.assertEqual(mt940.parse(content)["transactions"][0]["description"], "Müller")
+        content = statement(
+            [":61:2610051005C1,00NTRFNONREF//BANK-Q", ":86:Müller"]
+        ).encode("latin-1")
+        self.assertEqual(
+            mt940.parse(content)["transactions"][0]["description"], "Müller"
+        )
 
     def test_utf8_bytes_read_as_utf8(self):
-        content = statement([":61:2610051005C1,00NTRFNONREF//BANK-Q", ":86:Müller"]).encode("utf-8")
-        self.assertEqual(mt940.parse(content)["transactions"][0]["description"], "Müller")
+        content = statement(
+            [":61:2610051005C1,00NTRFNONREF//BANK-Q", ":86:Müller"]
+        ).encode("utf-8")
+        self.assertEqual(
+            mt940.parse(content)["transactions"][0]["description"], "Müller"
+        )
 
 
 if __name__ == "__main__":
