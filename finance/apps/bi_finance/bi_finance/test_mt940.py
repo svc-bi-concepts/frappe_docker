@@ -104,6 +104,13 @@ class Envelope(unittest.TestCase):
         self.assertEqual(mt940.parse(statement(LINES))["iban"], "CH5604835012345678009")
 
 
+class Trailer(unittest.TestCase):
+    def test_a_bare_text_block_may_end_with_a_dash_line(self):
+        self.assertEqual(
+            mt940.parse(statement(LINES) + "-\r\n"), mt940.parse(statement(LINES))
+        )
+
+
 class Lines(unittest.TestCase):
     def setUp(self):
         self.out = mt940.parse(envelope(statement(LINES)))
@@ -293,6 +300,11 @@ class Refusals(unittest.TestCase):
         text = statement(LINES).replace(
             ":28C:", ":25:CH9300762011623852957\r\n:28C:", 1
         )
+        with self.assertRaises(camt.CamtError):
+            mt940.parse(text)
+
+    def test_two_messages_in_envelopes_are_refused(self):
+        text = envelope(statement(LINES)) + envelope(statement(LINES))
         with self.assertRaises(camt.CamtError):
             mt940.parse(text)
 

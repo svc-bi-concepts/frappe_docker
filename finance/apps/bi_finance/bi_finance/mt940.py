@@ -114,6 +114,8 @@ def _text(content):
         return text
     text = text[start + len("{4:") :]
     end = re.search(r"(?:^|\n)-\}", text)
+    if "{4:" in text[end.end() :] if end else "{4:" in text:
+        raise camt.CamtError("more than one message in the file; one account per file")
     return text[: end.start()] if end else text
 
 
@@ -122,6 +124,8 @@ def _fields(text):
     fields = []
     for line in text.split("\n"):
         line = line.rstrip("\r")
+        if line.strip() == "-":  # the end of the text block of the bare variant
+            continue
         tag = TAG.match(line)
         if tag:
             fields.append((tag.group(1), line[tag.end() :].strip()))
