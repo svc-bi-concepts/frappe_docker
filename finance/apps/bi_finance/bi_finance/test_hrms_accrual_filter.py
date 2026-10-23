@@ -1,7 +1,8 @@
 """The hrms accrual filter that the history rule rests on: a Payroll Entry accrual picks only slips that name it and have no journal_entry.
 
-finance/docs/hrms.md, 'History: Salary Slips, not new GL', loads historical slips with an empty payroll_entry, so the
-Payroll Entry accrual never books them again. That holds only while get_sal_slip_list filters on payroll_entry and on an
+finance/docs/hrms.md, 'History: in the GL, no Salary Slips', keeps the payroll history out of Salary Slips: none is loaded
+for it. The filter still matters for any Salary Slip without a payroll_entry (made by hand or by a later load), which the
+Payroll Entry accrual must never book again. That holds only while get_sal_slip_list filters on payroll_entry and on an
 empty journal_entry. This test reads the installed hrms (v16.50.0 in the image) and fails when either condition is gone,
 so an hrms bump that loosens the filter stops the gate instead of double-booking payroll. It lives in bi_finance, not in
 bi_payroll, because only the frappe-image step of .yardr/check imports hrms; the payroll assumption it guards is bi_payroll's.
