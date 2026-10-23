@@ -83,7 +83,7 @@ Source: `hrms/hr/doctype` (119 doctypes) and `hrms/payroll/doctype` on `version-
   says the site lacks until HRMS is in).
 - **Accounting:** a Salary Slip submit makes no GL entry (`salary_slip.py`, `on_submit`).
   The GL comes from `Payroll Entry`; its accrual and bank entries are described in
-  [History: Salary Slips, not new GL](#history-salary-slips-not-new-gl).
+  [History: in the GL, no Salary Slips](#history-in-the-gl-no-salary-slips).
 - **Employee:** not in HRMS. It is in ERPNext core (`erpnext/setup/doctype/employee`).
 
 Regional code: `hrms/regional` has `india` and `united_arab_emirates` only. There is no
@@ -178,16 +178,14 @@ The figures of the exported paystub PDFs (monthly salary, BVG, the Quellensteuer
 AHV/ALV/NBU rates) are parsed into one private table by `finance/bexio/parse_paystubs.py`, so the
 per-employee setup reads them without opening the PDFs again.
 
-### History: Salary Slips, not new GL
+### History: in the GL, no Salary Slips
 
-The GL already holds the history: `import_payroll.py` loads the payroll journal lines as
-Journal Entries. Creating Salary Slips for those months does not create GL again, if the
-slips are never picked up by a Payroll Entry accrual. The accrual picks only slips that
-name that Payroll Entry (`payroll_entry`) and have an empty `journal_entry`
-(`payroll_entry.py`, `get_sal_slip_list`). The rule for history: leave `payroll_entry`
-empty. That alone excludes them. Setting `journal_entry` as well is optional: it is one Link,
-and `import_payroll.py` loads one Journal Entry per bexio journal line (`journal-<id>`), so a
-month can have several. Link it only when a month has a single entry; otherwise leave it empty. The pin test `bi_finance.test_hrms_accrual_filter` checks the two conditions in the installed hrms on every gate run; the live proof stays with the load itself.
+The GL holds the history: `import_payroll.py` loads the payroll journal lines as Journal
+Entries (`journal-<id>`, one per bexio journal line). No Salary Slips are loaded for it (step 5).
+
+The accrual filter is a general safeguard: a Salary Slip outside a Payroll Entry is never
+accrued (`payroll_entry.py`, `get_sal_slip_list`). The pin test `bi_finance.test_hrms_accrual_filter`
+checks this on every gate run.
 
 The check after the load is the one `import_payroll.py --check` already does: the GL per
 account and year against bexio's lines, with counts and totals only in the notes.
@@ -320,16 +318,17 @@ Risks:
   companies. Each numbered line is checked against the 2026 Wegleitung in "Lohnausweis: field check". The gaps there (whole francs on the certificate, the KTG remark on line 15) are open.
 - **ELM and certification.** A payroll that is not Swissdec-certified cannot send ELM data.
   This is a decision, not a build step.
-- **Double booking.** Before loading history live, follow the history rule above and confirm
-  its gate pin test passes.
+- **Double booking.** No history is loaded as Salary Slips (step 5), so the accrual cannot pick it up.
+  The safeguard is the accrual filter: its pin test `bi_finance.test_hrms_accrual_filter` must pass before any live run.
 
 ## Recommendation
 
 Go with HRMS `v16.50.0`, pinned as a tag. Write the Swiss deductions as Salary Components
 with formulas (AHV, ALV, BVG, UVG/NBU, KTG, FAK) as settings, in the `bi_payroll` app (its fixtures and Payroll Swiss Settings).
 Use erpnextswiss's Salary Certificate for the Lohnausweis, after its field layout is checked
-against the 2026 Form 11. Load the bexio history as submitted Salary Slips with no
-`payroll_entry`, so no GL is posted twice. Do not start the live site
+against the 2026 Form 11. Keep the bexio history in the GL as Journal Entries and load no
+Salary Slips for it: the paystub PDFs are private Files on their Employees, and the Lohnausweis
+for years before 2027 stays bexio's (step 5). Do not start the live site
 until the two gaps have a decision: how ELM is transmitted, and how Quellensteuer is
 calculated.
 
@@ -349,8 +348,10 @@ calculated.
 5. **13th salary.** Answered 2026-10-11 from the figures (HR 3): none. No 13th salary, bonus or December double
    in the 35 months of the figures (9 employees). No component; a "13th Salary" component, paid in December
    through Additional Salary, is added only when a contract says so. Counts in `finance/apps/bi_payroll/README.md`.
-6. **History depth.** Which business years must the Lohnausweis cover from ERPNext? Each year
-   back is one load of Salary Slips from bexio.
+6. **History depth.** Which business years must the Lohnausweis cover from ERPNext? **Answered**
+   by the decision of 2026-10-10 (step 5) and Benchi's D1/D2 (2026-10-11): the Lohnausweis for years
+   before 2027 stays bexio's, and 2026 payroll stays in bexio. The history is in the GL and as paystub
+   Files, not a load of Salary Slips per year.
 7. **Net salary payment.** Keep it on the UBS pain.001 run (erp-xpmr), once it works with
    HRMS? Or pay salaries by hand?
 8. **Install order.** OK to install HRMS on a copy site first, and to deploy the live site
