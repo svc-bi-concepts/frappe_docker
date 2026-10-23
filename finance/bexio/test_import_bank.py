@@ -1416,9 +1416,13 @@ class ClaimTest(unittest.TestCase):
         }
         claimed = {"9001": file_line(status="Unreconciled")}
         table, differences = ib.live_check([row], results, matches, LOOKUPS, claimed)
-        year_2026 = next(line for line in table if "2026" in line and "1 / 1" in line)
+        year_rows = [line for line in table[1:-1] if " / " in line]
+        self.assertEqual(len(year_rows), 1)
+        year_2026 = year_rows[0]
         self.assertIn("2026", year_2026)
+        self.assertNotIn("2025", year_2026)
         self.assertIn("1 / 1", year_2026)
+        self.assertIn("1,500.00 / 1,500.00", year_2026)
         self.assertEqual(differences, [])
 
 
