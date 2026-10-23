@@ -612,9 +612,10 @@ a rerun does not plan it again.
    It matches the transactions bexio booked and the ones it never reconciled (not the ignored ones), each only on a
    unique match: one voucher of the account, amount and day; else the only one within 5 days of the value or book date;
    else the one named in the bank title; else a combination of Payment and Journal Entries within 5 days. A voucher that
-   another open line is also near, or that ERPNext holds for another transaction, is not taken. The rest stays open,
-   with its reason in the `--unmatched` file.
-   A bank file (camt, from bank_statement_upload) may have brought a line before bexio did. Its bexio record is then a
+   another open line is also near, or that ERPNext holds for another transaction, is not taken. This includes vouchers
+   already allocated to a reconciled bank-file line (camt or MT940) with a `transaction_id` and no `bexio_id`; the
+   match reason names the bank-file allocation. A bank file (camt or MT940, from bank_statement_upload) may have brought
+   a line before bexio did. Its bexio record is then a
    claim, not a new document: the same account, deposit, withdrawal, and the bexio value date equal to the file line's
    value or booking date, each file line taken once (the mirror of camt's rule "bexio"). The loader stamps the
    bexio_id on that line and leaves a Comment; no second Bank Transaction is inserted. The dry run and `--check` count

@@ -82,6 +82,18 @@ def record(base, **changes):
     return doc
 
 
+def _passes(doc, filters):
+    """Whether a Bank Transaction passes the filters the importer sends for it: 'is set' / 'is not set' and 'not in'."""
+    for field, op, value in filters:
+        if op == "is":
+            if (doc.get(field) is not None) != (value == "set"):
+                return False
+        elif op == "not in":
+            if doc.get(field) in value:
+                return False
+    return True
+
+
 class FakeErp:
     """The reads the importer makes: the Bank Accounts that have a bexio_id, the GL rows, the vouchers and the Bank Transactions given to it."""
 
@@ -103,8 +115,9 @@ class FakeErp:
             return self.gl
         if doctype == "Bank Transaction":
             return [
-                {"name": name, "bexio_id": doc["bexio_id"]}
+                {"name": name, "bexio_id": doc.get("bexio_id")}
                 for name, doc in self.transactions.items()
+                if _passes(doc, filters or [])
             ]
         return self.vouchers.get(doctype, [])
 
@@ -714,6 +727,21 @@ class MatchTest(unittest.TestCase):
         )
         self.assertEqual(matches["1"], (ib.PASS_ONE, [voucher("PE-1", "1500.00")], ""))
 
+    def test_a_voucher_held_by_a_bank_file_line_is_no_candidate_and_the_reason_says_so(
+        self,
+    ):
+        # the file line BTN-F1 is reconciled to PE-1; the bexio record of the same amount, two days off, cannot take it
+        allocated = {("Payment Entry", "PE-1"): "file:BTN-F1"}
+        matches = ib.match(
+            [tx("1", "1081.00", date="2026-03-30")],
+            [voucher("PE-1", "1081.00", date="2026-03-28")],
+            allocated,
+        )
+        self.assertEqual(
+            matches["1"],
+            (None, [], "voucher within 5 days already allocated to a bank file line"),
+        )
+
     def test_an_allocated_voucher_does_not_make_an_open_line_ambiguous(self):
         # the reconciled line keeps PE-1; the open line on the same key gets PE-2 alone
         allocated = {("Payment Entry", "PE-1"): "7"}
@@ -733,6 +761,37 @@ class MatchTest(unittest.TestCase):
             "2": (ib.PASS_ONE, [voucher("PE-2", "900.00")], ""),
         }
         self.assertEqual(ib.kept_allocations(matches, allocated), ["2"])
+
+    def test_a_claimed_bank_file_line_hands_its_voucher_to_the_record_that_claims_it(
+        self,
+    ):
+        # BTN-F1 is claimed by bexio record 1 and reconciled to PE-1; BTN-F2 is nobody's and holds PE-2
+        allocated = {
+            ("Payment Entry", "PE-1"): "file:BTN-F1",
+            ("Payment Entry", "PE-2"): "file:BTN-F2",
+            ("Payment Entry", "PE-3"): "7",
+        }
+        held = ib.held_for_match(allocated, {"1": file_line("BTN-F1")})
+        self.assertEqual(
+            held,
+            {
+                ("Payment Entry", "PE-1"): "1",
+                ("Payment Entry", "PE-2"): "file:BTN-F2",
+                ("Payment Entry", "PE-3"): "7",
+            },
+        )
+        # the claimant finds its own voucher, a rival of the same amount does not
+        matches = ib.match(
+            [tx("1", "1081.00"), tx("2", "1081.00", date="2026-03-30")],
+            [voucher("PE-1", "1081.00")],
+            {("Payment Entry", "PE-1"): "1"},
+        )
+        self.assertEqual(matches["1"][0], ib.PASS_ONE)
+        self.assertIsNone(matches["2"][0])
+
+    def test_kept_allocations_leaves_out_the_vouchers_a_bank_file_line_holds(self):
+        allocated = {("Payment Entry", "PE-1"): "file:BTN-F1"}
+        self.assertEqual(ib.kept_allocations({}, allocated), [])
 
 
 class VoucherTest(unittest.TestCase):
@@ -874,6 +933,51 @@ class VoucherTest(unittest.TestCase):
         self.assertEqual(
             ib.read_allocated(FakeErp(transactions=transactions)),
             {("Payment Entry", "PE-1"): "1"},
+        )
+
+    def test_read_allocated_holds_the_voucher_of_a_reconciled_bank_file_line_under_its_file_mark(
+        self,
+    ):
+        def paid(name):
+            return [{"payment_document": "Payment Entry", "payment_entry": name}]
+
+        transactions = {
+            "BTN-1": {
+                "bexio_id": "1",
+                "status": "Reconciled",
+                "payment_entries": paid("PE-1"),
+            },
+            # a file line no bexio record has claimed yet: its voucher is held under its name
+            "BTN-F1": {
+                "transaction_id": "T1",
+                "status": "Reconciled",
+                "payment_entries": paid("PE-2"),
+            },
+            # a file line that is stamped with a bexio_id is read as the bexio record above
+            "BTN-S": {
+                "bexio_id": "2",
+                "transaction_id": "T2",
+                "status": "Reconciled",
+                "payment_entries": paid("PE-4"),
+            },
+            "BTN-F2": {
+                "transaction_id": "T3",
+                "status": "Unreconciled",
+                "payment_entries": paid("PE-5"),
+            },
+            "BTN-C": {
+                "bexio_id": "3",
+                "status": "Cancelled",
+                "payment_entries": paid("PE-6"),
+            },
+        }
+        self.assertEqual(
+            ib.read_allocated(FakeErp(transactions=transactions)),
+            {
+                ("Payment Entry", "PE-1"): "1",
+                ("Payment Entry", "PE-2"): "file:BTN-F1",
+                ("Payment Entry", "PE-4"): "2",
+            },
         )
 
 
@@ -1043,6 +1147,19 @@ class ReconcileOutputTest(unittest.TestCase):
         ]
         self.assertEqual(
             rows[0], ["11", "2026", "bexio", "booked", "1", "0", "0", "0", "0", "0"]
+        )
+
+    def test_the_match_summary_names_a_voucher_held_by_a_bank_file_line(self):
+        results = ib.plan([record(CHF_IN, amount=1081.0)], LOOKUPS)
+        allocated = {("Payment Entry", "PE-1081"): "file:BTN-F1"}
+        matches = ib.match(
+            ib.match_transactions(results, LOOKUPS),
+            [voucher("PE-1081", "1081.00", date="2026-03-28")],
+            allocated,
+        )
+        self.assertIn(
+            "open, voucher within 5 days already allocated to a bank file line: 1",
+            ib.match_summary(results, matches),
         )
 
 
@@ -1436,6 +1553,10 @@ class ClaimMainTest(unittest.TestCase):
 
         def list(self, doctype, filters=None, fields=("name",)):
             if doctype == "Bank Transaction" and any(
+                f[0] == "bexio_id" and f[2] == "not set" for f in filters or []
+            ):
+                return [line for line in self.file_lines if not line.get("bexio_id")]
+            if doctype == "Bank Transaction" and any(
                 f[0] == "transaction_id" for f in filters or []
             ):
                 return self.file_lines
@@ -1462,6 +1583,12 @@ class ClaimMainTest(unittest.TestCase):
                     if line.get("bexio_id")
                 ]
             return super().list(doctype, filters, fields)
+
+        def get(self, doctype, name):
+            line = next((f for f in self.file_lines if f["name"] == name), None)
+            if doctype == "Bank Transaction" and line is not None:
+                return line
+            return super().get(doctype, name)
 
         def meta(self, doctype):
             return {
@@ -1517,6 +1644,56 @@ class ClaimMainTest(unittest.TestCase):
         )
         self.assertEqual([d["bexio_id"] for d in written["documents"]], ["9002"])
         self.assertEqual(written["claims"], [{"bexio_id": "9001", "name": "BTN-F1"}])
+
+    def test_a_claimed_reconciled_line_keeps_its_voucher_and_is_not_reported_unmatched(
+        self,
+    ):
+        with tempfile.TemporaryDirectory() as export:
+            with open(os.path.join(export, "bank_transactions.json"), "w") as f:
+                json.dump([CHF_IN], f)
+            with open(os.path.join(export, "bank_accounts.json"), "w") as f:
+                json.dump([{"id": 11, "currency_id": 1}], f)
+            with open(os.path.join(export, "currencies.json"), "w") as f:
+                json.dump([{"id": 1, "name": "CHF"}], f)
+            line = file_line(
+                status="Reconciled",
+                payment_entries=[
+                    {"payment_document": "Payment Entry", "payment_entry": "PE-1"}
+                ],
+            )
+            erp = self.Erp([line])
+            erp.vouchers = {"Payment Entry": [{"name": "PE-1", "bexio_id": "v1"}]}
+            erp.gl = [
+                {
+                    "voucher_type": "Payment Entry",
+                    "voucher_no": "PE-1",
+                    "account": ACCOUNT,
+                    "posting_date": "2026-03-31",
+                    "debit": 1500.0,
+                    "credit": 0.0,
+                }
+            ]
+            unmatched = os.path.join(export, "unmatched.txt")
+            with mock.patch.object(
+                im.Erp, "from_file", return_value=erp
+            ), contextlib.redirect_stdout(io.StringIO()) as out:
+                ib.main(
+                    [
+                        "--write",
+                        os.path.join(export, "bank-docs.json"),
+                        "--export",
+                        export,
+                        "--report",
+                        os.path.join(export, "report.txt"),
+                        "--unmatched",
+                        unmatched,
+                    ]
+                )
+            with open(unmatched) as f:
+                reasons = f.read()
+        self.assertIn("claimed from bank file: 1", out.getvalue())
+        self.assertNotIn("bank file line", reasons)
+        self.assertNotIn("bank file line", out.getvalue())
 
     def test_a_stamped_claim_stays_counted_in_check_across_a_year_boundary(self):
         with tempfile.TemporaryDirectory() as export:
