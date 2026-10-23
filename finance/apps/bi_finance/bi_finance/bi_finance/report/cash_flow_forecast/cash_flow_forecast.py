@@ -148,22 +148,27 @@ def purchase_paid_in_windows(company, as_of):
 def paid_history(company, as_of, doctype, open_names, start=None, end=None):
     """{party: [(due date, last payment date)]} of the doctype's invoices paid from start to end, not the open ones.
     Default: the last year up to as_of."""
+    ranged = start is not None or end is not None
     start = start or as_of - datetime.timedelta(days=LOOKBACK_DAYS)
     end = end or as_of
-    rows = frappe.db.sql(
-        """select ple.against_voucher_no, max(ple.party), max(ple.posting_date)
+    if ranged:
+        rows = frappe.db.sql(
+            """select ple.against_voucher_no, max(ple.party), max(ple.posting_date)
         from `tabPayment Ledger Entry` ple
         where ple.company = %s and ple.against_voucher_type = %s and ple.voucher_type != %s and ple.delinked = 0
-          and ple.posting_date between %s and %s
         group by ple.against_voucher_no""",
-        (
-            company,
-            doctype,
-            doctype,
-            start,
-            end,
-        ),
-    )
+            (company, doctype, doctype),
+        )
+        rows = [row for row in rows if start <= row[2] <= end]
+    else:
+        rows = frappe.db.sql(
+            """select ple.against_voucher_no, max(ple.party), max(ple.posting_date)
+            from `tabPayment Ledger Entry` ple
+            where ple.company = %s and ple.against_voucher_type = %s and ple.voucher_type != %s and ple.delinked = 0
+              and ple.posting_date between %s and %s
+            group by ple.against_voucher_no""",
+            (company, doctype, doctype, start, end),
+        )
     rows = [(name, party, paid) for name, party, paid in rows if name not in open_names]
     dates = _invoice_dates(doctype, [name for name, _party, _paid in rows])
     history = collections.defaultdict(list)

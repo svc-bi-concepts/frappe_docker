@@ -1601,6 +1601,37 @@ class PaidHistoryWindow(DatesAsDatabase):
         )
         self.assertEqual(self.history(D(2025, 1, 1), D(2025, 12, 31)), {})
 
+    def test_ranged_history_uses_the_final_installment_before_windowing(self):
+        self.invoice("Sales Invoice", "SINV-PART", D(2024, 6, 1), D(2024, 5, 1))
+        self.entry(
+            "Sales Invoice", "SINV-PART", 100.0, D(2024, 5, 1), party="Customer One"
+        )
+        self.entry(
+            "Sales Invoice",
+            "SINV-PART",
+            -40.0,
+            D(2024, 12, 20),
+            party="Customer One",
+            voucher="PE-PART-1",
+        )
+        self.entry(
+            "Sales Invoice",
+            "SINV-PART",
+            -40.0,
+            D(2025, 1, 20),
+            party="Customer One",
+            voucher="PE-PART-2",
+        )
+        self.entry(
+            "Sales Invoice",
+            "SINV-PART",
+            -20.0,
+            D(2025, 2, 20),
+            party="Customer One",
+            voucher="PE-PART-3",
+        )
+        self.assertEqual(self.history(D(2025, 1, 1), D(2025, 1, 31)), {})
+
 
 class CustomerPaymentBehaviourReport(DatesAsDatabase):
     """The report over the Payment Ledger: the dates reach paid_history, the customer filter, the open overdue.
