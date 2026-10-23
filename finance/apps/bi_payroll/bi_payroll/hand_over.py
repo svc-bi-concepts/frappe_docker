@@ -6,7 +6,8 @@ Salary Detail rows of each slip, summed by component, so the rows match the pays
 The Lohnausweis view follows the ESTV Wegleitung for Form 11 (found in erp-hx7s): line 1 carries
 every earning row of the slips, line 11 is line 8 less lines 9 and 10.1 (not the slips' net pay, which also
 deducts Quellensteuer and KTG), and the KTG employee share goes into line 15 as a remark, for want of a line of
-its own. The printed certificate shows whole francs (round half up, certificate_rounding); the view keeps rappen.
+its own. The printed certificate shows whole francs (round half up, certificate_rounding; the certificate's own rounding is
+erpnextswiss patch 0009, finance/patches/erpnextswiss); the view keeps rappen.
 
 Pure Python, so the offline tests run without frappe (test_hand_over.py). The report
 (bi_payroll/bi_payroll/report/payroll_hand_over) reads the submitted Salary Slips and passes them here.
