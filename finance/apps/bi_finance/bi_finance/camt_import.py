@@ -1,4 +1,4 @@
-"""Imports a UBS camt.053 or camt.054 file as Bank Transactions: the ERPNext side of camt.py.
+"""Imports a UBS camt.053 or camt.054 file, or an MT940 file, as Bank Transactions: the ERPNext side of camt.py and mt940.py.
 
 dry_run shows what an import would do and writes nothing; import_statement does the same and
 then creates the Bank Transactions (submitted, Unreconciled) and stamps the transaction_id on
@@ -9,7 +9,7 @@ The balance check is reported, never blocking.
 from decimal import Decimal
 
 import frappe
-from bi_finance import bank_match_job, camt
+from bi_finance import bank_match_job, camt, mt940
 from frappe.utils import today
 
 
@@ -26,9 +26,16 @@ def import_statement(file_url, bank_account=None, upload=None):
     return _run(file_url, bank_account, write=True, upload=upload)
 
 
+def _parse(content):
+    """The statement of a file: camt for XML (a '<' first, past a byte order mark), MT940 for anything else."""
+    if content.lstrip(b"\xef\xbb\xbf \t\r\n")[:1] == b"<":
+        return camt.parse(content)
+    return mt940.parse(content)
+
+
 def _run(file_url, bank_account, write, upload=None):
     try:
-        statement = camt.parse(_file_content(file_url))
+        statement = _parse(_file_content(file_url))
     except camt.CamtError as err:
         frappe.throw(str(err))
 
@@ -121,7 +128,7 @@ def account_for_file(file_url):
     """The name of the one Bank Account whose IBAN is the file's, else None: the upload form's default."""
     frappe.has_permission("Bank Transaction", "read", throw=True)
     try:
-        iban = camt.parse(_file_content(file_url))["iban"]
+        iban = _parse(_file_content(file_url))["iban"]
     except camt.CamtError:
         return None
     names = [

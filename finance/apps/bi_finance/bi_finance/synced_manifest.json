@@ -24,8 +24,8 @@
     "sha": "a588b9de5807b61bbcf4eb112db5d8f4416473cfbb3c6a42691097ff5b67b96f"
   },
   "bi_finance/doctype/bank_statement_upload/bank_statement_upload.json": {
-    "modified": "2026-10-12 12:00:00.000000",
-    "sha": "9b64f35b67f59baea417195418ebb3cd8d72f0fe85516a03a9a5fe6bc4a44196"
+    "modified": "2026-10-23 15:00:00.000000",
+    "sha": "52175630332ea593d4cc5b78c0e8e66da2b1701347f105cb590fb9b35e1e0cbc"
   },
   "bi_finance/doctype/cash_forecast_manual_line/cash_forecast_manual_line.json": {
     "modified": "2026-10-10 17:00:00.000000",
