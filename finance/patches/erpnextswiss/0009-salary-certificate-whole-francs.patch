@@ -47,7 +47,7 @@ index fc02374..a352183 100644
      sql_query = """SELECT IFNULL(SUM(`tabSalary Slip`.`gross_pay`), 0) AS `gross`, IFNULL(SUM(`tabSalary Slip`.`net_pay`), 0) AS `net` 
          FROM `tabSalary Slip` 
          WHERE `tabSalary Slip`.`employee` = '{0}'
-@@ -125,6 +155,20 @@ def fetch_dynamic(self):
+@@ -125,6 +155,23 @@ def fetch_dynamic(self):
      else:
          self.remarks = frappe.get_doc('Salary Certificate Settings').remark_prefix
  
@@ -60,6 +60,9 @@ index fc02374..a352183 100644
 +    # Pos 15 (patch 0009): the KTG employee share as the remark, after the trustee's own remarks. A fetch replaces
 +    # the KTG remark from before, and keeps any other remark the trustee typed
 +    remarks = [part for part in (typed_remarks or "").split("; ") if part and not part.startswith(KTG_REMARK_START)]
++    # upstream's own Pos 15 line (the settings' remark prefix) is not dropped either, and not doubled by a second fetch
++    if self.remarks and self.remarks not in remarks:
++        remarks.append(self.remarks)
 +    ktg = ktg_employee_amount(self)
 +    if ktg:
 +        remarks.append(KTG_REMARK.format(whole_francs(ktg)))

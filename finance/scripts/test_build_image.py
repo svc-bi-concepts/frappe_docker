@@ -1245,6 +1245,16 @@ class WholeFrancsCertificate(unittest.TestCase):
         again = self.fetch(remarks=cert.remarks)
         self.assertEqual(again.remarks, cert.remarks)
 
+    def test_the_settings_remark_prefix_is_kept_once(self):
+        with mock.patch.object(FakeSettings, "remark_prefix", "Hinweis", create=True):
+            cert = self.fetch(remarks="Zweites Zertifikat 2027")
+            self.assertEqual(
+                cert.remarks,
+                "Zweites Zertifikat 2027; Hinweis; KTG-Beitrag Arbeitnehmer CHF 29",
+            )
+            again = self.fetch(remarks=cert.remarks)
+        self.assertEqual(again.remarks, cert.remarks)
+
     def test_without_a_ktg_employee_only_the_typed_remarks_stay(self):
         cert = self.fetch(
             remarks="Zweites Zertifikat 2027", slips=invented_year(ktg=(None, None))
