@@ -67,6 +67,10 @@ def execute(filters=None):
         company, to_date, "Sales Invoice", set(open_items), from_date, to_date
     )
     rows = cf.payment_behaviour(history, open_items, to_date)
+    for row in rows:
+        # payment_behaviour gives a share (0 to 1); a Percent column shows the number as it is
+        if row["on_time_share"] is not None:
+            row["on_time_share"] *= 100
     if filters.customer:
         rows = [row for row in rows if row["customer"] == filters.customer]
 

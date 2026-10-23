@@ -1705,7 +1705,8 @@ class CustomerPaymentBehaviourReport(DatesAsDatabase):
         rows = self.run_report(customer="Customer Two")
         self.assertEqual(list(rows), ["Customer Two"])
         self.assertEqual(rows["Customer Two"]["median_days_late"], 0)
-        self.assertEqual(rows["Customer Two"]["on_time_share"], 1)
+        # a Percent column shows the number as it is, so 100 and not 1
+        self.assertEqual(rows["Customer Two"]["on_time_share"], 100)
 
     def test_a_from_date_after_the_to_date_is_refused(self):
         import frappe
