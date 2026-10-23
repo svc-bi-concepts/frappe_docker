@@ -38,7 +38,6 @@ def columns(currency):
         col("Paid on time", "on_time_share", "Percent", precision=1, width=110),
         col("Median days late", "median_days_late", precision=1, width=130),
         col("Max days late", "max_days_late", "Int", width=110),
-        col("Mean days late", "mean_days_late", "Int", width=120),
         col("Open overdue invoices", "open_overdue_count", "Int", width=150),
         col(
             "Open overdue amount",
@@ -79,8 +78,7 @@ def execute(filters=None):
         for m in [
             _(
                 "Paid invoices: paid by a Payment Entry from {0} to {1}, the last payment as the paid date. "
-                "Days late: from the due date to that date; negative is paid early. Mean days late is the figure the "
-                "cash forecast moves a customer's receipts by."
+                "Days late: from the due date to that date; negative is paid early."
             ).format(from_date.isoformat(), to_date.isoformat()),
             _(
                 "Open overdue: Sales Invoices unpaid on {0} and due before it; the oldest overdue is counted in days."

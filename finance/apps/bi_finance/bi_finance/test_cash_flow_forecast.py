@@ -1707,6 +1707,7 @@ class CustomerPaymentBehaviourReport(DatesAsDatabase):
             "to_date": "2025-12-31",
         }
         columns, rows, message, chart = cpb.execute({**base, **filters})
+        self.assertNotIn("mean_days_late", {column["fieldname"] for column in columns})
         return {row["customer"]: row for row in rows}
 
     def test_the_dates_reach_paid_history_and_the_open_overdue_is_as_of_the_to_date(

@@ -104,7 +104,7 @@ Invoice prints, with the QR code drawn on our own server (no external host, see
   from this directory (no frappe needed).
 - `bi_finance/bi_finance/bi_finance/report/customer_payment_behaviour/`: the report "Customer Payment Behaviour" on the
   Cash Forecast card: per customer, the Sales Invoices paid from the From Date to the To Date (the last payment is the
-  paid date, as the forecast reads them) with the share paid on time, median, mean and maximum days late, and the open
+  paid date, as the forecast reads them) with the share paid on time, median and maximum days late, and the open
   overdue invoices as of the To Date. The row arithmetic is `payment_behaviour` in `cash_forecast.py`; `paid_history`
   takes the dates (its default is the last year, so the forecast does not move).
 - Synced JSON (the module folder): migrate skips a file whose `modified` the site already has, so a change without a new stamp never ships.
