@@ -28,8 +28,17 @@ Invoice prints, with the QR code drawn on our own server (no external host, see
   `import_statement(...)` creates the new Bank Transactions (submitted, Unreconciled) and stamps the bexio
   lines it matched. Refuses a file whose IBAN or currency is not the Bank Account's. The balance check is
   reported against the bank GL account (OPBD: before the date, CLBD: up to it), never blocking.
+- `bi_finance/mt940.py`: reads a UBS MT940 file (the envelope or the bare text block) into the same dict as
+  camt.parse, for the bank lines the e-banking offers only as MT940. camt_import picks it for a file that is
+  not XML. A :61: is one transaction (C, D, RC, RD; the entry date when it has one); its :86: text is the
+  description (UBS's `Z45?`-style codes are dropped, none is read as a counterparty). Reference: the bank
+  reference, booking date and amount, with '-2', '-3' for a repeat in the file (the camt NtryRef idea), so the
+  same line in an overlapping later file keeps its reference. Zero-amount lines are skipped and counted.
+  The end-to-end id is the customer reference unless NONREF; not yet proven on a real payment run (erp-mfr3).
 - `bi_finance/test_camt.py`: offline tests of both, with invented files: `python3 -m unittest bi_finance.test_camt`
   from this directory, or in the image as in `finance/docs/erpnext-setup.md`.
+- `bi_finance/test_mt940.py`: offline tests of mt940.py with invented files: `python3 -m unittest bi_finance.test_mt940`
+  from this directory.
 - `bi_finance/bi_finance/` is the module folder "BI Finance": the doctypes, reports, workspaces, number
   cards and charts that migrate syncs live there, and nowhere else (`bi_finance/test_layout.py` checks it).
 - Desk: BI Finance is a companion of ERPNext, its rail entry Treasury is the Dock in `bi_finance/dock/` and its menu the Sidebar in `bi_finance/bi_finance/sidebar/treasury/` (`bi_finance/test_sidebar.py`); see `finance/docs/erpnext-setup.md`, Desk conventions.
@@ -50,7 +59,7 @@ Invoice prints, with the QR code drawn on our own server (no external host, see
   (the source set in Currency Exchange Settings), one request per currency and range; a dry run stores none.
 - `bi_finance/bi_finance/doctype/bank_statement_upload/`: the doctype "Bank Statement Upload" (module BI Finance,
   `modules.txt`). A record per uploaded file: the Bank Account, the file, Dry run and Import buttons calling
-  `camt_import` (the Bank Account is proposed from the file's IBAN), the summary as the dry run gave it, and the count and who of the import. An upload imports once,
+  `camt_import` (the Bank Account is proposed from the file's IBAN; a camt or an MT940 file), the summary as the dry run gave it, and the count and who of the import. An upload imports once,
   after a dry run on the same file; a failed run leaves the record Failed and its ledger writes rolled back.
   Each stamp of a bexio line leaves a Comment on that Bank Transaction, naming the upload and the date.
 - `bi_finance/test_bank_statement_upload.py`: offline tests of the record, the stamp comment and the .json,

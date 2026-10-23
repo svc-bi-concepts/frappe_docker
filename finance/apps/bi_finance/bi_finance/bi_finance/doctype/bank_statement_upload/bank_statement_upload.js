@@ -3,7 +3,7 @@ frappe.ui.form.on("Bank Statement Upload", {
     if (frm.is_new()) {
       frm.set_intro(
         __(
-          "Upload the UBS camt.053 or camt.054 of the month, then Dry run, then Import.",
+          "Upload the UBS camt.053, camt.054 or MT940 of the month, then Dry run, then Import.",
         ),
       );
       return;

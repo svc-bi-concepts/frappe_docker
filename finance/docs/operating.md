@@ -11,8 +11,8 @@ document that explains the step is in brackets. Conventions for labels and butto
 
 1. **Wise and PayPal:** they sync each hour by themselves. Check on **Wise Settings** and
    **PayPal Settings** (Banking card) that the hourly sync is on. [`finance/apps/bi_finance/README.md`]
-2. **Bank Statement Upload:** upload the UBS camt file of the month (**Bank Statement Upload**,
-   Banking card). [`finance/apps/bi_finance/README.md`, bank_statement_upload]
+2. **Bank Statement Upload:** upload the UBS camt or MT940 file of the month (**Bank Statement Upload**,
+   Banking card). UBS offers MT940 only for the bank lines from 30.09.2026 on. [`finance/apps/bi_finance/README.md`, bank_statement_upload]
 3. **Unreconciled bank lines:** clear what is left (Treasury shortcut **Unreconciled**). [`finance/docs/payment-runs.md`, the camt match]
    After each Wise sync and camt import the matching job reconciles the lines it is certain of (the
    creditor reference of an open Sales Invoice, a payment run's EndToEndId, one open invoice or bill of
