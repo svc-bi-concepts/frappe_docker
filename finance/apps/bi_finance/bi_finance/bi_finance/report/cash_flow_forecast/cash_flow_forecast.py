@@ -156,10 +156,10 @@ def paid_history(company, as_of, doctype, open_names, start=None, end=None):
             """select ple.against_voucher_no, max(ple.party), max(ple.posting_date)
         from `tabPayment Ledger Entry` ple
         where ple.company = %s and ple.against_voucher_type = %s and ple.voucher_type != %s and ple.delinked = 0
-        group by ple.against_voucher_no""",
-            (company, doctype, doctype),
+        group by ple.against_voucher_no
+        having max(ple.posting_date) between %s and %s""",
+            (company, doctype, doctype, start, end),
         )
-        rows = [row for row in rows if start <= row[2] <= end]
     else:
         rows = frappe.db.sql(
             """select ple.against_voucher_no, max(ple.party), max(ple.posting_date)
