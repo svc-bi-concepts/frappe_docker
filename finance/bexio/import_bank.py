@@ -569,9 +569,7 @@ def claim_lines(results, file_lines, existing):
     """
     by_id = {r["bexio_id"]: r for r in results if r["doc"]}
     claimed = {
-        line["bexio_id"]: line
-        for line in file_lines
-        if line.get("bexio_id") in by_id
+        line["bexio_id"]: line for line in file_lines if line.get("bexio_id") in by_id
     }
     free = sorted(
         (line for line in file_lines if not line.get("bexio_id")),

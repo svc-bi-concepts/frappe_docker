@@ -1439,10 +1439,14 @@ class ClaimMainTest(unittest.TestCase):
                 f[0] == "transaction_id" for f in filters or []
             ):
                 return self.file_lines
-            if doctype == "Bank Transaction" and any(
-                f[0] == "bexio_id" and f[1] == "is" and f[2] == "set"
-                for f in filters or []
-            ) and "date" in fields:
+            if (
+                doctype == "Bank Transaction"
+                and any(
+                    f[0] == "bexio_id" and f[1] == "is" and f[2] == "set"
+                    for f in filters or []
+                )
+                and "date" in fields
+            ):
                 return [
                     {
                         "name": line["name"],
