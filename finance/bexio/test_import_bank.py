@@ -1439,6 +1439,24 @@ class ClaimMainTest(unittest.TestCase):
                 f[0] == "transaction_id" for f in filters or []
             ):
                 return self.file_lines
+            if doctype == "Bank Transaction" and any(
+                f[0] == "bexio_id" and f[1] == "is" and f[2] == "set"
+                for f in filters or []
+            ) and "date" in fields:
+                return [
+                    {
+                        "name": line["name"],
+                        "bexio_id": line["bexio_id"],
+                        "bank_account": line["bank_account"],
+                        "date": line["value_date"],
+                        "deposit": line["deposit"],
+                        "withdrawal": line["withdrawal"],
+                        "status": line["status"],
+                        "docstatus": 1,
+                    }
+                    for line in self.file_lines
+                    if line.get("bexio_id")
+                ]
             return super().list(doctype, filters, fields)
 
         def meta(self, doctype):
@@ -1495,6 +1513,40 @@ class ClaimMainTest(unittest.TestCase):
         )
         self.assertEqual([d["bexio_id"] for d in written["documents"]], ["9002"])
         self.assertEqual(written["claims"], [{"bexio_id": "9001", "name": "BTN-F1"}])
+
+    def test_a_stamped_claim_stays_counted_in_check_across_a_year_boundary(self):
+        with tempfile.TemporaryDirectory() as export:
+            with open(os.path.join(export, "bank_transactions.json"), "w") as f:
+                json.dump([record(CHF_IN, value_date="2026-01-01")], f)
+            with open(os.path.join(export, "bank_accounts.json"), "w") as f:
+                json.dump([{"id": 11, "currency_id": 1}], f)
+            with open(os.path.join(export, "currencies.json"), "w") as f:
+                json.dump([{"id": 1, "name": "CHF"}], f)
+            stamped = file_line(
+                value_date="2025-12-31",
+                booking_date="2026-01-01",
+                bexio_id="9001",
+            )
+            erp = self.Erp([stamped])
+            with mock.patch.object(
+                im.Erp, "from_file", return_value=erp
+            ), contextlib.redirect_stdout(io.StringIO()) as out:
+                code = ib.main(
+                    [
+                        "--check",
+                        "--export",
+                        export,
+                        "--report",
+                        os.path.join(export, "report.txt"),
+                        "--unmatched",
+                        os.path.join(export, "unmatched.txt"),
+                        "--differences",
+                        os.path.join(export, "differences.txt"),
+                    ]
+                )
+        self.assertEqual(code, 0)
+        self.assertIn("claimed from bank file: 1", out.getvalue())
+        self.assertIn("0 differences in", out.getvalue())
 
 
 if __name__ == "__main__":

@@ -527,18 +527,17 @@ def kept_allocations(matches, allocated):
 
 
 def file_lines_from_erp(erp, accounts):
-    """The Bank Transactions a bank file brought (transaction_id set) that bexio has not stamped (bexio_id empty), submitted,
-    on the given Bank Accounts: the lines claim_lines may claim."""
+    """Submitted Bank Transactions brought by a bank file, on the given Bank Accounts."""
     return erp.list(
         "Bank Transaction",
         [
             ["transaction_id", "is", "set"],
-            ["bexio_id", "is", "not set"],
             ["docstatus", "=", 1],
             ["bank_account", "in", accounts],
         ],
         [
             "name",
+            "bexio_id",
             "bank_account",
             "value_date",
             "booking_date",
@@ -568,13 +567,18 @@ def claim_lines(results, file_lines, existing):
     same lines. A file line that already holds a bexio_id is no candidate, and so is a bexio record that ERPNext
     already has (existing: the bexio_ids on Bank Transactions).
     """
+    by_id = {r["bexio_id"]: r for r in results if r["doc"]}
+    claimed = {
+        line["bexio_id"]: line
+        for line in file_lines
+        if line.get("bexio_id") in by_id
+    }
     free = sorted(
         (line for line in file_lines if not line.get("bexio_id")),
         key=lambda line: line["name"],
     )
-    claimed = {}
     for r in sorted((r for r in results if r["doc"]), key=lambda r: r["bexio_id"]):
-        if r["bexio_id"] in existing:
+        if r["bexio_id"] in claimed or r["bexio_id"] in existing:
             continue
         line = next((f for f in free if _same_line(f, r["doc"])), None)
         if line is not None:
