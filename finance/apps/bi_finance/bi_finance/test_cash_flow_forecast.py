@@ -20,6 +20,9 @@ from bi_finance.bi_finance.report.cash_flow_forecast import cash_flow_forecast a
 from bi_finance.bi_finance.report.cash_flow_forecast_lines import (
     cash_flow_forecast_lines as cffl,
 )
+from bi_finance.bi_finance.report.customer_payment_behaviour import (
+    customer_payment_behaviour as cpb,
+)
 
 D = datetime.date
 AS_OF = D(2026, 10, 10)
@@ -1521,6 +1524,97 @@ class Message(unittest.TestCase):
         message = cff.forecast_message(self.result({"<b>": 1}), "CHF")
         self.assertIn("entries on account &lt;b&gt;.", message)
         self.assertNotIn("<b>", message)
+
+
+class PaidHistoryWindow(LedgerFixture):
+    """paid_history reads the payments between its dates, and the default is the last year up to the as-of date.
+    Invented names, amounts and dates."""
+
+    def history(self, *args):
+        return cff.paid_history("Test Company", D(2025, 12, 31), "Sales Invoice", set(), *args)
+
+    def test_the_default_is_the_last_year_up_to_the_as_of_date(self):
+        self.invoice("Sales Invoice", "SINV-IN", D(2025, 1, 10), D(2025, 1, 1))
+        self.entry("Sales Invoice", "SINV-IN", 100.0, D(2025, 1, 1), party="Customer One")
+        self.entry("Sales Invoice", "SINV-IN", -100.0, D(2025, 1, 20), party="Customer One", voucher="PE-IN")
+        self.invoice("Sales Invoice", "SINV-OUT", D(2024, 12, 1), D(2024, 11, 1))
+        self.entry("Sales Invoice", "SINV-OUT", 50.0, D(2024, 11, 1), party="Customer One")
+        self.entry("Sales Invoice", "SINV-OUT", -50.0, D(2024, 12, 10), party="Customer One", voucher="PE-OUT")
+        self.assertEqual(
+            cff.paid_history("Test Company", D(2025, 12, 31), "Sales Invoice", set()),
+            {"Customer One": [(D(2025, 1, 10), D(2025, 1, 20))]},
+        )
+
+    def test_the_dates_given_are_the_window(self):
+        self.invoice("Sales Invoice", "SINV-OLD", D(2024, 6, 1), D(2024, 5, 1))
+        self.entry("Sales Invoice", "SINV-OLD", 50.0, D(2024, 5, 1), party="Customer One")
+        self.entry("Sales Invoice", "SINV-OLD", -50.0, D(2024, 6, 10), party="Customer One", voucher="PE-OLD")
+        self.assertEqual(
+            self.history(D(2024, 1, 1), D(2025, 12, 31)),
+            {"Customer One": [(D(2024, 6, 1), D(2024, 6, 10))]},
+        )
+        self.assertEqual(self.history(D(2025, 1, 1), D(2025, 12, 31)), {})
+
+
+class CustomerPaymentBehaviourReport(LedgerFixture):
+    """The report over the Payment Ledger: the dates reach paid_history, the customer filter, the open overdue.
+    Invented customers, invoices and amounts."""
+
+    def setUp(self):
+        super().setUp()
+        patch = mock.patch("frappe.get_cached_value", return_value="CHF")
+        patch.start()
+        self.addCleanup(patch.stop)
+        # Customer One: one invoice paid 4 days late in 2025, one paid in parts (last part 19 days late), one open and overdue
+        self.invoice("Sales Invoice", "SINV-1", D(2025, 3, 1), D(2025, 2, 1))
+        self.entry("Sales Invoice", "SINV-1", 100.0, D(2025, 2, 1), party="Customer One")
+        self.entry("Sales Invoice", "SINV-1", -100.0, D(2025, 3, 5), party="Customer One", voucher="PE-1")
+        self.invoice("Sales Invoice", "SINV-2", D(2025, 4, 1), D(2025, 3, 1))
+        self.entry("Sales Invoice", "SINV-2", 200.0, D(2025, 3, 1), party="Customer One")
+        self.entry("Sales Invoice", "SINV-2", -120.0, D(2025, 4, 3), party="Customer One", voucher="PE-2")
+        self.entry("Sales Invoice", "SINV-2", -80.0, D(2025, 4, 20), party="Customer One", voucher="PE-3")
+        self.invoice("Sales Invoice", "SINV-3", D(2025, 9, 1), D(2025, 8, 1))
+        self.entry("Sales Invoice", "SINV-3", 70.0, D(2025, 8, 1), party="Customer One")
+        # Customer Two: one invoice paid on its due date
+        self.invoice("Sales Invoice", "SINV-4", D(2025, 5, 1), D(2025, 4, 1))
+        self.entry("Sales Invoice", "SINV-4", 40.0, D(2025, 4, 1), party="Customer Two")
+        self.entry("Sales Invoice", "SINV-4", -40.0, D(2025, 5, 1), party="Customer Two", voucher="PE-4")
+        # Customer One's invoice paid in 2024, outside the 2025 window
+        self.invoice("Sales Invoice", "SINV-5", D(2024, 6, 1), D(2024, 5, 1))
+        self.entry("Sales Invoice", "SINV-5", 50.0, D(2024, 5, 1), party="Customer One")
+        self.entry("Sales Invoice", "SINV-5", -50.0, D(2024, 6, 10), party="Customer One", voucher="PE-5")
+
+    def run_report(self, **filters):
+        base = {"company": "Test Company", "from_date": "2025-01-01", "to_date": "2025-12-31"}
+        columns, rows, message, chart = cpb.execute({**base, **filters})
+        return {row["customer"]: row for row in rows}
+
+    def test_the_dates_reach_paid_history_and_the_open_overdue_is_as_of_the_to_date(self):
+        rows = self.run_report()
+        one = rows["Customer One"]
+        self.assertEqual(one["paid"], 2)  # SINV-1 and SINV-2, SINV-5 is before the window
+        self.assertEqual(one["median_days_late"], 11.5)  # 4 days and 19 days late
+        self.assertEqual(one["max_days_late"], 19)  # paid in parts: the last payment counts
+        self.assertEqual(one["open_overdue_count"], 1)
+        self.assertEqual(one["open_overdue_amount"], 70.0)
+        self.assertEqual(one["oldest_overdue_days"], (D(2025, 12, 31) - D(2025, 9, 1)).days)
+
+    def test_a_wider_window_reads_the_earlier_payments(self):
+        rows = self.run_report(from_date="2024-01-01")
+        self.assertEqual(rows["Customer One"]["paid"], 3)
+
+    def test_the_customer_filter_keeps_one_customer(self):
+        self.assertEqual(sorted(self.run_report()), ["Customer One", "Customer Two"])
+        rows = self.run_report(customer="Customer Two")
+        self.assertEqual(list(rows), ["Customer Two"])
+        self.assertEqual(rows["Customer Two"]["median_days_late"], 0)
+        self.assertEqual(rows["Customer Two"]["on_time_share"], 1)
+
+    def test_a_from_date_after_the_to_date_is_refused(self):
+        import frappe
+
+        with self.assertRaises(frappe.ValidationError):
+            self.run_report(from_date="2026-01-01", to_date="2025-12-31")
 
 
 if __name__ == "__main__":

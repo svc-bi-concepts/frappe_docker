@@ -145,8 +145,11 @@ def purchase_paid_in_windows(company, as_of):
     ]
 
 
-def paid_history(company, as_of, doctype, open_names):
-    """{party: [(due date, last payment date)]} of the doctype's invoices paid in the last year, not the open ones."""
+def paid_history(company, as_of, doctype, open_names, start=None, end=None):
+    """{party: [(due date, last payment date)]} of the doctype's invoices paid from start to end, not the open ones.
+    Default: the last year up to as_of."""
+    start = start or as_of - datetime.timedelta(days=LOOKBACK_DAYS)
+    end = end or as_of
     rows = frappe.db.sql(
         """select ple.against_voucher_no, max(ple.party), max(ple.posting_date)
         from `tabPayment Ledger Entry` ple
@@ -157,8 +160,8 @@ def paid_history(company, as_of, doctype, open_names):
             company,
             doctype,
             doctype,
-            as_of - datetime.timedelta(days=LOOKBACK_DAYS),
-            as_of,
+            start,
+            end,
         ),
     )
     rows = [(name, party, paid) for name, party, paid in rows if name not in open_names]

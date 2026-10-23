@@ -39,6 +39,7 @@ AREAS = [
             "Cash Flow Forecast",
             "Cash Flow Forecast Lines",
             "Cash Conversion Cycle",
+            "Customer Payment Behaviour",
             "Cash Forecast Settings",
         ],
     ),

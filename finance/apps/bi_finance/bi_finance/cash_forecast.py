@@ -170,6 +170,43 @@ def average_days_late(history):
     return round(statistics.mean((paid - due).days for due, paid in history))
 
 
+def payment_behaviour(history, open_items, as_of):
+    """One row per customer, for the Customer Payment Behaviour report: how each pays and what is overdue.
+
+    history: {customer: [(due, paid)]} of the invoices paid in the period, as paid_history gives it.
+    open_items: {invoice: (customer, amount owed, due)} of the invoices unpaid on as_of, as open_documents gives it.
+    Days late are paid less due, negative when paid early; on time is paid on or before the due date. mean_days_late
+    is average_days_late, so the report and the forecast agree. An open invoice is overdue when it is due before as_of;
+    the oldest is the one due longest ago. A customer with open items only has paid 0 and no days.
+    Sorted by the open overdue amount, then the median days late, both largest first.
+    """
+    overdue = collections.defaultdict(list)
+    for customer, amount, due in open_items.values():
+        if due < as_of:
+            overdue[customer].append((due, amount))
+    customers = set(history) | {customer for customer, _amount, _due in open_items.values()}
+    rows = []
+    for customer in customers:
+        pairs = history.get(customer, [])
+        late = [(paid - due).days for due, paid in pairs]
+        open_late = overdue.get(customer, [])
+        rows.append(
+            {
+                "customer": customer,
+                "paid": len(pairs),
+                "on_time_share": sum(1 for days in late if days <= 0) / len(late) if late else None,
+                "median_days_late": statistics.median(late) if late else None,
+                "max_days_late": max(late) if late else None,
+                "mean_days_late": average_days_late(pairs) if pairs else None,
+                "open_overdue_count": len(open_late),
+                "open_overdue_amount": sum(amount for _due, amount in open_late),
+                "oldest_overdue_days": (as_of - min(due for due, _amount in open_late)).days if open_late else None,
+            }
+        )
+    rows.sort(key=lambda row: (-row["open_overdue_amount"], -(row["median_days_late"] or 0), row["customer"]))
+    return rows
+
+
 def detect_period(dates, amounts):
     """The period a supplier's bills repeat on, from the median gap between them, as (period, median amount),
     or None when they have no fixed period. Needs two bills (one gap): a yearly cost has two in a look-back of a year.

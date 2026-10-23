@@ -95,6 +95,10 @@
     "modified": "2026-10-10 09:00:00.000000",
     "sha": "e97c1cc5a35c712e1ccfb82324513a3af4024cf20c0fc3ca678820094f4492df"
   },
+  "bi_finance/report/customer_payment_behaviour/customer_payment_behaviour.json": {
+    "modified": "2026-10-23 15:00:00.000000",
+    "sha": "71fd601226566bf7d32d96d06ba4110ea786ada90b38d185941041b67ef818c5"
+  },
   "bi_finance/report/mwst_pro_quartal/mwst_pro_quartal.json": {
     "modified": "2026-10-11 00:25:00.000000",
     "sha": "74e99d5618d48042d5bb35b684a59533cb9312156a4fdde72280c6277f02c8e4"
@@ -104,8 +108,8 @@
     "sha": "22e9434f432634574f9b0b4ac19e58d6710d4b54285a047321dc37736fea484e"
   },
   "bi_finance/workspace/treasury/treasury.json": {
-    "modified": "2026-10-12 12:00:00.000000",
-    "sha": "44b28edea44f7aa0fc291607cbbf7f57761d95b927594526ce4c7749bc6893fc"
+    "modified": "2026-10-23 15:00:00.000000",
+    "sha": "67dbe7a085849f9243938dd14b6ee51386377bd7e98127ac527c3c7f708bce64"
   },
   "bi_finance/workspace_sidebar/treasury/treasury.json": {
     "modified": "2026-10-11 15:00:00.000000",
