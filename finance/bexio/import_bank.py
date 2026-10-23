@@ -623,6 +623,21 @@ def claim_lines(results, file_lines, existing):
     return claimed
 
 
+def held_for_match(allocated, claimed):
+    """allocated as match takes it: the vouchers of a claimed bank file line belong to the bexio record that claims it.
+
+    The claim stamps that bexio_id on the line, so the next read gives the same; until then the record would find its own
+    voucher held by a bank file line. The vouchers of a line nobody claims stay FILE_LINE marks.
+    """
+    owner = {line["name"]: bexio_id for bexio_id, line in claimed.items()}
+    return {
+        key: owner.get(holder[len(FILE_LINE) :], holder)
+        if holder.startswith(FILE_LINE)
+        else holder
+        for key, holder in allocated.items()
+    }
+
+
 def claimed_reconciles(reconcile, claimed, allocations):
     """The reconciliations the loader makes, and the claimed lines it leaves alone: (reconcile, left bexio ids).
 
@@ -1166,7 +1181,11 @@ def main(argv):
         print(f"aborted: {err}", file=sys.stderr)
         return 2
 
-    matches = match(match_transactions(results, lookups), vouchers, allocated)
+    matches = match(
+        match_transactions(results, lookups),
+        vouchers,
+        held_for_match(allocated, claimed),
+    )
     reconcile, left = claimed_reconciles(reconcile_lines(matches), claimed, allocations)
     claims = [
         {"bexio_id": bexio_id, "name": line["name"]}
