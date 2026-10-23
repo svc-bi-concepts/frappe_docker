@@ -16,7 +16,7 @@ in the summary. A payment larger than what its invoice still owes is unmapped, n
 capped, unless the invoice owes nothing: then the excess is an advance (unallocated, on
 Erhaltene Anzahlungen, as bexio books it). What an invoice owes is counted over the
 mapped payments in date order, so an unmapped payment does not reduce it. A rerun maps the receipts an earlier run
-loaded (submitted Payment Entries with a bexio id) from the same start as the first run, and hands none of them over.
+loaded (submitted Payment Entries with a bexio id, or amended from one that kept it) from the same start as the first run, and hands none of them over.
 
 A receipt on a foreign-currency invoice that ERPNext holds in CHF (erp-h7dj books it at
 bexio's rate) is received in the CHF bexio booked to the bank for it, from the journal.
