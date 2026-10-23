@@ -10,6 +10,8 @@ and ACC-PINV counters do not move). A document is
 keyed by bexio_id: one that exists as a draft is updated in place, one that is submitted is skipped, and a
 name that another document holds is a conflict and is left alone. A rerun changes nothing that is already
 right. Each document is committed on its own, so a run that stops half way resumes where it stopped.
+A bank plan may also carry claims (import_bank.py): each stamps bexio_id on the bank file line it names, with a Comment,
+before anything else; the claimed bexio record is then no document of the plan.
 
 The loader runs as Administrator, as swiss-setup.py does: the API user may not name documents (the
 run is not a rights change). Only the core in apply_plan is tested offline (test_bexio_drafts.py); the
@@ -193,6 +195,44 @@ def apply_reconcile(plan, store):
     return counts, failures
 
 
+def apply_claims(plan, store):
+    """Stamp bexio_id on each bank file line the plan claims, with a Comment naming the claim: (counts, failures).
+
+    The line must still be a submitted bank file line with a transaction_id and no bexio_id, as import_bank found it; any
+    other state is a failure, listed by bexio id, and that line is left as it is. The stamp leaves the line's
+    reconciliation and its other fields alone, as camt's stamp does.
+    """
+    counts, failures = Counter(), []
+    for item in plan.get("claims", []):
+        bexio_id = str(item["bexio_id"])
+        name = item["name"]
+        try:
+            row = store.values("Bank Transaction", name)
+            if (
+                row.get("docstatus") != SUBMITTED
+                or row.get("bexio_id")
+                or not row.get("transaction_id")
+            ):
+                raise ValueError(
+                    "the bank line is no longer a submitted bank file line without a bexio_id"
+                )
+            store.set_bexio_id("Bank Transaction", name, bexio_id)
+            store.comment(
+                "Bank Transaction",
+                name,
+                f"bexio line {bexio_id} claimed this bank line",
+            )
+            store.commit()
+            counts["claimed"] += 1
+        except Exception as err:
+            store.rollback()
+            counts["failed"] += 1
+            failures.append(
+                ("Bank Transaction", bexio_id, f"{type(err).__name__}: {err}")
+            )
+    return counts, failures
+
+
 def relink(plan, store, write=True):
     """Set bexio_id on the submitted Journal Entries that an earlier run loaded without one: (counts, problems).
 
@@ -340,6 +380,18 @@ class FrappeStore:
             doctype, name, "bexio_id", bexio_id, update_modified=False
         )
 
+    def comment(self, doctype, name, text):
+        # the Comment is what shows a db_set stamp on the document (camt_import does the same)
+        self.frappe.get_doc(
+            {
+                "doctype": "Comment",
+                "comment_type": "Info",
+                "reference_doctype": doctype,
+                "reference_name": name,
+                "content": text,
+            }
+        ).insert(ignore_permissions=True)
+
     def allocated(self, name):
         """The vouchers a Bank Transaction is allocated to, as (doctype, name)."""
         rows = self.frappe.get_all(
@@ -379,9 +431,13 @@ def main(stdin):
         # check reports what relink would link; neither writes when a single item does not match exactly once
         counts, failures = relink(plan, FrappeStore(frappe), write=mode == "relink")
     else:
-        counts, failures = apply_plan(
+        # the claims first: a claimed bank file line gets its bexio_id before the documents and the reconciliations look for it
+        counts, failures = apply_claims(plan, FrappeStore(frappe))
+        more, more_failures = apply_plan(
             plan, FrappeStore(frappe), submit=mode == "submit"
         )
+        counts.update(more)
+        failures += more_failures
         if mode == "submit" and plan.get("reconcile"):
             more, more_failures = apply_reconcile(plan, FrappeStore(frappe))
             counts.update(more)

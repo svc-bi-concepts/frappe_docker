@@ -659,5 +659,77 @@ class Reconcile(unittest.TestCase):
         self.assertEqual((dict(counts), failures), ({}, []))
 
 
+class ClaimStore(FakeStore):
+    """The bank file lines: set_bexio_id stamps the line, and comment is recorded."""
+
+    def __init__(self, docs=None):
+        super().__init__(docs)
+        self.comments = []
+
+    def comment(self, doctype, name, text):
+        self.comments.append((doctype, name, text))
+
+
+def bank_file_line(name="BTN-F1", **changes):
+    fields = {
+        "bexio_id": None,
+        "docstatus": 1,
+        "transaction_id": "TX-1",
+        "status": "Unreconciled",
+    }
+    fields.update(changes)
+    return ("Bank Transaction", name, fields)
+
+
+class Claims(unittest.TestCase):
+    def test_a_claim_stamps_the_bexio_id_on_the_file_line_and_comments_it(self):
+        store = ClaimStore([bank_file_line()])
+        plan = {"documents": [], "claims": [{"bexio_id": "9001", "name": "BTN-F1"}]}
+        counts, failures = loader.apply_claims(plan, store)
+        self.assertEqual((dict(counts), failures), ({"claimed": 1}, []))
+        self.assertEqual(store.docs[("Bank Transaction", "BTN-F1")]["bexio_id"], "9001")
+        self.assertEqual(
+            store.comments,
+            [("Bank Transaction", "BTN-F1", "bexio line 9001 claimed this bank line")],
+        )
+        self.assertEqual(store.commits, 1)
+
+    def test_a_line_that_is_no_longer_a_bank_file_line_is_a_failure_and_stays_as_it_is(
+        self,
+    ):
+        store = ClaimStore(
+            [
+                bank_file_line("BTN-STAMPED", bexio_id="8000"),
+                bank_file_line("BTN-DRAFT", docstatus=0),
+                bank_file_line("BTN-NO-TX", transaction_id=None),
+            ]
+        )
+        plan = {
+            "documents": [],
+            "claims": [
+                {"bexio_id": "9001", "name": "BTN-STAMPED"},
+                {"bexio_id": "9002", "name": "BTN-DRAFT"},
+                {"bexio_id": "9003", "name": "BTN-NO-TX"},
+            ],
+        }
+        counts, failures = loader.apply_claims(plan, store)
+        self.assertEqual(dict(counts), {"failed": 3})
+        self.assertEqual(
+            [bexio_id for _, bexio_id, _ in failures], ["9001", "9002", "9003"]
+        )
+        self.assertEqual(
+            store.docs[("Bank Transaction", "BTN-STAMPED")]["bexio_id"], "8000"
+        )
+        self.assertIsNone(store.docs[("Bank Transaction", "BTN-DRAFT")]["bexio_id"])
+        self.assertEqual(store.comments, [])
+        self.assertEqual(store.rollbacks, 3)
+
+    def test_a_plan_without_claims_stamps_nothing(self):
+        store = ClaimStore([bank_file_line()])
+        counts, failures = loader.apply_claims({"documents": []}, store)
+        self.assertEqual((dict(counts), failures), ({}, []))
+        self.assertIsNone(store.docs[("Bank Transaction", "BTN-F1")]["bexio_id"])
+
+
 if __name__ == "__main__":
     unittest.main()

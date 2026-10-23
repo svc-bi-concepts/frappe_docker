@@ -614,6 +614,13 @@ a rerun does not plan it again.
    else the one named in the bank title; else a combination of Payment and Journal Entries within 5 days. A voucher that
    another open line is also near, or that ERPNext holds for another transaction, is not taken. The rest stays open,
    with its reason in the `--unmatched` file.
+   A bank file (camt, from bank_statement_upload) may have brought a line before bexio did. Its bexio record is then a
+   claim, not a new document: the same account, deposit, withdrawal, and the bexio value date equal to the file line's
+   value or booking date, each file line taken once (the mirror of camt's rule "bexio"). The loader stamps the
+   bexio_id on that line and leaves a Comment; no second Bank Transaction is inserted. The dry run and `--check` count
+   the claims apart ("claimed from bank file"). A claimed line that bexio's match would reconcile is reconciled as
+   any other; one already reconciled to other vouchers is left, and listed in `--unmatched`. Either order is safe: a
+   bexio line that came first is stamped with the transaction_id by the bank file import.
    `import_bank.py --cancel LIST [--confirm]` cancels the Bank Transactions named in a private list file (one name per
    line), only where they are submitted, on the Wise CHF account and unallocated; without `--confirm` it only checks
    and prints the count per class. A cancelled line keeps its trace and posts no GL. It was used once, for the August

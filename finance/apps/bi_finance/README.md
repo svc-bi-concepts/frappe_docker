@@ -62,6 +62,12 @@ Invoice prints, with the QR code drawn on our own server (no external host, see
   `camt_import` (the Bank Account is proposed from the file's IBAN; a camt or an MT940 file), the summary as the dry run gave it, and the count and who of the import. An upload imports once,
   after a dry run on the same file; a failed run leaves the record Failed and its ledger writes rolled back.
   Each stamp of a bexio line leaves a Comment on that Bank Transaction, naming the upload and the date.
+  Both orders are safe. A bexio line that came first is stamped with the transaction_id (rule "bexio" above). A file
+  line that came first is the mirror: when the bexio import later brings the same line (the same account, deposit,
+  withdrawal, and the bexio value date equal to the file line's value or booking date), `import_bank.py` claims it.
+  It stamps bexio_id on the file line and inserts no second Bank Transaction; the claim is counted apart
+  ("claimed from bank file") and leaves a Comment "bexio line <id> claimed this bank line". Each file line is
+  claimed once, and a line that already holds a bexio_id is never claimed.
 - `bi_finance/test_bank_statement_upload.py`: offline tests of the record, the stamp comment and the .json,
   with the frappe calls mocked; run in the image as `bi_finance.test_bank_statement_upload`.
 - `bi_finance/cash_forecast.py`: the 13-week cash forecast without the site: the weeks of each line, the
