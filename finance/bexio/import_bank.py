@@ -4,6 +4,8 @@ Step four of the bexio pipeline, after import_master.py has made the Bank Accoun
 function takes one export record and the lookups and returns the ERPNext Bank Transaction as a dict, not yet
 inserted. nothing is written to ERPNext here except by --cancel --confirm: --dry-run reads ERPNext and prints totals only;
 --write keeps the documents and their reconciliations in a private file for the loader (bexio-drafts.py, submit mode).
+A bexio record that a bank file's line already holds (a Bank Transaction with a transaction_id and no bexio_id, the same
+account, deposit, withdrawal and date) is a claim, not a document: the loader stamps its bexio_id on that line (claim_lines).
 
 The export's bank_transactions.json has amount unsigned (always positive) and type CREDIT (money in) or DEBIT
 (money out). status says whether bexio has booked the transaction: reconciled and auto_reconciled are booked
@@ -524,6 +526,82 @@ def kept_allocations(matches, allocated):
     )
 
 
+def file_lines_from_erp(erp, accounts):
+    """The Bank Transactions a bank file brought (transaction_id set) that bexio has not stamped (bexio_id empty), submitted,
+    on the given Bank Accounts: the lines claim_lines may claim."""
+    return erp.list(
+        "Bank Transaction",
+        [
+            ["transaction_id", "is", "set"],
+            ["bexio_id", "is", "not set"],
+            ["docstatus", "=", 1],
+            ["bank_account", "in", accounts],
+        ],
+        [
+            "name",
+            "bank_account",
+            "value_date",
+            "booking_date",
+            "deposit",
+            "withdrawal",
+            "status",
+        ],
+    )
+
+
+def _same_line(file_line, doc):
+    """camt's rule 'bexio' (camt._same_line) read from the bexio side: the same account, deposit and withdrawal, and the
+    bexio record's value date is the file line's value date or booking date."""
+    return (
+        file_line["bank_account"] == doc["bank_account"]
+        and cents(file_line["deposit"]) == cents(doc["deposit"])
+        and cents(file_line["withdrawal"]) == cents(doc["withdrawal"])
+        and doc["date"] in (file_line.get("value_date"), file_line.get("booking_date"))
+    )
+
+
+def claim_lines(results, file_lines, existing):
+    """The bexio records that a bank file's line already holds: {bexio_id: file line}, each file line taken once.
+
+    The mirror of camt's rule 'bexio' (camt.plan): the bexio record that comes in after the file line claims it, so the
+    loader stamps bexio_id on the file line and inserts no second line. Taken in bexio id order, so a rerun claims the
+    same lines. A file line that already holds a bexio_id is no candidate, and so is a bexio record that ERPNext
+    already has (existing: the bexio_ids on Bank Transactions).
+    """
+    free = sorted(
+        (line for line in file_lines if not line.get("bexio_id")),
+        key=lambda line: line["name"],
+    )
+    claimed = {}
+    for r in sorted((r for r in results if r["doc"]), key=lambda r: r["bexio_id"]):
+        if r["bexio_id"] in existing:
+            continue
+        line = next((f for f in free if _same_line(f, r["doc"])), None)
+        if line is not None:
+            free.remove(line)
+            claimed[r["bexio_id"]] = line
+    return claimed
+
+
+def claimed_reconciles(reconcile, claimed, allocations):
+    """The reconciliations the loader makes, and the claimed lines it leaves alone: (reconcile, left bexio ids).
+
+    A claimed line still Unreconciled is reconciled like any other. One already reconciled keeps its vouchers, and is
+    listed in left when they are not the ones the match names. allocations: {file line name: {(doctype, name)}}, for the
+    claimed lines that are reconciled.
+    """
+    kept, left = [], []
+    for item in reconcile:
+        line = claimed.get(item["bexio_id"])
+        if line is None or line["status"] == "Unreconciled":
+            kept.append(item)
+            continue
+        wanted = {(v["doctype"], v["name"]) for v in item["vouchers"]}
+        if allocations.get(line["name"], set()) != wanted:
+            left.append(item["bexio_id"])
+    return kept, left
+
+
 def reconcile_lines(matches):
     """What the loader reconciles: each matched transaction with its vouchers, by doctype and name."""
     return [
@@ -730,13 +808,15 @@ def _add(totals, key, sum_in, sum_out, reconciled):
     row[3] += int(reconciled)
 
 
-def live_check(erp_rows, results, matches, lookups):
+def live_check(erp_rows, results, matches, lookups, claimed=None):
     """The Bank Transactions in ERPNext against the dry run, per bank account and year: (table lines, difference lines).
 
     A document is right when it is submitted, with the account, date, deposit and withdrawal of its mapping, and status
-    Reconciled when the match found its vouchers, Unreconciled otherwise. The table shows each figure as dry run / ERPNext;
-    the differences name bexio ids only.
+    Reconciled when the match found its vouchers, Unreconciled otherwise. A claimed bexio id is the bank file's line
+    (claimed: {bexio_id: file line}): its date stays the file's, and its status is the file line's, Reconciled only
+    when the match took it. The table shows each figure as dry run / ERPNext; the differences name bexio ids only.
     """
+    claimed = claimed or {}
     names = {v["name"]: k for k, v in lookups["bank_account"].items()}
     live = {row["bexio_id"]: row for row in erp_rows}
     dry, found = collections.OrderedDict(), collections.OrderedDict()
@@ -760,13 +840,24 @@ def live_check(erp_rows, results, matches, lookups):
             cents(row["withdrawal"]),
             row["status"] == "Reconciled",
         )
+        if r["bexio_id"] in claimed:
+            before = claimed[r["bexio_id"]]["status"]
+            status = (
+                ("Reconciled" if reconciled else "Unreconciled")
+                if before == "Unreconciled"
+                else before
+            )
+            date_ok = True
+        else:
+            status = "Reconciled" if reconciled else "Unreconciled"
+            date_ok = row["date"] == doc["date"]
         same = (
             row["docstatus"] == 1
             and row["bank_account"] == doc["bank_account"]
-            and row["date"] == doc["date"]
+            and date_ok
             and cents(row["deposit"]) == cents(doc["deposit"])
             and cents(row["withdrawal"]) == cents(doc["withdrawal"])
-            and row["status"] == ("Reconciled" if reconciled else "Unreconciled")
+            and row["status"] == status
         )
         if not same:
             differences.append(
@@ -858,10 +949,11 @@ def cancel_lines(erp, names, account, confirm):
     return lines
 
 
-def write_documents(results, path, reconcile=()):
+def write_documents(results, path, reconcile=(), claims=()):
     """The mapped Bank Transactions and their reconciliations, as the loader takes them, into the private file; returns the number of documents.
 
-    Each document is keyed by bexio_id; the loader inserts and submits it, then reconciles the ones in reconcile.
+    Each document is keyed by bexio_id; the loader inserts and submits it, then reconciles the ones in reconcile. The
+    claims are stamped on the bank file lines first (the loader's apply_claims); a claimed record is not in results.
     """
     documents = [
         {
@@ -875,7 +967,14 @@ def write_documents(results, path, reconcile=()):
     ]
     write_private(
         path,
-        json.dumps({"documents": documents, "reconcile": list(reconcile)}, indent=1),
+        json.dumps(
+            {
+                "documents": documents,
+                "reconcile": list(reconcile),
+                "claims": list(claims),
+            },
+            indent=1,
+        ),
     )
     return len(documents)
 
@@ -989,31 +1088,49 @@ def main(argv):
         vouchers = read_vouchers(erp, gl_accounts)
         allocated = read_allocated(erp)
         balances = balance_lines(erp, lookups, export_dir) if args.balances else None
-        live_rows = (
-            erp.list(
-                "Bank Transaction",
-                [["bexio_id", "is", "set"]],
-                [
-                    "name",
-                    "bexio_id",
-                    "bank_account",
-                    "date",
-                    "deposit",
-                    "withdrawal",
-                    "status",
-                    "docstatus",
-                ],
-            )
-            if args.check
-            else None
+        # every Bank Transaction with a bexio_id: the --check rows, and the bexio records ERPNext already has
+        live_rows = erp.list(
+            "Bank Transaction",
+            [["bexio_id", "is", "set"]],
+            [
+                "name",
+                "bexio_id",
+                "bank_account",
+                "date",
+                "deposit",
+                "withdrawal",
+                "status",
+                "docstatus",
+            ],
         )
+        file_lines = file_lines_from_erp(
+            erp, [a["name"] for a in lookups["bank_account"].values()]
+        )
+        results = plan(records, lookups, meta)
+        claimed = claim_lines(
+            results, file_lines, {row["bexio_id"] for row in live_rows}
+        )
+        allocations = {
+            line["name"]: {
+                (p["payment_document"], p["payment_entry"])
+                for p in erp.get("Bank Transaction", line["name"]).get(
+                    "payment_entries"
+                )
+                or []
+            }
+            for line in claimed.values()
+            if line["status"] != "Unreconciled"
+        }
     except im.ErpError as err:
         print(f"aborted: {err}", file=sys.stderr)
         return 2
 
-    results = plan(records, lookups, meta)
     matches = match(match_transactions(results, lookups), vouchers, allocated)
-    reconcile = reconcile_lines(matches)
+    reconcile, left = claimed_reconciles(reconcile_lines(matches), claimed, allocations)
+    claims = [
+        {"bexio_id": bexio_id, "name": line["name"]}
+        for bexio_id, line in sorted(claimed.items())
+    ]
     done = set(allocated.values())
     kept = kept_allocations(matches, allocated)
     print(f"bank transactions from {export_dir}")
@@ -1027,19 +1144,27 @@ def main(argv):
     print(
         f"already reconciled: {len(done)}, whose match names other vouchers: {len(kept)}"
     )
+    print(f"claimed from bank file: {len(claimed)}")
     if balances is not None:
         print("")
         print(balances)
-    if live_rows is not None:
-        table, differences = live_check(live_rows, results, matches, lookups)
+    if args.check:
+        table, differences = live_check(live_rows, results, matches, lookups, claimed)
         print("")
         print("\n".join(table))
         write_private(args.differences, "\n".join(differences))
         print(f"{len(differences)} differences in {args.differences}")
     if args.write:
         print(
-            "wrote {} documents and {} reconciliations to the private file for the loader; nothing was written to ERPNext".format(
-                write_documents(results, args.write, reconcile), len(reconcile)
+            "wrote {} documents, {} reconciliations and {} claims to the private file for the loader; nothing was written to ERPNext".format(
+                write_documents(
+                    [r for r in results if r["bexio_id"] not in claimed],
+                    args.write,
+                    reconcile,
+                    claims,
+                ),
+                len(reconcile),
+                len(claims),
             )
         )
     else:
@@ -1047,11 +1172,18 @@ def main(argv):
     lines = detail_lines(results)
     print(f"{len(lines)} unmapped records in {args.report}")
     write_private(args.report, "\n".join(lines))
-    unmatched = unmatched_lines(results, matches) + [
-        f"Bank Transaction {bexio_id}: already reconciled, but the match names other vouchers"
-        for bexio_id in kept
-        if matches.get(bexio_id, (None,))[0]
-    ]
+    unmatched = (
+        unmatched_lines(results, matches)
+        + [
+            f"Bank Transaction {bexio_id}: already reconciled, but the match names other vouchers"
+            for bexio_id in kept
+            if matches.get(bexio_id, (None,))[0]
+        ]
+        + [
+            f"Bank Transaction {bexio_id}: claimed bank line already reconciled to other vouchers"
+            for bexio_id in left
+        ]
+    )
     print(f"{len(unmatched)} transactions left unreconciled in {args.unmatched}")
     write_private(args.unmatched, "\n".join(unmatched))
     return 1 if lines else 0

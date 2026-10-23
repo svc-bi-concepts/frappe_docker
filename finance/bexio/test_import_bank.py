@@ -1259,5 +1259,217 @@ class CancelTest(unittest.TestCase):
         self.assertEqual(erp.cancelled, [])
 
 
+def file_line(
+    name="BTN-F1",
+    deposit=1500.0,
+    withdrawal=0.0,
+    value_date="2026-03-31",
+    booking_date="2026-03-31",
+    bank_account="Hauptkonto - Testbank AG",
+    status="Unreconciled",
+    **extra,
+):
+    """A Bank Transaction that a bank file brought: a transaction_id and no bexio_id, as claim_lines reads it."""
+    line = {
+        "name": name,
+        "bank_account": bank_account,
+        "value_date": value_date,
+        "booking_date": booking_date,
+        "deposit": deposit,
+        "withdrawal": withdrawal,
+        "status": status,
+    }
+    line.update(extra)
+    return line
+
+
+def reconciliation(bexio_id, *names):
+    """A reconcile item of the plan: the Bank Transaction's bexio id and its Payment Entries, by name."""
+    return {
+        "bexio_id": bexio_id,
+        "vouchers": [{"doctype": "Payment Entry", "name": n} for n in names],
+    }
+
+
+class ClaimTest(unittest.TestCase):
+    """The rule 'bexio' from the bexio side: a bexio record that a file line holds claims it and no second line is made."""
+
+    def test_a_bexio_record_that_a_file_line_holds_is_a_claim(self):
+        results = ib.plan([CHF_IN], LOOKUPS)
+        claims = ib.claim_lines(results, [file_line()], set())
+        self.assertEqual(list(claims), ["9001"])
+        self.assertEqual(claims["9001"]["name"], "BTN-F1")
+
+    def test_the_booking_date_of_the_file_line_also_claims(self):
+        results = ib.plan([CHF_IN], LOOKUPS)  # value date 2026-03-31
+        line = file_line(value_date="2026-03-30", booking_date="2026-03-31")
+        self.assertEqual(list(ib.claim_lines(results, [line], set())), ["9001"])
+
+    def test_a_second_identical_bexio_record_takes_the_next_file_line_or_is_new_when_none_is_left(
+        self,
+    ):
+        second = record(CHF_IN, id=9010)
+        results = ib.plan([CHF_IN, second], LOOKUPS)
+        both = ib.claim_lines(
+            results, [file_line("BTN-F2"), file_line("BTN-F1")], set()
+        )
+        self.assertEqual(
+            {k: v["name"] for k, v in both.items()},
+            {"9001": "BTN-F1", "9010": "BTN-F2"},
+        )
+        one = ib.claim_lines(results, [file_line("BTN-F1")], set())
+        self.assertEqual(
+            list(one), ["9001"]
+        )  # the first in bexio id order; 9010 stays a new document
+
+    def test_a_file_line_that_already_holds_a_bexio_id_is_never_claimed(self):
+        results = ib.plan([CHF_IN], LOOKUPS)
+        line = file_line(bexio_id="8000")
+        self.assertEqual(ib.claim_lines(results, [line], set()), {})
+
+    def test_a_different_amount_or_a_date_outside_value_and_booking_date_is_new(self):
+        results = ib.plan([record(CHF_IN, amount=1500.5)], LOOKUPS)
+        self.assertEqual(ib.claim_lines(results, [file_line()], set()), {})
+        results = ib.plan([CHF_IN], LOOKUPS)
+        far = file_line(value_date="2026-03-20", booking_date="2026-03-21")
+        self.assertEqual(ib.claim_lines(results, [far], set()), {})
+        out = file_line(deposit=0.0, withdrawal=1500.0)  # the other direction
+        self.assertEqual(ib.claim_lines(results, [out], set()), {})
+        skewed = file_line(
+            withdrawal=7.0
+        )  # the deposit agrees, the withdrawal does not
+        self.assertEqual(ib.claim_lines(results, [skewed], set()), {})
+
+    def test_a_bexio_record_erpnext_already_has_is_never_claimed(self):
+        results = ib.plan([CHF_IN], LOOKUPS)
+        self.assertEqual(ib.claim_lines(results, [file_line()], {"9001"}), {})
+
+    def test_a_file_line_on_another_bank_account_is_not_claimed(self):
+        results = ib.plan([CHF_IN], LOOKUPS)
+        line = file_line(bank_account="Fremdwaehrung - Zweitbank AG")
+        self.assertEqual(ib.claim_lines(results, [line], set()), {})
+
+    def test_a_claimed_line_still_unreconciled_is_reconciled_like_any_other(self):
+        reconcile = [reconciliation("9001", "PE-1")]
+        kept, left = ib.claimed_reconciles(
+            reconcile, {"9001": file_line(status="Unreconciled")}, {}
+        )
+        self.assertEqual(kept, reconcile)
+        self.assertEqual(left, [])
+
+    def test_a_claimed_line_reconciled_to_other_vouchers_is_left_and_listed(self):
+        reconcile = [reconciliation("9001", "PE-1")]
+        kept, left = ib.claimed_reconciles(
+            reconcile,
+            {"9001": file_line(status="Reconciled")},
+            {"BTN-F1": {("Payment Entry", "PE-2")}},
+        )
+        self.assertEqual(kept, [])
+        self.assertEqual(left, ["9001"])
+
+    def test_a_claimed_line_reconciled_to_the_matched_vouchers_is_left_unlisted(self):
+        reconcile = [reconciliation("9001", "PE-1")]
+        kept, left = ib.claimed_reconciles(
+            reconcile,
+            {"9001": file_line(status="Reconciled")},
+            {"BTN-F1": {("Payment Entry", "PE-1")}},
+        )
+        self.assertEqual(kept, [])
+        self.assertEqual(left, [])
+
+    def test_a_claimed_line_keeps_the_bank_files_date_in_the_live_check(self):
+        results = ib.plan([CHF_IN], LOOKUPS)  # the bexio date is 2026-03-31
+        matches = {"9001": (None, [], "no voucher of that amount on the account")}
+        row = {
+            "name": "BTN-F1",
+            "bexio_id": "9001",
+            "bank_account": "Hauptkonto - Testbank AG",
+            "date": "2026-03-30",  # the booking date of the file line
+            "deposit": 1500.0,
+            "withdrawal": 0.0,
+            "status": "Unreconciled",
+            "docstatus": 1,
+        }
+        claimed = {"9001": file_line(status="Unreconciled")}
+        _, differences = ib.live_check([row], results, matches, LOOKUPS, claimed)
+        self.assertEqual(differences, [])
+        _, differences = ib.live_check([row], results, matches, LOOKUPS)
+        self.assertEqual(
+            differences,
+            ["Bank Transaction 9001: differs (status Unreconciled, submitted True)"],
+        )
+
+
+class ClaimMainTest(unittest.TestCase):
+    class Erp(FakeErp):
+        """The file lines are the Bank Transactions with a transaction_id; the others are as FakeErp gives them."""
+
+        def __init__(self, file_lines):
+            super().__init__()
+            self.file_lines = file_lines
+
+        def list(self, doctype, filters=None, fields=("name",)):
+            if doctype == "Bank Transaction" and any(
+                f[0] == "transaction_id" for f in filters or []
+            ):
+                return self.file_lines
+            return super().list(doctype, filters, fields)
+
+        def meta(self, doctype):
+            return {
+                "fields": [
+                    {"fieldname": f}
+                    for f in (
+                        "bexio_id",
+                        "date",
+                        "bank_account",
+                        "currency",
+                        "deposit",
+                        "withdrawal",
+                        "description",
+                        "reference_number",
+                        "company",
+                        "value_date",
+                        "booking_date",
+                    )
+                ]
+            }
+
+    def test_a_claim_is_counted_and_written_for_the_loader_instead_of_a_document(self):
+        with tempfile.TemporaryDirectory() as export:
+            with open(os.path.join(export, "bank_transactions.json"), "w") as f:
+                json.dump([CHF_IN, CHF_OUT], f)
+            with open(os.path.join(export, "bank_accounts.json"), "w") as f:
+                json.dump([{"id": 11, "currency_id": 1}], f)
+            with open(os.path.join(export, "currencies.json"), "w") as f:
+                json.dump([{"id": 1, "name": "CHF"}], f)
+            docs = os.path.join(export, "bank-docs.json")
+            erp = self.Erp([file_line()])
+            with mock.patch.object(
+                im.Erp, "from_file", return_value=erp
+            ), contextlib.redirect_stdout(io.StringIO()) as out:
+                code = ib.main(
+                    [
+                        "--write",
+                        docs,
+                        "--export",
+                        export,
+                        "--report",
+                        os.path.join(export, "report.txt"),
+                        "--unmatched",
+                        os.path.join(export, "unmatched.txt"),
+                    ]
+                )
+            with open(docs) as f:
+                written = json.load(f)
+        self.assertEqual(code, 0)
+        self.assertIn("claimed from bank file: 1", out.getvalue())
+        self.assertIn(
+            "wrote 1 documents, 0 reconciliations and 1 claims", out.getvalue()
+        )
+        self.assertEqual([d["bexio_id"] for d in written["documents"]], ["9002"])
+        self.assertEqual(written["claims"], [{"bexio_id": "9001", "name": "BTN-F1"}])
+
+
 if __name__ == "__main__":
     unittest.main()
