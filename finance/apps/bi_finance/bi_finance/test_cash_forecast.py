@@ -65,6 +65,71 @@ class CustomerDaysLate(unittest.TestCase):
         self.assertEqual(cf.expected_receipt(D(2026, 10, 1), 10), D(2026, 10, 11))
 
 
+class PaymentBehaviour(unittest.TestCase):
+    def test_on_time_early_and_late_payments(self):
+        history = {
+            "Customer A": [
+                (D(2026, 1, 10), D(2026, 1, 10)),  # on the due date: on time, 0 days
+                (D(2026, 2, 10), D(2026, 2, 8)),  # paid early: -2 days
+                (D(2026, 3, 10), D(2026, 3, 20)),  # 10 days late
+            ]
+        }
+        [row] = cf.payment_behaviour(history, {}, AS_OF)
+        self.assertEqual(row["customer"], "Customer A")
+        self.assertEqual(row["paid"], 3)
+        self.assertAlmostEqual(row["on_time_share"], 2 / 3)
+        self.assertEqual(row["median_days_late"], 0)
+        self.assertEqual(row["max_days_late"], 10)
+
+    def test_the_median_of_an_even_count_is_the_mean_of_the_two_middle_values(self):
+        history = {
+            "Customer B": [
+                (D(2026, 1, 1), D(2026, 1, 5)),  # 4 days late
+                (D(2026, 2, 1), D(2026, 2, 11)),  # 10 days late
+            ]
+        }
+        [row] = cf.payment_behaviour(history, {}, AS_OF)
+        self.assertEqual(row["median_days_late"], 7)
+        self.assertEqual(row["on_time_share"], 0)
+
+    def test_open_items_only_is_a_customer_with_nothing_paid(self):
+        open_items = {
+            "SINV-1": ("Customer C", 100.0, D(2026, 9, 1)),
+            "SINV-2": ("Customer C", 50.0, D(2026, 9, 20)),
+        }
+        [row] = cf.payment_behaviour({}, open_items, AS_OF)
+        self.assertEqual(row["paid"], 0)
+        self.assertIsNone(row["on_time_share"])
+        self.assertIsNone(row["median_days_late"])
+        self.assertEqual(row["open_overdue_count"], 2)
+        self.assertEqual(row["open_overdue_amount"], 150.0)
+        self.assertEqual(row["oldest_overdue_days"], 39)
+
+    def test_an_invoice_due_on_the_as_of_date_is_not_overdue(self):
+        open_items = {
+            "SINV-3": ("Customer D", 80.0, AS_OF),
+            "SINV-4": ("Customer D", 20.0, D(2026, 10, 20)),
+        }
+        [row] = cf.payment_behaviour({}, open_items, AS_OF)
+        self.assertEqual(row["open_overdue_count"], 0)
+        self.assertEqual(row["open_overdue_amount"], 0)
+        self.assertIsNone(row["oldest_overdue_days"])
+
+    def test_rows_are_sorted_by_open_overdue_then_median_days_late(self):
+        history = {
+            "Quick": [(D(2026, 1, 1), D(2026, 1, 1))],  # median 0, nothing open
+            "Late": [(D(2026, 1, 1), D(2026, 1, 9))],  # median 8, nothing open
+        }
+        open_items = {
+            "SINV-5": ("Owes", 300.0, D(2026, 9, 1)),
+            "SINV-6": ("Owes less", 100.0, D(2026, 9, 1)),
+        }
+        rows = cf.payment_behaviour(history, open_items, AS_OF)
+        self.assertEqual(
+            [row["customer"] for row in rows], ["Owes", "Owes less", "Late", "Quick"]
+        )
+
+
 class RecurringCosts(unittest.TestCase):
     def test_monthly_is_detected_with_the_median_amount(self):
         found = cf.detect_period(

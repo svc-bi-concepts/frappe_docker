@@ -117,6 +117,11 @@ Invoice prints, with the QR code drawn on our own server (no external host, see
   dashboard chart `bi_finance/bi_finance/bi_finance/dashboard_chart/cash_conversion_trend` (the module folder, where migrate syncs them).
 - `bi_finance/test_cash_conversion.py`: offline tests with invented numbers: `python3 -m unittest bi_finance.test_cash_conversion`
   from this directory (no frappe needed).
+- `bi_finance/bi_finance/bi_finance/report/customer_payment_behaviour/`: the report "Customer Payment Behaviour" on the
+  Cash Forecast card: per customer, the Sales Invoices paid from the From Date to the To Date (the last payment is the
+  paid date, as the forecast reads them) with the share paid on time, median and maximum days late, and the open
+  overdue invoices as of the To Date. The row arithmetic is `payment_behaviour` in `cash_forecast.py`; `paid_history`
+  takes the dates (its default is the last year, so the forecast does not move).
 - Synced JSON (the module folder): migrate skips a file whose `modified` the site already has, so a change without a new stamp never ships.
   Change a synced JSON, bump its `modified` to now (UTC, `2026-10-10 10:35:00.000000`), then update its `sha` and `modified` in
   `bi_finance/synced_manifest.json`. `python3 -m unittest bi_finance.test_layout` fails until it does and prints the new sha and stamp.
