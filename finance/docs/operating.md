@@ -31,9 +31,9 @@ document that explains the step is in brackets. Conventions for labels and butto
    card), check the list and the total, submit, then **Download bank file**. Upload that file in
    UBS e-banking; ERPNext sends nothing to a bank. [`finance/docs/payment-runs.md`, Run;
    `finance/docs/operating.md`, Expenses]
-6. **Who pays late:** once a month, **Customer Payment Behaviour** (Cash Forecast card) shows per customer the
-   share paid on time, the median and the maximum days late, and the open overdue invoices, largest first. It reads
-   the last year of payments up to today; the customer filter narrows it to one. [`finance/apps/bi_finance/README.md`]
+6. **Who pays late:** once a month, use **Customer Payment Behaviour** (Cash Forecast card). By default it covers
+   the last 365 days through today; change From Date and To Date to review another period, or filter to one customer.
+   [`finance/apps/bi_finance/README.md`]
 
 ## Expenses (on demand)
 
