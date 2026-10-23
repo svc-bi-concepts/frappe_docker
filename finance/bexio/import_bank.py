@@ -631,9 +631,11 @@ def held_for_match(allocated, claimed):
     """
     owner = {line["name"]: bexio_id for bexio_id, line in claimed.items()}
     return {
-        key: owner.get(holder[len(FILE_LINE) :], holder)
-        if holder.startswith(FILE_LINE)
-        else holder
+        key: (
+            owner.get(holder[len(FILE_LINE) :], holder)
+            if holder.startswith(FILE_LINE)
+            else holder
+        )
         for key, holder in allocated.items()
     }
 
