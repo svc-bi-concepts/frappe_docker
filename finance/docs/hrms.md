@@ -4,7 +4,7 @@ Decision document for running Swiss payroll in ERPNext v16 (ERPNext `v16.50.0`),
 the way `swiss.md` decides the Swiss accounting. Benchi decided on 2026-10-10: full
 HRMS in ERPNext, with the payroll history from bexio included. This document says how,
 and what is still open. HRMS is in `finance/apps.json` (live) and `finance/apps-copy.json` (the copy
-site, see [Copy stack for the HR train](#copy-stack-for-the-hr-train)). Payroll runs on the live site too (Decision 2026-10-10, below):
+site, see [Copy site](#copy-site)). Payroll runs on the live site too (Decision 2026-10-10, below):
 the live stack runs the HRMS image named in `finance-local.yml` (bi11), with `hrms` and `bi_payroll`
 installed on `frontend`.
 
