@@ -1,0 +1,69 @@
+name: sharepoint
+about: >-
+  Finance's SharePoint areas through the local broker. Area "out" is
+  Shared Drive/Finance/ws_finance (read and write); other areas are the
+  configured folders (read only). Paths are relative to each area's folder.
+base: http://127.0.0.1:8817
+credential:
+  env: SP_BROKER_TOKEN
+  header: "Authorization: Bearer {credential}"
+check: ping
+calls:
+  ping:
+    kind: read
+    about: Check the broker and see the areas it serves
+    request: { method: POST, path: /ping, body: {} }
+    answer: { max: 262144 }
+  ls:
+    kind: read
+    about: List a folder; omit path for the area's root
+    params:
+      area:
+        { type: string, pattern: "^[A-Za-z0-9_-]{1,40}$", max: 40, log: true }
+      path:
+        {
+          type: string,
+          pattern: '^[^\\:*?"<>|]{1,400}$',
+          max: 400,
+          optional: true,
+          log: true,
+        }
+    request:
+      { method: POST, path: /ls, body: { area: "{area}", path: "{path}" } }
+    answer: { max: 262144 }
+  get_file:
+    kind: read
+    about: Download one file (up to 250 MB) into the local inbox
+    params:
+      area:
+        { type: string, pattern: "^[A-Za-z0-9_-]{1,40}$", max: 40, log: true }
+      path:
+        { type: string, pattern: '^[^\\:*?"<>|]{1,400}$', max: 400, log: true }
+    request:
+      {
+        method: POST,
+        path: /get_file,
+        body: { area: "{area}", path: "{path}" },
+      }
+    answer: { max: 262144 }
+  put_file:
+    kind: update
+    about: Upload one file from work/out into ws_finance (up to 250 MB)
+    params:
+      src:
+        {
+          type: string,
+          pattern: '^/Users/bsaladin/ws_yardr_finance/work/out/[^\0]{1,400}$',
+          max: 443,
+          log: true,
+        }
+      path:
+        { type: string, pattern: '^[^\\:*?"<>|]{1,400}$', max: 400, log: true }
+      replace: { type: enum, values: ["true", "false"], optional: true }
+    request:
+      {
+        method: POST,
+        path: /put_file,
+        body: { src: "{src}", path: "{path}", replace: "{replace}" },
+      }
+    answer: { max: 262144 }
