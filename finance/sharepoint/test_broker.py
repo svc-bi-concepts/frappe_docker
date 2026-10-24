@@ -1,5 +1,7 @@
 """Offline broker tests; Graph is faked and all ids/names are invented."""
 
+import hashlib
+import io
 import json
 import os
 import tempfile
@@ -242,17 +244,246 @@ class BrokerTest(unittest.TestCase):
         self.assertFalse(broker.authorized("", "secret"))
         self.assertFalse(broker.authorized("Bearer secret", ""))
 
-    def test_download_error_does_not_expose_key(self):
-        key = "invented-private-key"
-        with mock.patch.object(broker, "GRAPH_CLIENT", self.client):
-            err = broker.Fail(502, "request failed")
-        self.assertNotIn(key, str(err))
+    def test_replacing_a_folder_is_refused(self):
+        self.client.existing = True
+        original = self.client.request
+
+        def request(method, url, **kwargs):
+            if method == "GET":
+                return Reply(value={"folder": {}})
+            return original(method, url, **kwargs)
+
+        with mock.patch.object(broker, "graph", side_effect=request):
+            with self.assertRaises(broker.Fail) as err:
+                broker.do_put_file(
+                    {"src": self.local_file(), "path": "folder", "replace": "true"}
+                )
+        self.assertEqual(err.exception.code, 409)
+        self.assertFalse(self.client.calls)
 
     def test_get_file_unknown_area_fails_before_graph_call(self):
         with self.assertRaises(broker.Fail) as caught:
             broker.do_get_file({"area": "absent", "path": "one.txt"})
         self.assertEqual(caught.exception.code, 400)
         self.assertEqual(self.client.calls, [])
+
+
+class GraphTest(unittest.TestCase):
+    def client(self, transport):
+        client = broker.Graph(
+            {
+                "tenant_id": "tenant-invented",
+                "client_id": "client-invented",
+                "thumbprint": "ab" * 20,
+                "drive_id": "drive-invented",
+                "folders": {"sample": "item-invented"},
+                "out": {"drive_id": "drive-output", "item_id": "item-output"},
+            },
+            "invented-private-key",
+            transport=transport,
+        )
+        return client
+
+    def test_token_is_reused_then_refreshed_before_expiry(self):
+        transport = mock.Mock(
+            side_effect=[
+                Reply(value={"access_token": "first", "expires_in": 3600}),
+                Reply(value={"access_token": "second", "expires_in": 3600}),
+            ]
+        )
+        client = self.client(transport)
+        with mock.patch.object(
+            client, "assertion", return_value="signed"
+        ), mock.patch.object(
+            broker.time, "monotonic", side_effect=[0, 100, 3541, 3541]
+        ):
+            self.assertEqual(client.access_token(), "first")
+            self.assertEqual(client.access_token(), "first")
+            self.assertEqual(client.access_token(), "second")
+        self.assertEqual(transport.call_count, 2)
+
+    def test_write_boundary_and_methods_are_enforced_before_transport(self):
+        transport = mock.Mock()
+        client = self.client(transport)
+        output = broker.GRAPH + "/drives/drive-output/items/item-output"
+        for method, url in (
+            ("PUT", output + "-other:/file:/content"),
+            ("POST", broker.GRAPH + "/drives/drive-invented/items/item-invented"),
+            ("DELETE", output),
+            ("PATCH", output),
+            ("GET", "https://untrusted.invalid/file"),
+        ):
+            with self.subTest(method=method, url=url), self.assertRaises(
+                broker.Fail
+            ) as err:
+                client.request(method, url)
+            self.assertEqual(err.exception.code, 403)
+        transport.assert_not_called()
+
+    def test_reserved_or_invalid_area_names_are_refused_before_resolution(self):
+        client = self.client(mock.Mock())
+        for name in ("out", "../escape", "bad name"):
+            config = dict(client.config, folders={name: "item-invented"})
+            with self.assertRaises(ValueError):
+                broker.resolve_areas(client, config)
+        client.transport.assert_not_called()
+
+    def test_graph_conflict_is_reported_as_conflict(self):
+        client = self.client(lambda *args: Reply(409))
+        with mock.patch.object(client, "access_token", return_value="fake"):
+            with self.assertRaises(broker.Fail) as err:
+                client.request(
+                    "PUT",
+                    broker.GRAPH
+                    + "/drives/drive-output/items/item-output:/report:/content",
+                )
+        self.assertEqual(err.exception.code, 409)
+
+    def test_download_redirect_strips_bearer_and_refuses_plain_http(self):
+        class Download(io.BytesIO):
+            status = 200
+            headers = {}
+
+        seen = []
+
+        def open_request(opener, request, timeout=None):
+            seen.append(request)
+            if len(seen) == 1:
+                raise broker.urllib.error.HTTPError(
+                    request.full_url,
+                    302,
+                    "Found",
+                    {"Location": "https://files.invalid/download"},
+                    io.BytesIO(),
+                )
+            return Download(b"sample")
+
+        with mock.patch.object(
+            broker.urllib.request.OpenerDirector, "open", open_request
+        ):
+            response = broker.Graph._http(
+                "GET",
+                broker.GRAPH + "/file/content",
+                {"Authorization": "Bearer invented"},
+            )
+        self.assertEqual(response.body, b"sample")
+        self.assertFalse(seen[1].has_header("Authorization"))
+        redirect = broker.urllib.error.HTTPError(
+            broker.GRAPH + "/file/content",
+            302,
+            "Found",
+            {"Location": "http://files.invalid/download"},
+            io.BytesIO(),
+        )
+        with mock.patch.object(
+            broker.urllib.request.OpenerDirector, "open", side_effect=redirect
+        ):
+            with self.assertRaises(broker.Fail):
+                broker.Graph._http("GET", broker.GRAPH + "/file/content")
+
+    def test_signing_failure_does_not_echo_key_or_openssl_stderr(self):
+        secret = "invented-private-key"
+        with mock.patch.object(
+            broker.subprocess,
+            "run",
+            return_value=mock.Mock(returncode=1, stderr=secret.encode()),
+        ):
+            with self.assertRaises(RuntimeError) as err:
+                broker.sign_rs256(b"data", secret)
+        self.assertNotIn(secret, str(err.exception))
+
+    def test_real_graph_layer_uploads_multiple_chunks_and_cancels_failure(self):
+        with tempfile.TemporaryDirectory() as out:
+            content = b"x" * (broker.CHUNK + 17)
+            src = os.path.join(out, "report.bin")
+            with open(src, "wb") as stream:
+                stream.write(content)
+            for fail in (False, True):
+                calls = []
+
+                def transport(method, url, headers, data):
+                    calls.append((method, url, headers, data))
+                    if method == "GET":
+                        return Reply(404)
+                    if method == "POST":
+                        return Reply(
+                            value={"uploadUrl": "https://upload.invalid/session"}
+                        )
+                    self.assertNotIn("Authorization", headers)
+                    if method == "DELETE":
+                        return Reply(204)
+                    if fail:
+                        return Reply(503)
+                    if headers["Content-Range"].startswith("bytes 0-"):
+                        return Reply(202)
+                    return Reply(201, {"size": len(content), "name": "report.bin"})
+
+                client = self.client(transport)
+                areas = {"out": client.config["out"]}
+                with mock.patch.object(broker, "OUT_DIR", out), mock.patch.object(
+                    broker, "GRAPH_CLIENT", client
+                ), mock.patch.object(broker, "AREAS", areas), mock.patch.object(
+                    client, "access_token", return_value="fake"
+                ):
+                    if fail:
+                        with self.assertRaises(broker.Fail):
+                            broker.do_put_file({"src": src, "path": "report.bin"})
+                        self.assertEqual(calls[-1][0], "DELETE")
+                    else:
+                        result = broker.do_put_file({"src": src, "path": "report.bin"})
+                        chunks = [call for call in calls if call[0] == "PUT"]
+                        self.assertEqual(
+                            [len(c[3]) for c in chunks], [broker.CHUNK, 17]
+                        )
+                        self.assertEqual(b"".join(c[3] for c in chunks), content)
+                        self.assertEqual(
+                            chunks[1][2]["Content-Range"],
+                            "bytes %d-%d/%d"
+                            % (broker.CHUNK, len(content) - 1, len(content)),
+                        )
+                        self.assertEqual(
+                            result["sha256"], hashlib.sha256(content).hexdigest()
+                        )
+                self.assertFalse(client.upload_urls)
+
+
+class HandlerTest(unittest.TestCase):
+    def call(
+        self, body=b"{}", auth="Bearer invented-token", length=None, route="/ping"
+    ):
+        handler = object.__new__(broker.Handler)
+        handler.headers = {
+            "Authorization": auth,
+            "Content-Length": str(len(body)) if length is None else length,
+        }
+        handler.path = route
+        handler.rfile = io.BytesIO(body)
+        handler.reply = mock.Mock()
+        with mock.patch.object(broker, "TOKEN", "invented-token"):
+            handler.do_POST()
+        return handler.reply.call_args.args
+
+    def test_bad_bearer_is_unauthorized_including_non_ascii(self):
+        for auth in ("", "Bearer wrong", "Bearer é"):
+            self.assertEqual(self.call(auth=auth)[0], 401)
+
+    def test_invalid_bodies_and_lengths_are_bad_requests(self):
+        for body in (b"[]", b"null", b"broken", b"\xff"):
+            self.assertEqual(self.call(body=body)[0], 400)
+        for length in ("-1", "invalid"):
+            self.assertEqual(self.call(length=length)[0], 400)
+
+    def test_exception_and_request_logging_do_not_expose_secrets(self):
+        secret = "invented-private-key"
+        with mock.patch.dict(
+            broker.ROUTES, {"/failure": mock.Mock(side_effect=RuntimeError(secret))}
+        ):
+            code, result = self.call(route="/failure")
+        self.assertEqual(code, 500)
+        self.assertNotIn(secret, json.dumps(result))
+        with mock.patch("sys.stderr", new_callable=io.StringIO) as log:
+            broker.Handler.log_message(None, "%s", secret)
+        self.assertNotIn(secret, log.getvalue())
 
 
 if __name__ == "__main__":

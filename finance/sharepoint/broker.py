@@ -9,6 +9,7 @@ import re
 import stat
 import subprocess
 import tempfile
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -103,6 +104,8 @@ class Graph:
         self.key = key
         self.transport = transport or self._http
         self.token = None
+        self.token_expires = 0
+        self.token_lock = threading.Lock()
         self.token_url = "{}/{}/oauth2/v2.0/token".format(LOGIN, config["tenant_id"])
         self.out = config["out"]
         self.upload_urls = set()
@@ -147,7 +150,11 @@ class Graph:
         return signed + "." + b64url(sign_rs256(signed.encode(), self.key))
 
     def access_token(self):
-        if not self.token:
+        # launchd keeps this client alive across many token lifetimes. Serialize
+        # refreshes so concurrent requests reuse one fresh assertion/token.
+        with self.token_lock:
+            if self.token and time.monotonic() < self.token_expires:
+                return self.token
             form = urllib.parse.urlencode(
                 {
                     "client_id": self.config["client_id"],
@@ -165,12 +172,18 @@ class Graph:
             )
             if resp.status >= 400:
                 raise Fail(502, "Graph token request failed")
-            self.token = resp.json()["access_token"]
-        return self.token
+            token = resp.json()
+            self.token = token["access_token"]
+            self.token_expires = time.monotonic() + max(
+                0, int(token["expires_in"]) - 60
+            )
+            return self.token
 
     def request(
         self, method, url, data=None, headers=None, json_body=None, missing_ok=False
     ):
+        if method not in ("GET", "PUT", "POST", "DELETE"):
+            raise Fail(403, "refused Graph method")
         upload_url = url in self.upload_urls
         if method == "GET" and not url.startswith(GRAPH + "/"):
             raise Fail(403, "refused Graph read outside Graph")
@@ -191,6 +204,8 @@ class Graph:
         if missing_ok and resp.status == 404:
             return None
         if resp.status >= 400:
+            if resp.status == 409:
+                raise Fail(409, "file already exists; pass replace=true")
             raise Fail(502, "Graph %s failed with HTTP %d" % (method, resp.status))
         return resp
 
@@ -220,6 +235,12 @@ def area_url(area, path=""):
 
 
 def resolve_areas(client, config):
+    if "out" in config["folders"]:
+        raise ValueError("out is reserved for the output folder")
+    if any(
+        not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", name) for name in config["folders"]
+    ):
+        raise ValueError("invalid configured area name")
     drive_id = config["drive_id"]
     areas = {"out": config["out"]}
     areas.update(
@@ -346,8 +367,11 @@ def do_put_file(body):
     replace = str(body.get("replace", "false")).lower() == "true"
     target = area_url("out", path)
     existing = graph("GET", target, missing_ok=True)
-    if existing is not None and not replace:
-        raise Fail(409, "file already exists; pass replace=true")
+    if existing is not None:
+        if "folder" in existing.json():
+            raise Fail(409, "target is a folder")
+        if not replace:
+            raise Fail(409, "file already exists; pass replace=true")
     digest = hashlib.sha256()
     if size <= SIMPLE_MAX_FILE:
         with open(src, "rb") as f:
@@ -419,7 +443,9 @@ ROUTES = {
 
 
 def authorized(header, token):
-    return bool(token) and hmac.compare_digest(header, "Bearer " + token)
+    return bool(token) and hmac.compare_digest(
+        header.encode("utf-8"), ("Bearer " + token).encode("utf-8")
+    )
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -431,10 +457,20 @@ class Handler(BaseHTTPRequestHandler):
             fn = ROUTES.get(self.path)
             if fn is None:
                 raise Fail(404, "no such call")
-            length = int(self.headers.get("Content-Length", "0"))
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+            except ValueError:
+                raise Fail(400, "bad content length")
+            if length < 0:
+                raise Fail(400, "bad content length")
             if length > 65536:
                 raise Fail(413, "request too large")
-            body = json.loads(self.rfile.read(length) or b"{}")
+            try:
+                body = json.loads(self.rfile.read(length) or b"{}")
+            except (ValueError, UnicodeError):
+                raise Fail(400, "bad JSON body")
+            if not isinstance(body, dict):
+                raise Fail(400, "body must be an object")
             self.reply(200, fn(body))
         except Fail as err:
             self.reply(err.code, {"error": str(err)})
@@ -450,7 +486,8 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def log_message(self, fmt, *args):
-        super().log_message(fmt, *args)
+        # The raw request line can contain caller-supplied secrets.
+        pass
 
 
 def main():
