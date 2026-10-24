@@ -28,7 +28,7 @@ The builder does not have those ids and has not made a live Graph request.
 5. Install the LaunchAgent and start it: `cp /Users/bsaladin/ws_yardr_finance/frappe_docker/finance/sharepoint/dev.finance.sp-broker.plist ~/Library/LaunchAgents/` then `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.finance.sp-broker.plist`.
 6. Write the Yardr source credential file through Vault injection: `av inject +FINANCE_SP_BROKER_TOKEN sh -c 'install -d -m 700 /Users/bsaladin/ws_yardr_finance/.yardr/sources && umask 177 && printf "SP_BROKER_TOKEN=%s\n" "$FINANCE_SP_BROKER_TOKEN" > /Users/bsaladin/ws_yardr_finance/.yardr/sources/sharepoint.env'`.
 7. Register the source and grants: `sh /Users/bsaladin/ws_yardr_finance/frappe_docker/finance/sharepoint/install-source.sh`.
-8. Check the listener and log with `lsof -nP -iTCP:8817 -sTCP:LISTEN` and `rg -n 'human approval required' /Users/bsaladin/ws_yardr_finance/.yardr/sp-broker.log`, then run `/Users/bsaladin/ws_yardr/yardr --home /Users/bsaladin/ws_yardr_finance/.yardr call sharepoint ping`.
+8. Check the listener with `lsof -nP -iTCP:8817 -sTCP:LISTEN`, review startup output in `/Users/bsaladin/ws_yardr_finance/.yardr/sp-broker.log`, then run `/Users/bsaladin/ws_yardr/yardr --home /Users/bsaladin/ws_yardr_finance/.yardr call sharepoint ping`.
 
 To stop and remove the service: `launchctl bootout gui/$(id -u)/dev.finance.sp-broker && rm ~/Library/LaunchAgents/dev.finance.sp-broker.plist`.
 
