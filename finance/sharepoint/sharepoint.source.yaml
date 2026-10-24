@@ -3,7 +3,7 @@ about: >-
   Finance's SharePoint areas through the local broker. Area "out" is
   Shared Drive/Finance/ws_finance (read and write); other areas are the
   configured folders (read only). Paths are relative to each area's folder.
-base: http://127.0.0.1:8857
+base: http://127.0.0.1:8817
 credential:
   env: SP_BROKER_TOKEN
   header: "Authorization: Bearer {credential}"
