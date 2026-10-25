@@ -13,12 +13,14 @@ certificate that finance/sharepoint/sp_read.py uses. Reads are GET under the mai
 writes are drafts only: a new draft (POST messages), a reply draft (createReply, then PATCH of
 that draft's own body) and the signature's inline images on a draft (POST attachments).
 Every request goes through Graph._send, which allows those and the token POST, and nothing
-else: no send, no delete, no move, no other mailbox.
+else: no send, no move, no delete except the tool's own drafts, no other mailbox.
 
     finance/mail/mail.py list [--folder inbox] [--top 10] [--from X] [--since 2026-10-01] [--search "..."]
     finance/mail/mail.py read <id> [--attachment NAME --out DIR]
     finance/mail/mail.py draft-new          < {"subject", "to", "cc"?, "body", "contentType"?}
     finance/mail/mail.py draft-reply <id> [--all]  < {"body", "contentType"?}
+    finance/mail/mail.py draft-update <id>       < {"subject"?, "body"?, "contentType"?}
+    finance/mail/mail.py draft-delete <id>
     finance/mail/mail.py contacts
 
 The mailbox, client id and tenant come from private/graph-cert/mail.json, which must be mode 600.
@@ -54,6 +56,7 @@ CONFIG = os.path.join(PRIVATE, "graph-cert", "mail.json")
 # Benchi's signature as IT's it-mail-draft cut it. Read here, never written: signature.html, and
 # the image files its cid: references, each named exactly as that cid.
 SIGNATURE_DIR = "/Users/bsaladin/ws_yardr/integrations/state/signatures/bi-concepts"
+DRAFTS_PATH = os.path.join(PRIVATE, "graph-cert", "mail-drafts.json")
 
 GRAPH = "https://graph.microsoft.com/v1.0"
 LOGIN = "https://login.microsoftonline.com"
@@ -70,12 +73,12 @@ CID = re.compile(r"cid:([^\s\"'<>]+)", re.I)
 CID_SAFE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._@-]{0,127}$")  # a cid becomes a file name
 MAX_IMG = 1024 * 1024
 
-# The only writes: a new draft, a reply draft, the PATCH of that reply draft's body, and images
-# added to a draft. Paths are relative to the mailbox. No send, no delete, no move.
+# Paths are relative to the mailbox. DELETE is additionally guarded by the tracked draft state.
 DRAFT_WRITES = (
     ("POST", re.compile(r"^messages$")),
     ("POST", re.compile(r"^messages/[^/]+/(createReply|createReplyAll|attachments)$")),
     ("PATCH", re.compile(r"^messages/[^/]+$")),
+    ("DELETE", re.compile(r"^messages/[^/]+$")),
 )
 
 
@@ -189,7 +192,7 @@ def addr(recipient):
 class Graph:
     """Reads and drafts in the mailbox as yardr-finance. Every request goes through _send."""
 
-    def __init__(self, cfg, key_pem, transport=http, now=time.time):
+    def __init__(self, cfg, key_pem, transport=http, now=time.time, drafts_path=DRAFTS_PATH):
         self.token_url = "%s/%s/oauth2/v2.0/token" % (LOGIN, cfg["tenant_id"])
         self.client_id = cfg["client_id"]
         self.prefix = "%s/users/%s/" % (GRAPH, quote_id(cfg["mailbox"]))
@@ -202,6 +205,7 @@ class Graph:
         self.key_pem = key_pem
         self.transport = transport
         self.now = now
+        self.drafts_path = drafts_path
         self.token = None
 
     def _send(self, method, url, headers, data=None):
@@ -210,7 +214,11 @@ class Graph:
         if not url.startswith(self.prefix):
             raise MailError("refused %s: only the configured mailbox is reached" % method)
         rel = url[len(self.prefix):].split("?", 1)[0]
-        if method == "GET" or any(method == m and pat.search(rel) for m, pat in DRAFT_WRITES):
+        if method == "DELETE" and re.fullmatch(r"messages/([^/]+)", rel):
+            did = urllib.parse.unquote(rel.split("/", 1)[1])
+            if not any(d.get("id") == did for d in load_drafts(self.drafts_path)):
+                raise MailError("refused DELETE: draft is not tracked as this tool's own", 2)
+        if method == "GET" or any(method == m and pat.fullmatch(rel) for m, pat in DRAFT_WRITES):
             return self.transport(method, url, headers, data)
         raise MailError("refused %s: this client reads mail and writes drafts only" % method)
 
@@ -291,6 +299,46 @@ class Graph:
 
     def add_attachment(self, did, attachment):
         return self.call("POST", self.url("messages/%s/attachments" % quote_id(did)), attachment)
+
+    def delete_draft(self, did):
+        self.call("DELETE", self.url("messages/%s" % quote_id(did)))
+
+
+def load_drafts(path=DRAFTS_PATH):
+    try:
+        mode = os.stat(path).st_mode
+    except FileNotFoundError:
+        return []
+    if mode & (stat.S_IRWXG | stat.S_IRWXO):
+        raise MailError("%s is readable by others; chmod 600 it" % path, 2)
+    with open(path, encoding="utf-8") as f:
+        rows = json.load(f)
+    if not isinstance(rows, list):
+        raise MailError("draft tracking state is invalid", 2)
+    return rows
+
+
+def save_drafts(rows, path=DRAFTS_PATH):
+    os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+    if os.path.exists(path) and os.stat(path).st_mode & (stat.S_IRWXG | stat.S_IRWXO):
+        raise MailError("%s is readable by others; chmod 600 it" % path, 2)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        if os.fstat(fd).st_mode & (stat.S_IRWXG | stat.S_IRWXO):
+            raise MailError("%s is readable by others; chmod 600 it" % path, 2)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            fd = -1
+            json.dump(rows, f)
+    finally:
+        if fd >= 0:
+            os.close(fd)
+
+
+def track_draft(graph, did, kind):
+    rows = [d for d in load_drafts(graph.drafts_path) if d.get("id") != did]
+    rows.append({"id": did, "kind": kind,
+                 "created": datetime.datetime.now(datetime.timezone.utc).isoformat()})
+    save_drafts(rows, graph.drafts_path)
 
 
 def search_text(value):
@@ -524,6 +572,7 @@ def draft_new(graph, draft):
         message["ccRecipients"] = recipients(cc)
     m = graph.create_draft(message)
     did = draft_ok(m)
+    track_draft(graph, did, "new")
     attach_images(graph, did, images)
     return did, m.get("webLink") or ""
 
@@ -535,6 +584,7 @@ def draft_reply(graph, source, reply_all, draft):
     sig, images = load_signature()  # before createReply: a missing image leaves no stray draft
     m = graph.reply_draft(source, reply_all)
     did = draft_ok(m, source)
+    track_draft(graph, did, "reply")
     orig = (m.get("body") or {}).get("content")
     if orig is None:
         raise MailError("the reply draft has no body to keep the quoted original in")
@@ -617,6 +667,54 @@ def cmd_draft_reply(graph, args, out):
     out.write("draft: %s\nwebLink: %s\n" % (did, link))
 
 
+def guard_draft(graph, did):
+    m = graph.message(did, "id,isDraft,parentFolderId")
+    folder = graph.call("GET", graph.url("mailFolders/drafts", {"$select": "id"}))
+    if m.get("isDraft") is not True:
+        raise MailError("refused: the message is not a draft", 2)
+    if not m.get("parentFolderId") or m.get("parentFolderId") != folder.get("id"):
+        raise MailError("refused: the draft is not in Drafts", 2)
+    return m
+
+
+def draft_update(graph, did, draft):
+    if not isinstance(draft, dict) or not any(k in draft for k in ("subject", "body")):
+        raise MailError("input: JSON needs subject and/or body", 2)
+    if "subject" in draft and not isinstance(draft["subject"], str):
+        raise MailError("input: subject must be text", 2)
+    record = next((d for d in load_drafts(graph.drafts_path) if d.get("id") == did), None)
+    guard_draft(graph, did)
+    if "body" in draft and record and record.get("kind") == "reply":
+        raise MailError("refused: delete it and make a new draft-reply", 2)
+    payload = {}
+    if "subject" in draft:
+        payload["subject"] = draft["subject"]
+    if "body" in draft:
+        text, ctype = parse_body(draft)
+        sig, images = load_signature()
+        payload["body"] = {"contentType": "HTML", "content": compose(body_html(text, ctype), sig)}
+        cids = {a.get("contentId") for a in graph.attachments(did)}
+    updated = graph.call("PATCH", graph.url("messages/%s" % quote_id(did)), payload)
+    if "body" in draft:
+        attach_images(graph, did, [(cid, data) for cid, data in images if cid not in cids])
+    return updated.get("webLink") or ""
+
+
+def cmd_draft_update(graph, args, out):
+    link = draft_update(graph, args.id, read_input())
+    out.write("draft: %s\nwebLink: %s\n" % (args.id, link))
+
+
+def cmd_draft_delete(graph, args, out):
+    rows = load_drafts(graph.drafts_path)
+    if not any(d.get("id") == args.id for d in rows):
+        raise MailError("refused: draft is not tracked as this tool's own", 2)
+    guard_draft(graph, args.id)
+    graph.delete_draft(args.id)
+    save_drafts([d for d in rows if d.get("id") != args.id], graph.drafts_path)
+    out.write("deleted draft: %s\n" % args.id)
+
+
 def cmd_contacts(graph, args, out):
     for name, mails in contact_rows(graph):
         out.write("%s\t%s\n" % (name, mails))
@@ -642,6 +740,12 @@ def parser():
     dr.add_argument("id")
     dr.add_argument("--all", action="store_true", help="reply to all")
     dr.set_defaults(run=cmd_draft_reply)
+    du = sub.add_parser("draft-update", help="update a draft from JSON on stdin")
+    du.add_argument("id")
+    du.set_defaults(run=cmd_draft_update)
+    dd = sub.add_parser("draft-delete", help="delete a draft made by this tool")
+    dd.add_argument("id")
+    dd.set_defaults(run=cmd_draft_delete)
     sub.add_parser("contacts", help="the top 25 contacts (needs Contacts.Read)").set_defaults(run=cmd_contacts)
     return p
 

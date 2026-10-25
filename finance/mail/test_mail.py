@@ -74,6 +74,7 @@ def graph_with(*replies):
     fake = Fake(*replies)
     g = Graph(CFG, b"unused", transport=fake)
     g.token = "token-x"  # the token call is tested on its own
+    g.drafts_path = os.path.join(tempfile.mkdtemp(), "mail-drafts.json")
     return g, fake
 
 
@@ -154,6 +155,8 @@ class DraftNewTest(unittest.TestCase):
             msg["toRecipients"], [{"emailAddress": {"address": "a@example.test"}}]
         )
         self.assertNotIn("ccRecipients", msg)
+        self.assertEqual(mail.load_drafts(g.drafts_path)[0]["id"], "draft-1")
+        self.assertEqual(mail.load_drafts(g.drafts_path)[0]["kind"], "new")
 
     def test_signature_image_is_posted_inline_with_its_cid(self):
         g, fake = graph_with({"id": "draft-1", "isDraft": True}, {})
@@ -226,6 +229,7 @@ class DraftReplyTest(unittest.TestCase):
         }
         g, fake = graph_with(created, patched, {})
         result = mail.draft_reply(g, "source-9", reply_all, {"body": "Our answer"})
+        self.last_graph = g
         return result, fake
 
     def test_reply_text_and_signature_sit_above_the_quoted_history(self):
@@ -242,7 +246,9 @@ class DraftReplyTest(unittest.TestCase):
         self.assertLess(sig, quoted)
 
     def test_reply_is_created_with_createreply_and_not_sent(self):
-        _, fake = self.reply()
+        (did, _), fake = self.reply()
+        record = mail.load_drafts(self.last_graph.drafts_path)[0]
+        self.assertEqual((record["id"], record["kind"]), (did, "reply"))
         self.assertEqual(fake.calls[0][1], PREFIX + "messages/source-9/createReply")
         self.assertFalse(any("send" in c[1] for c in fake.calls))
 
@@ -347,6 +353,117 @@ class ContactsTest(unittest.TestCase):
         self.assertEqual(mail.contact_rows(g), [("Invented Person", "p@example.test")])
 
 
+class DraftMutationTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp)
+        self.sig_dir = signature_dir(self.tmp)
+        self.sig_patch = unittest.mock.patch.object(mail, "SIGNATURE_DIR", self.sig_dir)
+        self.sig_patch.start()
+        self.addCleanup(self.sig_patch.stop)
+
+    def state(self, graph, kind="new"):
+        mail.save_drafts(
+            [{"id": "draft-x", "kind": kind, "created": "2026-01-01T00:00:00+00:00"}],
+            graph.drafts_path,
+        )
+
+    def guard_replies(self, parent="folder-drafts", is_draft=True):
+        return (
+            {"id": "draft-x", "isDraft": is_draft, "parentFolderId": parent},
+            {"id": "folder-drafts"},
+        )
+
+    def test_update_refuses_non_draft_and_outside_drafts_before_patch(self):
+        for parent, is_draft in (("folder-drafts", False), ("other-folder", True)):
+            g, fake = graph_with(*self.guard_replies(parent, is_draft))
+            self.state(g)
+            with self.assertRaises(MailError):
+                mail.draft_update(g, "draft-x", {"subject": "Invented"})
+            self.assertFalse(fake.sent("PATCH"))
+
+    def test_body_update_composes_signature_and_only_posts_missing_cid(self):
+        g, fake = graph_with(
+            *self.guard_replies(),
+            {"value": [{"contentId": "logo.png@01AB.CD"}]},
+            {"id": "draft-x", "webLink": "https://example.test/d"}
+        )
+        self.state(g)
+        link = mail.draft_update(g, "draft-x", {"body": "Invented update"})
+        self.assertEqual(link, "https://example.test/d")
+        self.assertEqual([c[0] for c in fake.calls], ["GET", "GET", "GET", "PATCH"])
+        payload = json.loads(fake.sent("PATCH")[0][3])
+        self.assertEqual(payload["body"]["contentType"], "HTML")
+        self.assertLess(
+            payload["body"]["content"].index("Invented update"),
+            payload["body"]["content"].index(SIG_HTML),
+        )
+        self.assertFalse(fake.sent("POST"))
+
+    def test_body_update_posts_missing_cid(self):
+        g, fake = graph_with(
+            *self.guard_replies(), {"value": []}, {}, {"id": "draft-x"}
+        )
+        self.state(g)
+        mail.draft_update(g, "draft-x", {"body": "Invented update"})
+        self.assertEqual(
+            fake.sent("POST")[0][1], PREFIX + "messages/draft-x/attachments"
+        )
+        self.assertEqual(len(fake.sent("PATCH")), 1)
+
+    def test_subject_only_patch_has_no_body_or_attachment_calls(self):
+        g, fake = graph_with(
+            *self.guard_replies(), {"webLink": "https://example.test/d"}
+        )
+        self.state(g)
+        mail.draft_update(g, "draft-x", {"subject": "New invented subject"})
+        self.assertEqual(
+            json.loads(fake.sent("PATCH")[0][3]), {"subject": "New invented subject"}
+        )
+        self.assertEqual([c[0] for c in fake.calls], ["GET", "GET", "PATCH"])
+
+    def test_reply_body_update_refused(self):
+        g, fake = graph_with(*self.guard_replies())
+        self.state(g, "reply")
+        with self.assertRaises(MailError) as ctx:
+            mail.draft_update(g, "draft-x", {"body": "Changed"})
+        self.assertIn("delete it and make a new draft-reply", str(ctx.exception))
+        self.assertFalse(fake.sent("PATCH"))
+
+    def test_delete_requires_tracking_before_guard_and_write(self):
+        g, fake = graph_with()
+        with self.assertRaises(MailError):
+            mail.cmd_draft_delete(g, types.SimpleNamespace(id="draft-x"), io.StringIO())
+        self.assertEqual(fake.calls, [])
+
+    def test_delete_refuses_invalid_location(self):
+        for parent, is_draft in (("folder-drafts", False), ("other-folder", True)):
+            g, fake = graph_with(*self.guard_replies(parent, is_draft))
+            self.state(g)
+            with self.assertRaises(MailError):
+                mail.cmd_draft_delete(
+                    g, types.SimpleNamespace(id="draft-x"), io.StringIO()
+                )
+            self.assertFalse(fake.sent("DELETE"))
+
+    def test_delete_tracked_draft_removes_state(self):
+        g, fake = graph_with(*self.guard_replies(), {})
+        self.state(g)
+        out = io.StringIO()
+        mail.cmd_draft_delete(g, types.SimpleNamespace(id="draft-x"), out)
+        self.assertEqual([c[0] for c in fake.calls], ["GET", "GET", "DELETE"])
+        self.assertEqual(fake.sent("DELETE")[0][1], PREFIX + "messages/draft-x")
+        self.assertEqual(out.getvalue(), "deleted draft: draft-x\n")
+        self.assertEqual(mail.load_drafts(g.drafts_path), [])
+
+    def test_state_file_readable_by_others_is_refused(self):
+        g, _ = graph_with()
+        mail.save_drafts([], g.drafts_path)
+        os.chmod(g.drafts_path, 0o640)
+        with self.assertRaises(MailError):
+            mail.load_drafts(g.drafts_path)
+
+
 class RefusalTest(unittest.TestCase):
     def setUp(self):
         self.g, self.fake = graph_with()
@@ -359,6 +476,7 @@ class RefusalTest(unittest.TestCase):
     def test_delete_is_refused(self):
         with self.assertRaises(MailError):
             self.g._send("DELETE", PREFIX + "messages/m1", {})
+        self.assertEqual(self.fake.calls, [])
 
     def test_another_mailbox_is_refused(self):
         with self.assertRaises(MailError):
