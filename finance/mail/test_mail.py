@@ -73,6 +73,21 @@ class Fake:
         return [c for c in self.calls if c[0] == method]
 
 
+class GraphAttachmentSelectFake(Fake):
+    """Model Graph rejecting contentId on the base attachment collection."""
+
+    def __call__(self, method, url, headers, data):
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
+        if (
+            method == "GET"
+            and "/attachments" in urllib.parse.urlsplit(url).path
+            and "contentId" in query.get("$select", [""])[0].split(",")
+        ):
+            self.calls.append((method, url, headers, data))
+            raise GraphError("GET", 400, "BadRequest")
+        return super().__call__(method, url, headers, data)
+
+
 def graph_with(*replies):
     fake = Fake(*replies)
     g = Graph(CFG, b"unused", transport=fake)
@@ -415,7 +430,7 @@ class DraftMutationTest(unittest.TestCase):
         g, fake = graph_with(
             *self.guard_replies(),
             {"value": [{"contentId": "logo.png@01AB.CD"}]},
-            {"id": "draft-x", "webLink": "https://example.test/d"}
+            {"id": "draft-x", "webLink": "https://example.test/d"},
         )
         self.state(g)
         link = mail.draft_update(g, "draft-x", {"body": "Invented update"})
@@ -429,6 +444,36 @@ class DraftMutationTest(unittest.TestCase):
         )
         self.assertFalse(fake.sent("POST"))
 
+    def test_body_update_avoids_content_id_select_and_posts_only_missing_images(self):
+        sig = '<img src="cid:logo.png@01AB.CD"><img src="cid:mark.png@02EF.GH">'
+        with open(os.path.join(self.sig_dir, "signature.html"), "w") as f:
+            f.write(sig)
+        with open(os.path.join(self.sig_dir, "mark.png@02EF.GH"), "wb") as f:
+            f.write(b"invented mark")
+        fake = GraphAttachmentSelectFake(
+            *self.guard_replies(),
+            {"value": [{"contentId": "logo.png@01AB.CD"}, {"name": "item"}]},
+            {"webLink": "https://example.test/updated"},
+            {},
+        )
+        g = Graph(CFG, b"unused", transport=fake)
+        g.token = "token-x"
+        g.drafts_path = os.path.join(self.tmp, "mail-drafts.json")
+        self.state(g)
+
+        mail.draft_update(g, "draft-x", {"body": "Invented update"})
+
+        attachment_gets = [c for c in fake.sent("GET") if "/attachments" in c[1]]
+        self.assertEqual(len(attachment_gets), 1)
+        query = urllib.parse.parse_qs(
+            urllib.parse.urlsplit(attachment_gets[0][1]).query
+        )
+        self.assertNotIn("$select", query)
+        self.assertEqual(len(fake.sent("PATCH")), 1)
+        posts = fake.sent("POST")
+        self.assertEqual(len(posts), 1)
+        self.assertEqual(json.loads(posts[0][3])["contentId"], "mark.png@02EF.GH")
+
     def test_repeated_body_updates_request_cids_and_do_not_duplicate_images(self):
         g, fake = graph_with(
             *self.guard_replies(),
@@ -437,7 +482,7 @@ class DraftMutationTest(unittest.TestCase):
             {},
             *self.guard_replies(),
             {"value": [{"contentId": "logo.png@01AB.CD"}]},
-            {}
+            {},
         )
         transport = g.transport
 
@@ -467,7 +512,7 @@ class DraftMutationTest(unittest.TestCase):
             *self.guard_replies(),
             {"value": [], "@odata.nextLink": next_page},
             {"value": [{"contentId": "logo.png@01AB.CD"}]},
-            {}
+            {},
         )
         mail.draft_update(g, "draft-x", {"body": "Invented update"})
         self.assertEqual(fake.sent("GET")[-1][1], next_page)
@@ -486,7 +531,7 @@ class DraftMutationTest(unittest.TestCase):
             *self.guard_replies(),
             {"value": []},
             {"webLink": "https://example.test/updated"},
-            {}
+            {},
         )
         changed_sig = SIG_HTML.replace("Invented Signer", "Invented Current Signer")
         with open(os.path.join(self.sig_dir, "signature.html"), "w") as f:
@@ -770,6 +815,12 @@ class ReadTest(unittest.TestCase):
         self.assertIn("  bill.pdf  1234 bytes  attached", lines)
         self.assertIn("  logo.png  56 bytes  inline", lines)
         self.assertEqual([c[0] for c in fake.calls], ["GET", "GET"])
+        listing_query = urllib.parse.parse_qs(
+            urllib.parse.urlsplit(fake.sent("GET")[1][1]).query
+        )
+        self.assertEqual(
+            listing_query["$select"], ["id,name,size,contentType,isInline"]
+        )
 
     def test_a_name_that_could_leave_the_directory_is_refused(self):
         g, fake = graph_with()
