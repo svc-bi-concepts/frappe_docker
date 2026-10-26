@@ -287,9 +287,13 @@ class Graph:
 
     def attachments(self, mid, content_ids=False):
         rel = "messages/%s/attachments" % quote_id(mid)
-        query = {"$select": "id,name,size,contentType,isInline"}
-        if content_ids:
-            query["$select"] += ",contentId"
+        # contentId is a fileAttachment property; selecting it on the base
+        # attachment collection is rejected by Graph, so fetch full rows here.
+        query = (
+            {}
+            if content_ids
+            else {"$select": "id,name,size,contentType,isInline"}
+        )
         rows = []
         url = self.url(rel, query)
         while url:
@@ -739,7 +743,11 @@ def draft_update(graph, did, draft):
         text, ctype = parse_body(draft)
         sig, images = load_signature()
         payload["body"] = {"contentType": "HTML", "content": compose(body_html(text, ctype), sig)}
-        cids = {a.get("contentId") for a in graph.attachments(did, content_ids=True)}
+        cids = {
+            a["contentId"]
+            for a in graph.attachments(did, content_ids=True)
+            if a.get("contentId")
+        }
     updated = graph.call("PATCH", graph.url("messages/%s" % quote_id(did)), payload)
     if "body" in draft:
         attach_images(graph, did, [(cid, data) for cid, data in images if cid not in cids])
