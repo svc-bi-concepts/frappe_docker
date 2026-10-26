@@ -11,7 +11,8 @@ exec /usr/bin/python3 -I - "$@" 3<&0 <<'__MAIL_PY__'
 Talks to Microsoft Graph as the yardr-finance app, with the client-credentials token of the
 certificate that finance/sharepoint/sp_read.py uses. Reads are GET under the mailbox. The
 writes are drafts only: a new draft (POST messages), a reply draft (createReply, then PATCH of
-that draft's own body) and the signature's inline images on a draft (POST attachments).
+that draft's own body), draft-update (PATCH subject/body), draft-delete (DELETE of a tracked
+draft), and the signature's inline images on a draft (POST attachments).
 Every request goes through Graph._send, which allows those and the token POST, and nothing
 else: no send, no move, no delete except the tool's own drafts, no other mailbox.
 
@@ -22,6 +23,12 @@ else: no send, no move, no delete except the tool's own drafts, no other mailbox
     finance/mail/mail.py draft-update <id>       < {"subject"?, "body"?, "contentType"?}
     finance/mail/mail.py draft-delete <id>
     finance/mail/mail.py contacts
+
+draft-update replaces the whole body with our text and the current signature. A tracked reply
+allows subject changes only; delete it and make a new draft-reply to change its body. draft-delete
+requires a draft made by this tool. Both commands require the message to be in Drafts.
+Draft ownership is kept in private/graph-cert/mail-drafts.json (mode 600, ids/kind/creation time
+only). An image failure leaves the draft tracked, so it can still be updated or deleted.
 
 The mailbox, client id and tenant come from private/graph-cert/mail.json, which must be mode 600.
 The private key comes from FINANCE_SP_CERT_KEY (Automic Vault) and reaches openssl through a
@@ -34,7 +41,9 @@ Standard library only, plus the openssl binary, so it runs on the system Python.
 
 import argparse
 import base64
+import contextlib
 import datetime
+import fcntl
 import hashlib
 import html
 import json
@@ -73,7 +82,8 @@ CID = re.compile(r"cid:([^\s\"'<>]+)", re.I)
 CID_SAFE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._@-]{0,127}$")  # a cid becomes a file name
 MAX_IMG = 1024 * 1024
 
-# Paths are relative to the mailbox. DELETE is additionally guarded by the tracked draft state.
+# The only writes: new/reply drafts, draft-update, draft-delete, and signature images.
+# Paths are relative to the mailbox. DELETE also requires a tracked draft. No send or move.
 DRAFT_WRITES = (
     ("POST", re.compile(r"^messages$")),
     ("POST", re.compile(r"^messages/[^/]+/(createReply|createReplyAll|attachments)$")),
@@ -275,10 +285,19 @@ class Graph:
     def message(self, mid, select):
         return self.call("GET", self.url("messages/%s" % quote_id(mid), {"$select": select}))
 
-    def attachments(self, mid):
+    def attachments(self, mid, content_ids=False):
         rel = "messages/%s/attachments" % quote_id(mid)
         query = {"$select": "id,name,size,contentType,isInline"}
-        return self.call("GET", self.url(rel, query)).get("value") or []
+        if content_ids:
+            query["$select"] += ",contentId"
+        rows = []
+        url = self.url(rel, query)
+        while url:
+            page = self.call("GET", url)
+            rows.extend(page.get("value") or [])
+            # Updates must see every CID before deciding which images are missing.
+            url = page.get("@odata.nextLink") if content_ids else None
+        return rows
 
     def attachment(self, mid, aid):
         return self.call("GET", self.url("messages/%s/attachments/%s" % (quote_id(mid), quote_id(aid))))
@@ -306,39 +325,66 @@ class Graph:
 
 def load_drafts(path=DRAFTS_PATH):
     try:
-        mode = os.stat(path).st_mode
+        with open(path, encoding="utf-8") as f:
+            if os.fstat(f.fileno()).st_mode & (stat.S_IRWXG | stat.S_IRWXO):
+                raise MailError("%s is readable by others; chmod 600 it" % path, 2)
+            rows = json.load(f)
     except FileNotFoundError:
         return []
-    if mode & (stat.S_IRWXG | stat.S_IRWXO):
-        raise MailError("%s is readable by others; chmod 600 it" % path, 2)
-    with open(path, encoding="utf-8") as f:
-        rows = json.load(f)
-    if not isinstance(rows, list):
+    except (ValueError, UnicodeError):
+        raise MailError("draft tracking state is invalid", 2)
+    if not isinstance(rows, list) or any(
+            not isinstance(d, dict) or not isinstance(d.get("id"), str) or not d["id"]
+            or d.get("kind") not in ("new", "reply")
+            or not isinstance(d.get("created"), str) for d in rows):
         raise MailError("draft tracking state is invalid", 2)
     return rows
 
 
-def save_drafts(rows, path=DRAFTS_PATH):
+@contextlib.contextmanager
+def draft_state_lock(path):
+    # A stable lock file survives atomic replacements of the JSON file. Lock only local
+    # read/modify/write operations: never hold it across Graph calls (_send reads the state).
     os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
-    if os.path.exists(path) and os.stat(path).st_mode & (stat.S_IRWXG | stat.S_IRWXO):
-        raise MailError("%s is readable by others; chmod 600 it" % path, 2)
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    fd = os.open(path + ".lock", os.O_RDWR | os.O_CREAT, 0o600)
     try:
         if os.fstat(fd).st_mode & (stat.S_IRWXG | stat.S_IRWXO):
-            raise MailError("%s is readable by others; chmod 600 it" % path, 2)
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            fd = -1
-            json.dump(rows, f)
+            raise MailError("draft tracking lock is readable by others; chmod 600 it", 2)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
     finally:
-        if fd >= 0:
-            os.close(fd)
+        os.close(fd)
+
+
+def change_drafts(change, path=DRAFTS_PATH):
+    with draft_state_lock(path):
+        rows = change(load_drafts(path))
+        # A failed write must leave the previous ownership records intact; readers see
+        # either complete version, never a truncated or partially written JSON document.
+        temporary = path + "." + uuid.uuid4().hex + ".tmp"
+        fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(rows, f)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(temporary, path)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+
+
+def save_drafts(rows, path=DRAFTS_PATH):
+    change_drafts(lambda existing: rows, path)
 
 
 def track_draft(graph, did, kind):
-    rows = [d for d in load_drafts(graph.drafts_path) if d.get("id") != did]
-    rows.append({"id": did, "kind": kind,
-                 "created": datetime.datetime.now(datetime.timezone.utc).isoformat()})
-    save_drafts(rows, graph.drafts_path)
+    def add(rows):
+        rows = [d for d in rows if d["id"] != did]
+        rows.append({"id": did, "kind": kind,
+                     "created": datetime.datetime.now(datetime.timezone.utc).isoformat()})
+        return rows
+    change_drafts(add, graph.drafts_path)
 
 
 def search_text(value):
@@ -693,7 +739,7 @@ def draft_update(graph, did, draft):
         text, ctype = parse_body(draft)
         sig, images = load_signature()
         payload["body"] = {"contentType": "HTML", "content": compose(body_html(text, ctype), sig)}
-        cids = {a.get("contentId") for a in graph.attachments(did)}
+        cids = {a.get("contentId") for a in graph.attachments(did, content_ids=True)}
     updated = graph.call("PATCH", graph.url("messages/%s" % quote_id(did)), payload)
     if "body" in draft:
         attach_images(graph, did, [(cid, data) for cid, data in images if cid not in cids])
@@ -711,7 +757,7 @@ def cmd_draft_delete(graph, args, out):
         raise MailError("refused: draft is not tracked as this tool's own", 2)
     guard_draft(graph, args.id)
     graph.delete_draft(args.id)
-    save_drafts([d for d in rows if d.get("id") != args.id], graph.drafts_path)
+    change_drafts(lambda current: [d for d in current if d["id"] != args.id], graph.drafts_path)
     out.write("deleted draft: %s\n" % args.id)
 
 
