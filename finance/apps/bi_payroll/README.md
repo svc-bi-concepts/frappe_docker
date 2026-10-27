@@ -17,8 +17,9 @@ migrate on any site. Its Desk is the Swiss Payroll shell: a Sidebar (`bi_payroll
   `ensure_structure` (one "Swiss Monthly" Salary Structure per Swiss company).
 - `bi_payroll/bi_payroll/doctype/payroll_swiss_settings`: the settings (single). KTG's two fields (swiss_ktg_ee,
   swiss_ktg_ag) are set — 2026-10-11, from the insurer's contract, the employee side checked against the paystubs;
-  the values sit in the private rates CSV. Four placeholders remain, listed by token: swiss_uvg_ag, swiss_uvg_max,
-  swiss_nbu_ee and swiss_fak_ag are empty, the documents still awaited. The BVG age-band rates stay placeholders
+  the values sit in the private rates CSV. swiss_uvg_ag and swiss_nbu_ee are set from Suva's 2026 provisional
+  premium invoice; swiss_uvg_max is set from Suva's official insured-earnings guidance. swiss_fak_ag remains
+  a placeholder pending the fund's rate sheet. The BVG age-band rates stay placeholders
   (half the statutory minimum, calibrated from the paystubs) until the fund's plan sheet arrives.
   `finance/scripts/load-swiss-rates.sh` reads the private CSV and sets the rows marked
   set=yes — dry run on the copy by default, the live stack only with `--live --backup`.
