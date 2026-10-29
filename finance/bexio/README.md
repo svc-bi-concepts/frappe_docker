@@ -788,7 +788,7 @@ The yardmaster's first-run sequence is:
    Unknown keys and files outside `private/` are refused. For an existing contact, use
    `--vendor-name` and/or `--vendor-uid` instead; lookup-only mode never creates a contact.
 
-3. Run `finance/bexio/create_contact_and_bill.py --vendor <file> --file-uuid <uuid> --nr <number> --date <YYYY-MM-DD> --total <gross-total> --account <account-no> --tax <input-VAT-code> --text <text>` as a dry run. Review the resolved account, input VAT code, currency and due date, then repeat with `--yes`. For a known contact, replace `--vendor <file>` with `--vendor-name <name>` and/or `--vendor-uid <uid>`. Currency defaults to CHF; due date defaults to 30 days after the bill date.
+3. Run `finance/bexio/create_contact_and_bill.py --vendor <file> --file-uuid <uuid> --nr <number> --date <YYYY-MM-DD> --total <gross-total> --account <account-no> --tax <input-VAT-code> --text <text>` as a dry run. Review the resolved account, input VAT code, currency and due date, then repeat with `--yes`. For a known contact, replace `--vendor <file>` with `--vendor-name <name>` and/or `--vendor-uid <uid>`. Currency defaults to CHF; due date defaults to 30 days after the bill date. For another currency, also pass `--exchange-rate <CHF-per-unit>` from Benchi; the script includes the required exchange rate and rounded CHF base amount for these CHF books.
 4. Mail Benchi the vendor, invoice number, date, total and bexio ids from the result file. The bill
    is a draft only; Benchi books and pays it. Ask Benchi first if the account or VAT code is in doubt.
 

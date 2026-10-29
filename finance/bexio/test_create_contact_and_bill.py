@@ -123,7 +123,19 @@ def standard_answers(contacts=None, bills=None):
             [{"id": 5, "iso_3166_alpha2": "CH"}, {"id": 6, "iso_3166_alpha2": "DE"}]
         ],
         ("GET", "/3.0/users/me"): [{"id": 9}],
-        ("GET", "/4.0/purchase/bills"): [{"data": bills if bills is not None else []}],
+        ("GET", "/4.0/purchase/bills"): [
+            {"data": bills if bills is not None else []},
+            {
+                "data": [
+                    b
+                    for b in (bills or [])
+                    if any(
+                        str(c.get("id")) == str(b.get("supplier_id"))
+                        for c in (contacts or [])
+                    )
+                ]
+            },
+        ],
         ("GET", "/2.0/accounts"): [
             [
                 {
@@ -211,6 +223,7 @@ class ResultFileTest(unittest.TestCase):
         content = self.result()
         self.assertIn("contact id 77", content)
         self.assertIn("bill id 88", content)
+        self.assertIn("vendor_ref INV-TEST-1 supplier id 77", content)
         self.assertNotIn(TOKEN, content)
 
     def test_an_existing_contact_records_only_the_bill_id(self):
@@ -340,7 +353,8 @@ class PlanTest(unittest.TestCase):
         answers = standard_answers(contacts=[dict(VENDOR, id=12)])
         answers[("GET", "/4.0/purchase/bills")] = [
             {"data": full},
-            {"data": [{"id": 6, "supplier_id": 12, "vendor_ref": "INV-TEST-1"}]},
+            {"data": [{"id": 6, "vendor_ref": "INV-TEST-1"}]},
+            {"data": [{"id": 6, "vendor_ref": "INV-TEST-1"}]},
         ]
         urlopen, calls = fake_bexio(answers)
         with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
@@ -350,7 +364,7 @@ class PlanTest(unittest.TestCase):
             urllib.parse.parse_qs(urllib.parse.urlparse(r.full_url).query)["page"]
             for r in _sent(calls, "GET", "/4.0/purchase/bills")
         ]
-        self.assertEqual(pages, [["1"], ["2"]])
+        self.assertEqual(pages, [["1"], ["2"], ["1"]])
 
 
 class PostGuardTest(unittest.TestCase):
@@ -448,6 +462,8 @@ class ArgumentTest(unittest.TestCase):
                 _run(
                     [
                         "--yes",
+                        "--vendor",
+                        ARGS[1],
                         "--file-uuid",
                         "uuid-invented-1",
                         "--nr",
@@ -603,6 +619,126 @@ class GeneralizationTest(unittest.TestCase):
                 ("POST", "/4.0/purchase/bills"),
             },
         )
+
+
+class ReviewRegressionTest(unittest.TestCase):
+    setUp = GeneralizationTest.setUp
+    lookup_args = GeneralizationTest.lookup_args
+
+    def test_duplicate_check_uses_supplier_filter_and_documented_limit(self):
+        # Actual list rows omit supplier_id, even for a matching supplier.
+        answers = standard_answers(contacts=[dict(VENDOR, id=12)])
+        row = {"id": "invented-bill", "vendor_ref": "INV-TEST-1"}
+        answers[("GET", "/4.0/purchase/bills")] = [
+            {"data": [row]},
+            {"data": [row]},
+        ]
+        urlopen, calls = fake_bexio(answers)
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            with self.assertRaisesRegex(SystemExit, "already exists for this supplier"):
+                _run(["--yes"] + ARGS)
+        queries = [
+            urllib.parse.parse_qs(urllib.parse.urlparse(r.full_url).query)
+            for r in _sent(calls, "GET", "/4.0/purchase/bills")
+        ]
+        self.assertEqual(
+            queries,
+            [
+                {"page": ["1"], "limit": ["500"]},
+                {"page": ["1"], "limit": ["500"], "supplier_id": ["12"]},
+            ],
+        )
+        self.assertFalse(any(key[0] == "POST" for key, _ in calls))
+
+    def test_lookup_address_uses_current_contact_and_country_id(self):
+        existing = dict(
+            VENDOR,
+            id=12,
+            name_1="Current Invented Name",
+            country_id=6,
+            contact_type_id=2,
+        )
+        del existing["country"]
+        answers = standard_answers(contacts=[existing])
+        urlopen, calls = fake_bexio(answers)
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            _run(["--yes"] + self.lookup_args("--vendor-uid", VENDOR["vat_number"]))
+        address = _body(_sent(calls, "POST", "/4.0/purchase/bills")[0])["address"]
+        self.assertEqual(address["lastname_company"], "Current Invented Name")
+        self.assertEqual(address["type"], "PRIVATE")
+        self.assertEqual(address["country_code"], "DE")
+        first_post = next(i for i, (key, _) in enumerate(calls) if key[0] == "POST")
+        self.assertTrue(all(key[0] == "GET" for key, _ in calls[:first_post]))
+        self.assertTrue(all(key[0] == "POST" for key, _ in calls[first_post:]))
+
+    def test_minimal_address_has_required_type_and_omits_empty_fields(self):
+        self.assertEqual(
+            cb.contact_address({"name_1": "Invented Supplier"}),
+            {
+                "lastname_company": "Invented Supplier",
+                "type": "COMPANY",
+            },
+        )
+
+    def test_foreign_currency_requires_rate_before_any_request(self):
+        for rate in [None, "invalid", "NaN", "0", "-1"]:
+            args = ["--currency", "EUR"] + ARGS
+            if rate is not None:
+                args += ["--exchange-rate", rate]
+            with self.subTest(rate=rate), mock.patch.object(
+                cb.urllib.request, "urlopen"
+            ) as send:
+                with self.assertRaises(SystemExit):
+                    _run(["--yes"] + args)
+                send.assert_not_called()
+
+    def test_foreign_currency_sends_required_conversion_fields(self):
+        urlopen, calls = fake_bexio(standard_answers())
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            _run(["--yes", "--currency", "EUR", "--exchange-rate", "1"] + ARGS)
+        bill = _body(_sent(calls, "POST", "/4.0/purchase/bills")[0])
+        self.assertEqual(bill["currency_code"], "EUR")
+        self.assertEqual(bill["exchange_rate"], 1)
+        self.assertEqual(bill["base_currency_amount"], bill["amount_man"])
+
+    def test_other_supplier_reference_warns_with_realistic_list_rows(self):
+        answers = standard_answers(contacts=[dict(VENDOR, id=12)])
+        answers[("GET", "/4.0/purchase/bills")] = [
+            {"data": [{"id": "invented-bill", "vendor_ref": "INV-TEST-1"}]},
+            {"data": []},
+        ]
+        urlopen, calls = fake_bexio(answers)
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            out = _run(["--yes"] + ARGS)
+        self.assertIn("exists for another supplier", out)
+        self.assertEqual(len(_sent(calls, "POST", "/4.0/purchase/bills")), 1)
+
+    def test_vendor_field_types_refuse_before_any_request(self):
+        path = os.path.join(cb.PRIVATE, "bad-vendor-type.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(dict(VENDOR, house_number=12), f)
+        with mock.patch.object(cb.urllib.request, "urlopen") as send:
+            with self.assertRaisesRegex(SystemExit, "house_number must be a string"):
+                _run(["--yes", "--vendor", path] + ARGS[2:])
+            send.assert_not_called()
+
+    def test_accounts_are_paged_and_unknown_tax_refuses(self):
+        answers = standard_answers()
+        answers[("GET", "/2.0/accounts")] = [
+            [{"account_no": "other"}] * cb.PAGE_SIZE,
+            answers[("GET", "/2.0/accounts")][0],
+        ]
+        answers[("GET", "/3.0/taxes")] = [[]]
+        urlopen, calls = fake_bexio(answers)
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            with self.assertRaisesRegex(SystemExit, "unknown tax code"):
+                _run(["--yes"] + ARGS)
+        offsets = [
+            urllib.parse.parse_qs(urllib.parse.urlparse(r.full_url).query)["offset"]
+            for r in _sent(calls, "GET", "/2.0/accounts")
+        ]
+        self.assertEqual(offsets, [["0"], ["500"]])
+        self.assertFalse(any(key[0] == "POST" for key, _ in calls))
 
 
 if __name__ == "__main__":

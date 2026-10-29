@@ -29,7 +29,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 BEXIO_DIR = os.environ.get("BEXIO_DIR") or "/Users/bsaladin/ws_yardr_finance/frappe_docker/finance/bexio"
 sys.path.insert(0, BEXIO_DIR)
@@ -113,10 +113,13 @@ def list_taxes(token):
     return _paged_list("/3.0/taxes", token)
 
 
-def list_bills(token):
+def list_bills(token, supplier_id=None):
     rows, page = [], 1
     while True:
-        body = _send("GET", "/4.0/purchase/bills", token, query={"page": page, "page_size": PAGE_SIZE})
+        query = {"page": page, "limit": PAGE_SIZE}
+        if supplier_id is not None:
+            query["supplier_id"] = supplier_id
+        body = _send("GET", "/4.0/purchase/bills", token, query=query)
         data = body.get("data") if isinstance(body, dict) else None
         if not isinstance(data, list):
             raise SystemExit("bexio answered the bill list without its rows")
@@ -168,6 +171,9 @@ def load_vendor(path):
         raise SystemExit("refused vendor file: unknown keys {}".format(", ".join(sorted(unknown))))
     if not isinstance(vendor.get("name_1"), str) or not vendor["name_1"].strip():
         raise SystemExit("refused vendor file: name_1 is required")
+    for key, value in vendor.items():
+        if value is not None and not isinstance(value, str):
+            raise SystemExit("refused vendor file: {} must be a string".format(key))
     vendor = dict(vendor)
     vendor["name_1"] = vendor["name_1"].strip()
     vendor["country"] = vendor.get("country", "CH")
@@ -224,13 +230,16 @@ def resolve_tax(taxes, code):
 
 def contact_address(vendor):
     address_line = " ".join(part for part in (vendor.get("street_name"), vendor.get("house_number")) if part)
-    return {
+    address = {
         "lastname_company": vendor["name_1"],
-        "address_line": address_line,
-        "postcode": vendor.get("postcode") or "",
-        "city": vendor.get("city") or "",
-        "country_code": vendor.get("country") or "CH",
+        "type": "PRIVATE" if vendor.get("contact_type_id") == 2 else "COMPANY",
     }
+    # Optional address fields have minLength 1 in the create schema: omit missing ones.
+    for key, value in (("address_line", address_line), ("postcode", vendor.get("postcode")),
+                       ("city", vendor.get("city")), ("country_code", vendor.get("country"))):
+        if value:
+            address[key] = value
+    return address
 
 
 def bill_body(supplier_id, partner_id, vendor, file_uuid, nr, date, due_date, total, text, currency, account, tax):
@@ -281,6 +290,7 @@ def main(argv):
     parser.add_argument("--account", required=True, help="expense account number")
     parser.add_argument("--tax", required=True, help="input VAT code")
     parser.add_argument("--currency", default="CHF", help="three-letter upper-case currency (default: CHF)")
+    parser.add_argument("--exchange-rate", help="CHF per currency unit; required for non-CHF bills")
     parser.add_argument("--due-date", help="due date, YYYY-MM-DD (default: bill date plus 30 days)")
     parser.add_argument("--text", required=True, help="bill and line item title")
     parser.add_argument("--yes", action="store_true", help="create for real (default: dry run)")
@@ -295,6 +305,16 @@ def main(argv):
     if not re.fullmatch(r"[A-Z]{3}", args.currency):
         raise SystemExit("refused currency: use three upper-case letters")
     total = checked_total(args.total)
+    exchange_rate = None
+    if args.currency != "CHF":
+        try:
+            exchange_rate = Decimal(args.exchange_rate or "")
+        except InvalidOperation:
+            raise SystemExit("refused: non-CHF bills require --exchange-rate (CHF per currency unit)")
+        if not exchange_rate.is_finite() or exchange_rate <= 0 or exchange_rate >= 100000 or exchange_rate.as_tuple().exponent < -10:
+            raise SystemExit("refused exchange rate: use a positive rate with at most 5 integer and 10 decimal digits")
+    elif args.exchange_rate is not None:
+        raise SystemExit("refused: --exchange-rate is only used for non-CHF bills")
     bill_date = checked_date(args.date)
     due_date = checked_date(args.due_date) if args.due_date else bill_date + datetime.timedelta(days=30)
     if due_date < bill_date:
@@ -311,13 +331,16 @@ def main(argv):
     contact_plan = None
     if existing:
         supplier_id = existing["id"]
-        partner_id = existing.get("contact_partner_id", supplier_id)
-        vendor_for_bill = dict(vendor)
-        for key in ("name_1", "street_name", "house_number", "postcode", "city", "country"):
-            if not vendor_for_bill.get(key) and existing.get(key):
-                vendor_for_bill[key] = existing[key]
-        if not vendor_for_bill.get("country") and existing.get("country_code"):
-            vendor_for_bill["country"] = existing["country_code"]
+        partner_id = existing.get("contact_partner_id") or supplier_id
+        # A UID match can have a different current name/address from the input file.
+        vendor_for_bill = dict(existing)
+        vendor_for_bill["country"] = existing.get("country_code") or existing.get("country")
+        if not vendor_for_bill["country"] and existing.get("country_id") is not None:
+            countries = _send("GET", "/2.0/country", token)
+            country = [c for c in countries if c.get("id") == existing["country_id"]]
+            if len(country) != 1:
+                raise SystemExit("bexio has no single country for the existing contact")
+            vendor_for_bill["country"] = country[0]["iso_3166_alpha2"]
         print("contact: found '{}' as bexio contact id {}; not created".format(existing.get("name_1"), supplier_id))
     elif can_create:
         country = [c for c in _send("GET", "/2.0/country", token) if c.get("iso_3166_alpha2") == vendor["country"]]
@@ -335,7 +358,9 @@ def main(argv):
 
     duplicate_refs = [b for b in bills if str(b.get("vendor_ref") or "") == args.nr]
     if supplier_id is not None:
-        same_supplier = [b for b in duplicate_refs if str(b.get("supplier_id")) == str(supplier_id)]
+        # The list response has no supplier_id: ask the API to filter it instead.
+        same_supplier = [b for b in list_bills(token, supplier_id=supplier_id)
+                         if str(b.get("vendor_ref") or "") == args.nr]
         if same_supplier:
             raise SystemExit("refused: vendor_ref {} already exists for this supplier; nothing was created".format(args.nr))
     if duplicate_refs:
@@ -346,6 +371,9 @@ def main(argv):
     print("tax: {} — {} ({}%)".format(tax.get("code"), tax.get("display_name"), tax.get("value")))
     print("due date: {}".format(due_iso))
     bill_plan = bill_body(supplier_id, partner_id, vendor_for_bill, args.file_uuid, args.nr, bill_date.isoformat(), due_iso, total, args.text, args.currency, account, tax)
+    if exchange_rate is not None:
+        bill_plan["exchange_rate"] = float(exchange_rate)
+        bill_plan["base_currency_amount"] = float((total * exchange_rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
     print("bill: would create as {}:".format(BILL_STATUS))
     print(json.dumps(bill_plan, ensure_ascii=False, indent=2))
     if not args.yes:
@@ -357,7 +385,7 @@ def main(argv):
         if not isinstance(created, dict) or created.get("id") is None:
             raise SystemExit("bexio answered the contact without an id; check contacts before running again")
         supplier_id = created["id"]
-        partner_id = created.get("contact_partner_id", supplier_id)
+        partner_id = created.get("contact_partner_id") or supplier_id
         line = "contact: created bexio contact id {} ({})".format(supplier_id, vendor["name_1"])
         print(line)
         record_result(line)
