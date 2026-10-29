@@ -27,6 +27,10 @@ from private_guard import (  # every test below runs against a temp private fold
 
 TOKEN = "tok-invented-not-real"
 ARGS = [
+    "--vendor",
+    os.path.join(
+        os.environ.get("BEXIO_PRIVATE", "/tmp/bexio-tests"), "vendors", "vendor.json"
+    ),
     "--file-uuid",
     "uuid-invented-1",
     "--nr",
@@ -35,7 +39,24 @@ ARGS = [
     "2026-01-15",
     "--total",
     "733.30",
+    "--account",
+    "6000",
+    "--tax",
+    "VM81",
+    "--text",
+    "Invented supplier service",
 ]
+
+VENDOR = {
+    "name_1": "Muster Reinigung AG",
+    "vat_number": "CHE-000.000.000",
+    "street_name": "Beispielweg",
+    "house_number": "12",
+    "postcode": "8000",
+    "city": "Beispielstadt",
+    "country": "CH",
+    "mail": "rechnung@example.invalid",
+}
 
 
 def _answer(body):
@@ -68,6 +89,12 @@ def fake_bexio(answers):
 
 
 def _run(argv):
+    vendor_path = os.path.join(cb.PRIVATE, "vendors", "vendor.json")
+    os.makedirs(os.path.dirname(vendor_path), exist_ok=True)
+    if not os.path.exists(vendor_path):
+        with open(vendor_path, "w", encoding="utf-8") as f:
+            json.dump(VENDOR, f)
+    argv = [vendor_path if value == ARGS[1] else value for value in argv]
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
         cb.main(argv)
@@ -83,16 +110,56 @@ def _body(req):
 
 
 def standard_answers(contacts=None, bills=None):
-    """A yard with no Vebego contact and no bill of that number yet, unless the caller says otherwise."""
+    """An invented yard with no matching contact or bill, unless the caller says otherwise."""
     return {
         ("GET", "/2.0/contact"): [
-            contacts if contacts is not None else [{"id": 1, "name_1": "Muster AG"}]
+            (
+                contacts
+                if contacts is not None
+                else [{"id": 1, "name_1": "Unrelated Vendor"}]
+            )
         ],
         ("GET", "/2.0/country"): [
             [{"id": 5, "iso_3166_alpha2": "CH"}, {"id": 6, "iso_3166_alpha2": "DE"}]
         ],
         ("GET", "/3.0/users/me"): [{"id": 9}],
-        ("GET", "/4.0/purchase/bills"): [{"data": bills if bills is not None else []}],
+        ("GET", "/4.0/purchase/bills"): [
+            {"data": bills if bills is not None else []},
+            {
+                "data": [
+                    b
+                    for b in (bills or [])
+                    if any(
+                        str(c.get("id")) == str(b.get("supplier_id"))
+                        for c in (contacts or [])
+                    )
+                ]
+            },
+        ],
+        ("GET", "/2.0/accounts"): [
+            [
+                {
+                    "id": 16,
+                    "account_no": "6000",
+                    "name": "Office supplies",
+                    "account_type": 2,
+                    "is_active": True,
+                    "is_locked": False,
+                }
+            ]
+        ],
+        ("GET", "/3.0/taxes"): [
+            [
+                {
+                    "id": 23,
+                    "code": "VM81",
+                    "display_name": "Input VAT 8.1%",
+                    "value": 8.1,
+                    "type": "pre_tax_material",
+                    "is_active": True,
+                }
+            ]
+        ],
         ("POST", "/2.0/contact"): [{"id": 77}],
         ("POST", "/4.0/purchase/bills"): [{"id": 88}],
     }
@@ -156,10 +223,11 @@ class ResultFileTest(unittest.TestCase):
         content = self.result()
         self.assertIn("contact id 77", content)
         self.assertIn("bill id 88", content)
+        self.assertIn("vendor_ref INV-TEST-1 supplier id 77", content)
         self.assertNotIn(TOKEN, content)
 
     def test_an_existing_contact_records_only_the_bill_id(self):
-        answers = standard_answers(contacts=[{"id": 12, "name_1": "VEBEGO AG"}])
+        answers = standard_answers(contacts=[dict(VENDOR, id=12)])
         del answers[("GET", "/2.0/country")], answers[("GET", "/3.0/users/me")]
         urlopen, calls = fake_bexio(answers)
         with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
@@ -191,14 +259,15 @@ class PlanTest(unittest.TestCase):
         self.assertEqual(_sent(calls, "POST", "/4.0/purchase/bills"), [])
         self.assertIn("would create", out)
         self.assertIn("dry run: nothing created", out)
-        self.assertIn('"name_1": "Vebego AG"', out)
-        self.assertIn('"street_name": "Kanalstrasse"', out)
-        self.assertIn('"city": "Dietikon"', out)
-        self.assertNotIn("Albisriederstrasse", out)
+        self.assertIn('"name_1": "Muster Reinigung AG"', out)
+        self.assertIn('"street_name": "Beispielweg"', out)
+        self.assertIn('"city": "Beispielstadt"', out)
         self.assertIn('"country_id": 5', out)
         self.assertIn('"owner_id": 9', out)
         self.assertIn('"attachment_ids": [\n    "uuid-invented-1"', out)
-        self.assertIn('"gross": 733.3', out)
+        self.assertIn('"amount_man": 733.3', out)
+        self.assertIn('"booking_account_id": 16', out)
+        self.assertIn('"tax_id": 23', out)
         self.assertNotIn(TOKEN, out)
 
     def test_yes_creates_the_contact_then_the_bill(self):
@@ -206,21 +275,29 @@ class PlanTest(unittest.TestCase):
         with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
             out = _run(["--yes"] + ARGS)
         contact = _body(_sent(calls, "POST", "/2.0/contact")[0])
-        self.assertEqual(contact["name_1"], "Vebego AG")
+        self.assertEqual(contact["name_1"], "Muster Reinigung AG")
         self.assertEqual(contact["contact_type_id"], 1)
         self.assertEqual(contact["country_id"], 5)
-        self.assertEqual(contact["vat_number"], "CHE-105.953.190")
+        self.assertEqual(contact["vat_number"], "CHE-000.000.000")
         bill = _body(_sent(calls, "POST", "/4.0/purchase/bills")[0])
         self.assertEqual(bill["supplier_id"], 77)
         self.assertEqual(bill["vendor_ref"], "INV-TEST-1")
         self.assertEqual(bill["bill_date"], "2026-01-15")
         self.assertEqual(bill["currency_code"], "CHF")
-        self.assertEqual(bill["gross"], 733.3)
-        self.assertEqual(bill["title"], cb.DEFAULT_TEXT)
+        self.assertEqual(bill["amount_man"], 733.3)
+        self.assertEqual(bill["title"], "Invented supplier service")
         self.assertEqual(bill["attachment_ids"], ["uuid-invented-1"])
-        self.assertEqual(bill["status"], "DRAFT")
-        self.assertNotIn("positions", bill)
-        self.assertNotIn("line_items", bill)
+        self.assertNotIn("status", bill)
+        self.assertEqual(bill["line_items"][0]["amount"], 733.3)
+        self.assertEqual(bill["line_items"][0]["booking_account_id"], 16)
+        self.assertEqual(bill["line_items"][0]["tax_id"], 23)
+        self.assertEqual(bill["currency_code"], "CHF")
+        self.assertEqual(bill["due_date"], "2026-02-14")
+        self.assertFalse(bill["item_net"])
+        self.assertTrue(bill["manual_amount"])
+        self.assertEqual(bill["discounts"], [])
+        self.assertNotIn("split_into_line_items", bill)
+        self.assertNotIn("status", bill)
         self.assertIn("created bexio contact id 77", out)
         self.assertIn("created bexio bill id 88", out)
         self.assertNotIn(TOKEN, out)
@@ -230,7 +307,7 @@ class PlanTest(unittest.TestCase):
         answers = standard_answers()
         answers[("GET", "/2.0/contact")] = [
             contacts,
-            [{"id": 12, "name_1": "VEBEGO AG"}],
+            [dict(VENDOR, id=12)],
         ]
         del answers[("GET", "/2.0/country")], answers[("GET", "/3.0/users/me")]
         urlopen, calls = fake_bexio(answers)
@@ -240,13 +317,15 @@ class PlanTest(unittest.TestCase):
         self.assertEqual(
             _body(_sent(calls, "POST", "/4.0/purchase/bills")[0])["supplier_id"], 12
         )
-        self.assertIn("found 'VEBEGO AG' as bexio contact id 12; not created", out)
+        self.assertIn(
+            "found 'Muster Reinigung AG' as bexio contact id 12; not created", out
+        )
 
     def test_two_matching_contacts_refuse_before_any_write(self):
         answers = standard_answers(
             contacts=[
-                {"id": 3, "name_1": "Vebego AG"},
-                {"id": 4, "name_1": "Vebego Ost"},
+                dict(VENDOR, id=3),
+                dict(VENDOR, id=4),
             ]
         )
         urlopen, calls = fake_bexio(answers)
@@ -258,19 +337,23 @@ class PlanTest(unittest.TestCase):
 
     def test_an_invoice_number_already_in_bexio_refuses_before_any_write(self):
         urlopen, calls = fake_bexio(
-            standard_answers(bills=[{"id": 5, "vendor_ref": "INV-TEST-1"}])
+            standard_answers(
+                contacts=[dict(VENDOR, id=12)],
+                bills=[{"id": 5, "supplier_id": 12, "vendor_ref": "INV-TEST-1"}],
+            )
         )
         with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
             with self.assertRaises(SystemExit) as cm:
                 _run(["--yes"] + ARGS)
-        self.assertIn("already in bexio", str(cm.exception))
+        self.assertIn("already exists for this supplier", str(cm.exception))
         self.assertEqual([k for (k, _) in calls if k[0] == "POST"], [])
 
     def test_bills_are_read_page_by_page(self):
         full = [{"id": i, "vendor_ref": f"other-{i}"} for i in range(cb.PAGE_SIZE)]
-        answers = standard_answers()
+        answers = standard_answers(contacts=[dict(VENDOR, id=12)])
         answers[("GET", "/4.0/purchase/bills")] = [
             {"data": full},
+            {"data": [{"id": 6, "vendor_ref": "INV-TEST-1"}]},
             {"data": [{"id": 6, "vendor_ref": "INV-TEST-1"}]},
         ]
         urlopen, calls = fake_bexio(answers)
@@ -281,7 +364,7 @@ class PlanTest(unittest.TestCase):
             urllib.parse.parse_qs(urllib.parse.urlparse(r.full_url).query)["page"]
             for r in _sent(calls, "GET", "/4.0/purchase/bills")
         ]
-        self.assertEqual(pages, [["1"], ["2"]])
+        self.assertEqual(pages, [["1"], ["2"], ["1"]])
 
 
 class PostGuardTest(unittest.TestCase):
@@ -348,7 +431,21 @@ class ArgumentTest(unittest.TestCase):
     def test_bad_totals_and_dates_send_nothing(self):
         bad_totals = ["0", "-5", "2.001", "abc", "nan"]
         bad_dates = ["2026-13-01", "15.01.2026"]
-        base = ["--yes", "--file-uuid", "uuid-invented-1", "--nr", "INV-TEST-1"]
+        base = [
+            "--yes",
+            "--vendor",
+            ARGS[1],
+            "--file-uuid",
+            "uuid-invented-1",
+            "--nr",
+            "INV-TEST-1",
+            "--account",
+            "6000",
+            "--tax",
+            "VM81",
+            "--text",
+            "Invented service",
+        ]
         cases = [base + ["--date", "2026-01-15", "--total", t] for t in bad_totals]
         cases += [base + ["--date", d, "--total", "733.30"] for d in bad_dates]
         for argv in cases:
@@ -365,6 +462,8 @@ class ArgumentTest(unittest.TestCase):
                 _run(
                     [
                         "--yes",
+                        "--vendor",
+                        ARGS[1],
                         "--file-uuid",
                         "uuid-invented-1",
                         "--nr",
@@ -373,22 +472,273 @@ class ArgumentTest(unittest.TestCase):
                         "2026-01-15",
                         "--total",
                         "733.30",
+                        "--account",
+                        "6000",
+                        "--tax",
+                        "VM81",
+                        "--text",
+                        "Invented service",
                     ]
                 )
         urlopen.assert_not_called()
 
 
 class ContactBodyTest(unittest.TestCase):
-    def test_the_vendor_has_the_address_from_the_invoice(self):
-        body = cb.contact_body(9, 5)
-        self.assertEqual(body["street_name"], "Kanalstrasse")
-        self.assertEqual(body["house_number"], "6")
-        self.assertEqual(body["postcode"], "8953")
-        self.assertEqual(body["city"], "Dietikon")
-        self.assertEqual(body["mail"], "zuerich@vebego.ch")
-        self.assertNotIn("phone_fixed", body)
-        self.assertNotIn("fax", body)
+    def test_contact_body_uses_vendor_fields_and_owner(self):
+        body = cb.contact_body(VENDOR, 9, 5)
+        self.assertEqual(body["street_name"], "Beispielweg")
+        self.assertEqual(body["house_number"], "12")
+        self.assertEqual(body["postcode"], "8000")
+        self.assertEqual(body["city"], "Beispielstadt")
+        self.assertEqual(body["mail"], "rechnung@example.invalid")
+        self.assertNotIn("country", body)
         self.assertEqual((body["user_id"], body["owner_id"]), (9, 9))
+
+
+class GeneralizationTest(unittest.TestCase):
+    def setUp(self):
+        patcher = mock.patch.dict(os.environ, {"BEXIO_TOKEN": TOKEN}, clear=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def lookup_args(self, *lookup):
+        args = list(ARGS[2:])
+        return list(lookup) + args
+
+    def test_uid_punctuation_match_beats_exact_name(self):
+        answers = standard_answers(
+            contacts=[
+                {"id": 30, "name_1": VENDOR["name_1"], "vat_number": "CHE 999 999 999"},
+                {"id": 31, "name_1": "Different Name", "vat_number": "CH-E000000000"},
+            ]
+        )
+        del answers[("GET", "/2.0/country")], answers[("GET", "/3.0/users/me")]
+        urlopen, calls = fake_bexio(answers)
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            out = _run(["--yes"] + ARGS)
+        bill = _body(_sent(calls, "POST", "/4.0/purchase/bills")[0])
+        self.assertEqual(bill["supplier_id"], 31)
+        self.assertIn("Different Name", out)
+
+    def test_exact_name_reused_but_substring_does_not_match(self):
+        exact = standard_answers(
+            contacts=[{"id": 41, "name_1": "  MUSTER   REINIGUNG AG "}]
+        )
+        del exact[("GET", "/2.0/country")], exact[("GET", "/3.0/users/me")]
+        urlopen, calls = fake_bexio(exact)
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            _run(["--yes"] + ARGS)
+        self.assertEqual(
+            _body(_sent(calls, "POST", "/4.0/purchase/bills")[0])["supplier_id"], 41
+        )
+        args = self.lookup_args("--vendor-name", "Muster Reinigung AG")
+        answers = standard_answers(
+            contacts=[{"id": 42, "name_1": "Muster Reinigung AG Ost"}]
+        )
+        urlopen, calls = fake_bexio(answers)
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            with self.assertRaises(SystemExit) as cm:
+                _run(args)
+        self.assertIn("no contact; pass --vendor <file>", str(cm.exception))
+        self.assertEqual([key for key, _ in calls if key[0] == "POST"], [])
+
+    def test_vendor_file_outside_private_and_unknown_key_refuse(self):
+        with mock.patch.object(
+            cb, "PRIVATE", "/tmp/bexio-private-test"
+        ), mock.patch.object(cb.urllib.request, "urlopen") as urlopen:
+            with self.assertRaises(SystemExit):
+                _run(["--vendor", "/tmp/outside-vendor.json"] + ARGS[2:])
+            urlopen.assert_not_called()
+        path = os.path.join(cb.PRIVATE, "vendors", "bad-vendor.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(dict(VENDOR, surprise="no"), f)
+        with mock.patch.object(cb.urllib.request, "urlopen") as urlopen:
+            with self.assertRaises(SystemExit) as cm:
+                _run(["--vendor", path] + ARGS[2:])
+        self.assertIn("unknown keys", str(cm.exception))
+        urlopen.assert_not_called()
+
+    def test_invalid_accounts_and_taxes_refuse(self):
+        bad_accounts = [
+            [],
+            [{"id": 1, "account_no": "6000", "is_active": False, "is_locked": False}],
+            [{"id": 1, "account_no": "6000", "is_active": True, "is_locked": True}],
+            [
+                {
+                    "id": 1,
+                    "account_no": "6000",
+                    "account_type": 1,
+                    "is_active": True,
+                    "is_locked": False,
+                }
+            ],
+        ]
+        for rows in bad_accounts:
+            answers = standard_answers()
+            answers[("GET", "/2.0/accounts")] = [rows]
+            urlopen, calls = fake_bexio(answers)
+            with self.subTest(rows=rows), mock.patch.object(
+                cb.urllib.request, "urlopen", side_effect=urlopen
+            ):
+                with self.assertRaises(SystemExit):
+                    _run(ARGS)
+                self.assertEqual([key for key, _ in calls if key[0] == "POST"], [])
+        for tax in [
+            {"id": 1, "code": "VM81", "type": "sales_tax", "is_active": True},
+            {"id": 1, "code": "VM81", "type": "pre_tax_material", "is_active": False},
+        ]:
+            answers = standard_answers()
+            answers[("GET", "/3.0/taxes")] = [[tax]]
+            urlopen, calls = fake_bexio(answers)
+            with self.subTest(tax=tax), mock.patch.object(
+                cb.urllib.request, "urlopen", side_effect=urlopen
+            ):
+                with self.assertRaises(SystemExit):
+                    _run(ARGS)
+                self.assertEqual([key for key, _ in calls if key[0] == "POST"], [])
+
+    def test_same_vendor_ref_for_other_supplier_warns_and_exact_request_set(self):
+        answers = standard_answers(
+            bills=[{"id": 9, "supplier_id": 999, "vendor_ref": "INV-TEST-1"}]
+        )
+        urlopen, calls = fake_bexio(answers)
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            out = _run(ARGS)
+        self.assertIn("warning: vendor_ref INV-TEST-1 exists for another supplier", out)
+        self.assertEqual([key for key, _ in calls if key[0] == "POST"], [])
+        self.assertEqual(
+            cb.REQUESTS,
+            {
+                ("GET", "/2.0/contact"),
+                ("GET", "/2.0/country"),
+                ("GET", "/3.0/users/me"),
+                ("GET", "/4.0/purchase/bills"),
+                ("GET", "/2.0/accounts"),
+                ("GET", "/3.0/taxes"),
+                ("POST", "/2.0/contact"),
+                ("POST", "/4.0/purchase/bills"),
+            },
+        )
+
+
+class ReviewRegressionTest(unittest.TestCase):
+    setUp = GeneralizationTest.setUp
+    lookup_args = GeneralizationTest.lookup_args
+
+    def test_duplicate_check_uses_supplier_filter_and_documented_limit(self):
+        # Actual list rows omit supplier_id, even for a matching supplier.
+        answers = standard_answers(contacts=[dict(VENDOR, id=12)])
+        row = {"id": "invented-bill", "vendor_ref": "INV-TEST-1"}
+        answers[("GET", "/4.0/purchase/bills")] = [
+            {"data": [row]},
+            {"data": [row]},
+        ]
+        urlopen, calls = fake_bexio(answers)
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            with self.assertRaisesRegex(SystemExit, "already exists for this supplier"):
+                _run(["--yes"] + ARGS)
+        queries = [
+            urllib.parse.parse_qs(urllib.parse.urlparse(r.full_url).query)
+            for r in _sent(calls, "GET", "/4.0/purchase/bills")
+        ]
+        self.assertEqual(
+            queries,
+            [
+                {"page": ["1"], "limit": ["500"]},
+                {"page": ["1"], "limit": ["500"], "supplier_id": ["12"]},
+            ],
+        )
+        self.assertFalse(any(key[0] == "POST" for key, _ in calls))
+
+    def test_lookup_address_uses_current_contact_and_country_id(self):
+        existing = dict(
+            VENDOR,
+            id=12,
+            name_1="Current Invented Name",
+            country_id=6,
+            contact_type_id=2,
+        )
+        del existing["country"]
+        answers = standard_answers(contacts=[existing])
+        urlopen, calls = fake_bexio(answers)
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            _run(["--yes"] + self.lookup_args("--vendor-uid", VENDOR["vat_number"]))
+        address = _body(_sent(calls, "POST", "/4.0/purchase/bills")[0])["address"]
+        self.assertEqual(address["lastname_company"], "Current Invented Name")
+        self.assertEqual(address["type"], "PRIVATE")
+        self.assertEqual(address["country_code"], "DE")
+        first_post = next(i for i, (key, _) in enumerate(calls) if key[0] == "POST")
+        self.assertTrue(all(key[0] == "GET" for key, _ in calls[:first_post]))
+        self.assertTrue(all(key[0] == "POST" for key, _ in calls[first_post:]))
+
+    def test_minimal_address_has_required_type_and_omits_empty_fields(self):
+        self.assertEqual(
+            cb.contact_address({"name_1": "Invented Supplier"}),
+            {
+                "lastname_company": "Invented Supplier",
+                "type": "COMPANY",
+            },
+        )
+
+    def test_foreign_currency_requires_rate_before_any_request(self):
+        for rate in [None, "invalid", "NaN", "0", "-1"]:
+            args = ["--currency", "EUR"] + ARGS
+            if rate is not None:
+                args += ["--exchange-rate", rate]
+            with self.subTest(rate=rate), mock.patch.object(
+                cb.urllib.request, "urlopen"
+            ) as send:
+                with self.assertRaises(SystemExit):
+                    _run(["--yes"] + args)
+                send.assert_not_called()
+
+    def test_foreign_currency_sends_required_conversion_fields(self):
+        urlopen, calls = fake_bexio(standard_answers())
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            _run(["--yes", "--currency", "EUR", "--exchange-rate", "1"] + ARGS)
+        bill = _body(_sent(calls, "POST", "/4.0/purchase/bills")[0])
+        self.assertEqual(bill["currency_code"], "EUR")
+        self.assertEqual(bill["exchange_rate"], 1)
+        self.assertEqual(bill["base_currency_amount"], bill["amount_man"])
+
+    def test_other_supplier_reference_warns_with_realistic_list_rows(self):
+        answers = standard_answers(contacts=[dict(VENDOR, id=12)])
+        answers[("GET", "/4.0/purchase/bills")] = [
+            {"data": [{"id": "invented-bill", "vendor_ref": "INV-TEST-1"}]},
+            {"data": []},
+        ]
+        urlopen, calls = fake_bexio(answers)
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            out = _run(["--yes"] + ARGS)
+        self.assertIn("exists for another supplier", out)
+        self.assertEqual(len(_sent(calls, "POST", "/4.0/purchase/bills")), 1)
+
+    def test_vendor_field_types_refuse_before_any_request(self):
+        path = os.path.join(cb.PRIVATE, "bad-vendor-type.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(dict(VENDOR, house_number=12), f)
+        with mock.patch.object(cb.urllib.request, "urlopen") as send:
+            with self.assertRaisesRegex(SystemExit, "house_number must be a string"):
+                _run(["--yes", "--vendor", path] + ARGS[2:])
+            send.assert_not_called()
+
+    def test_accounts_are_paged_and_unknown_tax_refuses(self):
+        answers = standard_answers()
+        answers[("GET", "/2.0/accounts")] = [
+            [{"account_no": "other"}] * cb.PAGE_SIZE,
+            answers[("GET", "/2.0/accounts")][0],
+        ]
+        answers[("GET", "/3.0/taxes")] = [[]]
+        urlopen, calls = fake_bexio(answers)
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            with self.assertRaisesRegex(SystemExit, "unknown tax code"):
+                _run(["--yes"] + ARGS)
+        offsets = [
+            urllib.parse.parse_qs(urllib.parse.urlparse(r.full_url).query)["offset"]
+            for r in _sent(calls, "GET", "/2.0/accounts")
+        ]
+        self.assertEqual(offsets, [["0"], ["500"]])
+        self.assertFalse(any(key[0] == "POST" for key, _ in calls))
 
 
 if __name__ == "__main__":

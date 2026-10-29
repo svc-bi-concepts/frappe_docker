@@ -742,11 +742,12 @@ The failure mail is pinned in the wrapper, not in the plist: `sync_hourly.sh` ca
 and `YARDR_ACTOR=Benchi`, so the mail reaches this yard under launchd's bare env as well as by hand
 (erp-xgpk, erp-xwht).
 
-## Uploading a bill (the only write to bexio)
+## Supplier bills (the only writes to bexio)
 
-`upload_bill.py` puts a bill PDF into bexio's file inbox (Dateneingang), from which bexio turns it
-into a bill. This is the only write to bexio: Benchi's exception of 2026-10-12. Nothing else is
-written, and the client and `SCOPE` stay read-only.
+`upload_bill.py` uploads a PDF to bexio's file inbox (Dateneingang), and
+`create_contact_and_bill.py` creates a supplier contact when needed and a draft bill. These are
+the only writers (Benchi, 2026-10-12 and 2026-10-29). `client.py` remains GET-only and OAuth
+`SCOPE` remains read-only.
 
 ```sh
 finance/bexio/upload_bill.py <file>.pdf        # dry run
@@ -762,6 +763,34 @@ finance/bexio/upload_bill.py --yes <file>.pdf
   bexio file id and uuid of each upload are printed. A POST is never retried: after an error, look in the
   inbox before sending the file again.
 - Only `.pdf` files under `private/` are sent, each checked before the first upload.
+
+The yardmaster's first-run sequence is:
+
+1. Run `finance/bexio/upload_bill.py <pdf>` to preview, then repeat with `--yes`. Read the uploaded
+   file uuid from the new line in `private/bexio-upload/last-result.txt`.
+2. If the supplier contact may be new, put its JSON in `private/bexio-vendors/`. Example shape
+   (invented values):
+
+   ```json
+   {
+     "name_1": "Muster Reinigung AG",
+     "vat_number": "CHE-000.000.000",
+     "street_name": "Beispielweg",
+     "house_number": "12",
+     "postcode": "8000",
+     "city": "Beispielstadt",
+     "country": "CH",
+     "mail": "rechnung@example.invalid"
+   }
+   ```
+
+   `name_1` is required; the other vendor fields are optional, and `country` defaults to `CH`.
+   Unknown keys and files outside `private/` are refused. For an existing contact, use
+   `--vendor-name` and/or `--vendor-uid` instead; lookup-only mode never creates a contact.
+
+3. Run `finance/bexio/create_contact_and_bill.py --vendor <file> --file-uuid <uuid> --nr <number> --date <YYYY-MM-DD> --total <gross-total> --account <account-no> --tax <input-VAT-code> --text <text>` as a dry run. Review the resolved account, input VAT code, currency and due date, then repeat with `--yes`. For a known contact, replace `--vendor <file>` with `--vendor-name <name>` and/or `--vendor-uid <uid>`. Currency defaults to CHF; due date defaults to 30 days after the bill date. For another currency, also pass `--exchange-rate <CHF-per-unit>` from Benchi; the script includes the required exchange rate and rounded CHF base amount for these CHF books.
+4. Mail Benchi the vendor, invoice number, date, total and bexio ids from the result file. The bill
+   is a draft only; Benchi books and pays it. Ask Benchi first if the account or VAT code is in doubt.
 
 ## Tests never touch private/
 
