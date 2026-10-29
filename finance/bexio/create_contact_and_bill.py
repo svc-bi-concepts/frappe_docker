@@ -52,6 +52,14 @@ PRIVATE = os.environ.get("BEXIO_PRIVATE") or "/Users/bsaladin/ws_yardr_finance/p
 RESULT_FOLDER = "bexio-upload"
 RESULT_FILE = "last-result.txt"
 VENDOR_KEYS = {"name_1", "vat_number", "street_name", "house_number", "postcode", "city", "country", "mail"}
+# Fields accepted by POST /2.0/contact, per https://docs.bexio.com/#operation/ApiContacts_POST.
+CONTACT_CREATE_FIELDS = {
+    "contact_type_id", "name_1", "name_2", "salutation_id", "salutation_form", "title_id",
+    "birthday", "street_name", "house_number", "address_addition", "postcode", "city",
+    "country_id", "mail", "mail_second", "phone_fixed", "phone_fixed_second", "phone_mobile",
+    "fax", "url", "skype_name", "remarks", "language_id", "contact_group_ids",
+    "contact_branch_ids", "user_id", "owner_id",
+}
 
 
 def record_result(line):
@@ -130,7 +138,21 @@ def list_bills(token, supplier_id=None):
 
 
 def normalize_uid(value):
-    return "".join(re.findall(r"\d", str(value or "")))
+    match = re.search(r"(?i)\bCHE[\s.-]*(\d{3})[\s.-]?(\d{3})[\s.-]?(\d{3})(?!\d)", str(value or ""))
+    return "".join(match.groups()) if match else ""
+
+
+def contact_uid(contact):
+    return normalize_uid(contact.get("remarks"))
+
+
+def canonical_uid(value):
+    if not re.fullmatch(r"(?i)\s*CHE[\s.-]*\d{3}[\s.-]?\d{3}[\s.-]?\d{3}(?:\s+MWST)?\s*", str(value or "")):
+        raise SystemExit("refused vendor UID: expected CHE followed by nine digits")
+    uid = normalize_uid(value)
+    if not uid:
+        raise SystemExit("refused vendor UID: expected CHE followed by nine digits")
+    return "CHE-{}.{}.{}".format(uid[:3], uid[3:6], uid[6:])
 
 
 def normalize_name(value):
@@ -140,10 +162,16 @@ def normalize_name(value):
 def find_vendor(contacts, vendor):
     """Prefer exact UID, then exact normalized name; refuse ambiguous matches."""
     uid = normalize_uid(vendor.get("vat_number"))
-    found = [c for c in contacts if uid and normalize_uid(c.get("vat_number")) == uid]
+    found = [c for c in contacts if uid and contact_uid(c) == uid]
+    name = normalize_name(vendor.get("name_1"))
+    named = [c for c in contacts if name and normalize_name(c.get("name_1")) == name]
+    different_uid = [c for c in named if contact_uid(c) and contact_uid(c) != uid]
+    if different_uid:
+        ids = {str(c.get("id")) for c in found + different_uid}
+        raise SystemExit("name and UID point to different contact id(s) {}; check bexio before proceeding".format(
+            ", ".join(sorted(ids))))
     if not found:
-        name = normalize_name(vendor.get("name_1"))
-        found = [c for c in contacts if name and normalize_name(c.get("name_1")) == name]
+        found = named
     if len(found) > 1:
         raise SystemExit("{} contacts match the vendor ({}); resolve the duplicates in bexio first".format(
             len(found), ", ".join(str(c.get("id")) for c in found)))
@@ -186,15 +214,29 @@ def vendor_from_args(args):
     if args.vendor:
         if args.vendor_name or args.vendor_uid:
             raise SystemExit("refused: use --vendor or lookup arguments, not both")
-        return load_vendor(args.vendor), True
+        vendor = load_vendor(args.vendor)
+        if vendor.get("vat_number"):
+            canonical_uid(vendor["vat_number"])
+        return vendor, True
     if not args.vendor_name and not args.vendor_uid:
         raise SystemExit("refused: pass exactly one of --vendor or --vendor-name/--vendor-uid")
+    if args.vendor_uid:
+        canonical_uid(args.vendor_uid)
     return {"name_1": args.vendor_name or "", "vat_number": args.vendor_uid}, False
 
 
 def contact_body(vendor, owner_id, country_id):
-    fields = {key: value for key, value in vendor.items() if key in VENDOR_KEYS - {"country"} and value is not None}
+    unknown_vendor_fields = set(vendor) - VENDOR_KEYS
+    if unknown_vendor_fields:
+        raise ValueError("vendor contains unsupported fields: {}".format(", ".join(sorted(unknown_vendor_fields))))
+    fields = {key: value for key, value in vendor.items()
+              if key in CONTACT_CREATE_FIELDS and key in VENDOR_KEYS - {"country", "vat_number"} and value is not None}
+    if vendor.get("vat_number"):
+        fields["remarks"] = "UID " + canonical_uid(vendor["vat_number"])
     fields.update(contact_type_id=1, country_id=country_id, user_id=owner_id, owner_id=owner_id)
+    unknown = set(fields) - CONTACT_CREATE_FIELDS
+    if unknown:
+        raise ValueError("contact body contains undocumented fields: {}".format(", ".join(sorted(unknown))))
     return fields
 
 
