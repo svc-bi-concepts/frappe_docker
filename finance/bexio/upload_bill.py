@@ -4,11 +4,11 @@
 # /dev/fd script from where its zip check left the shared offset: a script
 # of more than a few bytes then runs empty and exits 0 (IT, 2026-10-14).
 exec /usr/bin/python3 -I - "$@" <<'__BEXIO_UPLOAD_BILL_PY__'
-"""Upload bill PDFs to the bexio file inbox (Dateneingang): the one write to bexio.
+"""Upload bill PDFs to the bexio file inbox (Dateneingang).
 
 bexio turns a file in its inbox into a bill; this script only puts the file there.
-Benchi decided on this one exception to "bexio is read-only" (2026-10-12). Nothing
-else is written: the one request the script can make is POST /3.0/files with the
+Benchi approved this upload path on 2026-10-12. The only request this script can
+make is POST /3.0/files with the
 PDF as the multipart field "file", and _send refuses any other method or path.
 
 It authenticates with the personal access token only: BEXIO_TOKEN, injected by av
