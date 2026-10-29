@@ -52,9 +52,9 @@ PRIVATE = os.environ.get("BEXIO_PRIVATE") or "/Users/bsaladin/ws_yardr_finance/p
 RESULT_FOLDER = "bexio-upload"
 RESULT_FILE = "last-result.txt"
 VENDOR_KEYS = {"name_1", "vat_number", "street_name", "house_number", "postcode", "city", "country", "mail"}
-# Fields accepted by POST /2.0/contact, per https://docs.bexio.com/#operation/ApiContacts_POST.
+# Fields accepted by POST /2.0/contact, per https://docs.bexio.com/#tag/Contacts/operation/v2CreateContact.
 CONTACT_CREATE_FIELDS = {
-    "contact_type_id", "name_1", "name_2", "salutation_id", "salutation_form", "title_id",
+    "nr", "contact_type_id", "name_1", "name_2", "salutation_id", "salutation_form", "title_id",
     "birthday", "street_name", "house_number", "address_addition", "postcode", "city",
     "country_id", "mail", "mail_second", "phone_fixed", "phone_fixed_second", "phone_mobile",
     "fax", "url", "skype_name", "remarks", "language_id", "contact_group_ids",
@@ -165,7 +165,7 @@ def find_vendor(contacts, vendor):
     found = [c for c in contacts if uid and contact_uid(c) == uid]
     name = normalize_name(vendor.get("name_1"))
     named = [c for c in contacts if name and normalize_name(c.get("name_1")) == name]
-    different_uid = [c for c in named if contact_uid(c) and contact_uid(c) != uid]
+    different_uid = [c for c in named if uid and contact_uid(c) and contact_uid(c) != uid]
     if different_uid:
         ids = {str(c.get("id")) for c in found + different_uid}
         raise SystemExit("name and UID point to different contact id(s) {}; check bexio before proceeding".format(

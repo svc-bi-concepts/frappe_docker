@@ -61,6 +61,39 @@ CONTACT = {key: value for key, value in VENDOR.items() if key != "vat_number"}
 CONTACT["remarks"] = "UID CHE-000.000.001"
 
 
+# POST /2.0/contact request fields, copied from https://docs.bexio.com/#tag/Contacts/operation/v2CreateContact.
+DOCUMENTED_CONTACT_CREATE_FIELDS = {
+    "nr",
+    "contact_type_id",
+    "name_1",
+    "name_2",
+    "salutation_id",
+    "salutation_form",
+    "title_id",
+    "birthday",
+    "street_name",
+    "house_number",
+    "address_addition",
+    "postcode",
+    "city",
+    "country_id",
+    "mail",
+    "mail_second",
+    "phone_fixed",
+    "phone_fixed_second",
+    "phone_mobile",
+    "fax",
+    "url",
+    "skype_name",
+    "remarks",
+    "language_id",
+    "contact_group_ids",
+    "contact_branch_ids",
+    "user_id",
+    "owner_id",
+}
+
+
 def _answer(body):
     resp = mock.MagicMock()
     resp.read.return_value = body
@@ -488,6 +521,24 @@ class ArgumentTest(unittest.TestCase):
 
 
 class ContactBodyTest(unittest.TestCase):
+    def test_allowlist_matches_documented_create_schema(self):
+        self.assertEqual(cb.CONTACT_CREATE_FIELDS, DOCUMENTED_CONTACT_CREATE_FIELDS)
+
+    def test_contact_body_refuses_unknown_vendor_fields(self):
+        with self.assertRaisesRegex(ValueError, "unsupported fields"):
+            cb.contact_body(dict(VENDOR, unexpected="invented"), 9, 5)
+
+    def test_invalid_vendor_uid_refuses_before_any_request(self):
+        path = os.path.join(cb.PRIVATE, "invalid-uid-vendor.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(dict(VENDOR, vat_number="not-a-uid"), f)
+        with mock.patch.dict(os.environ, BEXIO_TOKEN=TOKEN), mock.patch.object(
+            cb.urllib.request, "urlopen"
+        ) as urlopen:
+            with self.assertRaisesRegex(SystemExit, "refused vendor UID"):
+                _run(["--vendor", path] + ARGS[2:])
+        urlopen.assert_not_called()
+
     def test_contact_body_uses_vendor_fields_and_owner(self):
         body = cb.contact_body(VENDOR, 9, 5)
         self.assertEqual(body["street_name"], "Beispielweg")
@@ -517,8 +568,10 @@ class ContactBodyTest(unittest.TestCase):
             )
 
     def test_invalid_uid_is_refused_before_any_request(self):
-        with mock.patch.object(cb.urllib.request, "urlopen") as urlopen:
-            with self.assertRaises(SystemExit):
+        with mock.patch.dict(os.environ, BEXIO_TOKEN=TOKEN), mock.patch.object(
+            cb.urllib.request, "urlopen"
+        ) as urlopen:
+            with self.assertRaisesRegex(SystemExit, "refused vendor UID"):
                 _run(["--vendor-uid", "not-a-uid"] + ARGS[2:])
         urlopen.assert_not_called()
 
@@ -532,6 +585,16 @@ class GeneralizationTest(unittest.TestCase):
     def lookup_args(self, *lookup):
         args = list(ARGS[2:])
         return list(lookup) + args
+
+    def test_name_only_reuses_contact_with_uid_in_remarks(self):
+        answers = standard_answers(contacts=[dict(CONTACT, id=12)])
+        urlopen, calls = fake_bexio(answers)
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            _run(["--yes", "--vendor-name", VENDOR["name_1"]] + ARGS[2:])
+        self.assertEqual(_sent(calls, "POST", "/2.0/contact"), [])
+        self.assertEqual(
+            _body(_sent(calls, "POST", "/4.0/purchase/bills")[0])["supplier_id"], 12
+        )
 
     def test_conflicting_name_uid_and_uid_match_refuse(self):
         answers = standard_answers(
