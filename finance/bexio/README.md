@@ -772,7 +772,13 @@ mail reader and places their PDF attachments or approved download-link PDFs unde
 `private/bills/incoming/`. Configure `private/bills/sweep.json` with mode 600, for example:
 
 ```json
-{"folders":["inbox"],"hosts":["example.test"],"forwarders":["forwarder@example.test"],"senders":[],"ignore":[]}
+{
+  "folders": ["inbox"],
+  "hosts": ["example.test"],
+  "forwarders": ["forwarder@example.test"],
+  "senders": [],
+  "ignore": []
+}
 ```
 
 Each run prints and logs `saved`, `dup`, `no-document`, `other-attachment`, `host-unlisted`,
