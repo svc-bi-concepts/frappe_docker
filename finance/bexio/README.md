@@ -811,11 +811,12 @@ closing balances, pairs by date, amount and direction, and writes both a names-o
 `private/`:
 
 ```sh
-python3 finance/bexio/bank_surplus.py --mt940 private/mt940/transactions_2.mt940 --from 2024-01-03 --to 2026-10-09 --bank-account '<UBS Bank Account name>'
+python3 finance/bexio/bank_surplus.py --mt940 private/mt940/example.mt940 --from 2031-01-01 --to 2031-12-31 --bank-account '<UBS Bank Account name>'
 ```
 
-Review the private report. This interval is expected to show about 402 surplus rows and zero conflicts; stop if the
-counts differ. Check the names with cancellation's dry run before any later approved write:
+Use the actual statement path and comparison window for your account. Review the private report against the
+expected counts supplied privately; stop if they differ or there are conflicts. Rows without a bank line are counted
+separately and excluded from the cancel list. Check the names with cancellation's dry run before any later approved write:
 
 ```sh
 python3 finance/bexio/import_bank.py --cancel private/bexio-bank-surplus-<date>.txt --bank-account-id 1

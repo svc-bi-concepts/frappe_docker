@@ -55,13 +55,13 @@ class BankSurplusTest(unittest.TestCase):
         self.assertEqual((surplus, conflicts, no_bank, no_row), ([], [], 0, 1))
 
     def test_rejects_statement_with_closing_balance_that_does_not_tie(self):
-        text = """:20:STATEMENT\n:25:CH9300762011623852957\n:60F:C250101CHF1000,00\n:61:2501020102C10,00NTRFNONREF//BANK1\n:62F:C250102CHF1011,00\n-\n"""
+        text = """:20:STATEMENT\n:25:CH0000000000000000000\n:60F:C250101CHF1000,00\n:61:2501020102C10,00NTRFNONREF//BANK1\n:62F:C250102CHF1011,00\n-\n"""
         statement = mt940.parse(text)
         with self.assertRaisesRegex(ValueError, "does not equal"):
             bs.check_statement(statement)
 
     def test_balanced_statement_passes(self):
-        text = """:20:STATEMENT\n:25:CH9300762011623852957\n:60F:C250101CHF1000,00\n:61:2501020102C10,00NTRFNONREF//BANK1\n:62F:C250102CHF1010,00\n-\n"""
+        text = """:20:STATEMENT\n:25:CH0000000000000000000\n:60F:C250101CHF1000,00\n:61:2501020102C10,00NTRFNONREF//BANK1\n:62F:C250102CHF1010,00\n-\n"""
         bs.check_statement(mt940.parse(text))
 
 
