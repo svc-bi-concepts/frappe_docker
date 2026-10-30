@@ -11,7 +11,7 @@ import os
 import sys
 
 import import_master as im
-from import_bank import CENT, ZERO, cents, write_private
+from import_bank import ZERO, cents, write_private
 
 # Reuse the app's parser; loading it this way keeps this host-side script independent of Frappe.
 APP_ROOT = os.path.join(
@@ -65,6 +65,9 @@ def pair(bank_lines, rows):
         grouped[_key(row)].append(row)
     surplus, conflicts = [], []
     for key, group in grouped.items():
+        # An absent bank key is unexplained, not proof of a surplus copy.
+        if key not in bank:
+            continue
         group.sort(
             key=lambda row: (
                 not bool(
@@ -103,7 +106,7 @@ def report_text(bank_lines, rows, surplus, conflicts, no_bank, no_row):
     lines = [
         f"bank lines: {len(bank_lines)}",
         f"rows: {len(rows)}",
-        f"kept: {len(rows) - len(surplus)}",
+        f"kept: {len(rows) - len(surplus) - len(conflicts) - no_bank}",
         f"surplus: {len(surplus)}",
         f"conflicts: {len(conflicts)}",
         f"rows with no bank line: {no_bank}",
@@ -205,7 +208,7 @@ def main(argv=None):
             report_text(bank_lines, rows, surplus, conflicts, no_bank, no_row),
         )
         print(
-            f"bank lines: {len(bank_lines)}; rows: {len(rows)}; kept: {len(rows)-len(surplus)}; surplus: {len(surplus)}; conflicts: {len(conflicts)}; rows without bank line: {no_bank}; bank lines without row: {no_row}"
+            f"bank lines: {len(bank_lines)}; rows: {len(rows)}; kept: {len(rows)-len(surplus)-len(conflicts)-no_bank}; surplus: {len(surplus)}; conflicts: {len(conflicts)}; rows without bank line: {no_bank}; bank lines without row: {no_row}"
         )
         return 0
     except (OSError, ValueError, im.ErpError) as err:

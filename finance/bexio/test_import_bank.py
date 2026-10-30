@@ -1253,9 +1253,18 @@ class LiveCheckTest(unittest.TestCase):
         results = ib.plan([CHF_IN], LOOKUPS)
         matches = {"9001": (None, [], "no candidate")}
         rows = [self._row("9001", docstatus=2, status="Cancelled")]
-        _, differences = ib.live_check(rows, results, matches, LOOKUPS)
+        lines, differences = ib.live_check(rows, results, matches, LOOKUPS)
         self.assertEqual(differences, [])
+        self.assertEqual(
+            len(lines), 2
+        )  # No cancelled row in either side of the totals.
         self.assertEqual(ib.documents_to_write(results, set(), {"9001"}), [])
+
+    def test_cancelled_id_absent_from_export_is_not_an_extra_row(self):
+        _, differences = ib.live_check(
+            [self._row("9001", docstatus=2, status="Cancelled")], [], {}, LOOKUPS
+        )
+        self.assertEqual(differences, [])
 
 
 class CancelTest(unittest.TestCase):
@@ -1679,6 +1688,60 @@ class ClaimMainTest(unittest.TestCase):
         )
         self.assertEqual([d["bexio_id"] for d in written["documents"]], ["9002"])
         self.assertEqual(written["claims"], [{"bexio_id": "9001", "name": "BTN-F1"}])
+
+    def test_cancelled_export_id_is_not_recreated_reconciled_or_matched_on_rerun(self):
+        with tempfile.TemporaryDirectory() as export:
+            for name, data in (
+                ("bank_transactions", [CHF_IN, record(CHF_IN, id=9010)]),
+                ("bank_accounts", [{"id": 11, "currency_id": 1}]),
+                ("currencies", [{"id": 1, "name": "CHF"}]),
+            ):
+                with open(os.path.join(export, name + ".json"), "w") as target:
+                    json.dump(data, target)
+            erp = self.Erp([])
+            original_list = erp.list
+
+            def list_rows(doctype, filters=None, fields=("name",)):
+                if doctype == "Bank Transaction" and "docstatus" in fields:
+                    return [
+                        LiveCheckTest()._row("9001", docstatus=2, status="Cancelled")
+                    ]
+                return original_list(doctype, filters, fields)
+
+            erp.list = list_rows
+            erp.vouchers = {"Payment Entry": [{"name": "PE-1", "bexio_id": "v1"}]}
+            erp.gl = [
+                {
+                    "voucher_type": "Payment Entry",
+                    "voucher_no": "PE-1",
+                    "account": ACCOUNT,
+                    "posting_date": CHF_IN["value_date"],
+                    "debit": CHF_IN["amount"],
+                    "credit": 0,
+                }
+            ]
+            docs = os.path.join(export, "docs.json")
+            with mock.patch.object(
+                im.Erp, "from_file", return_value=erp
+            ), contextlib.redirect_stdout(io.StringIO()):
+                code = ib.main(
+                    [
+                        "--write",
+                        docs,
+                        "--export",
+                        export,
+                        "--report",
+                        os.path.join(export, "report.txt"),
+                        "--unmatched",
+                        os.path.join(export, "unmatched.txt"),
+                    ]
+                )
+            with open(docs) as target:
+                written = json.load(target)
+            self.assertEqual(code, 0)
+            self.assertEqual([d["bexio_id"] for d in written["documents"]], ["9010"])
+            self.assertEqual(written["reconcile"], [reconciliation("9010", "PE-1")])
+            self.assertEqual(written["claims"], [])
 
     def test_a_claimed_reconciled_line_keeps_its_voucher_and_is_not_reported_unmatched(
         self,

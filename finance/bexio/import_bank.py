@@ -881,17 +881,16 @@ def live_check(erp_rows, results, matches, lookups, claimed=None):
     for r in sorted(
         (r for r in results if r["doc"]), key=lambda r: (r["account"], r["year"])
     ):
+        row = live.get(r["bexio_id"])
+        if row is not None and row["docstatus"] == 2:
+            continue
         doc = r["doc"]
         reconciled = bool(r["candidate"] and matches[r["bexio_id"]][0])
         _add(dry, (r["account"], r["year"]), r["in"], r["out"], reconciled)
-        row = live.get(r["bexio_id"])
         if row is None:
             differences.append(
                 "Bank Transaction {}: not in ERPNext".format(r["bexio_id"])
             )
-            continue
-        if row["docstatus"] == 2:
-            # Keep cancelled ids in the existing-id set so reruns do not insert them again.
             continue
         year = r["year"] if r["bexio_id"] in claimed else row["date"][:4]
         _add(
@@ -1202,8 +1201,11 @@ def main(argv):
         print(f"aborted: {err}", file=sys.stderr)
         return 2
 
+    cancelled_ids = {row["bexio_id"] for row in live_rows if row["docstatus"] == 2}
+    # Cancelled export records must not compete for vouchers or reach the loader.
+    active_results = [r for r in results if r["bexio_id"] not in cancelled_ids]
     matches = match(
-        match_transactions(results, lookups),
+        match_transactions(active_results, lookups),
         vouchers,
         held_for_match(allocated, claimed),
     )
@@ -1225,7 +1227,7 @@ def main(argv):
     print(
         f"vouchers already allocated to a Bank Transaction in ERPNext: {len(allocated)}"
     )
-    print(match_summary(results, matches, done))
+    print(match_summary(active_results, matches, done))
     print(
         f"already reconciled: {len(done)}, whose match names other vouchers: {len(kept)}"
     )
@@ -1240,7 +1242,6 @@ def main(argv):
         write_private(args.differences, "\n".join(differences))
         print(f"{len(differences)} differences in {args.differences}")
     if args.write:
-        cancelled_ids = {row["bexio_id"] for row in live_rows if row["docstatus"] == 2}
         print(
             "wrote {} documents, {} reconciliations and {} claims to the private file for the loader; nothing was written to ERPNext".format(
                 write_documents(
@@ -1259,7 +1260,7 @@ def main(argv):
     print(f"{len(lines)} unmapped records in {args.report}")
     write_private(args.report, "\n".join(lines))
     unmatched = (
-        unmatched_lines(results, matches)
+        unmatched_lines(active_results, matches)
         + [
             f"Bank Transaction {bexio_id}: already reconciled, but the match names other vouchers"
             for bexio_id in kept
