@@ -58,8 +58,8 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-import uuid
 import unicodedata
+import uuid
 from html.parser import HTMLParser
 
 PRIVATE = "/Users/bsaladin/ws_yardr_finance/private"
@@ -302,7 +302,7 @@ class Graph:
         while url:
             page = self.call("GET", url)
             rows.extend(page.get("value") or [])
-            # Updates must see every CID before deciding which images are missing.
+            # Updates need every CID; JSON reads need every attachment's metadata.
             url = page.get("@odata.nextLink") if content_ids or all_pages else None
         return rows
 
@@ -455,7 +455,6 @@ class _Text(HTMLParser):
             self.parts.append(data)
 
 
-
 class _Links(HTMLParser):
     """Collect safe HTTP link targets and their visible text in document order."""
 
@@ -463,11 +462,9 @@ class _Links(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.links = []
         self.current = None
-        self.has_anchor = False
 
     def handle_starttag(self, tag, attrs):
         if tag == "a":
-            self.has_anchor = True
             self._finish()
             href = dict(attrs).get("href") or ""
             href = "".join(ch for ch in href if not ch.isspace() and unicodedata.category(ch) != "Cc")
@@ -488,7 +485,9 @@ class _Links(HTMLParser):
 
     def _finish(self):
         if self.current is not None:
-            text = one_line("".join(self.current["text"]) or " ".join(self.current["alt"]))
+            text = one_line("".join(self.current["text"]))
+            if not text:
+                text = one_line(" ".join(self.current["alt"]))
             self.links.append({"text": text, "href": self.current["href"]})
             self.current = None
 
@@ -505,6 +504,7 @@ def body_links(body):
         parser.close()
         return parser.links
     return [{"text": "", "href": href} for href in re.findall(r"https?://[^\s<>\"]+", content, re.I)]
+
 
 def html_to_text(content):
     p = _Text()

@@ -395,6 +395,32 @@ class ListTest(unittest.TestCase):
         self.assertEqual(ctx.exception.code, 2)
         self.assertEqual(fake.calls, [])
 
+    def test_before_cli_validates_date_and_keeps_listing_to_one_page(self):
+        with self.assertRaises(SystemExit) as ctx, unittest.mock.patch(
+            "sys.stderr", new=io.StringIO()
+        ):
+            mail.parser().parse_args(["list", "--before", "invented-invalid-date"])
+        self.assertEqual(ctx.exception.code, 2)
+        args = mail.parser().parse_args(
+            ["list", "--before", "2042-03-04", "--top", "5"]
+        )
+        g, fake = graph_with(
+            {
+                "value": [],
+                "@odata.nextLink": PREFIX + "mailFolders/inbox/messages?$skip=5",
+            }
+        )
+        args.run(g, args, io.StringIO())
+        self.assertEqual(len(fake.calls), 1)
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(fake.calls[0][1]).query)
+        self.assertEqual(query["$top"], ["5"])
+        self.assertEqual(
+            query["$filter"],
+            [
+                "receivedDateTime ge 1970-01-01T00:00:00Z and receivedDateTime lt 2042-03-04T00:00:00Z"
+            ],
+        )
+
     def test_search_does_not_combine_with_from(self):
         g, fake = graph_with()
         with self.assertRaises(MailError) as ctx:
@@ -877,6 +903,52 @@ class ReadTest(unittest.TestCase):
             ],
         )
 
+    def test_image_link_with_whitespace_uses_alt_but_visible_text_wins(self):
+        self.assertEqual(
+            mail.body_links(
+                {
+                    "contentType": "html",
+                    "content": '<a href="https://example.test/image"> \n<img alt="Download &amp; view"/>\t</a>'
+                    '<a href="https://example.test/text"><img alt="Ignored"/> View <b>invoice</b></a>',
+                }
+            ),
+            [
+                {"text": "Download & view", "href": "https://example.test/image"},
+                {"text": "View invoice", "href": "https://example.test/text"},
+            ],
+        )
+
+    def test_nested_anchor_closes_previous_and_forward_keeps_order(self):
+        self.assertEqual(
+            mail.body_links(
+                {
+                    "contentType": "html",
+                    "content": '<a href="https://example.test/first">first'
+                    '<a href="https://example.test/second">second</a>'
+                    "<blockquote><p>Invented forwarded message</p>"
+                    '<a href="https://example.test/forward">forward</a></blockquote>',
+                }
+            ),
+            [
+                {"text": "first", "href": "https://example.test/first"},
+                {"text": "second", "href": "https://example.test/second"},
+                {"text": "forward", "href": "https://example.test/forward"},
+            ],
+        )
+
+    def test_href_cleaned_and_entities_decoded_only_once(self):
+        self.assertEqual(
+            mail.body_links(
+                {
+                    "contentType": "html",
+                    "content": '<a href=" \tHtTpS://example.test/\x00x\x7f?x=1&amp;amp;y=2\n">go</a>'
+                    '<a href="tel:123">tel</a><a href="cid:invented">cid</a>'
+                    '<a href="">empty</a><a>missing</a>',
+                }
+            ),
+            [{"text": "go", "href": "HtTpS://example.test/x?x=1&amp;y=2"}],
+        )
+
     def test_links_read_is_one_get_and_does_not_fetch_attachments(self):
         g, fake = graph_with(
             {
@@ -955,6 +1027,32 @@ class ReadTest(unittest.TestCase):
             {"from", "to", "cc", "received", "subject", "text", "links", "attachments"},
         )
         self.assertEqual(result["text"], "Hello\ngo\nAttachments:")
+        self.assertEqual(result["from"], "from@example.test")
+        self.assertEqual(result["to"], [])
+        self.assertEqual(result["cc"], [])
+        self.assertEqual(result["subject"], msg["subject"])
+        self.assertEqual(result["received"], msg["receivedDateTime"])
+        self.assertEqual(
+            result["links"], [{"text": "go", "href": "https://example.test/x"}]
+        )
+        self.assertEqual(
+            result["attachments"],
+            [
+                {
+                    "name": "one.pdf",
+                    "size": 10,
+                    "contentType": "application/pdf",
+                    "isInline": False,
+                },
+                {
+                    "name": "two.pdf",
+                    "size": 20,
+                    "contentType": "application/pdf",
+                    "isInline": False,
+                },
+            ],
+        )
+        self.assertEqual(out.getvalue(), json.dumps(result, sort_keys=True) + "\n")
         self.assertEqual(len(result["attachments"]), 2)
         self.assertEqual(len(fake.calls), 3)
         for call in fake.calls[1:]:
@@ -966,11 +1064,13 @@ class ReadTest(unittest.TestCase):
         for argv in (
             ["read", "m1", "--links", "--json"],
             ["read", "m1", "--links", "--attachment", "x", "--out", "/tmp"],
+            ["read", "m1", "--json", "--attachment", "x", "--out", "/tmp"],
         ):
-            with self.assertRaises(SystemExit), unittest.mock.patch(
+            with self.assertRaises(SystemExit) as ctx, unittest.mock.patch(
                 "sys.stderr", new=io.StringIO()
             ):
                 mail.parser().parse_args(argv)
+            self.assertEqual(ctx.exception.code, 2)
         g, _ = graph_with({"body": {"contentType": "text", "content": "Plain body"}})
         out = io.StringIO()
         mail.cmd_read(g, types.SimpleNamespace(id="m1", attachment=None, out=None), out)
