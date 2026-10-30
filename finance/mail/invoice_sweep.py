@@ -2,24 +2,24 @@
 """Collect invoice PDFs from mail.py. Mail and every downloaded file are untrusted."""
 
 import argparse
-import csv
 import datetime
 import fcntl
 import hashlib
 import http.client
-import io
 import ipaddress
 import json
 import os
-import re
+import signal
 import stat
 import subprocess
 import sys
 import tempfile
 import time
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
+from contextlib import contextmanager
 
 MAIL = "/Users/bsaladin/ws_yardr_finance/frappe_docker/finance/mail/mail.py"
 PRIVATE = "/Users/bsaladin/ws_yardr_finance/private/bills"
@@ -63,7 +63,7 @@ class PeerHTTPSConnection(http.client.HTTPSConnection):
         address = ipaddress.ip_address(peer.split("%", 1)[0])
         if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped:
             address = address.ipv4_mapped
-        if not address.is_global:
+        if not address.is_global or address.is_reserved or address.is_multicast:
             self.close()
             raise Refused("peer-not-global")
 
@@ -93,12 +93,6 @@ def mail_call(mail_path, args, runner=subprocess.run):
         return subprocess.CompletedProcess(args, 1, "", type(exc).__name__)
 
 
-def parse_json_result(result):
-    if result.returncode:
-        raise RuntimeError("mail-read-failed")
-    return json.loads(result.stdout)
-
-
 def has_word(value):
     folded = (value or "").casefold()
     return any(word in folded for word in WORDS)
@@ -106,19 +100,24 @@ def has_word(value):
 
 def clean(value, limit=None):
     value = " ".join(str(value or "").split())
+    value = "".join(c for c in value if not unicodedata.category(c).startswith("C"))
     return value[:limit] if limit else value
 
 
 def url_host(url):
-    parsed = urllib.parse.urlsplit(url)
-    host = parsed.hostname or ""
+    try:
+        parsed = urllib.parse.urlsplit(url)
+        host = parsed.hostname or ""
+        port = parsed.port
+    except ValueError:
+        raise Refused("invalid-url")
     try:
         host.encode("ascii")
     except UnicodeEncodeError:
         raise Refused("non-ascii-host")
     if parsed.scheme.lower() != "https":
         raise Refused("https-required")
-    if parsed.port not in (None, 443):
+    if port not in (None, 443):
         raise Refused("port-not-443")
     if parsed.username is not None or parsed.password is not None:
         raise Refused("userinfo")
@@ -128,7 +127,10 @@ def url_host(url):
 
 
 def unwrap_safelinks(url):
-    host = urllib.parse.urlsplit(url).hostname or ""
+    try:
+        host = urllib.parse.urlsplit(url).hostname or ""
+    except ValueError:
+        raise Refused("invalid-url")
     if host.lower().endswith(".safelinks.protection.outlook.com"):
         values = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query).get("url", [])
         if not values:
@@ -144,52 +146,95 @@ def listed(host, hosts):
     )
 
 
+def qualifying_link(link, url):
+    try:
+        path = urllib.parse.urlsplit(url).path
+    except ValueError:
+        raise Refused("invalid-url")
+    return has_word(link.get("text")) or path.lower().endswith(".pdf") or has_word(path)
+
+
+@contextmanager
+def fetch_deadline():
+    # This Unix CLI runs on the main thread. An alarm also interrupts a stalled
+    # DNS lookup, TLS handshake, headers or slow-drip body, not only chunk loops.
+    def expired(signum, frame):
+        raise RuntimeError("deadline")
+
+    previous = signal.signal(signal.SIGALRM, expired)
+    old_timer = signal.setitimer(signal.ITIMER_REAL, 120)
+    started = time.monotonic()
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
+        if old_timer[0]:
+            signal.setitimer(
+                signal.ITIMER_REAL,
+                max(0.000001, old_timer[0] - (time.monotonic() - started)),
+                old_timer[1],
+            )
+
+
 def fetch_pdf(url, target, opener=None, clock=time.monotonic):
-    opener = opener or safe_opener()
+    with fetch_deadline():
+        return _fetch_pdf(url, target, opener or safe_opener(), clock)
+
+
+def _fetch_pdf(url, target, opener, clock):
     deadline = clock() + 120
     current = url
     for redirects in range(6):
         url_host(current)
-        if clock() >= deadline:
+        remaining = deadline - clock()
+        if remaining <= 0:
             raise RuntimeError("deadline")
         req = urllib.request.Request(
             current,
             headers={"User-Agent": "invoice-sweep/1", "Accept": "application/pdf"},
         )
         try:
-            response = opener.open(req, timeout=max(1, deadline - clock()))
+            response = opener.open(req, timeout=remaining)
         except urllib.error.HTTPError as err:
-            if err.code in (301, 302, 303, 307, 308):
-                if redirects == 5:
-                    raise RuntimeError("too-many-redirects")
-                location = err.headers.get("Location")
-                if not location:
-                    raise RuntimeError("redirect-without-location")
-                current = urllib.parse.urljoin(current, location)
-                continue
-            raise RuntimeError("http-%d" % err.code)
+            try:
+                if err.code in (301, 302, 303, 307, 308):
+                    if redirects == 5:
+                        raise RuntimeError("too-many-redirects")
+                    location = err.headers.get("Location")
+                    if not location:
+                        raise RuntimeError("redirect-without-location")
+                    current = urllib.parse.urljoin(current, location)
+                    continue
+                raise RuntimeError("http-%d" % err.code)
+            finally:
+                err.close()
         except Refused:
             raise
         except Exception as err:
             raise RuntimeError(type(err).__name__)
-        length = response.headers.get("Content-Length")
-        if length:
-            try:
-                if int(length) > MAX_BYTES:
-                    raise OverflowError("too-big")
-            except ValueError:
-                pass
-        size = 0
-        head = b""
-        fd, tmp = tempfile.mkstemp(
-            prefix=".invoice-sweep-", dir=os.path.dirname(target)
-        )
+        tmp = None
         try:
+            length = response.headers.get("Content-Length")
+            if length:
+                try:
+                    size_hint = int(length)
+                except ValueError:
+                    size_hint = 0
+                if size_hint > MAX_BYTES:
+                    raise OverflowError("too-big")
+            size = 0
+            head = b""
+            fd, tmp = tempfile.mkstemp(
+                prefix=".invoice-sweep-", dir=os.path.dirname(target)
+            )
             with os.fdopen(fd, "wb") as out:
                 while True:
                     if clock() >= deadline:
                         raise RuntimeError("deadline")
                     chunk = response.read(65536)
+                    if clock() >= deadline:
+                        raise RuntimeError("deadline")
                     if not chunk:
                         break
                     size += len(chunk)
@@ -200,15 +245,15 @@ def fetch_pdf(url, target, opener=None, clock=time.monotonic):
                     out.write(chunk)
             if b"%PDF-" not in head:
                 raise ValueError("not-pdf")
-            os.chmod(tmp, 0o600)
             os.replace(tmp, target)
+            tmp = None
             return
-        except Exception:
-            try:
+        except (OSError, http.client.HTTPException) as err:
+            raise RuntimeError(type(err).__name__)
+        finally:
+            response.close()
+            if tmp is not None:
                 os.unlink(tmp)
-            except FileNotFoundError:
-                pass
-            raise
     raise RuntimeError("too-many-redirects")
 
 
@@ -233,10 +278,6 @@ def day_range(start, end):
         day += datetime.timedelta(days=1)
 
 
-def row_id(row):
-    return row.get("id") or row.get("Id") or ""
-
-
 def run_sweep(
     config_path=None,
     incoming=None,
@@ -258,7 +299,10 @@ def run_sweep(
     lock = None
     if not dry_run:
         os.makedirs(os.path.dirname(state_path), mode=0o700, exist_ok=True)
-        lock = open(state_path + ".lock", "a+")
+        lock = os.fdopen(
+            os.open(state_path + ".lock", os.O_CREAT | os.O_RDWR, 0o600), "a+"
+        )
+        os.fchmod(lock.fileno(), 0o600)
     try:
         if lock:
             try:
@@ -292,43 +336,39 @@ def run_sweep(
             return mail_call(mail_path, args, runner)
 
         rows_seen = {}
-        try:
-            for folder in cfg.get("folders", ["inbox"]):
-                for day in day_range(first, today):
-                    nxt = day + datetime.timedelta(days=1)
-                    result = call(
-                        [
-                            "list",
-                            "--folder",
-                            folder,
-                            "--since",
-                            day.isoformat(),
-                            "--before",
-                            nxt.isoformat(),
-                            "--top",
-                            "25",
-                        ]
-                    )
-                    if result.returncode:
-                        raise RuntimeError("mail-list-failed")
-                    rows = list(csv.reader(io.StringIO(result.stdout), delimiter="\t"))
-                    if len(rows) == 25 and [folder, day.isoformat()] not in state.get(
-                        "gaps", []
-                    ):
-                        emit("gap", day.isoformat(), detail=folder)
-                        state.setdefault("gaps", []).append([folder, day.isoformat()])
-                    for row in rows:
-                        mid = row[0] if row else ""
-                        if mid and mid not in state.get("mails", {}):
-                            rows_seen[mid] = {
-                                "received": row[1] if len(row) > 1 else "",
-                                "sender": row[2] if len(row) > 2 else "",
-                                "subject": row[3] if len(row) > 3 else "",
-                            }
-        except Exception:
-            if not dry_run:
-                raise
-            raise
+        for folder in cfg.get("folders", ["inbox"]):
+            for day in day_range(first, today):
+                nxt = day + datetime.timedelta(days=1)
+                result = call(
+                    [
+                        "list",
+                        "--folder",
+                        folder,
+                        "--since",
+                        day.isoformat(),
+                        "--before",
+                        nxt.isoformat(),
+                        "--top",
+                        "25",
+                    ]
+                )
+                if result.returncode:
+                    raise RuntimeError("mail-list-failed")
+                # mail.py emits plain TSV, not CSV: quotes in a subject are literal.
+                rows = [line.split("\t") for line in result.stdout.splitlines()]
+                if len(rows) == 25 and [folder, day.isoformat()] not in state.get(
+                    "gaps", []
+                ):
+                    emit("gap", day.isoformat(), detail=folder)
+                    state.setdefault("gaps", []).append([folder, day.isoformat()])
+                for row in rows:
+                    mid = row[0] if row else ""
+                    if mid and mid not in state.get("mails", {}):
+                        rows_seen[mid] = {
+                            "received": row[1] if len(row) > 1 else "",
+                            "sender": row[2] if len(row) > 2 else "",
+                            "subject": row[3] if len(row) > 3 else "",
+                        }
         pending = list(rows_seen)
         pending.extend(
             mid
@@ -354,7 +394,6 @@ def run_sweep(
                 )
                 sender = rows_seen.get(mid, {}).get("sender", "")
                 subject = rows_seen.get(mid, {}).get("subject", "")
-                first_seen = record.get("first_seen", today)
                 age = (
                     (
                         datetime.date.fromisoformat(today)
@@ -391,7 +430,7 @@ def run_sweep(
                     for s in cfg.get("forwarders", []) + cfg.get("senders", [])
                 }
                 or has_word(subject)
-                or any(has_word(a.get("name")) for a in noninline)
+                or any(has_word(a.get("name")) for a in attachments)
                 or any(has_word(x.get("text")) for x in links)
                 or (
                     any(
@@ -402,10 +441,62 @@ def run_sweep(
                 )
             )
             if not candidate:
-                state.setdefault("mails", {}).pop(mid, None)
+                state.setdefault("mails", {})[mid] = {
+                    "status": "done",
+                    "received": received,
+                    "first_seen": today,
+                }
                 continue
             if dry_run:
-                emit("saved", received, sender, subject, "would collect documents")
+                for attachment in noninline:
+                    name = attachment.get("name") or ""
+                    kind = (
+                        "saved" if name.lower().endswith(".pdf") else "other-attachment"
+                    )
+                    if kind == "saved" and (attachment.get("size") or 0) > MAX_BYTES:
+                        kind = "too-big"
+                    emit(
+                        kind,
+                        received,
+                        sender,
+                        subject,
+                        "would inspect attachment: " + name,
+                    )
+                count = 0
+                reported = bool(noninline)
+                for link in links:
+                    try:
+                        url = unwrap_safelinks(link.get("href", ""))
+                        if not qualifying_link(link, url):
+                            continue
+                        count += 1
+                        if count > 3:
+                            break
+                        reported = True
+                        host = url_host(url)
+                        kind = (
+                            "saved"
+                            if listed(host, cfg.get("hosts", []))
+                            else "host-unlisted"
+                        )
+                        emit(
+                            kind,
+                            received,
+                            sender,
+                            subject,
+                            "would try link if no attachment PDF: " + host,
+                        )
+                    except Refused as exc:
+                        reported = True
+                        emit("refused", received, sender, subject, str(exc))
+                if not reported:
+                    emit(
+                        "no-document",
+                        received,
+                        sender,
+                        subject,
+                        "would report no eligible PDF",
+                    )
                 continue
             if not record:
                 record = {"status": "open", "received": received, "first_seen": today}
@@ -416,47 +507,76 @@ def run_sweep(
                 + "-"
                 + hashlib.sha256(mid.encode()).hexdigest()[:8],
             )
+            os.makedirs(incoming, mode=0o700, exist_ok=True)
+            os.chmod(incoming, 0o700)
             os.makedirs(outdir, mode=0o700, exist_ok=True)
             os.chmod(outdir, 0o700)
-            saved = False
+            completed = record.setdefault("completed", {})
+            saved = any(
+                value
+                for key, value in completed.items()
+                if key.startswith("attachment-")
+            )
             retry = False
             document_reported = False
             for idx, attachment in enumerate(noninline):
                 name = attachment.get("name") or ""
+                key = "attachment-%d" % (idx + 1)
+                if key in completed:
+                    continue
                 if not name.lower().endswith(".pdf"):
+                    emit(
+                        "other-attachment",
+                        received,
+                        sender,
+                        subject,
+                        name or "attached item",
+                    )
+                    completed[key] = False
+                    document_reported = True
                     continue
                 if (attachment.get("size") or 0) > MAX_BYTES:
                     emit("too-big", received, sender, subject, name)
                     document_reported = True
-                    record["status"] = "done"
+                    completed[key] = False
                     continue
-                destination = os.path.join(outdir, "attachment-%d.pdf" % (idx + 1))
-                got = call(["read", mid, "--attachment", name, "--out", outdir])
-                if got.returncode:
-                    emit(
-                        "fetch-failed",
-                        received,
-                        sender,
-                        subject,
-                        "attachment-save-failed",
-                    )
-                    document_reported = True
-                    retry = True
-                    continue
-                # mail.py writes the original safe attachment name into outdir.
-                source = os.path.join(outdir, name)
-                if not os.path.exists(source):
-                    emit(
-                        "fetch-failed", received, sender, subject, "attachment-missing"
-                    )
-                    document_reported = True
-                    retry = True
-                    continue
+                destination = os.path.join(outdir, key + ".pdf")
+                # Isolate the original name from our final names and previous attempts.
+                # The blessed reader alone decides whether the name is safe/unique.
+                with tempfile.TemporaryDirectory(
+                    prefix=".attachment-", dir=outdir
+                ) as staging:
+                    got = call(["read", mid, "--attachment", name, "--out", staging])
+                    if got.returncode:
+                        emit(
+                            "fetch-failed",
+                            received,
+                            sender,
+                            subject,
+                            "attachment-save-failed",
+                        )
+                        document_reported = True
+                        retry = True
+                        continue
+                    source = os.path.join(staging, name)
+                    if not os.path.isfile(source):
+                        emit(
+                            "fetch-failed",
+                            received,
+                            sender,
+                            subject,
+                            "attachment-missing",
+                        )
+                        document_reported = True
+                        retry = True
+                        continue
+                    os.replace(source, destination)
+                source = destination
                 if os.path.getsize(source) > MAX_BYTES:
                     os.unlink(source)
                     emit("too-big", received, sender, subject, name)
                     document_reported = True
-                    record["status"] = "done"
+                    completed[key] = False
                     continue
                 with open(source, "rb") as f:
                     head = f.read(1024)
@@ -464,7 +584,7 @@ def run_sweep(
                     os.unlink(source)
                     emit("not-pdf", received, sender, subject, name)
                     document_reported = True
-                    record["status"] = "done"
+                    completed[key] = False
                     continue
                 saved |= self_save(
                     source,
@@ -475,18 +595,23 @@ def run_sweep(
                     sender,
                     subject,
                 )
+                completed[key] = True
+                document_reported = True
             if not saved:
-                for n, link in enumerate(links[:3], 1):
+                n = 0
+                for index, link in enumerate(links):
                     raw = link.get("href", "")
+                    key = "link-%d" % index
                     try:
                         url = unwrap_safelinks(raw)
-                        host = url_host(url)
-                        if not (
-                            has_word(link.get("text"))
-                            or urllib.parse.urlsplit(url).path.lower().endswith(".pdf")
-                            or has_word(urllib.parse.urlsplit(url).path)
-                        ):
+                        if not qualifying_link(link, url):
                             continue
+                        n += 1
+                        if n > 3:
+                            break
+                        if key in completed:
+                            continue
+                        host = url_host(url)
                         if not listed(host, cfg.get("hosts", [])):
                             emit("host-unlisted", received, sender, subject, host)
                             document_reported = True
@@ -498,17 +623,17 @@ def run_sweep(
                         except OverflowError:
                             emit("too-big", received, sender, subject, "link-%d" % n)
                             document_reported = True
-                            record["status"] = "done"
+                            completed[key] = False
                             continue
                         except ValueError:
                             emit("not-pdf", received, sender, subject, "link-%d" % n)
                             document_reported = True
-                            record["status"] = "done"
+                            completed[key] = False
                             continue
                         except Refused as exc:
                             emit("refused", received, sender, subject, str(exc))
                             document_reported = True
-                            retry = True
+                            completed[key] = False
                             continue
                         except RuntimeError as exc:
                             emit("fetch-failed", received, sender, subject, str(exc))
@@ -518,36 +643,16 @@ def run_sweep(
                         saved |= self_save(
                             target, target, state, emit, received, sender, subject
                         )
-                    except Refused as exc:
-                        emit("refused", received, sender, subject, str(exc))
+                        completed[key] = True
                         document_reported = True
-                        retry = True
-            if (
-                not saved
-                and not retry
-                and not document_reported
-                and not any(
-                    (a.get("name") or "").lower().endswith(".pdf") for a in noninline
-                )
-            ):
-                if any(
-                    not (a.get("name") or "").lower().endswith(".pdf")
-                    for a in noninline
-                ):
-                    emit(
-                        "other-attachment",
-                        received,
-                        sender,
-                        subject,
-                        "non-PDF attachment",
-                    )
-                else:
-                    emit("no-document", received, sender, subject, "no eligible PDF")
-                record["status"] = "done"
-            elif saved:
-                record["status"] = "done"
-            elif retry:
-                record["status"] = "open"
+                    except Refused as exc:
+                        if key not in completed:
+                            emit("refused", received, sender, subject, str(exc))
+                        document_reported = True
+                        completed[key] = False
+            if not saved and not retry and not document_reported and not completed:
+                emit("no-document", received, sender, subject, "no eligible PDF")
+            record["status"] = "open" if retry else "done"
         state["last_date"] = today
         cutoff = datetime.date.fromisoformat(today) - datetime.timedelta(days=60)
         state["mails"] = {
@@ -563,12 +668,14 @@ def run_sweep(
         events.append(
             "totals\t" + ",".join("%s=%d" % (k, totals[k]) for k in sorted(totals))
         )
+        print(events[-1])
         if not dry_run:
             os.makedirs(incoming, mode=0o700, exist_ok=True)
             os.chmod(incoming, 0o700)
             atomic_json(state_path, state)
-            with open(log_path, "a", encoding="utf-8") as out:
-                os.chmod(log_path, 0o600)
+            fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+            with os.fdopen(fd, "a", encoding="utf-8") as out:
+                os.fchmod(out.fileno(), 0o600)
                 out.write("\n".join(events) + "\n")
         return 0
     finally:
@@ -583,13 +690,9 @@ def self_save(source, target, state, emit, received, sender, subject):
             digest.update(chunk)
     value = digest.hexdigest()
     if value in state.setdefault("hashes", []):
-        if source != target:
-            try:
-                os.unlink(source)
-            except FileNotFoundError:
-                pass
+        os.unlink(source)
         emit("dup", received, sender, subject, value[:12])
-        return False
+        return True
     state["hashes"].append(value)
     if source != target:
         os.replace(source, target)

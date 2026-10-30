@@ -1,7 +1,7 @@
 """Synthetic tests for invoice_sweep; no mailbox, private data, or network."""
 
-import datetime
 import http.client
+import io
 import json
 import os
 import stat
@@ -19,6 +19,9 @@ class Response:
     def __init__(self, data=b"%PDF-1.7 synthetic", headers=None):
         self.data, self.offset = data, 0
         self.headers = headers or {}
+
+    def close(self):
+        self.closed = True
 
     def read(self, n):
         part = self.data[self.offset : self.offset + n]
@@ -98,7 +101,7 @@ class SweepTests(unittest.TestCase):
     ):
         return {
             "from": sender,
-            "received": "2026-10-30T12:00:00Z",
+            "received": "2042-04-30T12:00:00Z",
             "subject": subject,
             "attachments": list(attachments),
             "links": list(links),
@@ -124,6 +127,8 @@ class SweepTests(unittest.TestCase):
             "::1",
             "::ffff:127.0.0.1",
             "fc00::1",
+            "240.0.0.1",
+            "ff0e::1",
         ):
             conn = sweep.PeerHTTPSConnection("example.test")
             conn.sock = Sock(ip)
@@ -131,7 +136,7 @@ class SweepTests(unittest.TestCase):
                 with self.assertRaises(sweep.Refused, msg=ip):
                     conn.connect()
         conn = sweep.PeerHTTPSConnection("example.test")
-        conn.sock = Sock("8.8.8.8")
+        conn.sock = Sock("::ffff:8.8.8.8")
         with mock.patch.object(http.client.HTTPSConnection, "connect"):
             conn.connect()
 
@@ -150,7 +155,7 @@ class SweepTests(unittest.TestCase):
                     302,
                     "redirect",
                     {"Location": "http://storage.test/x"},
-                    None,
+                    io.BytesIO(),
                 )
             ]
         )
@@ -160,7 +165,11 @@ class SweepTests(unittest.TestCase):
             )
         redirects = [
             urllib.error.HTTPError(
-                "https://example.test/a", 302, "redirect", {"Location": "/b"}, None
+                "https://example.test/a",
+                302,
+                "redirect",
+                {"Location": "/b"},
+                io.BytesIO(),
             )
             for _ in range(6)
         ]
@@ -213,7 +222,7 @@ class SweepTests(unittest.TestCase):
 
     def test_gap_only_once_and_last_date_advances(self):
         rows = [
-            ("m%d" % i, "2026-10-30 12:00", "a@example.test", "x") for i in range(25)
+            ("m%d" % i, "2042-04-30 12:00", "a@example.test", "x") for i in range(25)
         ]
         run, _ = self.runner(rows)
         with mock.patch("builtins.print") as output:
@@ -223,13 +232,15 @@ class SweepTests(unittest.TestCase):
                 self.state,
                 self.log,
                 "blessed-mail.py",
-                "2026-10-30",
+                "2042-04-30",
                 runner=run,
-                today="2026-10-30",
+                today="2042-04-30",
             )
-        self.assertEqual(sum("gap" in str(c) for c in output.call_args_list), 1)
+        self.assertEqual(
+            sum(c.args[0].startswith("gap\t") for c in output.call_args_list), 1
+        )
         with open(self.state) as f:
-            self.assertEqual(json.load(f)["last_date"], "2026-10-30")
+            self.assertEqual(json.load(f)["last_date"], "2042-04-30")
         run, _ = self.runner(rows)
         with mock.patch("builtins.print") as output:
             sweep.run_sweep(
@@ -239,7 +250,7 @@ class SweepTests(unittest.TestCase):
                 self.log,
                 "blessed-mail.py",
                 runner=run,
-                today="2026-10-30",
+                today="2042-04-30",
             )
         self.assertFalse(
             any(str(c).startswith("call('gap") for c in output.call_args_list)
@@ -254,15 +265,15 @@ class SweepTests(unittest.TestCase):
                 self.state,
                 self.log,
                 "mail.py",
-                "2026-10-30",
+                "2042-04-30",
                 runner=run,
-                today="2026-10-30",
+                today="2042-04-30",
             )
         self.assertFalse(os.path.exists(self.state))
 
     def test_dry_run_writes_nothing_and_ignore_wins(self):
         run, _ = self.runner(
-            [("m1", "2026-10-30 12:00", "x@example.test", "Invoice")],
+            [("m1", "2042-04-30 12:00", "x@example.test", "Invoice")],
             {"m1": self.mail(sender="x@example.test")},
         )
         with open(self.config, "w") as f:
@@ -283,17 +294,17 @@ class SweepTests(unittest.TestCase):
             self.state,
             self.log,
             "mail.py",
-            "2026-10-30",
+            "2042-04-30",
             True,
             run,
-            today="2026-10-30",
+            today="2042-04-30",
         )
         self.assertFalse(os.path.exists(self.state))
         self.assertFalse(os.path.exists(self.log))
         self.assertFalse(os.path.exists(self.incoming))
 
     def test_idempotent_saved_mail_and_control_characters(self):
-        row = [("m1", "2026-10-30 12:00", "vendor@example.test", "Invoice\t\n")]
+        row = [("m1", "2042-04-30 12:00", "vendor@example.test", "Invoice\t\n")]
         run, _ = self.runner(row, {"m1": self.mail(subject="Invoice\t\n")})
         sweep.run_sweep(
             self.config,
@@ -301,9 +312,9 @@ class SweepTests(unittest.TestCase):
             self.state,
             self.log,
             "mail.py",
-            "2026-10-30",
+            "2042-04-30",
             runner=run,
-            today="2026-10-30",
+            today="2042-04-30",
         )
         with open(self.log) as f:
             lines = f.readlines()
@@ -317,7 +328,7 @@ class SweepTests(unittest.TestCase):
                 self.log,
                 "mail.py",
                 runner=run,
-                today="2026-10-30",
+                today="2042-04-30",
             )
         with open(self.log) as f:
             self.assertEqual(
@@ -330,7 +341,7 @@ class SweepTests(unittest.TestCase):
             sweep.load_private_config(self.config)
 
     def test_unlisted_link_is_reported_without_fetch(self):
-        row = [("m1", "2026-10-30 12:00", "vendor@example.test", "Invoice")]
+        row = [("m1", "2042-04-30 12:00", "vendor@example.test", "Invoice")]
         mail = self.mail(
             links=[
                 {"text": "invoice download", "href": "https://evil.test/invoice.pdf"}
@@ -346,9 +357,9 @@ class SweepTests(unittest.TestCase):
                 self.state,
                 self.log,
                 "mail.py",
-                "2026-10-30",
+                "2042-04-30",
                 runner=run,
-                today="2026-10-30",
+                today="2042-04-30",
             )
         fetch.assert_not_called()
         self.assertIn("host-unlisted", str(output.call_args_list))
@@ -357,12 +368,12 @@ class SweepTests(unittest.TestCase):
         with open(self.state, "w") as f:
             json.dump(
                 {
-                    "last_date": "2026-10-30",
+                    "last_date": "2042-04-30",
                     "mails": {
                         "old-id": {
                             "status": "open",
-                            "received": "2026-10-20T12:00:00Z",
-                            "first_seen": "2026-10-20",
+                            "received": "2042-04-20T12:00:00Z",
+                            "first_seen": "2042-04-20",
                         }
                     },
                     "hashes": [],
@@ -387,7 +398,7 @@ class SweepTests(unittest.TestCase):
                 self.log,
                 "mail.py",
                 runner=run,
-                today="2026-10-30",
+                today="2042-04-30",
             )
         self.assertIn(["read", "old-id", "--json"], calls)
         self.assertNotIn("expired", str(output.call_args_list))
@@ -398,12 +409,12 @@ class SweepTests(unittest.TestCase):
         with open(self.state, "w") as f:
             json.dump(
                 {
-                    "last_date": "2026-10-30",
+                    "last_date": "2042-04-30",
                     "mails": {
                         "old-id": {
                             "status": "open",
-                            "received": "2026-10-01T12:00:00Z",
-                            "first_seen": "2026-10-01",
+                            "received": "2042-04-01T12:00:00Z",
+                            "first_seen": "2042-04-01",
                         }
                     },
                     "hashes": [],
@@ -420,7 +431,7 @@ class SweepTests(unittest.TestCase):
                 self.log,
                 "mail.py",
                 runner=run,
-                today="2026-10-30",
+                today="2042-04-30",
             )
         self.assertNotIn(["read", "old-id", "--json"], calls)
         self.assertIn("expired", str(output.call_args_list))
@@ -429,8 +440,8 @@ class SweepTests(unittest.TestCase):
 
     def test_duplicate_pdf_across_two_mails_is_removed(self):
         rows = [
-            ("m1", "2026-10-30 12:00", "vendor@example.test", "Invoice"),
-            ("m2", "2026-10-30 12:01", "vendor@example.test", "Invoice"),
+            ("m1", "2042-04-30 12:00", "vendor@example.test", "Invoice"),
+            ("m2", "2042-04-30 12:01", "vendor@example.test", "Invoice"),
         ]
         mails = {
             mid: self.mail(
@@ -470,9 +481,9 @@ class SweepTests(unittest.TestCase):
                 self.state,
                 self.log,
                 "mail.py",
-                "2026-10-30",
+                "2042-04-30",
                 runner=run,
-                today="2026-10-30",
+                today="2042-04-30",
             )
         text = str(output.call_args_list)
         self.assertIn("saved", text)
@@ -481,6 +492,429 @@ class SweepTests(unittest.TestCase):
         for base, _, names in os.walk(self.incoming):
             files.extend(os.path.join(base, n) for n in names)
         self.assertEqual(len(files), 1)
+        self.assertTrue(
+            all(r["status"] == "done" for r in self.stored()["mails"].values())
+        )
+
+    def execute(self, runner, **kwargs):
+        with mock.patch("builtins.print") as output:
+            sweep.run_sweep(
+                self.config,
+                self.incoming,
+                self.state,
+                self.log,
+                "fake-mail",
+                since="2042-04-30",
+                today="2042-04-30",
+                runner=runner,
+                **kwargs
+            )
+        return [c.args[0] for c in output.call_args_list]
+
+    def stored(self):
+        with open(self.state) as source:
+            return json.load(source)
+
+    def test_duplicate_links_are_removed_and_done_on_rerun(self):
+        rows = [
+            (mid, "2042-04-30", "vendor@example.test", "Invoice") for mid in ("a", "b")
+        ]
+        mails = {
+            mid: self.mail(links=[{"href": "https://example.test/invoice.pdf"}])
+            for mid in ("a", "b")
+        }
+        runner, calls = self.runner(rows, mails)
+        opener = Opener([Response(), Response()])
+        lines = self.execute(runner, opener_factory=lambda: opener)
+        self.assertEqual(
+            [line.split("\t")[0] for line in lines], ["saved", "dup", "totals"]
+        )
+        self.assertTrue(
+            all(r["status"] == "done" for r in self.stored()["mails"].values())
+        )
+        self.assertEqual(sum(len(files) for _, _, files in os.walk(self.incoming)), 1)
+        calls.clear()
+        self.assertEqual(self.execute(runner), ["totals\t"])
+        self.assertTrue(all(call[0] == "list" for call in calls))
+
+    def test_partial_attachment_failure_retries_only_failed_document(self):
+        mail = self.mail(
+            attachments=[
+                {"name": "first.pdf"},
+                {"name": "second.pdf"},
+                {"name": "forward.eml"},
+            ]
+        )
+        base, _ = self.runner(
+            [("a", "2042-04-30", "v@example.test", "Invoice")], {"a": mail}
+        )
+        attempts = []
+        fail = [True]
+
+        def runner(argv, **kwargs):
+            if "--attachment" not in argv:
+                return base(argv, **kwargs)
+            name, outdir = argv[4], argv[-1]
+            attempts.append(name)
+            if name == "second.pdf" and fail[0]:
+                return sweep.subprocess.CompletedProcess(argv, 1, "", "")
+            with open(os.path.join(outdir, name), "wb") as out:
+                out.write(b"%PDF-synthetic-" + name.encode())
+            return sweep.subprocess.CompletedProcess(argv, 0, "", "")
+
+        first = self.execute(runner)
+        self.assertEqual(self.stored()["mails"]["a"]["status"], "open")
+        fail[0] = False
+        second = self.execute(runner)
+        self.assertEqual(attempts, ["first.pdf", "second.pdf", "second.pdf"])
+        self.assertEqual(self.stored()["mails"]["a"]["status"], "done")
+        self.assertEqual(
+            sum(x.startswith("other-attachment\t") for x in first + second), 1
+        )
+        self.assertEqual(sum(x.startswith("saved\t") for x in first + second), 2)
+        for base_dir, _, names in os.walk(self.incoming):
+            self.assertEqual(stat.S_IMODE(os.stat(base_dir).st_mode), 0o700)
+            for name in names:
+                self.assertEqual(
+                    stat.S_IMODE(os.stat(os.path.join(base_dir, name)).st_mode), 0o600
+                )
+        for path in (self.state, self.log, self.state + ".lock"):
+            self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o600)
+
+    def test_partial_link_failure_retries_only_failed_link(self):
+        mail = self.mail(
+            links=[
+                {"href": "https://example.test/invoice-%d.pdf" % i} for i in range(2)
+            ]
+        )
+        runner, _ = self.runner(
+            [("a", "2042-04-30", "v@example.test", "Invoice")], {"a": mail}
+        )
+        opener = Opener([Response(), OSError("synthetic"), Response(b"%PDF-different")])
+        self.execute(runner, opener_factory=lambda: opener)
+        self.assertEqual(self.stored()["mails"]["a"]["status"], "open")
+        self.execute(runner, opener_factory=lambda: opener)
+        self.assertEqual(
+            [r.full_url for r in opener.requests],
+            [
+                "https://example.test/invoice-0.pdf",
+                "https://example.test/invoice-1.pdf",
+                "https://example.test/invoice-1.pdf",
+            ],
+        )
+        self.assertEqual(self.stored()["mails"]["a"]["status"], "done")
+
+    def test_link_cap_counts_qualifying_links_after_unrelated_links(self):
+        mail = self.mail(
+            links=[{"href": "https://example.test/help"}] * 4
+            + [{"href": "https://example.test/invoice-%d.pdf" % i} for i in range(4)]
+        )
+        runner, _ = self.runner(
+            [("a", "2042-04-30", "v@example.test", "Invoice")], {"a": mail}
+        )
+        opener = Opener([Response()] * 3)
+        self.execute(runner, opener_factory=lambda: opener)
+        self.assertEqual(len(opener.requests), 3)
+        self.assertTrue(opener.requests[0].full_url.endswith("invoice-0.pdf"))
+
+    def test_safe_links_inner_host_enforced_end_to_end(self):
+        wrapped = (
+            "https://tenant.safelinks.protection.outlook.com/?url="
+            + urllib.parse.quote("https://unlisted.test/invoice.pdf", safe="")
+        )
+        mail = self.mail(links=[{"href": wrapped}])
+        runner, _ = self.runner(
+            [("a", "2042-04-30", "v@example.test", "Invoice")], {"a": mail}
+        )
+        opener = Opener([])
+        lines = self.execute(runner, opener_factory=lambda: opener)
+        self.assertTrue(lines[0].startswith("host-unlisted\t"))
+        self.assertFalse(opener.requests)
+        self.assertEqual(self.stored()["mails"]["a"]["status"], "open")
+
+    def test_failed_read_of_new_mail_is_retried_then_expires(self):
+        runner, _ = self.runner([("a", "2042-04-30", "v@example.test", "Invoice")])
+        self.execute(runner)
+        state = self.stored()
+        state["mails"]["a"]["received"] = "2042-04-01"
+        with open(self.state, "w") as out:
+            json.dump(state, out)
+        runner, _ = self.runner()
+        lines = self.execute(runner)
+        self.assertEqual([x.split("\t")[0] for x in lines], ["expired", "totals"])
+        self.assertEqual(self.execute(runner), ["totals\t"])
+
+    def test_non_candidates_are_remembered_and_quotes_in_tsv_are_literal(self):
+        rows = [
+            ("a", "2042-04-30", "v@example.test", '"unclosed quote'),
+            ("b", "2042-04-30", "v@example.test", "Invoice"),
+        ]
+        runner, calls = self.runner(
+            rows, {"a": self.mail(subject="Hello"), "b": self.mail()}
+        )
+        self.execute(runner)
+        self.assertEqual(set(self.stored()["mails"]), {"a", "b"})
+        calls.clear()
+        self.execute(runner)
+        self.assertTrue(all(call[0] == "list" for call in calls))
+
+    def test_fetch_closes_response_and_rejects_length_before_read(self):
+        response = Response(headers={"Content-Length": str(sweep.MAX_BYTES + 1)})
+        target = os.path.join(self.root, "x.pdf")
+        with self.assertRaises(OverflowError):
+            sweep.fetch_pdf("https://example.test/a.pdf", target, Opener([response]))
+        self.assertTrue(response.closed)
+        self.assertEqual(response.offset, 0)
+        self.assertFalse(os.path.exists(target))
+
+    def test_body_read_error_is_reported_and_partial_file_removed(self):
+        response = Response()
+        response.read = mock.Mock(
+            side_effect=[b"%PDF-partial", http.client.IncompleteRead(b"partial")]
+        )
+        mail = self.mail(links=[{"href": "https://example.test/invoice.pdf"}])
+        runner, _ = self.runner(
+            [("a", "2042-04-30", "v@example.test", "Invoice")], {"a": mail}
+        )
+        lines = self.execute(runner, opener_factory=lambda: Opener([response]))
+        self.assertTrue(lines[0].startswith("fetch-failed\t"))
+        self.assertEqual(self.stored()["mails"]["a"]["status"], "open")
+        self.assertTrue(response.closed)
+        self.assertEqual(sum(len(files) for _, _, files in os.walk(self.incoming)), 0)
+
+    def test_deadline_after_final_read_removes_partial_file(self):
+        response = Response()
+        clock = mock.Mock(side_effect=[0, 0, 0, 1, 1, 121])
+        target = os.path.join(self.root, "x.pdf")
+        with self.assertRaisesRegex(RuntimeError, "deadline"):
+            sweep.fetch_pdf(
+                "https://example.test/a.pdf", target, Opener([response]), clock
+            )
+        self.assertTrue(response.closed)
+        self.assertFalse(os.path.exists(target))
+        self.assertFalse(
+            any(n.startswith(".invoice-sweep") for n in os.listdir(self.root))
+        )
+
+    def test_deadline_interrupts_a_blocked_read_and_restores_handler(self):
+        previous = sweep.signal.getsignal(sweep.signal.SIGALRM)
+        response = Response()
+
+        def interrupted(n):
+            # Simulate the OS delivering the installed deadline signal mid-read.
+            sweep.signal.getsignal(sweep.signal.SIGALRM)(sweep.signal.SIGALRM, None)
+
+        response.read = interrupted
+        with self.assertRaisesRegex(RuntimeError, "deadline"):
+            sweep.fetch_pdf(
+                "https://example.test/a.pdf",
+                os.path.join(self.root, "x"),
+                Opener([response]),
+            )
+        self.assertEqual(sweep.signal.getsignal(sweep.signal.SIGALRM), previous)
+        self.assertEqual(sweep.signal.getitimer(sweep.signal.ITIMER_REAL), (0, 0))
+        self.assertTrue(response.closed)
+
+    def test_redirect_to_storage_host_and_security_policy(self):
+        error = urllib.error.HTTPError(
+            "https://example.test/a.pdf",
+            302,
+            "redirect",
+            {"Location": "https://storage.test/b"},
+            io.BytesIO(),
+        )
+        opener = Opener([error, Response()])
+        sweep.fetch_pdf(
+            "https://example.test/a.pdf", os.path.join(self.root, "x"), opener
+        )
+        self.assertEqual(opener.requests[1].full_url, "https://storage.test/b")
+        for bad in (
+            "https://example.test:wrong/a.pdf",
+            "https://[bad/a.pdf",
+            "https://é.test/a.pdf",
+            "https://u:p@example.test/a.pdf",
+        ):
+            with self.subTest(url=bad), self.assertRaises(sweep.Refused):
+                sweep.url_host(bad)
+        self.assertTrue(sweep.listed("child.example.test", ["example.test"]))
+        self.assertFalse(sweep.listed("fakeexample.test", ["example.test"]))
+        handlers = sweep.safe_opener().handlers
+        self.assertFalse(
+            any(
+                isinstance(
+                    h, (urllib.request.HTTPCookieProcessor, urllib.request.ProxyHandler)
+                )
+                for h in handlers
+            )
+        )
+
+    def test_config_missing_lock_and_mail_subprocess_contract(self):
+        with self.assertRaisesRegex(ValueError, '"folders"'):
+            sweep.load_private_config(os.path.join(self.root, "missing"))
+        runner = mock.Mock(
+            return_value=sweep.subprocess.CompletedProcess([], 0, "", "")
+        )
+        sweep.mail_call(sweep.MAIL, ["list"], runner)
+        runner.assert_called_once_with(
+            [sweep.MAIL, "list"],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+        with open(self.state + ".lock", "w") as lock:
+            sweep.fcntl.flock(lock, sweep.fcntl.LOCK_EX | sweep.fcntl.LOCK_NB)
+            with self.assertRaisesRegex(RuntimeError, "already-running"):
+                self.execute(self.runner()[0])
+
+    def test_dry_run_explains_attachments_and_links_without_writes(self):
+        mail = self.mail(
+            attachments=[{"name": "bill.pdf"}, {"name": "forward.eml"}],
+            links=[{"href": "https://unlisted.test/invoice.pdf"}],
+        )
+        runner, _ = self.runner(
+            [("a", "2042-04-30", "v@example.test", "Invoice")], {"a": mail}
+        )
+        before = os.listdir(self.root)
+        with mock.patch.object(sweep, "fetch_pdf") as fetch:
+            lines = self.execute(runner, dry_run=True)
+        fetch.assert_not_called()
+        self.assertEqual(before, os.listdir(self.root))
+        self.assertEqual(
+            [x.split("\t")[0] for x in lines],
+            ["saved", "other-attachment", "host-unlisted", "totals"],
+        )
+        self.assertIn("would inspect", lines[0])
+
+    def test_controls_are_removed_and_subject_is_capped(self):
+        value = sweep.clean("Invoice\x00\x1b\t\n" + "x" * 180, 120)
+        self.assertEqual(len(value), 120)
+        self.assertTrue(all(ord(c) >= 32 and ord(c) != 127 for c in value))
+
+    def test_attachment_names_cannot_collide_with_final_names(self):
+        names = ["attachment-2.pdf", "attachment-1.pdf"]
+        mail = self.mail(
+            attachments=[{"name": n} for n in names],
+            links=[{"href": "https://example.test/invoice.pdf"}],
+        )
+        base, _ = self.runner(
+            [("a", "2042-04-30", "v@example.test", "Invoice")], {"a": mail}
+        )
+
+        def runner(argv, **kwargs):
+            if "--attachment" not in argv:
+                return base(argv, **kwargs)
+            name, outdir = argv[4], argv[-1]
+            path = os.path.join(outdir, name)
+            if os.path.exists(path):
+                return sweep.subprocess.CompletedProcess(argv, 2, "", "exists")
+            with open(path, "wb") as out:
+                out.write(b"%PDF-" + name.encode())
+            return sweep.subprocess.CompletedProcess(argv, 0, "", "")
+
+        opener = Opener([])
+        self.execute(runner, opener_factory=lambda: opener)
+        self.assertFalse(opener.requests)
+        contents = []
+        for base_dir, _, files in os.walk(self.incoming):
+            for name in files:
+                with open(os.path.join(base_dir, name), "rb") as source:
+                    contents.append(source.read())
+        self.assertCountEqual(contents, [b"%PDF-" + n.encode() for n in names])
+
+    def test_candidate_rules_and_ignore_override(self):
+        cases = [
+            (
+                self.mail(
+                    subject="Hello",
+                    attachments=[{"name": "invoice.png", "isInline": True}],
+                ),
+                True,
+            ),
+            (self.mail(subject="Hello", links=[{"text": "Facture"}]), True),
+            (
+                self.mail(
+                    subject="Hello", text="Rechnung", attachments=[{"name": "data.PDF"}]
+                ),
+                True,
+            ),
+            (self.mail(subject="Hello", text="Invoice"), False),
+            (
+                self.mail(
+                    subject="Hello",
+                    text="Invoice",
+                    attachments=[{"name": "data.pdf", "isInline": True}],
+                ),
+                False,
+            ),
+        ]
+        for mail, expected in cases:
+            with self.subTest(mail=mail):
+                runner, _ = self.runner(
+                    [("a", "2042-04-30", "v@example.test", "Hello")], {"a": mail}
+                )
+                lines = self.execute(runner, dry_run=True)
+                self.assertEqual(len(lines) > 1, expected)
+        for configured in ("senders", "forwarders", "ignore"):
+            with open(self.config, "w") as out:
+                json.dump(
+                    {"folders": ["inbox"], configured: ["VENDOR@example.test"]}, out
+                )
+            runner, _ = self.runner(
+                [("a", "2042-04-30", "v@example.test", "Hello")],
+                {"a": self.mail(subject="Hello")},
+            )
+            lines = self.execute(runner, dry_run=True)
+            self.assertEqual(len(lines) > 1, configured != "ignore")
+
+    def test_existing_state_is_unchanged_when_later_listing_fails(self):
+        original = {"last_date": "2042-04-29", "mails": {}, "hashes": [], "gaps": []}
+        with open(self.state, "w") as out:
+            json.dump(original, out)
+        with open(self.state, "rb") as source:
+            before = source.read()
+        replies = iter(
+            [
+                sweep.subprocess.CompletedProcess([], 0, "", ""),
+                sweep.subprocess.CompletedProcess([], 1, "", ""),
+            ]
+        )
+        with self.assertRaisesRegex(RuntimeError, "mail-list-failed"):
+            self.execute(lambda *args, **kwargs: next(replies))
+        with open(self.state, "rb") as source:
+            self.assertEqual(before, source.read())
+        self.assertFalse(os.path.exists(self.log))
+
+    def test_expiry_boundary_and_pruning_preserve_hashes(self):
+        with open(self.state, "w") as out:
+            json.dump(
+                {
+                    "last_date": "2042-04-30",
+                    "mails": {
+                        "expired": {
+                            "status": "open",
+                            "received": "2042-04-16",
+                            "first_seen": "2042-04-16",
+                        },
+                        "old": {
+                            "status": "done",
+                            "received": "2041-01-01",
+                            "first_seen": "2041-01-01",
+                        },
+                    },
+                    "hashes": ["synthetic-digest"],
+                    "gaps": [],
+                },
+                out,
+            )
+        runner, calls = self.runner()
+        lines = self.execute(runner)
+        self.assertTrue(lines[0].startswith("expired\t"))
+        self.assertTrue(all(call[0] == "list" for call in calls))
+        state = self.stored()
+        self.assertNotIn("old", state["mails"])
+        self.assertEqual(state["hashes"], ["synthetic-digest"])
+        self.assertEqual(state["mails"]["expired"]["status"], "done")
 
 
 if __name__ == "__main__":
