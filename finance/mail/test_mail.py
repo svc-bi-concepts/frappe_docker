@@ -367,6 +367,34 @@ class ListTest(unittest.TestCase):
             "filter=receivedDateTime%20ge%201970-01-01T00%3A00%3A00Z%20and%20from", url
         )
 
+    def test_before_filter_orders_ge_then_lt_and_alone_keeps_ge(self):
+        g, fake = graph_with({"value": []})
+        mail.list_rows(g, "inbox", 5, since="2026-10-01", before="2026-10-31")
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(fake.calls[0][1]).query)
+        self.assertEqual(
+            query["$filter"],
+            [
+                "receivedDateTime ge 2026-10-01T00:00:00Z and receivedDateTime lt 2026-10-31T00:00:00Z"
+            ],
+        )
+        g, fake = graph_with({"value": []})
+        mail.list_rows(g, "inbox", 5, before="2026-10-31")
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(fake.calls[0][1]).query)
+        self.assertEqual(
+            query["$filter"],
+            [
+                "receivedDateTime ge 1970-01-01T00:00:00Z and receivedDateTime lt 2026-10-31T00:00:00Z"
+            ],
+        )
+        self.assertEqual(len(fake.calls), 1)
+
+    def test_search_does_not_combine_with_before(self):
+        g, fake = graph_with()
+        with self.assertRaises(MailError) as ctx:
+            mail.list_rows(g, "inbox", 5, search="invoice", before="2026-10-31")
+        self.assertEqual(ctx.exception.code, 2)
+        self.assertEqual(fake.calls, [])
+
     def test_search_does_not_combine_with_from(self):
         g, fake = graph_with()
         with self.assertRaises(MailError) as ctx:
@@ -820,6 +848,134 @@ class ReadTest(unittest.TestCase):
         )
         self.assertEqual(
             listing_query["$select"], ["id,name,size,contentType,isInline"]
+        )
+
+    def test_html_links_cover_order_alt_filtering_entities_and_unclosed_anchor(self):
+        body = {
+            "contentType": "html",
+            "content": '<a href="https://example.test/a?x=1&amp;y=2"> first <b>link</b></a><a href="https://example.test/img"><img alt="Download invoice"></a><a href="mailto:x@example.test">mail</a><a href="#part">fragment</a><a href="HTTP://example.test/end">last',
+        }
+        self.assertEqual(
+            mail.body_links(body),
+            [
+                {"text": "first link", "href": "https://example.test/a?x=1&y=2"},
+                {"text": "Download invoice", "href": "https://example.test/img"},
+                {"text": "last", "href": "HTTP://example.test/end"},
+            ],
+        )
+
+    def test_plain_body_links_have_empty_text(self):
+        body = {
+            "contentType": "text",
+            "content": "See https://example.test/a and https://example.test/b.",
+        }
+        self.assertEqual(
+            mail.body_links(body),
+            [
+                {"text": "", "href": "https://example.test/a"},
+                {"text": "", "href": "https://example.test/b."},
+            ],
+        )
+
+    def test_links_read_is_one_get_and_does_not_fetch_attachments(self):
+        g, fake = graph_with(
+            {
+                "body": {
+                    "contentType": "html",
+                    "content": '<p>forward</p><a href="https://example.test/x">invoice</a>',
+                }
+            }
+        )
+        out = io.StringIO()
+        mail.cmd_read(
+            g,
+            types.SimpleNamespace(
+                id="m1", attachment=None, out=None, links=True, json=False
+            ),
+            out,
+        )
+        self.assertEqual(out.getvalue(), "invoice\thttps://example.test/x\n")
+        self.assertEqual([call[0] for call in fake.calls], ["GET"])
+        self.assertIn(
+            "%24select=" + urllib.parse.quote(mail.READ_SELECT, safe=""),
+            fake.calls[0][1],
+        )
+
+    def test_json_read_has_fixed_keys_and_paginated_attachment_metadata(self):
+        msg = {
+            "from": {"emailAddress": {"address": "from@example.test"}},
+            "toRecipients": [],
+            "ccRecipients": [],
+            "subject": "Hi",
+            "receivedDateTime": "2026-10-01T00:00:00Z",
+            "body": {
+                "contentType": "html",
+                "content": '<p>Hello</p><a href="https://example.test/x">go</a><p>Attachments:</p>',
+            },
+        }
+        next_url = (
+            PREFIX
+            + "messages/m1/attachments?%24skip=1&%24select=id%2Cname%2Csize%2CcontentType%2CisInline"
+        )
+        g, fake = graph_with(
+            msg,
+            {
+                "value": [
+                    {
+                        "name": "one.pdf",
+                        "size": 10,
+                        "contentType": "application/pdf",
+                        "isInline": False,
+                    }
+                ],
+                "@odata.nextLink": next_url,
+            },
+            {
+                "value": [
+                    {
+                        "name": "two.pdf",
+                        "size": 20,
+                        "contentType": "application/pdf",
+                        "isInline": False,
+                    }
+                ]
+            },
+        )
+        out = io.StringIO()
+        mail.cmd_read(
+            g,
+            types.SimpleNamespace(
+                id="m1", attachment=None, out=None, links=False, json=True
+            ),
+            out,
+        )
+        result = json.loads(out.getvalue())
+        self.assertEqual(
+            set(result),
+            {"from", "to", "cc", "received", "subject", "text", "links", "attachments"},
+        )
+        self.assertEqual(result["text"], "Hello\ngo\nAttachments:")
+        self.assertEqual(len(result["attachments"]), 2)
+        self.assertEqual(len(fake.calls), 3)
+        for call in fake.calls[1:]:
+            query = urllib.parse.parse_qs(urllib.parse.urlsplit(call[1]).query)
+            self.assertEqual(query["$select"], ["id,name,size,contentType,isInline"])
+            self.assertNotIn("contentBytes", query["$select"][0])
+
+    def test_read_modes_exclude_each_other_and_plain_output_is_unchanged(self):
+        for argv in (
+            ["read", "m1", "--links", "--json"],
+            ["read", "m1", "--links", "--attachment", "x", "--out", "/tmp"],
+        ):
+            with self.assertRaises(SystemExit), unittest.mock.patch(
+                "sys.stderr", new=io.StringIO()
+            ):
+                mail.parser().parse_args(argv)
+        g, _ = graph_with({"body": {"contentType": "text", "content": "Plain body"}})
+        out = io.StringIO()
+        mail.cmd_read(g, types.SimpleNamespace(id="m1", attachment=None, out=None), out)
+        self.assertEqual(
+            out.getvalue(), "From: \nTo: \nDate: \nSubject: \n\nPlain body\n"
         )
 
     def test_a_name_that_could_leave_the_directory_is_refused(self):
