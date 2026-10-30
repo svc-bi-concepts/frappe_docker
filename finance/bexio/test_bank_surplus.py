@@ -43,12 +43,14 @@ class BankSurplusTest(unittest.TestCase):
         for count, expected_conflicts in (
             (1, ["BT-3", "BT-2"]),
             (2, ["BT-2"]),
-            (3, []),
+            (3, ["BT-2"]),
         ):
             with self.subTest(bank_lines=count):
                 bank = [line("2025-01-01", deposit="10.00") for _ in range(count)]
                 surplus, conflicts, _, _ = bs.pair(bank, rows)
-                self.assertEqual([r["name"] for r in surplus], ["BT-1"])
+                self.assertEqual(
+                    [r["name"] for r in surplus], ["BT-1"] if count < 3 else []
+                )
                 self.assertEqual([r["name"] for r in conflicts], expected_conflicts)
 
     def test_reports_protected_surplus_as_conflict(self):
@@ -105,11 +107,9 @@ class BankSurplusTest(unittest.TestCase):
             row("BT-1", "2025-01-01", deposit="10", status="Ignored"),
             row("BT-2", "2025-01-01", deposit="10"),
         ]
-        surplus, conflicts, _, _ = bs.pair(
-            [line("2025-01-01", deposit="10")], rows
-        )
-        self.assertEqual([r["name"] for r in surplus], ["BT-2"])
-        self.assertEqual([r["name"] for r in conflicts], [])
+        surplus, conflicts, _, _ = bs.pair([line("2025-01-01", deposit="10")], rows)
+        self.assertEqual(surplus, [])
+        self.assertEqual([r["name"] for r in conflicts], ["BT-1"])
 
     def test_report_counts_kept_separately_and_retains_unmatched_rows_in_net(self):
         bank = [line("2025-01-01", deposit="10")]

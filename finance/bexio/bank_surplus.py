@@ -76,7 +76,7 @@ def pair(bank_lines, rows):
                     or row.get("payment_entries")
                 ),
                 not bool(row.get("transaction_id")),
-                row.get("status") == "Unreconciled",
+                row.get("status") != "Unreconciled",
                 row.get("status") != "Reconciled",
                 row["name"],
             )
