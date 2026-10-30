@@ -505,14 +505,20 @@ def body_links(body):
         return parser.links
     links = []
     for href in re.findall(r"https?://[^\s<>\"]+", content, re.I):
-        href = href.rstrip(".,;:!?")
         changed = True
         while changed:
             changed = False
+            trimmed = href.rstrip(".,;:!?")
+            if trimmed != href:
+                href = trimmed
+                changed = True
             for opening, closing in (("(", ")"), ("[", "]"), ("{", "}")):
                 if href.endswith(closing) and href.count(closing) > href.count(opening):
                     href = href[:-1]
                     changed = True
+            if href.endswith("'") and href.count("'") % 2:
+                href = href[:-1]
+                changed = True
         links.append({"text": "", "href": href})
     return links
 

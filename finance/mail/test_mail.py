@@ -894,7 +894,8 @@ class ReadTest(unittest.TestCase):
         body = {
             "contentType": "text",
             "content": "See https://example.test/a and https://example.test/b. "
-            "(https://example.test/c_(d)). [https://example.test/e]}",
+            "(https://example.test/c_(d)). [https://example.test/e]} "
+            "See https://example.test/f.pdf' and https://example.test/g/'quoted''.",
         }
         self.assertEqual(
             mail.body_links(body),
@@ -903,6 +904,8 @@ class ReadTest(unittest.TestCase):
                 {"text": "", "href": "https://example.test/b"},
                 {"text": "", "href": "https://example.test/c_(d)"},
                 {"text": "", "href": "https://example.test/e"},
+                {"text": "", "href": "https://example.test/f.pdf"},
+                {"text": "", "href": "https://example.test/g/'quoted'"},
             ],
         )
 
