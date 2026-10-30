@@ -37,6 +37,7 @@ WORDS = (
     "mahnung",
     "zahlungserinnerung",
 )
+ATTACHMENT_SEARCH = "hasAttachment:true"
 KINDS = (
     "saved",
     "dup",
@@ -192,7 +193,7 @@ def _fetch_pdf(url, target, opener, clock):
             raise RuntimeError("deadline")
         req = urllib.request.Request(
             current,
-            headers={"User-Agent": "invoice-sweep/1", "Accept": "application/pdf"},
+            headers={"User-Agent": "invoice-sweep/1", "Accept": "application/pdf, */*;q=0.1"},
         )
         try:
             response = opener.open(req, timeout=remaining)
@@ -314,6 +315,8 @@ def run_sweep(
             with open(state_path, encoding="utf-8") as source:
                 state = json.load(source)
         first = state.get("last_date") or since
+        if since and first and since < first:
+            first = since
         if not first:
             raise ValueError("first run requires --since YYYY-MM-DD")
         today = today or datetime.datetime.now(datetime.timezone.utc).date().isoformat()
@@ -336,6 +339,22 @@ def run_sweep(
             return mail_call(mail_path, args, runner)
 
         rows_seen = {}
+
+        def collect_rows(result):
+            if result.returncode:
+                raise RuntimeError("mail-list-failed")
+            # mail.py emits plain TSV: quotes in a subject are literal.
+            for line in result.stdout.splitlines():
+                row = line.split("\t")
+                mid = row[0] if row else ""
+                if mid and mid not in state.get("mails", {}) and mid not in rows_seen:
+                    rows_seen[mid] = {
+                        "received": row[1] if len(row) > 1 else "",
+                        "sender": row[2] if len(row) > 2 else "",
+                        "subject": row[3] if len(row) > 3 else "",
+                    }
+
+        day_full = 0
         for folder in cfg.get("folders", ["inbox"]):
             for day in day_range(first, today):
                 nxt = day + datetime.timedelta(days=1)
@@ -352,23 +371,30 @@ def run_sweep(
                         "25",
                     ]
                 )
-                if result.returncode:
-                    raise RuntimeError("mail-list-failed")
-                # mail.py emits plain TSV, not CSV: quotes in a subject are literal.
-                rows = [line.split("\t") for line in result.stdout.splitlines()]
-                if len(rows) == 25 and [folder, day.isoformat()] not in state.get(
-                    "gaps", []
-                ):
-                    emit("gap", day.isoformat(), detail=folder)
-                    state.setdefault("gaps", []).append([folder, day.isoformat()])
-                for row in rows:
-                    mid = row[0] if row else ""
-                    if mid and mid not in state.get("mails", {}):
-                        rows_seen[mid] = {
-                            "received": row[1] if len(row) > 1 else "",
-                            "sender": row[2] if len(row) > 2 else "",
-                            "subject": row[3] if len(row) > 3 else "",
-                        }
+                collect_rows(result)
+                if len(result.stdout.splitlines()) == 25:
+                    day_full += 1
+
+                searches = ["%s received:%s..%s" % (word, day, day) for word in WORDS]
+                searches.append("%s received:%s..%s" % (ATTACHMENT_SEARCH, day, day))
+                for search in searches:
+                    result = call(["list", "--folder", folder, "--search", search, "--top", "25"])
+                    collect_rows(result)
+                    gap_key = [folder, day.isoformat(), search]
+                    if len(result.stdout.splitlines()) == 25 and gap_key not in state.get("gaps", []):
+                        emit("gap", day.isoformat(), detail=folder + " " + search)
+                        state.setdefault("gaps", []).append(gap_key)
+
+                addresses = dict.fromkeys(cfg.get("forwarders", []) + cfg.get("senders", []))
+                for address in addresses:
+                    result = call(["list", "--folder", folder, "--from", address,
+                                   "--since", day.isoformat(), "--before", nxt.isoformat(),
+                                   "--top", "25"])
+                    collect_rows(result)
+                    gap_key = [folder, day.isoformat(), "from " + address]
+                    if len(result.stdout.splitlines()) == 25 and gap_key not in state.get("gaps", []):
+                        emit("gap", day.isoformat(), detail=folder + " from " + address)
+                        state.setdefault("gaps", []).append(gap_key)
         pending = list(rows_seen)
         pending.extend(
             mid
@@ -665,9 +691,10 @@ def run_sweep(
             or r.get("status") == "open"
         }
         state["hashes"] = state.get("hashes", [])
-        events.append(
-            "totals\t" + ",".join("%s=%d" % (k, totals[k]) for k in sorted(totals))
-        )
+        events.append("totals\t" + ",".join(
+            ["day-full=%d" % day_full]
+            + ["%s=%d" % (k, totals[k]) for k in sorted(totals)]
+        ))
         print(events[-1])
         if not dry_run:
             os.makedirs(incoming, mode=0o700, exist_ok=True)
