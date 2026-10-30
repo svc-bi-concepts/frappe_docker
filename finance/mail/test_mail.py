@@ -948,11 +948,17 @@ class ReadTest(unittest.TestCase):
                 {
                     "contentType": "html",
                     "content": '<a href=" \tHtTpS://example.test/\x00x\x7f?x=1&amp;amp;y=2\n">go</a>'
+                    '<a href="https://example.test/invoice file.pdf">space</a>'
+                    '<a href="https://example.test/invoice\nfile.pdf">newline</a>'
                     '<a href="tel:123">tel</a><a href="cid:invented">cid</a>'
                     '<a href="">empty</a><a>missing</a>',
                 }
             ),
-            [{"text": "go", "href": "HtTpS://example.test/x?x=1&amp;y=2"}],
+            [
+                {"text": "go", "href": "HtTpS://example.test/x?x=1&amp;y=2"},
+                {"text": "space", "href": "https://example.test/invoice%20file.pdf"},
+                {"text": "newline", "href": "https://example.test/invoicefile.pdf"},
+            ],
         )
 
     def test_links_read_is_one_get_and_does_not_fetch_attachments(self):

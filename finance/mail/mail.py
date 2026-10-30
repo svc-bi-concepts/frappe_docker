@@ -467,7 +467,9 @@ class _Links(HTMLParser):
         if tag == "a":
             self._finish()
             href = dict(attrs).get("href") or ""
-            href = "".join(ch for ch in href if not ch.isspace() and unicodedata.category(ch) != "Cc")
+            href = href.strip()
+            href = "".join(ch for ch in href if unicodedata.category(ch) != "Cc")
+            href = href.replace(" ", "%20")
             if re.match(r"https?://", href, re.I):
                 self.current = {"href": href, "text": [], "alt": []}
         elif tag == "img" and self.current is not None:
