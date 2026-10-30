@@ -535,8 +535,11 @@ class SweepTests(unittest.TestCase):
         os.chmod(self.config, 0o600)
         rows = {
             "invoice received:2042-04-30..2042-04-30": ["word-hit"],
-            "hasAttachment:true received:2042-04-30..2042-04-30": ["compound"],
-            "from": ["forwarded"],
+            "hasAttachment:true received:2042-04-30..2042-04-30": [
+                "compound",
+                "word-hit",
+            ],
+            "from": ["forwarded", "word-hit", "compound"],
             "rechnung received:2042-04-30..2042-04-30": ["not-candidate"],
         }
         mails = {
@@ -590,6 +593,16 @@ class SweepTests(unittest.TestCase):
         )
         self.assertEqual(len(reads), len(set(reads)))
         self.assertFalse(any("not-candidate" in line for line in lines))
+        outcomes = [line.split("\t") for line in lines[:-1]]
+        self.assertCountEqual(
+            [(row[0], row[2], row[3]) for row in outcomes],
+            [
+                ("no-document", "vendor@example.test", "Invoice"),
+                ("saved", "vendor@example.test", "Monthly"),
+                ("no-document", "forwarder@example.test", "Monthly"),
+            ],
+        )
+        self.assertEqual(os.listdir(self.root), ["sweep.json"])
         expected = [
             [
                 "list",
@@ -680,6 +693,39 @@ class SweepTests(unittest.TestCase):
         self.assertEqual(self.stored()["gaps"][0], ["inbox", "2042-04-30"])
         second = self.execute(runner)
         self.assertFalse(any(line.startswith("gap\t") for line in second))
+
+    def test_sender_gap_and_failure_preserve_state(self):
+        with open(self.config) as source:
+            cfg = json.load(source)
+        cfg["senders"] = ["sender@example.test"]
+        with open(self.config, "w") as target:
+            json.dump(cfg, target)
+        base, _ = self.runner(mails={"same": self.mail(subject="Hello")})
+        fail = False
+
+        def runner(argv, **kwargs):
+            args = argv[1:]
+            if args[0] == "list" and "--from" in args:
+                return sweep.subprocess.CompletedProcess(
+                    argv,
+                    1 if fail else 0,
+                    "same\t2042-04-30 12:00\tx@example.test\tHello\n" * 25,
+                    "",
+                )
+            return base(argv, **kwargs)
+
+        first = self.execute(runner)
+        gaps = [line for line in first if line.startswith("gap\t")]
+        self.assertEqual(len(gaps), 1)
+        self.assertIn("inbox from sender@example.test", gaps[0])
+        self.assertFalse(any(line.startswith("gap\t") for line in self.execute(runner)))
+        with open(self.state, "rb") as source:
+            before = source.read()
+        fail = True
+        with self.assertRaisesRegex(RuntimeError, "mail-list-failed"):
+            self.execute(runner)
+        with open(self.state, "rb") as source:
+            self.assertEqual(source.read(), before)
 
     def test_earlier_since_rewinds_but_later_since_does_not(self):
         with open(self.state, "w") as f:
