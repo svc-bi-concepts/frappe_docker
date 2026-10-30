@@ -503,7 +503,10 @@ def body_links(body):
         parser.feed(content)
         parser.close()
         return parser.links
-    return [{"text": "", "href": href} for href in re.findall(r"https?://[^\s<>\"]+", content, re.I)]
+    return [
+        {"text": "", "href": href.rstrip(".,;:!?")}
+        for href in re.findall(r"https?://[^\s<>\"]+", content, re.I)
+    ]
 
 
 def html_to_text(content):

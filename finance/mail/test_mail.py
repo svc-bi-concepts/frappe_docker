@@ -899,7 +899,7 @@ class ReadTest(unittest.TestCase):
             mail.body_links(body),
             [
                 {"text": "", "href": "https://example.test/a"},
-                {"text": "", "href": "https://example.test/b."},
+                {"text": "", "href": "https://example.test/b"},
             ],
         )
 
