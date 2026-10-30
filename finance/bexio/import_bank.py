@@ -24,7 +24,7 @@ Run it as:
     python3 finance/bexio/import_bank.py --dry-run [--export DIR] [--balances]
     python3 finance/bexio/import_bank.py --write <private>/bexio-bank-docs.json [--export DIR]
     python3 finance/bexio/import_bank.py --check [--export DIR]     (after the loader ran: ERPNext against the dry run)
-    python3 finance/bexio/import_bank.py --cancel <private list> [--confirm]   (cancel the listed submitted, unallocated lines on the Wise CHF account; without --confirm only checked)
+    python3 finance/bexio/import_bank.py --cancel <private list> [--bank-account-id 1|2] [--confirm]   (default 2, Wise CHF; without --confirm only checked)
 
 --export defaults to the newest directory under <private>/bexio-export/. The output is totals only; the unmapped
 and unmatched records go to files under <private>, never to the repository. Standard library only, plus import_master
@@ -75,7 +75,7 @@ PASS_WINDOW = "date window"
 PASS_TEXT = "text"
 PASS_COMBINED = "combined transfer"
 
-# the bexio bank account that --cancel works on: the Wise CHF account (bank_account_id 2 in the export)
+# The default bexio account for --cancel, retained for book_bank_line's account scope.
 WISE_BEXIO_ID = "2"
 
 # the most vouchers of one account and window a combined transfer is searched in (2^12 subsets at most)
@@ -881,10 +881,12 @@ def live_check(erp_rows, results, matches, lookups, claimed=None):
     for r in sorted(
         (r for r in results if r["doc"]), key=lambda r: (r["account"], r["year"])
     ):
+        row = live.get(r["bexio_id"])
+        if row is not None and row["docstatus"] == 2:
+            continue
         doc = r["doc"]
         reconciled = bool(r["candidate"] and matches[r["bexio_id"]][0])
         _add(dry, (r["account"], r["year"]), r["in"], r["out"], reconciled)
-        row = live.get(r["bexio_id"])
         if row is None:
             differences.append(
                 "Bank Transaction {}: not in ERPNext".format(r["bexio_id"])
@@ -927,6 +929,7 @@ def live_check(erp_rows, results, matches, lookups, claimed=None):
     differences.extend(
         f"Bank Transaction {bexio_id}: in ERPNext, not in the export"
         for bexio_id in sorted(set(live) - seen)
+        if live[bexio_id]["docstatus"] != 2
     )
 
     lines = [
@@ -964,18 +967,18 @@ def read_names(path):
 
 
 def cancel_problem(doc, account):
-    """Why a Bank Transaction on the list may not be cancelled, or None when it may: submitted, on the Wise CHF account, not allocated."""
+    """Why a Bank Transaction on the list may not be cancelled, or None when it may."""
     if doc.get("docstatus") != 1:
         return "docstatus {}, only a submitted line is cancelled".format(
             doc.get("docstatus")
         )
     if doc.get("bank_account") != account:
         return "on another bank account"
-    if (
-        doc.get("status") != "Unreconciled"
-        or _dec(doc.get("allocated_amount") or 0) != ZERO
-        or doc.get("payment_entries")
-    ):
+    if doc.get("status") != "Unreconciled":
+        return "not Unreconciled"
+    if doc.get("transaction_id"):
+        return "has a transaction_id"
+    if _dec(doc.get("allocated_amount") or 0) != ZERO or doc.get("payment_entries"):
         return "allocated to a voucher"
     return None
 
@@ -1037,16 +1040,25 @@ def write_documents(results, path, reconcile=(), claims=()):
     return len(documents)
 
 
+def documents_to_write(results, claimed, cancelled_ids):
+    """Do not put an already-cancelled bexio id back in the loader plan."""
+    return [
+        result
+        for result in results
+        if result["bexio_id"] not in claimed and result["bexio_id"] not in cancelled_ids
+    ]
+
+
 def cancel_main(args):
-    """--cancel: check the listed Bank Transactions on the Wise CHF account and, with --confirm, cancel them through the API."""
+    """--cancel: check the listed Bank Transactions on the selected account."""
     erp = im.Erp.from_file(args.token_file)
     try:
         accounts = erp.list(
-            "Bank Account", [["bexio_id", "=", WISE_BEXIO_ID]], ["name"]
+            "Bank Account", [["bexio_id", "=", args.bank_account_id]], ["name"]
         )
         if len(accounts) != 1:
             print(
-                f"aborted: {len(accounts)} Bank Accounts with the Wise bexio_id, want one",
+                f"aborted: {len(accounts)} Bank Accounts with bexio_id {args.bank_account_id}, want one",
                 file=sys.stderr,
             )
             return 2
@@ -1112,7 +1124,13 @@ def main(argv):
     parser.add_argument(
         "--cancel",
         metavar="LIST",
-        help="cancel the Bank Transactions named in a private list file, on the Wise CHF account, where they are submitted and unallocated; alone it only checks them",
+        help="cancel the Bank Transactions named in a private list file on the selected bexio bank account; alone it only checks them",
+    )
+    parser.add_argument(
+        "--bank-account-id",
+        choices=("1", "2"),
+        default="2",
+        help="with --cancel: bexio account id (default 2, Wise CHF)",
     )
     parser.add_argument(
         "--confirm",
@@ -1183,8 +1201,11 @@ def main(argv):
         print(f"aborted: {err}", file=sys.stderr)
         return 2
 
+    cancelled_ids = {row["bexio_id"] for row in live_rows if row["docstatus"] == 2}
+    # Cancelled export records must not compete for vouchers or reach the loader.
+    active_results = [r for r in results if r["bexio_id"] not in cancelled_ids]
     matches = match(
-        match_transactions(results, lookups),
+        match_transactions(active_results, lookups),
         vouchers,
         held_for_match(allocated, claimed),
     )
@@ -1206,7 +1227,7 @@ def main(argv):
     print(
         f"vouchers already allocated to a Bank Transaction in ERPNext: {len(allocated)}"
     )
-    print(match_summary(results, matches, done))
+    print(match_summary(active_results, matches, done))
     print(
         f"already reconciled: {len(done)}, whose match names other vouchers: {len(kept)}"
     )
@@ -1224,7 +1245,7 @@ def main(argv):
         print(
             "wrote {} documents, {} reconciliations and {} claims to the private file for the loader; nothing was written to ERPNext".format(
                 write_documents(
-                    [r for r in results if r["bexio_id"] not in claimed],
+                    documents_to_write(results, claimed, cancelled_ids),
                     args.write,
                     reconcile,
                     claims,
@@ -1239,7 +1260,7 @@ def main(argv):
     print(f"{len(lines)} unmapped records in {args.report}")
     write_private(args.report, "\n".join(lines))
     unmatched = (
-        unmatched_lines(results, matches)
+        unmatched_lines(active_results, matches)
         + [
             f"Bank Transaction {bexio_id}: already reconciled, but the match names other vouchers"
             for bexio_id in kept

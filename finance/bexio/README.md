@@ -622,8 +622,9 @@ a rerun does not plan it again.
    the claims apart ("claimed from bank file"). A claimed line that bexio's match would reconcile is reconciled as
    any other; one already reconciled to other vouchers is left, and listed in `--unmatched`. Either order is safe: a
    bexio line that came first is stamped with the transaction_id by the bank file import.
-   `import_bank.py --cancel LIST [--confirm]` cancels the Bank Transactions named in a private list file (one name per
-   line), only where they are submitted, on the Wise CHF account and unallocated; without `--confirm` it only checks
+   `import_bank.py --cancel LIST [--bank-account-id 1|2] [--confirm]` cancels the Bank Transactions named in a private list file (one name per
+   line), only where they are submitted, Unreconciled, have no transaction id and are unallocated; account 2 (Wise CHF)
+   remains the default and account 1 selects UBS. Without `--confirm` it only checks
    and prints the count per class. A cancelled line keeps its trace and posts no GL. It was used once, for the August
    duplicates bexio's own sync holds (erp-aapr); bexio's export holds those lines, so the importer maps them one to one.
 6. Manual entries: `import_manual_entries.py --write FILE`, then submit; `import_manual_fix.py --write FILE`, then submit.
@@ -801,3 +802,25 @@ The yardmaster's first-run sequence is:
 Every unit test run (`python3 -m unittest discover -s finance/bexio -p 'test_*.py'`) points private/
 at a temp folder (`private_guard.py`, pulled into each test module by its `setUpModule` import); the
 scripts themselves read `BEXIO_PRIVATE` to override their private folder, unset it is the real one.
+
+## UBS duplicate bank lines
+
+Some bexio exports contain repeated UBS Bank Transactions with distinct bexio ids. Compare submitted rows with the
+bank's MT940 statement before preparing a cancel list. The read-only script validates the statement's opening and
+closing balances, pairs by date, amount and direction, and writes both a names-only list and a totals report under
+`private/`:
+
+```sh
+python3 finance/bexio/bank_surplus.py --mt940 private/mt940/example.mt940 --from 2031-01-01 --to 2031-12-31 --bank-account '<UBS Bank Account name>'
+```
+
+Use the actual statement path and comparison window for your account. Review the private report against the
+expected counts supplied privately; stop if they differ or there are conflicts. Rows without a bank line are counted
+separately and excluded from the cancel list. Check the names with cancellation's dry run before any later approved write:
+
+```sh
+python3 finance/bexio/import_bank.py --cancel private/bexio-bank-surplus-<date>.txt --bank-account-id 1
+```
+
+Only a separate invocation with `--confirm` cancels eligible rows. Cancelled rows remain keyed by their bexio id, so
+the importer does not recreate them on a rerun and `--check` excludes them from differences.
