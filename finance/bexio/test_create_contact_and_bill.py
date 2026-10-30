@@ -49,13 +49,48 @@ ARGS = [
 
 VENDOR = {
     "name_1": "Muster Reinigung AG",
-    "vat_number": "CHE-000.000.000",
+    "vat_number": "CHE-000.000.001",
     "street_name": "Beispielweg",
     "house_number": "12",
     "postcode": "8000",
     "city": "Beispielstadt",
     "country": "CH",
     "mail": "rechnung@example.invalid",
+}
+CONTACT = {key: value for key, value in VENDOR.items() if key != "vat_number"}
+CONTACT["remarks"] = "UID CHE-000.000.001"
+
+
+# POST /2.0/contact request fields, copied from https://docs.bexio.com/#tag/Contacts/operation/v2CreateContact.
+DOCUMENTED_CONTACT_CREATE_FIELDS = {
+    "nr",
+    "contact_type_id",
+    "name_1",
+    "name_2",
+    "salutation_id",
+    "salutation_form",
+    "title_id",
+    "birthday",
+    "street_name",
+    "house_number",
+    "address_addition",
+    "postcode",
+    "city",
+    "country_id",
+    "mail",
+    "mail_second",
+    "phone_fixed",
+    "phone_fixed_second",
+    "phone_mobile",
+    "fax",
+    "url",
+    "skype_name",
+    "remarks",
+    "language_id",
+    "contact_group_ids",
+    "contact_branch_ids",
+    "user_id",
+    "owner_id",
 }
 
 
@@ -227,7 +262,7 @@ class ResultFileTest(unittest.TestCase):
         self.assertNotIn(TOKEN, content)
 
     def test_an_existing_contact_records_only_the_bill_id(self):
-        answers = standard_answers(contacts=[dict(VENDOR, id=12)])
+        answers = standard_answers(contacts=[dict(CONTACT, id=12)])
         del answers[("GET", "/2.0/country")], answers[("GET", "/3.0/users/me")]
         urlopen, calls = fake_bexio(answers)
         with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
@@ -278,7 +313,9 @@ class PlanTest(unittest.TestCase):
         self.assertEqual(contact["name_1"], "Muster Reinigung AG")
         self.assertEqual(contact["contact_type_id"], 1)
         self.assertEqual(contact["country_id"], 5)
-        self.assertEqual(contact["vat_number"], "CHE-000.000.000")
+        self.assertNotIn("vat_number", contact)
+        self.assertEqual(contact["remarks"], "UID CHE-000.000.001")
+        self.assertTrue(set(contact).issubset(cb.CONTACT_CREATE_FIELDS))
         bill = _body(_sent(calls, "POST", "/4.0/purchase/bills")[0])
         self.assertEqual(bill["supplier_id"], 77)
         self.assertEqual(bill["vendor_ref"], "INV-TEST-1")
@@ -307,7 +344,7 @@ class PlanTest(unittest.TestCase):
         answers = standard_answers()
         answers[("GET", "/2.0/contact")] = [
             contacts,
-            [dict(VENDOR, id=12)],
+            [dict(CONTACT, id=12)],
         ]
         del answers[("GET", "/2.0/country")], answers[("GET", "/3.0/users/me")]
         urlopen, calls = fake_bexio(answers)
@@ -324,8 +361,8 @@ class PlanTest(unittest.TestCase):
     def test_two_matching_contacts_refuse_before_any_write(self):
         answers = standard_answers(
             contacts=[
-                dict(VENDOR, id=3),
-                dict(VENDOR, id=4),
+                dict(CONTACT, id=3),
+                dict(CONTACT, id=4),
             ]
         )
         urlopen, calls = fake_bexio(answers)
@@ -338,7 +375,7 @@ class PlanTest(unittest.TestCase):
     def test_an_invoice_number_already_in_bexio_refuses_before_any_write(self):
         urlopen, calls = fake_bexio(
             standard_answers(
-                contacts=[dict(VENDOR, id=12)],
+                contacts=[dict(CONTACT, id=12)],
                 bills=[{"id": 5, "supplier_id": 12, "vendor_ref": "INV-TEST-1"}],
             )
         )
@@ -350,7 +387,7 @@ class PlanTest(unittest.TestCase):
 
     def test_bills_are_read_page_by_page(self):
         full = [{"id": i, "vendor_ref": f"other-{i}"} for i in range(cb.PAGE_SIZE)]
-        answers = standard_answers(contacts=[dict(VENDOR, id=12)])
+        answers = standard_answers(contacts=[dict(CONTACT, id=12)])
         answers[("GET", "/4.0/purchase/bills")] = [
             {"data": full},
             {"data": [{"id": 6, "vendor_ref": "INV-TEST-1"}]},
@@ -484,6 +521,24 @@ class ArgumentTest(unittest.TestCase):
 
 
 class ContactBodyTest(unittest.TestCase):
+    def test_allowlist_matches_documented_create_schema(self):
+        self.assertEqual(cb.CONTACT_CREATE_FIELDS, DOCUMENTED_CONTACT_CREATE_FIELDS)
+
+    def test_contact_body_refuses_unknown_vendor_fields(self):
+        with self.assertRaisesRegex(ValueError, "unsupported fields"):
+            cb.contact_body(dict(VENDOR, unexpected="invented"), 9, 5)
+
+    def test_invalid_vendor_uid_refuses_before_any_request(self):
+        path = os.path.join(cb.PRIVATE, "invalid-uid-vendor.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(dict(VENDOR, vat_number="not-a-uid"), f)
+        with mock.patch.dict(os.environ, BEXIO_TOKEN=TOKEN), mock.patch.object(
+            cb.urllib.request, "urlopen"
+        ) as urlopen:
+            with self.assertRaisesRegex(SystemExit, "refused vendor UID"):
+                _run(["--vendor", path] + ARGS[2:])
+        urlopen.assert_not_called()
+
     def test_contact_body_uses_vendor_fields_and_owner(self):
         body = cb.contact_body(VENDOR, 9, 5)
         self.assertEqual(body["street_name"], "Beispielweg")
@@ -493,6 +548,32 @@ class ContactBodyTest(unittest.TestCase):
         self.assertEqual(body["mail"], "rechnung@example.invalid")
         self.assertNotIn("country", body)
         self.assertEqual((body["user_id"], body["owner_id"]), (9, 9))
+        self.assertTrue(set(body).issubset(cb.CONTACT_CREATE_FIELDS))
+        self.assertNotIn("vat_number", body)
+        self.assertEqual(body["remarks"], "UID CHE-000.000.001")
+
+    def test_contact_body_without_uid_has_only_documented_fields(self):
+        body = cb.contact_body({"name_1": "Muster AG"}, 9, 5)
+        self.assertTrue(set(body).issubset(cb.CONTACT_CREATE_FIELDS))
+        self.assertNotIn("vat_number", body)
+        self.assertNotIn("remarks", body)
+
+    def test_uid_inputs_are_canonicalized(self):
+        for value in ("che000000001", "CHE-000.000.001 MWST"):
+            self.assertEqual(
+                cb.contact_body({"name_1": "Muster AG", "vat_number": value}, 9, 5)[
+                    "remarks"
+                ],
+                "UID CHE-000.000.001",
+            )
+
+    def test_invalid_uid_is_refused_before_any_request(self):
+        with mock.patch.dict(os.environ, BEXIO_TOKEN=TOKEN), mock.patch.object(
+            cb.urllib.request, "urlopen"
+        ) as urlopen:
+            with self.assertRaisesRegex(SystemExit, "refused vendor UID"):
+                _run(["--vendor-uid", "not-a-uid"] + ARGS[2:])
+        urlopen.assert_not_called()
 
 
 class GeneralizationTest(unittest.TestCase):
@@ -505,20 +586,107 @@ class GeneralizationTest(unittest.TestCase):
         args = list(ARGS[2:])
         return list(lookup) + args
 
-    def test_uid_punctuation_match_beats_exact_name(self):
+    def test_name_only_reuses_contact_with_uid_in_remarks(self):
+        answers = standard_answers(contacts=[dict(CONTACT, id=12)])
+        urlopen, calls = fake_bexio(answers)
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            _run(["--yes", "--vendor-name", VENDOR["name_1"]] + ARGS[2:])
+        self.assertEqual(_sent(calls, "POST", "/2.0/contact"), [])
+        self.assertEqual(
+            _body(_sent(calls, "POST", "/4.0/purchase/bills")[0])["supplier_id"], 12
+        )
+
+    def test_conflicting_name_uid_and_uid_match_refuse(self):
         answers = standard_answers(
             contacts=[
-                {"id": 30, "name_1": VENDOR["name_1"], "vat_number": "CHE 999 999 999"},
-                {"id": 31, "name_1": "Different Name", "vat_number": "CH-E000000000"},
+                {
+                    "id": 30,
+                    "name_1": VENDOR["name_1"],
+                    "remarks": "Other UID CHE-999.999.999",
+                },
+                {
+                    "id": 31,
+                    "name_1": "Different Name",
+                    "remarks": "legacy UID CHE000000001 MWST",
+                },
+            ]
+        )
+        urlopen, calls = fake_bexio(answers)
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            with self.assertRaisesRegex(SystemExit, "30, 31"):
+                _run(["--yes"] + ARGS)
+        self.assertEqual([key for key, _ in calls if key[0] == "POST"], [])
+
+    def test_uid_match_beats_exact_name_without_uid(self):
+        answers = standard_answers(
+            contacts=[
+                {"id": 30, "name_1": VENDOR["name_1"]},
+                {
+                    "id": 31,
+                    "name_1": "Different Name",
+                    "remarks": "legacy UID CHE000000001 MWST",
+                },
             ]
         )
         del answers[("GET", "/2.0/country")], answers[("GET", "/3.0/users/me")]
         urlopen, calls = fake_bexio(answers)
         with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
             out = _run(["--yes"] + ARGS)
-        bill = _body(_sent(calls, "POST", "/4.0/purchase/bills")[0])
-        self.assertEqual(bill["supplier_id"], 31)
+        self.assertEqual(
+            _body(_sent(calls, "POST", "/4.0/purchase/bills")[0])["supplier_id"], 31
+        )
         self.assertIn("Different Name", out)
+
+    def test_uid_in_remarks_matches_when_name_differs(self):
+        answers = standard_answers(
+            contacts=[
+                {
+                    "id": 61,
+                    "name_1": "Renamed Muster",
+                    "remarks": "Billing UID: CHE 000.000.001 MWST",
+                }
+            ]
+        )
+        del answers[("GET", "/2.0/country")], answers[("GET", "/3.0/users/me")]
+        urlopen, calls = fake_bexio(answers)
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            _run(["--yes"] + ARGS)
+        self.assertEqual(
+            _body(_sent(calls, "POST", "/4.0/purchase/bills")[0])["supplier_id"], 61
+        )
+
+    def test_name_with_conflicting_uid_refuses_before_write(self):
+        answers = standard_answers(
+            contacts=[
+                {
+                    "id": 51,
+                    "name_1": VENDOR["name_1"],
+                    "remarks": "UID CHE-999.999.999",
+                },
+                {
+                    "id": 52,
+                    "name_1": "Renamed Vendor",
+                    "remarks": "UID CHE-000.000.001",
+                },
+            ]
+        )
+        urlopen, calls = fake_bexio(answers)
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            with self.assertRaises(SystemExit) as cm:
+                _run(["--yes"] + ARGS)
+        self.assertIn("51", str(cm.exception))
+        self.assertIn("52", str(cm.exception))
+        self.assertEqual([key for key, _ in calls if key[0] == "POST"], [])
+
+    def test_name_without_remarks_falls_back_to_exact_name(self):
+        answers = standard_answers(contacts=[{"id": 62, "name_1": VENDOR["name_1"]}])
+        del answers[("GET", "/2.0/country")], answers[("GET", "/3.0/users/me")]
+        urlopen, calls = fake_bexio(answers)
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            _run(["--yes"] + ARGS)
+        self.assertEqual(
+            _body(_sent(calls, "POST", "/4.0/purchase/bills")[0])["supplier_id"], 62
+        )
 
     def test_exact_name_reused_but_substring_does_not_match(self):
         exact = standard_answers(
@@ -627,7 +795,7 @@ class ReviewRegressionTest(unittest.TestCase):
 
     def test_duplicate_check_uses_supplier_filter_and_documented_limit(self):
         # Actual list rows omit supplier_id, even for a matching supplier.
-        answers = standard_answers(contacts=[dict(VENDOR, id=12)])
+        answers = standard_answers(contacts=[dict(CONTACT, id=12)])
         row = {"id": "invented-bill", "vendor_ref": "INV-TEST-1"}
         answers[("GET", "/4.0/purchase/bills")] = [
             {"data": [row]},
@@ -652,7 +820,7 @@ class ReviewRegressionTest(unittest.TestCase):
 
     def test_lookup_address_uses_current_contact_and_country_id(self):
         existing = dict(
-            VENDOR,
+            CONTACT,
             id=12,
             name_1="Current Invented Name",
             country_id=6,
@@ -702,7 +870,7 @@ class ReviewRegressionTest(unittest.TestCase):
         self.assertEqual(bill["base_currency_amount"], bill["amount_man"])
 
     def test_other_supplier_reference_warns_with_realistic_list_rows(self):
-        answers = standard_answers(contacts=[dict(VENDOR, id=12)])
+        answers = standard_answers(contacts=[dict(CONTACT, id=12)])
         answers[("GET", "/4.0/purchase/bills")] = [
             {"data": [{"id": "invented-bill", "vendor_ref": "INV-TEST-1"}]},
             {"data": []},
