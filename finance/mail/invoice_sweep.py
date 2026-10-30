@@ -193,7 +193,10 @@ def _fetch_pdf(url, target, opener, clock):
             raise RuntimeError("deadline")
         req = urllib.request.Request(
             current,
-            headers={"User-Agent": "invoice-sweep/1", "Accept": "application/pdf, */*;q=0.1"},
+            headers={
+                "User-Agent": "invoice-sweep/1",
+                "Accept": "application/pdf, */*;q=0.1",
+            },
         )
         try:
             response = opener.open(req, timeout=remaining)
@@ -375,24 +378,44 @@ def run_sweep(
                 if len(result.stdout.splitlines()) == 25:
                     day_full += 1
 
-                searches = ["%s received:%s..%s" % (word, day, day) for word in WORDS]
-                searches.append("%s received:%s..%s" % (ATTACHMENT_SEARCH, day, day))
+                searches = [f"{word} received:{day}..{day}" for word in WORDS]
+                searches.append(f"{ATTACHMENT_SEARCH} received:{day}..{day}")
                 for search in searches:
-                    result = call(["list", "--folder", folder, "--search", search, "--top", "25"])
+                    result = call(
+                        ["list", "--folder", folder, "--search", search, "--top", "25"]
+                    )
                     collect_rows(result)
                     gap_key = [folder, day.isoformat(), search]
-                    if len(result.stdout.splitlines()) == 25 and gap_key not in state.get("gaps", []):
+                    if len(
+                        result.stdout.splitlines()
+                    ) == 25 and gap_key not in state.get("gaps", []):
                         emit("gap", day.isoformat(), detail=folder + " " + search)
                         state.setdefault("gaps", []).append(gap_key)
 
-                addresses = dict.fromkeys(cfg.get("forwarders", []) + cfg.get("senders", []))
+                addresses = dict.fromkeys(
+                    cfg.get("forwarders", []) + cfg.get("senders", [])
+                )
                 for address in addresses:
-                    result = call(["list", "--folder", folder, "--from", address,
-                                   "--since", day.isoformat(), "--before", nxt.isoformat(),
-                                   "--top", "25"])
+                    result = call(
+                        [
+                            "list",
+                            "--folder",
+                            folder,
+                            "--from",
+                            address,
+                            "--since",
+                            day.isoformat(),
+                            "--before",
+                            nxt.isoformat(),
+                            "--top",
+                            "25",
+                        ]
+                    )
                     collect_rows(result)
                     gap_key = [folder, day.isoformat(), "from " + address]
-                    if len(result.stdout.splitlines()) == 25 and gap_key not in state.get("gaps", []):
+                    if len(
+                        result.stdout.splitlines()
+                    ) == 25 and gap_key not in state.get("gaps", []):
                         emit("gap", day.isoformat(), detail=folder + " from " + address)
                         state.setdefault("gaps", []).append(gap_key)
         pending = list(rows_seen)
@@ -691,10 +714,13 @@ def run_sweep(
             or r.get("status") == "open"
         }
         state["hashes"] = state.get("hashes", [])
-        events.append("totals\t" + ",".join(
-            ["day-full=%d" % day_full]
-            + ["%s=%d" % (k, totals[k]) for k in sorted(totals)]
-        ))
+        events.append(
+            "totals\t"
+            + ",".join(
+                ["day-full=%d" % day_full]
+                + ["%s=%d" % (k, totals[k]) for k in sorted(totals)]
+            )
+        )
         print(events[-1])
         if not dry_run:
             os.makedirs(incoming, mode=0o700, exist_ok=True)

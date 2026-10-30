@@ -74,7 +74,9 @@ class SweepTests(unittest.TestCase):
             if args[0] == "list":
                 if list_error:
                     return sweep.subprocess.CompletedProcess(argv, 1, "", "")
-                listed_rows = rows if "--search" not in args and "--from" not in args else ()
+                listed_rows = (
+                    rows if "--search" not in args and "--from" not in args else ()
+                )
                 return sweep.subprocess.CompletedProcess(
                     argv,
                     0,
@@ -238,7 +240,9 @@ class SweepTests(unittest.TestCase):
                 runner=run,
                 today="2042-04-30",
             )
-        self.assertFalse(any(c.args[0].startswith("gap\t") for c in output.call_args_list))
+        self.assertFalse(
+            any(c.args[0].startswith("gap\t") for c in output.call_args_list)
+        )
         self.assertIn("day-full=1", output.call_args_list[-1].args[0])
         with open(self.state) as f:
             self.assertEqual(json.load(f)["last_date"], "2042-04-30")
@@ -253,7 +257,9 @@ class SweepTests(unittest.TestCase):
                 runner=run,
                 today="2042-04-30",
             )
-        self.assertFalse(any(c.args[0].startswith("gap\t") for c in output.call_args_list))
+        self.assertFalse(
+            any(c.args[0].startswith("gap\t") for c in output.call_args_list)
+        )
 
     def test_failed_list_does_not_write_state(self):
         run, _ = self.runner(list_error=True)
@@ -516,11 +522,16 @@ class SweepTests(unittest.TestCase):
 
     def test_targeted_search_attachment_and_sender_passes_share_dedupe(self):
         with open(self.config, "w") as f:
-            json.dump({
-                "folders": ["inbox"], "hosts": ["example.test"],
-                "forwarders": ["forwarder@example.test"],
-                "senders": ["sender@example.test"], "ignore": [],
-            }, f)
+            json.dump(
+                {
+                    "folders": ["inbox"],
+                    "hosts": ["example.test"],
+                    "forwarders": ["forwarder@example.test"],
+                    "senders": ["sender@example.test"],
+                    "ignore": [],
+                },
+                f,
+            )
         os.chmod(self.config, 0o600)
         rows = {
             "invoice received:2042-04-30..2042-04-30": ["word-hit"],
@@ -530,7 +541,9 @@ class SweepTests(unittest.TestCase):
         }
         mails = {
             "word-hit": self.mail(subject="Invoice"),
-            "compound": self.mail(subject="Monthly", attachments=[{"name": "jahresrechnung.pdf"}]),
+            "compound": self.mail(
+                subject="Monthly", attachments=[{"name": "jahresrechnung.pdf"}]
+            ),
             "forwarded": self.mail(sender="forwarder@example.test", subject="Monthly"),
             "not-candidate": self.mail(subject="Unrelated"),
         }
@@ -543,51 +556,121 @@ class SweepTests(unittest.TestCase):
                 if "--search" in args:
                     ids = rows.get(args[args.index("--search") + 1], [])
                 elif "--from" in args:
-                    ids = rows["from"] if args[args.index("--from") + 1] == "forwarder@example.test" else []
+                    ids = (
+                        rows["from"]
+                        if args[args.index("--from") + 1] == "forwarder@example.test"
+                        else []
+                    )
                 else:
                     ids = []
                 output = "".join(
-                    "\t".join([mid, "2042-04-30 12:00", "sender@example.test", "preview", "", ""]) + "\n"
+                    "\t".join(
+                        [
+                            mid,
+                            "2042-04-30 12:00",
+                            "sender@example.test",
+                            "preview",
+                            "",
+                            "",
+                        ]
+                    )
+                    + "\n"
                     for mid in ids
                 )
                 return sweep.subprocess.CompletedProcess(argv, 0, output, "")
             if "--json" in args:
                 reads.append(args[1])
-            return sweep.subprocess.CompletedProcess(argv, 0, json.dumps(mails[args[1]]), "")
+            return sweep.subprocess.CompletedProcess(
+                argv, 0, json.dumps(mails[args[1]]), ""
+            )
 
         lines = self.execute(runner, dry_run=True)
-        self.assertCountEqual(reads, ["word-hit", "compound", "forwarded", "not-candidate"])
+        self.assertCountEqual(
+            reads, ["word-hit", "compound", "forwarded", "not-candidate"]
+        )
         self.assertEqual(len(reads), len(set(reads)))
         self.assertFalse(any("not-candidate" in line for line in lines))
-        expected = [["list", "--folder", "inbox", "--since", "2042-04-30",
-                     "--before", "2042-05-01", "--top", "25"]]
+        expected = [
+            [
+                "list",
+                "--folder",
+                "inbox",
+                "--since",
+                "2042-04-30",
+                "--before",
+                "2042-05-01",
+                "--top",
+                "25",
+            ]
+        ]
         expected.extend(
-            ["list", "--folder", "inbox", "--search",
-             "%s received:2042-04-30..2042-04-30" % word, "--top", "25"]
+            [
+                "list",
+                "--folder",
+                "inbox",
+                "--search",
+                "%s received:2042-04-30..2042-04-30" % word,
+                "--top",
+                "25",
+            ]
             for word in sweep.WORDS
         )
-        expected.append(["list", "--folder", "inbox", "--search",
-                         "hasAttachment:true received:2042-04-30..2042-04-30",
-                         "--top", "25"])
+        expected.append(
+            [
+                "list",
+                "--folder",
+                "inbox",
+                "--search",
+                "hasAttachment:true received:2042-04-30..2042-04-30",
+                "--top",
+                "25",
+            ]
+        )
         expected.extend(
-            ["list", "--folder", "inbox", "--from", address, "--since",
-             "2042-04-30", "--before", "2042-05-01", "--top", "25"]
+            [
+                "list",
+                "--folder",
+                "inbox",
+                "--from",
+                address,
+                "--since",
+                "2042-04-30",
+                "--before",
+                "2042-05-01",
+                "--top",
+                "25",
+            ]
             for address in ("forwarder@example.test", "sender@example.test")
         )
-        self.assertEqual(calls[:len(expected)], expected)
+        self.assertEqual(calls[: len(expected)], expected)
 
     def test_targeted_gap_is_deduped_and_old_gap_shape_loads(self):
         with open(self.state, "w") as f:
-            json.dump({"last_date": "2042-04-30", "mails": {}, "hashes": [],
-                       "gaps": [["inbox", "2042-04-30"]]}, f)
+            json.dump(
+                {
+                    "last_date": "2042-04-30",
+                    "mails": {},
+                    "hashes": [],
+                    "gaps": [["inbox", "2042-04-30"]],
+                },
+                f,
+            )
         rows = [("same", "2042-04-30 12:00", "x@example.test", "Preview")] * 25
         base, _ = self.runner(mails={"same": self.mail(subject="Hello")})
 
         def runner(argv, **kwargs):
             args = argv[1:]
-            if args[0] == "list" and "--search" in args and args[args.index("--search") + 1].startswith("invoice "):
-                return sweep.subprocess.CompletedProcess(argv, 0,
-                    "".join("\t".join([*row, "", ""]) + "\n" for row in rows), "")
+            if (
+                args[0] == "list"
+                and "--search" in args
+                and args[args.index("--search") + 1].startswith("invoice ")
+            ):
+                return sweep.subprocess.CompletedProcess(
+                    argv,
+                    0,
+                    "".join("\t".join([*row, "", ""]) + "\n" for row in rows),
+                    "",
+                )
             return base(argv, **kwargs)
 
         first = self.execute(runner)
@@ -600,14 +683,32 @@ class SweepTests(unittest.TestCase):
 
     def test_earlier_since_rewinds_but_later_since_does_not(self):
         with open(self.state, "w") as f:
-            json.dump({"last_date": "2042-04-30", "mails": {}, "hashes": [], "gaps": []}, f)
+            json.dump(
+                {"last_date": "2042-04-30", "mails": {}, "hashes": [], "gaps": []}, f
+            )
         run, calls = self.runner()
-        sweep.run_sweep(self.config, self.incoming, self.state, self.log, "fake-mail",
-                        "2042-04-28", runner=run, today="2042-04-30")
+        sweep.run_sweep(
+            self.config,
+            self.incoming,
+            self.state,
+            self.log,
+            "fake-mail",
+            "2042-04-28",
+            runner=run,
+            today="2042-04-30",
+        )
         self.assertEqual(calls[0][calls[0].index("--since") + 1], "2042-04-28")
         calls.clear()
-        sweep.run_sweep(self.config, self.incoming, self.state, self.log, "fake-mail",
-                        "2042-05-01", runner=run, today="2042-04-30")
+        sweep.run_sweep(
+            self.config,
+            self.incoming,
+            self.state,
+            self.log,
+            "fake-mail",
+            "2042-05-01",
+            runner=run,
+            today="2042-04-30",
+        )
         self.assertEqual(calls[0][calls[0].index("--since") + 1], "2042-04-30")
 
     def test_failed_search_does_not_advance_or_rewrite_state(self):
@@ -621,12 +722,21 @@ class SweepTests(unittest.TestCase):
         def runner(argv, **kwargs):
             args = argv[1:]
             if args[0] == "list" and "--search" in args:
-                return sweep.subprocess.CompletedProcess(argv, 1, "", "synthetic failure")
+                return sweep.subprocess.CompletedProcess(
+                    argv, 1, "", "synthetic failure"
+                )
             return base(argv, **kwargs)
 
         with self.assertRaisesRegex(RuntimeError, "mail-list-failed"):
-            sweep.run_sweep(self.config, self.incoming, self.state, self.log, "fake-mail",
-                            runner=runner, today="2042-04-30")
+            sweep.run_sweep(
+                self.config,
+                self.incoming,
+                self.state,
+                self.log,
+                "fake-mail",
+                runner=runner,
+                today="2042-04-30",
+            )
         with open(self.state, "rb") as f:
             self.assertEqual(f.read(), before)
 
