@@ -893,13 +893,16 @@ class ReadTest(unittest.TestCase):
     def test_plain_body_links_have_empty_text(self):
         body = {
             "contentType": "text",
-            "content": "See https://example.test/a and https://example.test/b.",
+            "content": "See https://example.test/a and https://example.test/b. "
+            "(https://example.test/c_(d)). [https://example.test/e]}",
         }
         self.assertEqual(
             mail.body_links(body),
             [
                 {"text": "", "href": "https://example.test/a"},
                 {"text": "", "href": "https://example.test/b"},
+                {"text": "", "href": "https://example.test/c_(d)"},
+                {"text": "", "href": "https://example.test/e"},
             ],
         )
 
