@@ -100,6 +100,17 @@ class BankSurplusTest(unittest.TestCase):
                 self.assertEqual(surplus, [])
                 self.assertEqual([r["name"] for r in conflicts], ["BT-2"])
 
+    def test_ignored_duplicate_is_a_conflict_not_a_cancel_candidate(self):
+        rows = [
+            row("BT-1", "2025-01-01", deposit="10"),
+            row("BT-2", "2025-01-01", deposit="10", status="Ignored"),
+        ]
+        surplus, conflicts, _, _ = bs.pair(
+            [line("2025-01-01", deposit="10")], rows
+        )
+        self.assertEqual([r["name"] for r in surplus], [])
+        self.assertEqual([r["name"] for r in conflicts], ["BT-2"])
+
     def test_report_counts_kept_separately_and_retains_unmatched_rows_in_net(self):
         bank = [line("2025-01-01", deposit="10")]
         rows = [

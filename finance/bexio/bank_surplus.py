@@ -84,7 +84,7 @@ def pair(bank_lines, rows):
             if (
                 (row.get("allocated_amount") and cents(row["allocated_amount"]) != ZERO)
                 or row.get("payment_entries")
-                or row.get("status") == "Reconciled"
+                or row.get("status") != "Unreconciled"
                 or row.get("transaction_id")
             ):
                 conflicts.append(row)
