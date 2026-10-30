@@ -7,7 +7,7 @@ exec /usr/bin/python3 -I - "$@" <<'__BEXIO_CONTACT_BILL_PY__'
 """Create a supplier contact when needed and prepare a draft bill for an uploaded file.
 
 The vendor is supplied by a private JSON file or identified by an existing name/UID.
-The bill uses one gross line item. Reads are completed before either approved write;
+The bill uses one line item, gross for ordinary VAT and net for reverse charge. Reads are completed before either approved write;
 POST requests are never retried because an error may follow a successful store.
 
 Authentication is the personal access token BEXIO_TOKEN injected by av. Dry run is
@@ -48,6 +48,7 @@ REQUESTS = {
 }
 PAGE_SIZE = 500
 BILL_STATUS = "DRAFT"
+REVERSE_CHARGE_CODES = {"BZM77", "BZM81", "BZB77", "BZB81"}
 PRIVATE = os.environ.get("BEXIO_PRIVATE") or "/Users/bsaladin/ws_yardr_finance/private"
 RESULT_FOLDER = "bexio-upload"
 RESULT_FILE = "last-result.txt"
@@ -265,7 +266,7 @@ def resolve_tax(taxes, code):
     tax = matches[0]
     if not tax.get("is_active"):
         raise SystemExit("refused: tax code {} is inactive".format(code))
-    if not str(tax.get("type", "")).startswith("pre_"):
+    if code not in REVERSE_CHARGE_CODES and not str(tax.get("type", "")).startswith("pre_"):
         raise SystemExit("{} is a sales VAT code, not input VAT; ask Benchi which code".format(code))
     return tax
 
@@ -295,7 +296,7 @@ def bill_body(supplier_id, partner_id, vendor, file_uuid, nr, date, due_date, to
         "amount_man": float(total),
         "manual_amount": True,
         "currency_code": currency,
-        "item_net": False,
+        "item_net": tax["code"] in REVERSE_CHARGE_CODES,
         "attachment_ids": [file_uuid],
         "address": contact_address(vendor),
         "line_items": [{"position": 0, "amount": float(total), "booking_account_id": account["id"], "tax_id": tax["id"], "title": text}],
@@ -328,7 +329,8 @@ def main(argv):
     parser.add_argument("--file-uuid", required=True, help="uuid from upload_bill.py's result line")
     parser.add_argument("--nr", required=True, help="vendor invoice number")
     parser.add_argument("--date", required=True, help="invoice date, YYYY-MM-DD")
-    parser.add_argument("--total", required=True, help="gross invoice total")
+    parser.add_argument("--total", required=True,
+                        help="invoice total; for reverse charge, the invoice amount is net and the whole bill total")
     parser.add_argument("--account", required=True, help="expense account number")
     parser.add_argument("--tax", required=True, help="input VAT code")
     parser.add_argument("--currency", default="CHF", help="three-letter upper-case currency (default: CHF)")
@@ -417,6 +419,8 @@ def main(argv):
         bill_plan["exchange_rate"] = float(exchange_rate)
         bill_plan["base_currency_amount"] = float((total * exchange_rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
     print("bill: would create as {}:".format(BILL_STATUS))
+    print("amount basis: net, reverse charge (Bezugsteuer)" if tax["code"] in REVERSE_CHARGE_CODES
+          else "amount basis: gross")
     print(json.dumps(bill_plan, ensure_ascii=False, indent=2))
     if not args.yes:
         print("dry run: nothing created; add --yes to create")

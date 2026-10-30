@@ -280,7 +280,7 @@ class ResultFileTest(unittest.TestCase):
         )
 
 
-class PlanTest(unittest.TestCase):
+class PlanDryRunTest(unittest.TestCase):
     def setUp(self):
         patcher = mock.patch.dict(os.environ, {"BEXIO_TOKEN": TOKEN}, clear=False)
         patcher.start()
@@ -304,6 +304,99 @@ class PlanTest(unittest.TestCase):
         self.assertIn('"booking_account_id": 16', out)
         self.assertIn('"tax_id": 23', out)
         self.assertNotIn(TOKEN, out)
+
+
+class ReverseChargeTest(unittest.TestCase):
+    def setUp(self):
+        patcher = mock.patch.dict(os.environ, {"BEXIO_TOKEN": TOKEN}, clear=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def run_with_tax(self, code, tax_type="pre_tax_material", active=True):
+        answers = standard_answers()
+        answers[("GET", "/3.0/taxes")] = [
+            [
+                {
+                    "id": 23,
+                    "code": code,
+                    "display_name": "Invented tax",
+                    "value": 8.1,
+                    "type": tax_type,
+                    "is_active": active,
+                }
+            ]
+        ]
+        argv = list(ARGS)
+        argv[argv.index("VM81")] = code
+        urlopen, calls = fake_bexio(answers)
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            out = _run(argv)
+        return out, calls
+
+    def test_each_reverse_charge_code_uses_invoice_amount_as_net(self):
+        self.assertEqual(cb.REVERSE_CHARGE_CODES, {"BZM77", "BZM81", "BZB77", "BZB81"})
+        for code in sorted(cb.REVERSE_CHARGE_CODES):
+            with self.subTest(code=code):
+                out, calls = self.run_with_tax(code, tax_type="unknown_fixture_type")
+                self.assertIn("amount basis: net, reverse charge (Bezugsteuer)", out)
+                self.assertIn('"item_net": true', out)
+                self.assertIn('"amount_man": 733.3', out)
+                self.assertIn('"manual_amount": true', out)
+                bill_json = out.split('"line_items": [', 1)[1]
+                self.assertIn('"amount": 733.3', bill_json)
+                self.assertEqual(_sent(calls, "POST", "/4.0/purchase/bills"), [])
+
+    def test_ordinary_input_vat_stays_gross(self):
+        out, _ = self.run_with_tax("VM81")
+        self.assertIn("amount basis: gross", out)
+        self.assertIn('"item_net": false', out)
+
+    def test_sales_code_still_refuses(self):
+        answers = standard_answers()
+        answers[("GET", "/3.0/taxes")] = [
+            [
+                {
+                    "id": 24,
+                    "code": "SALE81",
+                    "type": "sales_tax",
+                    "is_active": True,
+                }
+            ]
+        ]
+        argv = list(ARGS)
+        argv[argv.index("VM81")] = "SALE81"
+        urlopen, calls = fake_bexio(answers)
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            with self.assertRaisesRegex(SystemExit, "sales VAT code"):
+                _run(argv)
+        self.assertEqual([key for key, _ in calls if key[0] == "POST"], [])
+
+    def test_inactive_reverse_charge_code_still_refuses(self):
+        answers = standard_answers()
+        answers[("GET", "/3.0/taxes")] = [
+            [
+                {
+                    "id": 23,
+                    "code": "BZM81",
+                    "type": "unknown_fixture_type",
+                    "is_active": False,
+                }
+            ]
+        ]
+        argv = list(ARGS)
+        argv[argv.index("VM81")] = "BZM81"
+        urlopen, calls = fake_bexio(answers)
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            with self.assertRaisesRegex(SystemExit, "inactive"):
+                _run(argv)
+        self.assertEqual([key for key, _ in calls if key[0] == "POST"], [])
+
+
+class PlanTest(unittest.TestCase):
+    def setUp(self):
+        patcher = mock.patch.dict(os.environ, {"BEXIO_TOKEN": TOKEN}, clear=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def test_yes_creates_the_contact_then_the_bill(self):
         urlopen, calls = fake_bexio(standard_answers())
