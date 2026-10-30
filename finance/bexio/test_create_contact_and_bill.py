@@ -312,7 +312,7 @@ class ReverseChargeTest(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
-    def run_with_tax(self, code, tax_type="pre_tax_material", active=True):
+    def run_with_tax(self, code, tax_type="pre_tax_material", active=True, yes=False):
         answers = standard_answers()
         answers[("GET", "/3.0/taxes")] = [
             [
@@ -328,6 +328,8 @@ class ReverseChargeTest(unittest.TestCase):
         ]
         argv = list(ARGS)
         argv[argv.index("VM81")] = code
+        if yes:
+            argv.append("--yes")
         urlopen, calls = fake_bexio(answers)
         with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
             out = _run(argv)
@@ -345,6 +347,38 @@ class ReverseChargeTest(unittest.TestCase):
                 bill_json = out.split('"line_items": [', 1)[1]
                 self.assertIn('"amount": 733.3', bill_json)
                 self.assertEqual(_sent(calls, "POST", "/4.0/purchase/bills"), [])
+
+    def test_yes_sends_each_reverse_charge_bill_on_net_basis(self):
+        for code in sorted(cb.REVERSE_CHARGE_CODES):
+            with self.subTest(code=code):
+                _, calls = self.run_with_tax(
+                    code, tax_type="unknown_fixture_type", yes=True
+                )
+                bills = _sent(calls, "POST", "/4.0/purchase/bills")
+                self.assertEqual(len(bills), 1)
+                bill = _body(bills[0])
+                self.assertTrue(bill["item_net"])
+                self.assertTrue(bill["manual_amount"])
+                self.assertEqual(
+                    bill["amount_man"], float(ARGS[ARGS.index("--total") + 1])
+                )
+                self.assertEqual(bill["line_items"][0]["amount"], bill["amount_man"])
+
+    def test_reverse_charge_tax_must_be_known_and_unique(self):
+        tax = {"code": "BZM81", "type": "unknown_fixture_type", "is_active": True}
+        for taxes, error in (([], "unknown tax code"), ([tax, dict(tax)], "ambiguous")):
+            with self.subTest(error=error):
+                answers = standard_answers()
+                answers[("GET", "/3.0/taxes")] = [taxes]
+                argv = list(ARGS)
+                argv[argv.index("VM81")] = tax["code"]
+                urlopen, calls = fake_bexio(answers)
+                with mock.patch.object(
+                    cb.urllib.request, "urlopen", side_effect=urlopen
+                ):
+                    with self.assertRaisesRegex(SystemExit, error):
+                        _run(["--yes"] + argv)
+                self.assertFalse(any(key[0] == "POST" for key, _ in calls))
 
     def test_ordinary_input_vat_stays_gross(self):
         out, _ = self.run_with_tax("VM81")
