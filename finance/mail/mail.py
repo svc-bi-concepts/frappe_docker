@@ -17,7 +17,8 @@ Every request goes through Graph._send, which allows those and the token POST, a
 else: no send, no move, no delete except the tool's own drafts, no other mailbox.
 
     finance/mail/mail.py list [--folder inbox] [--top 10] [--from X] [--since 2026-10-01] [--search "..."]
-    finance/mail/mail.py read <id> [--attachment NAME --out DIR]
+    finance/mail/mail.py read <id> [--links | --json | --attachment NAME --out DIR]
+    finance/mail/mail.py list [--before YYYY-MM-DD]
     finance/mail/mail.py draft-new          < {"subject", "to", "cc"?, "body", "contentType"?}
     finance/mail/mail.py draft-reply <id> [--all]  < {"body", "contentType"?}
     finance/mail/mail.py draft-update <id>       < {"subject"?, "body"?, "contentType"?}
@@ -34,6 +35,7 @@ The mailbox, client id and tenant come from private/graph-cert/mail.json, which 
 The private key comes from FINANCE_SP_CERT_KEY (Automic Vault) and reaches openssl through a
 pipe, never a file. A draft's JSON comes on stdin only, never in argv or in a file. Output is
 ids, webLinks and counts; an error names a status and a Graph error code, never a mail's content.
+The added read modes are reads only.
 
 Exit: 0 done, 1 Graph or file error, 2 usage or missing input, 3 Contacts.Read not granted yet.
 Standard library only, plus the openssl binary, so it runs on the system Python.
@@ -56,6 +58,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import unicodedata
 import uuid
 from html.parser import HTMLParser
 
@@ -285,7 +288,7 @@ class Graph:
     def message(self, mid, select):
         return self.call("GET", self.url("messages/%s" % quote_id(mid), {"$select": select}))
 
-    def attachments(self, mid, content_ids=False):
+    def attachments(self, mid, content_ids=False, all_pages=False):
         rel = "messages/%s/attachments" % quote_id(mid)
         # contentId is a fileAttachment property; selecting it on the base
         # attachment collection is rejected by Graph, so fetch full rows here.
@@ -299,8 +302,8 @@ class Graph:
         while url:
             page = self.call("GET", url)
             rows.extend(page.get("value") or [])
-            # Updates must see every CID before deciding which images are missing.
-            url = page.get("@odata.nextLink") if content_ids else None
+            # Updates need every CID; JSON reads need every attachment's metadata.
+            url = page.get("@odata.nextLink") if content_ids or all_pages else None
         return rows
 
     def attachment(self, mid, aid):
@@ -402,14 +405,16 @@ def from_filter(who):
     return "startswith(from/emailAddress/name,%s)" % odata_str(who)
 
 
-def list_rows(graph, folder, top, from_who=None, since=None, search=None):
-    if search and (from_who or since):
-        raise MailError("--search does not combine with --from or --since", 2)
+def list_rows(graph, folder, top, from_who=None, since=None, search=None, before=None):
+    if search and (from_who or since or before):
+        raise MailError("--search does not combine with --from, --since or --before", 2)
     filters = []
-    if from_who or since:
+    if from_who or since or before:
         # Graph refuses a filter plus $orderby (InefficientFilter) unless the ordered property
         # leads the filter, so receivedDateTime is always its first term.
         filters.append("receivedDateTime ge %sT00:00:00Z" % (since or "1970-01-01"))
+    if before:
+        filters.append("receivedDateTime lt %sT00:00:00Z" % before)
     if from_who:
         filters.append(from_filter(from_who))
     return graph.messages(folder, top, filters, search_text(search) if search else None)
@@ -448,6 +453,76 @@ class _Text(HTMLParser):
     def handle_data(self, data):
         if not self.skip:
             self.parts.append(data)
+
+
+class _Links(HTMLParser):
+    """Collect safe HTTP link targets and their visible text in document order."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.links = []
+        self.current = None
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "a":
+            self._finish()
+            href = dict(attrs).get("href") or ""
+            href = href.strip()
+            href = "".join(ch for ch in href if unicodedata.category(ch) != "Cc")
+            href = href.replace(" ", "%20")
+            if re.match(r"https?://", href, re.I):
+                self.current = {"href": href, "text": [], "alt": []}
+        elif tag == "img" and self.current is not None:
+            alt = dict(attrs).get("alt") or ""
+            if alt:
+                self.current["alt"].append(alt)
+
+    def handle_endtag(self, tag):
+        if tag == "a":
+            self._finish()
+
+    def handle_data(self, data):
+        if self.current is not None:
+            self.current["text"].append(data)
+
+    def _finish(self):
+        if self.current is not None:
+            text = one_line("".join(self.current["text"]))
+            if not text:
+                text = one_line(" ".join(self.current["alt"]))
+            self.links.append({"text": text, "href": self.current["href"]})
+            self.current = None
+
+    def close(self):
+        super().close()
+        self._finish()
+
+
+def body_links(body):
+    content = (body or {}).get("content") or ""
+    if ((body or {}).get("contentType") or "").lower() == "html":
+        parser = _Links()
+        parser.feed(content)
+        parser.close()
+        return parser.links
+    links = []
+    for href in re.findall(r"https?://[^\s<>\"]+", content, re.I):
+        changed = True
+        while changed:
+            changed = False
+            trimmed = href.rstrip(".,;:!?")
+            if trimmed != href:
+                href = trimmed
+                changed = True
+            for opening, closing in (("(", ")"), ("[", "]"), ("{", "}")):
+                if href.endswith(closing) and href.count(closing) > href.count(opening):
+                    href = href[:-1]
+                    changed = True
+            if href.endswith("'") and href.count("'") % 2:
+                href = href[:-1]
+                changed = True
+        links.append({"text": "", "href": href})
+    return links
 
 
 def html_to_text(content):
@@ -672,11 +747,11 @@ def date_arg(value):
     try:
         return datetime.date.fromisoformat(value).isoformat()
     except ValueError:
-        raise argparse.ArgumentTypeError("--since takes a date, YYYY-MM-DD")
+        raise argparse.ArgumentTypeError("a date must be YYYY-MM-DD")
 
 
 def cmd_list(graph, args, out):
-    rows = list_rows(graph, args.folder, args.top, args.from_, args.since, args.search)
+    rows = list_rows(graph, args.folder, args.top, args.from_, args.since, args.search, args.before)
     for m in rows:
         out.write(row_text(m) + "\n")
 
@@ -685,6 +760,8 @@ READ_SELECT = "subject,from,toRecipients,ccRecipients,receivedDateTime,hasAttach
 
 
 def cmd_read(graph, args, out):
+    if (getattr(args, "links", False) or getattr(args, "json", False)) and args.attachment:
+        raise MailError("--links, --json and --attachment are mutually exclusive", 2)
     if bool(args.attachment) != bool(args.out):
         raise MailError("--attachment and --out go together", 2)
     if args.attachment:
@@ -692,6 +769,24 @@ def cmd_read(graph, args, out):
         out.write("saved %s (%d bytes)\n" % (path, size))
         return
     m = graph.message(args.id, READ_SELECT)
+    if getattr(args, "links", False):
+        for link in body_links(m.get("body")):
+            out.write("%s\t%s\n" % (link["text"], link["href"]))
+        return
+    if getattr(args, "json", False):
+        atts = graph.attachments(args.id, all_pages=True)
+        value = {
+            "from": addr(m.get("from")),
+            "to": [addr(r) for r in m.get("toRecipients") or []],
+            "cc": [addr(r) for r in m.get("ccRecipients") or []],
+            "received": m.get("receivedDateTime") or "",
+            "subject": one_line(m.get("subject")),
+            "text": body_text(m.get("body")),
+            "links": body_links(m.get("body")),
+            "attachments": [{"name": a.get("name"), "size": a.get("size"), "contentType": a.get("contentType"), "isInline": a.get("isInline")} for a in atts],
+        }
+        out.write(json.dumps(value, sort_keys=True) + "\n")
+        return
     out.write("From: %s\n" % addr(m.get("from")))
     out.write("To: %s\n" % ", ".join(addr(r) for r in m.get("toRecipients") or []))
     if m.get("ccRecipients"):
@@ -782,11 +877,15 @@ def parser():
     ls.add_argument("--top", type=top_arg, default=TOP_DEFAULT, help="1 to 25")
     ls.add_argument("--from", dest="from_", help="an address, or a name at the start of the sender's name")
     ls.add_argument("--since", type=date_arg, help="YYYY-MM-DD, received on or after")
-    ls.add_argument("--search", help="Graph's search, with no --from or --since")
+    ls.add_argument("--before", type=date_arg, help="YYYY-MM-DD, received before")
+    ls.add_argument("--search", help="Graph's search, with no --from, --since or --before")
     ls.set_defaults(run=cmd_list)
     rd = sub.add_parser("read", help="one mail as text, or one attachment saved")
     rd.add_argument("id")
-    rd.add_argument("--attachment", help="the attachment's name, saved under --out")
+    modes = rd.add_mutually_exclusive_group()
+    modes.add_argument("--attachment", help="the attachment's name, saved under --out")
+    modes.add_argument("--links", action="store_true", help="print link text and target (read only)")
+    modes.add_argument("--json", action="store_true", help="print mail and attachments as JSON (read only)")
     rd.add_argument("--out", help="the directory an attachment is saved into")
     rd.set_defaults(run=cmd_read)
     sub.add_parser("draft-new", help="a new draft from the JSON on stdin").set_defaults(run=cmd_draft_new)
