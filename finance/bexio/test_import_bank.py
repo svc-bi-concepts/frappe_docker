@@ -1249,6 +1249,14 @@ class LiveCheckTest(unittest.TestCase):
             ],
         )
 
+    def test_cancelled_bexio_id_is_not_a_check_difference_or_an_extra_row(self):
+        results = ib.plan([CHF_IN], LOOKUPS)
+        matches = {"9001": (None, [], "no candidate")}
+        rows = [self._row("9001", docstatus=2, status="Cancelled")]
+        _, differences = ib.live_check(rows, results, matches, LOOKUPS)
+        self.assertEqual(differences, [])
+        self.assertEqual(ib.documents_to_write(results, set(), {"9001"}), [])
+
 
 class CancelTest(unittest.TestCase):
     """--cancel: the named lines are checked, and only the ones that pass are cancelled. Invented names and amounts."""
@@ -1293,7 +1301,9 @@ class CancelTest(unittest.TestCase):
                 "on another bank account",
                 self._doc("BT-1", bank_account="Other - Testbank AG"),
             ),
-            ("allocated to a voucher", self._doc("BT-1", status="Reconciled")),
+            ("not Unreconciled", self._doc("BT-1", status="Reconciled")),
+            ("not Unreconciled", self._doc("BT-1", status="Ignored")),
+            ("has a transaction_id", self._doc("BT-1", transaction_id="MT-1")),
             ("allocated to a voucher", self._doc("BT-1", allocated_amount=5.0)),
             (
                 "allocated to a voucher",
@@ -1349,9 +1359,13 @@ class CancelTest(unittest.TestCase):
             with open(path, "w") as f:
                 f.write("BT-1\n")
             erp = self.Erp({"BT-1": self._doc("BT-1")})
-            erp.list = lambda doctype, filters=None, fields=("name",): [
-                {"name": self.WISE}
-            ]
+            requested = []
+
+            def list_accounts(doctype, filters=None, fields=("name",)):
+                requested.append(filters)
+                return [{"name": self.WISE}]
+
+            erp.list = list_accounts
             with mock.patch.object(
                 im.Erp, "from_file", return_value=erp
             ), contextlib.redirect_stdout(io.StringIO()) as out:
@@ -1359,6 +1373,27 @@ class CancelTest(unittest.TestCase):
         self.assertEqual(erp.cancelled, [])
         self.assertEqual(code, 0)
         self.assertIn("dry run: nothing was cancelled", out.getvalue())
+        self.assertEqual(requested, [[["bexio_id", "=", "2"]]])
+
+    def test_main_can_select_ubs_account_id_1(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "list.txt")
+            with open(path, "w") as f:
+                f.write("BT-1\n")
+            erp = self.Erp({"BT-1": self._doc("BT-1")})
+            requested = []
+
+            def list_accounts(doctype, filters=None, fields=("name",)):
+                requested.append(filters)
+                return [{"name": self.WISE}]
+
+            erp.list = list_accounts
+            with mock.patch.object(
+                im.Erp, "from_file", return_value=erp
+            ), contextlib.redirect_stdout(io.StringIO()):
+                code = ib.main(["--cancel", path, "--bank-account-id", "1"])
+        self.assertEqual(code, 0)
+        self.assertEqual(requested, [[["bexio_id", "=", "1"]]])
 
     def test_main_refuses_when_the_wise_account_is_not_the_one_bank_account(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1372,7 +1407,7 @@ class CancelTest(unittest.TestCase):
             ), contextlib.redirect_stderr(io.StringIO()) as err:
                 code = ib.main(["--cancel", path, "--confirm"])
         self.assertEqual(code, 2)
-        self.assertIn("0 Bank Accounts with the Wise bexio_id", err.getvalue())
+        self.assertIn("0 Bank Accounts with bexio_id 2", err.getvalue())
         self.assertEqual(erp.cancelled, [])
 
 
