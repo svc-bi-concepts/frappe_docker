@@ -69,7 +69,7 @@ CONTACT_EDIT_FIELDS = {
     "skype_name", "remarks", "language_id", "contact_group_ids", "contact_branch_ids",
     "user_id", "owner_id",
 }
-# The docs list title_id and is_lead, but the live edit answers 422.
+# Live contact edits reject title_id and is_lead with HTTP 422.
 CONTACT_ID_PATH = re.compile(r"/2\.0/contact/[0-9]+\Z")
 
 
