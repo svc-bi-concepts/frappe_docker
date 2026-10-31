@@ -63,12 +63,13 @@ CONTACT_CREATE_FIELDS = {
     "contact_branch_ids", "user_id", "owner_id",
 }
 CONTACT_EDIT_FIELDS = {
-    "nr", "contact_type_id", "name_1", "name_2", "salutation_id", "salutation_form", "title_id",
+    "nr", "contact_type_id", "name_1", "name_2", "salutation_id", "salutation_form",
     "birthday", "street_name", "house_number", "address_addition", "postcode", "city", "country_id",
     "mail", "mail_second", "phone_fixed", "phone_fixed_second", "phone_mobile", "fax", "url",
-    "skype_name", "remarks", "language_id", "contact_group_ids", "contact_branch_ids", "is_lead",
+    "skype_name", "remarks", "language_id", "contact_group_ids", "contact_branch_ids",
     "user_id", "owner_id",
 }
+# The docs list title_id and is_lead, but the live edit answers 422.
 CONTACT_ID_PATH = re.compile(r"/2\.0/contact/[0-9]+\Z")
 
 
@@ -514,6 +515,11 @@ def fill_contact_plan(contact, vendor):
     missing = required - set(contact)
     if missing:
         raise SystemExit("refused fill: contact is missing required field(s): {}".format(", ".join(sorted(missing))))
+    for key in ("title_id", "is_lead"):
+        if (key == "title_id" and contact.get(key) is not None) or (
+            key == "is_lead" and contact.get(key)
+        ):
+            raise SystemExit("refused fill: contact has {} set, the edit cannot carry it".format(key))
     file_uid = normalize_uid(vendor.get("vat_number"))
     contact_contact_uid = contact_uid(contact)
     if normalize_name(vendor.get("name_1")) != normalize_name(contact.get("name_1")) and not (file_uid and file_uid == contact_contact_uid):

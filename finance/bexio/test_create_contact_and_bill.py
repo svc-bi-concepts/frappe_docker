@@ -7,6 +7,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import shutil
 import unittest
 import urllib.error
@@ -110,6 +111,7 @@ DOCUMENTED_CONTACT_CREATE_FIELDS = {
     "user_id",
     "owner_id",
 }
+CONTACT_EDIT_ACCEPTED_FIELDS = DOCUMENTED_CONTACT_CREATE_FIELDS - {"title_id"}
 
 
 def _answer(body):
@@ -141,6 +143,20 @@ def fake_bexio(answers):
                     "Bad Request",
                     {},
                     io.BytesIO(b'{"error": "missing required field"}'),
+                )
+        if req.get_method() == "POST" and re.fullmatch(
+            r"/2\.0/contact/[0-9]+", url.path
+        ):
+            body = json.loads(req.data.decode("utf-8"))
+            missing = {"contact_type_id", "name_1", "user_id", "owner_id"} - set(body)
+            refused = set(body) - CONTACT_EDIT_ACCEPTED_FIELDS
+            if missing or refused:
+                raise urllib.error.HTTPError(
+                    req.full_url,
+                    422,
+                    "Unprocessable Entity",
+                    {},
+                    io.BytesIO(b'{"error": "invalid contact edit fields"}'),
                 )
         if not queues.get(key):
             raise AssertionError("unexpected request {} {}".format(*key))
@@ -1847,7 +1863,8 @@ class FillContactTest(unittest.TestCase):
         body = _body(_sent(calls, "POST", "/2.0/contact/42")[0])
         self.assertEqual(body["contact_group_ids"], "3")
         self.assertIsNone(body["contact_branch_ids"])
-        self.assertEqual(body["is_lead"], False)
+        self.assertNotIn("title_id", body)
+        self.assertNotIn("is_lead", body)
         self.assertNotIn("id", body)
         self.assertNotIn("updated_at", body)
         self.assertNotIn("address", body)
@@ -2047,11 +2064,9 @@ class FillContactTest(unittest.TestCase):
             self.assertEqual(len(_sent(calls, "POST", "/2.0/contact/42")), 1)
 
     def test_each_empty_variant_is_filled_and_all_edit_fields_are_preserved(self):
-        self.assertEqual(
-            cb.CONTACT_EDIT_FIELDS, DOCUMENTED_CONTACT_CREATE_FIELDS | {"is_lead"}
-        )
+        self.assertEqual(cb.CONTACT_EDIT_FIELDS, CONTACT_EDIT_ACCEPTED_FIELDS)
         for empty in (None, "", " \t\n"):
-            before = dict.fromkeys(DOCUMENTED_CONTACT_CREATE_FIELDS, None)
+            before = dict.fromkeys(CONTACT_EDIT_ACCEPTED_FIELDS, None)
             before.update(self.contact(), mail=empty, url=empty, remarks=empty)
             before["contact_branch_ids"] = "4,5"
             body, fills, kept = cb.fill_contact_plan(before, VENDOR)
@@ -2068,6 +2083,74 @@ class FillContactTest(unittest.TestCase):
                 {key: fills.get(key, before[key]) for key in cb.CONTACT_EDIT_FIELDS},
             )
             self.assertEqual(kept, [])
+
+    def test_title_and_lead_flags_refuse_dry_run_and_yes_without_post(self):
+        for key, value in (("title_id", 1), ("is_lead", True)):
+            for yes in (False, True):
+                before = self.contact()
+                before[key] = value
+                answers = {("GET", "/2.0/contact/42"): [before]}
+                with self.subTest(key=key, yes=yes):
+                    path = self.vendor_file()
+                    urlopen, calls = fake_bexio(answers)
+                    with mock.patch.object(
+                        cb.urllib.request, "urlopen", side_effect=urlopen
+                    ):
+                        with self.assertRaisesRegex(
+                            SystemExit, f"contact has {key} set"
+                        ) as error:
+                            _run(
+                                ["--fill-contact", "42", "--vendor", path]
+                                + (["--yes"] if yes else [])
+                            )
+                    self.assertNotIn(str(value), str(error.exception))
+                    self.assertEqual(_sent(calls, "POST", "/2.0/contact/42"), [])
+
+    def test_null_title_and_false_lead_are_filled(self):
+        before = dict(self.contact(), title_id=None, is_lead=False)
+        after = dict(
+            before,
+            mail=VENDOR["mail"],
+            url=VENDOR["url"],
+            remarks="UID CHE-000.000.001",
+        )
+        answers = {
+            ("GET", "/2.0/contact/42"): [before, dict(before), after],
+            ("POST", "/2.0/contact/42"): [{}],
+        }
+        out, calls = self.run_fill(answers, ["--yes"])
+        body = _body(_sent(calls, "POST", "/2.0/contact/42")[0])
+        self.assertNotIn("title_id", body)
+        self.assertNotIn("is_lead", body)
+        self.assertIn("read-back yes", out)
+
+    def test_fake_rejects_title_id_body_without_retry_or_success_record(self):
+        before = self.contact()
+        answers = {
+            ("GET", "/2.0/contact/42"): [before, dict(before)],
+        }
+        path = self.vendor_file()
+        urlopen, calls = fake_bexio(answers)
+        plan = cb.fill_contact_plan
+
+        def plan_with_refused_field(contact, vendor):
+            body, fills, kept = plan(contact, vendor)
+            body["title_id"] = 1
+            return body, fills, kept
+
+        with mock.patch.object(
+            cb, "fill_contact_plan", side_effect=plan_with_refused_field
+        ), mock.patch.object(
+            cb.urllib.request, "urlopen", side_effect=urlopen
+        ), mock.patch.object(
+            cb, "record_result"
+        ) as record:
+            with self.assertRaisesRegex(SystemExit, "HTTP 422"):
+                _run(["--fill-contact", "42", "--vendor", path, "--yes"])
+        sent = _sent(calls, "POST", "/2.0/contact/42")
+        self.assertEqual(len(sent), 1)
+        self.assertIn("title_id", _body(sent[0]))
+        record.assert_not_called()
 
     def test_populated_website_and_text_remarks_survive_the_sent_body(self):
         before = dict(
