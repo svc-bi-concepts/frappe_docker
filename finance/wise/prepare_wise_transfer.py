@@ -36,10 +36,19 @@ class RefusedRequest(Exception):
 
 
 def _template(method, path):
-    path = re.sub(r"(?<=/profiles/)\d+(?=/quotes\Z)", "{id}", path)
-    path = re.sub(r"(?<=/accounts/)\d+\Z", "{id}", path)
-    path = re.sub(r"(?<=/transfers/)\d+\Z", "{id}", path)
+    path = re.sub(r"(?<=/profiles/)[0-9]+(?=/quotes\Z)", "{id}", path)
+    path = re.sub(r"(?<=/accounts/)[0-9]+\Z", "{id}", path)
+    path = re.sub(r"(?<=/transfers/)[0-9]+\Z", "{id}", path)
     return method, path
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        # A redirect must never carry the Authorization header to another host.
+        return None
+
+
+OPENER = urllib.request.build_opener(NoRedirect())
 
 
 def _send(method, path, token, body=None, query=None):
@@ -55,27 +64,28 @@ def _send(method, path, token, body=None, query=None):
     if data is not None:
         req.add_header("Content-Type", "application/json")
     try:
-        with urllib.request.urlopen(req, timeout=60) as response:
+        with OPENER.open(req, timeout=60) as response:
             raw = response.read()
             return json.loads(raw.decode("utf-8")) if raw else None
     except urllib.error.HTTPError as err:
         codes = []
         approval = False
         try:
-            payload = json.loads(err.read().decode("utf-8"))
+            error_text = err.read().decode("utf-8", errors="replace")
+            approval = "missing approval" in error_text.casefold()
+            payload = json.loads(error_text)
             errors = payload.get("errors", [])
             codes = [str(e["code"]) for e in errors if isinstance(e, dict) and e.get("code")]
-            approval = "missing approval" in json.dumps(payload).casefold()
         except (ValueError, AttributeError, TypeError):
             pass
-        if approval:
-            raise SystemExit("a payment approval rule on the account blocks API transfers; Benchi must change this")
         message = "Wise refused {} {} (HTTP {})".format(method, path, err.code)
         if codes:
             message += " ({})".format(", ".join(codes))
-        raise SystemExit(message)
-    except urllib.error.URLError:
-        raise SystemExit("could not reach Wise on {} {}; no further request was sent".format(method, path))
+        if approval:
+            message += "; a payment approval rule on the account blocks API transfers; Benchi must change this"
+        raise SystemExit(message.replace(token, "[redacted]")) from None
+    except (OSError, ValueError) as err:
+        raise SystemExit("no usable answer from Wise on {} {} ({}); no further request was sent".format(method, path, type(err).__name__)) from None
 
 
 def record_result(outcome, transfer_id="", status=""):
@@ -88,10 +98,12 @@ def record_result(outcome, transfer_id="", status=""):
 def amount_value(raw):
     try:
         value = Decimal(raw)
-    except (InvalidOperation, TypeError):
-        raise SystemExit("refused: amount must be a positive number with at most two decimals")
-    if not value.is_finite() or value <= 0 or value != value.quantize(Decimal("0.01")):
-        raise SystemExit("refused: amount must be a positive number with at most two decimals")
+        valid = (value.is_finite() and value > 0 and value == value.quantize(Decimal("0.01"))
+                 and Decimal(str(float(value))) == value)
+    except (InvalidOperation, TypeError, ValueError, OverflowError):
+        valid = False
+    if not valid:
+        raise SystemExit("refused: amount must be a positive number with at most two decimals, representable without rounding")
     return value
 
 
@@ -119,7 +131,7 @@ def transaction_id(recipient_id, invoice, attempt):
     return str(uuid.uuid5(NAMESPACE, name))
 
 
-def transfer_body(args, source_currency):
+def transfer_body(args):
     details = {"reference": args.invoice.strip()}
     details.update(dict(args.detail))
     return {"targetAccount": args.recipient_id, "quoteUuid": "<quote UUID>",
@@ -128,23 +140,23 @@ def transfer_body(args, source_currency):
 
 
 def validate_requirements(answer, details):
-    groups = answer if isinstance(answer, list) else answer.get("requirements", []) if isinstance(answer, dict) else []
-    for group in groups:
-        fields = group.get("fields", []) if isinstance(group, dict) else []
-        for field in fields:
-            key = field.get("key") or field.get("name")
-            if field.get("required") and key and not str(details.get(key, "")).strip():
-                raise SystemExit("refused: required field {} is empty; supply it with --detail".format(key))
-            if key == "reference":
-                value = details.get("reference", "")
-                constraints = field.get("constraints", {})
-                if constraints.get("maxLength") is not None and len(value) > constraints["maxLength"]:
-                    raise SystemExit("refused: reference exceeds Wise maxLength; do not shorten it")
-                if constraints.get("minLength") is not None and len(value) < constraints["minLength"]:
-                    raise SystemExit("refused: reference is below Wise minLength")
-                regexp = constraints.get("validationRegexp")
-                if regexp and not re.fullmatch(regexp, value):
-                    raise SystemExit("refused: reference does not match Wise validationRegexp")
+    if not isinstance(answer, list):
+        raise SystemExit("refused: Wise answered requirements without a field list")
+    for requirement in answer:
+        for field in requirement.get("fields", []):
+            for item in field.get("group", []):
+                key = item.get("key")
+                if item.get("required") and not str(details.get(key) or "").strip():
+                    raise SystemExit("refused: required field {} is empty; supply it with --detail".format(key))
+                if key == "reference":
+                    value = details["reference"]
+                    if item.get("maxLength") is not None and len(value) > item["maxLength"]:
+                        raise SystemExit("refused: reference exceeds Wise maxLength; do not shorten it")
+                    if item.get("minLength") is not None and len(value) < item["minLength"]:
+                        raise SystemExit("refused: reference is below Wise minLength")
+                    regexp = item.get("validationRegexp")
+                    if regexp and not re.fullmatch(regexp, value):
+                        raise SystemExit("refused: reference does not match Wise validationRegexp")
 
 
 def main(argv=None):
@@ -190,7 +202,10 @@ def main(argv=None):
     recipient = _send("GET", "/{}/accounts/{}".format(API_VERSION, args.recipient_id), token)
     if str(recipient.get("profileId")) != str(profile_id) or recipient.get("active") is not True or recipient.get("currency") != args.target_currency:
         raise SystemExit("refused: recipient must be active, belong to the BUSINESS profile and use the target currency; Benchi must add or change recipients in the Wise UI")
-    print("recipient: {} — {}".format(recipient.get("name", ""), recipient.get("longAccountSummary", "")))
+    name = recipient.get("name", "")
+    if isinstance(name, dict):
+        name = name.get("fullName", "")
+    print("recipient: {} — {}".format(name, recipient.get("longAccountSummary", "")))
     transfers = read_transfers(profile_id, token, args.recipient_id)
     completed = [r for r in transfers if r.get("status") == "outgoing_payment_sent"]
     if not completed:
@@ -211,10 +226,10 @@ def main(argv=None):
     quote_body = {"sourceCurrency": source_currency, "targetCurrency": args.target_currency,
                   "sourceAmount": None, "targetAmount": float(amount), "targetAccount": args.recipient_id,
                   "preferredPayIn": "BALANCE"}
-    body = transfer_body(args, source_currency)
+    body = transfer_body(args)
     body["quoteUuid"] = "<quote UUID>"
     print("checks: BUSINESS profile; active recipient; completed recipient history; no duplicate invoice reference")
-    print("planned date: {}; within 14 days; rate floats after 24–48 hours; unfunded transfers cancel after about 14 days".format(planned))
+    print("planned date: {}; --yes requires today through today + 14 days; rate floats after 24–48 hours; unfunded transfers cancel after about 14 days".format(planned))
     print("quote request: {}".format(json.dumps(quote_body, sort_keys=True)))
     print("transfer request: {}".format(json.dumps(body, sort_keys=True)))
     if not args.yes:
@@ -224,31 +239,49 @@ def main(argv=None):
         return 0
     try:
         quote = _send("POST", "/{}/profiles/{}/quotes".format(API_VERSION, profile_id), token, body=quote_body)
-        option = next((o for o in quote.get("paymentOptions", []) if o.get("payIn") == "BALANCE"), {})
-        if quote.get("targetAmountAllowed") is not True or Decimal(str(quote.get("targetAmount"))) != amount or quote.get("sourceCurrency") != source_currency or quote.get("targetCurrency") != args.target_currency:
+        if not isinstance(quote, dict):
+            raise SystemExit("refused: quote response is not an object")
+        option = next((o for o in (quote.get("paymentOptions") or []) if o.get("payIn") == "BALANCE"), {})
+        try:
+            quoted_amount = Decimal(str(quote.get("targetAmount")))
+        except InvalidOperation:
+            quoted_amount = Decimal("-1")
+        if quote.get("targetAmountAllowed") is not True or not quoted_amount.is_finite() or quoted_amount != amount or quote.get("sourceCurrency") != source_currency or quote.get("targetCurrency") != args.target_currency:
             raise SystemExit("refused: quote amount or currencies do not match the request")
         if option.get("disabled"):
             print("BALANCE option disabled: {}".format((option.get("disabledReason") or {}).get("message", "reason unavailable")))
         body["quoteUuid"] = quote.get("id")
-        requirements_body = {"targetAccount": args.recipient_id, "quote": quote.get("id"), "details": body["details"]}
-        requirements = _send("POST", "/{}/transfer-requirements".format(API_VERSION), token, body=requirements_body)
+        if not body["quoteUuid"]:
+            raise SystemExit("refused: quote has no id")
+        requirements = _send("POST", "/{}/transfer-requirements".format(API_VERSION), token, body=body)
         validate_requirements(requirements, body["details"])
         created = _send("POST", "/{}/transfers".format(API_VERSION), token, body=body)
-    except SystemExit as err:
-        if "missing approval" in str(err).casefold():
-            raise SystemExit("a payment approval rule on the account blocks API transfers; Benchi must change this")
+    except SystemExit:
         record_result("failed")
         raise
     transfer_id = str(created.get("id", "")) if isinstance(created, dict) else ""
     if not transfer_id.isdigit():
         record_result("create response missing id")
         raise SystemExit("Wise answered without a transfer id; check transfers before rerunning")
-    readback = _send("GET", "/{}/transfers/{}".format(API_VERSION, transfer_id), token)
+    print("transfer id: {}".format(transfer_id))
+    try:
+        readback = _send("GET", "/{}/transfers/{}".format(API_VERSION, transfer_id), token)
+    except SystemExit:
+        record_result("read-back failed", transfer_id)
+        raise
+    if not isinstance(readback, dict):
+        record_result("read-back mismatch", transfer_id)
+        raise SystemExit("transfer {} read-back mismatch; check transfers before rerunning".format(transfer_id))
     status = str(readback.get("status", "unknown"))
+    try:
+        target_amount = Decimal(str(readback.get("targetValue", readback.get("targetAmount"))))
+    except InvalidOperation:
+        target_amount = Decimal("-1")
     same = (status == "incoming_payment_waiting" and str(readback.get("targetAccount")) == str(args.recipient_id)
-            and any(ref.strip() == args.invoice.strip() for ref in reference_of(readback))
+            and bool(reference_of(readback))
+            and all(ref.strip() == args.invoice.strip() for ref in reference_of(readback))
             and readback.get("targetCurrency") == args.target_currency
-            and Decimal(str(readback.get("targetValue", readback.get("targetAmount", "-1")))) == amount)
+            and target_amount.is_finite() and target_amount == amount)
     if not same:
         record_result("read-back mismatch", transfer_id, status)
         raise SystemExit("transfer {} read-back mismatch; do not retry or cancel".format(transfer_id))

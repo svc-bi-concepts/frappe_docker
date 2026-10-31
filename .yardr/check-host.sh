@@ -57,7 +57,7 @@ assert all(s[n].get('restart') != 'unless-stopped' for n in ['configurator', 'cr
 # The mailbox tool's tests on a stubbed HTTP layer (invented mail, no network), with openssl for the assertion check.
 (cd finance/mail && python3 -m unittest discover -s . -p "test_*.py")
 # The Wise transfer launcher tests use only a fake HTTP layer (invented data, no network).
-(cd finance/wise && PYTHONPATH=../bexio python3 -m unittest discover -s . -p "test_*.py")
+(cd finance/wise && python3 -m unittest discover -s . -p "test_*.py")
 # The image app lists (live without hrms, copy with it) and build-image.sh's modes; no docker.
 # switch-image.sh's decisions (which tag runs, which images go at rest) with stub docker and curl.
 # gate-image.sh's choice of the gate's image (main's pin, the branch's, the one at rest) with stub git and docker.
