@@ -511,8 +511,11 @@ def check_title_readback(bill, title, expected_lines, before, partner_id, amount
 def fill_contact_plan(contact, vendor):
     if not isinstance(contact, dict):
         raise SystemExit("bexio answered the contact read without an object")
-    required = {"contact_type_id", "name_1", "user_id", "owner_id"}
-    missing = required - set(contact)
+    required = {"contact_type_id", "name_1", "user_id", "owner_id", "nr"}
+    missing = {
+        key for key in required
+        if contact.get(key) is None or contact.get(key) == "" or contact.get(key) == 0
+    }
     if missing:
         raise SystemExit("refused fill: contact is missing required field(s): {}".format(", ".join(sorted(missing))))
     for key in ("title_id", "is_lead"):
@@ -540,15 +543,22 @@ def fill_contact_plan(contact, vendor):
             kept.append("kept: remarks, UID not written")
         elif current != value:
             kept.append("kept: {}, differs from the file".format(key))
-    body = {key: value for key, value in contact.items() if key in CONTACT_EDIT_FIELDS}
+    omitted = {
+        key for key, value in contact.items()
+        if key in CONTACT_EDIT_FIELDS and (value is None or value == "" or value == 0)
+    }
+    body = {
+        key: value for key, value in contact.items()
+        if key in CONTACT_EDIT_FIELDS and key not in omitted
+    }
     body.update(fills)
-    return body, fills, kept
+    return body, fills, kept, omitted
 
 
 def fill_contact(token, contact_id, vendor, yes):
     path = "/2.0/contact/" + contact_id
     before = _send("GET", path, token)
-    body, fills, kept = fill_contact_plan(before, vendor)
+    body, fills, kept, omitted = fill_contact_plan(before, vendor)
     for message in kept:
         print(message)
     if not fills:
@@ -580,6 +590,13 @@ def fill_contact(token, contact_id, vendor, yes):
         for key in set(before) | set(readback):
             if key == "updated_at" or key in fills:
                 continue
+            if key in omitted:
+                empty = (None, "", 0)
+                if (
+                    key in before and key in readback
+                    and before.get(key) in empty and readback.get(key) in empty
+                ):
+                    continue
             if (key in before) != (key in readback) or before.get(key) != readback.get(key):
                 raise SystemExit("fill read-back failed: {} changed".format(key))
     except SystemExit as error:
