@@ -1066,7 +1066,9 @@ class LinesRepairTest(unittest.TestCase):
                     with mock.patch.object(
                         cb.urllib.request, "urlopen", side_effect=urlopen
                     ):
-                        with self.assertRaisesRegex(SystemExit, "run plain --repair first"):
+                        with self.assertRaisesRegex(
+                            SystemExit, "run plain --repair first"
+                        ):
                             _run(
                                 ["--repair", "DOC-TEST-1", "--text", "Renamed"]
                                 + (["--yes"] if write else [])
