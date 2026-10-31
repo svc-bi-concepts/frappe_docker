@@ -53,7 +53,7 @@ REVERSE_CHARGE_CODES = {"BZM77", "BZM81", "BZB77", "BZB81"}
 PRIVATE = os.environ.get("BEXIO_PRIVATE") or "/Users/bsaladin/ws_yardr_finance/private"
 RESULT_FOLDER = "bexio-upload"
 RESULT_FILE = "last-result.txt"
-VENDOR_KEYS = {"name_1", "vat_number", "street_name", "house_number", "postcode", "city", "country", "mail"}
+VENDOR_KEYS = {"name_1", "vat_number", "street_name", "house_number", "postcode", "city", "country", "mail", "url"}
 # Fields accepted by POST /2.0/contact, per https://docs.bexio.com/#tag/Contacts/operation/v2CreateContact.
 CONTACT_CREATE_FIELDS = {
     "nr", "contact_type_id", "name_1", "name_2", "salutation_id", "salutation_form", "title_id",
@@ -62,6 +62,14 @@ CONTACT_CREATE_FIELDS = {
     "fax", "url", "skype_name", "remarks", "language_id", "contact_group_ids",
     "contact_branch_ids", "user_id", "owner_id",
 }
+CONTACT_EDIT_FIELDS = {
+    "nr", "contact_type_id", "name_1", "name_2", "salutation_id", "salutation_form", "title_id",
+    "birthday", "street_name", "house_number", "address_addition", "postcode", "city", "country_id",
+    "mail", "mail_second", "phone_fixed", "phone_fixed_second", "phone_mobile", "fax", "url",
+    "skype_name", "remarks", "language_id", "contact_group_ids", "contact_branch_ids", "is_lead",
+    "user_id", "owner_id",
+}
+CONTACT_ID_PATH = re.compile(r"/2\.0/contact/[0-9]+\Z")
 
 
 def record_result(line):
@@ -80,6 +88,8 @@ def _send(method, path, token, body=None, query=None):
     """Send one reviewed request; this is the only place a request leaves this script."""
     if (method, path) not in REQUESTS and not (
         method in {"GET", "PUT"} and REVIEWED_BILL_ID.fullmatch(path)
+    ) and not (
+        method in {"GET", "POST"} and CONTACT_ID_PATH.fullmatch(path)
     ):
         raise RefusedRequest("refused {} {}: this script does not send it".format(method, path))
     url = client.BASE_URL + path
@@ -208,6 +218,10 @@ def load_vendor(path):
             raise SystemExit("refused vendor file: {} must be a string".format(key))
     vendor = dict(vendor)
     vendor["name_1"] = vendor["name_1"].strip()
+    if vendor.get("url") is not None and not re.fullmatch(r"https?://\S+", vendor["url"]):
+        raise SystemExit("refused vendor file: url must match http(s) URL format")
+    if vendor.get("mail") is not None and (re.search(r"\s", vendor["mail"]) or vendor["mail"].count("@") != 1):
+        raise SystemExit("refused vendor file: mail must contain one @ and no spaces")
     vendor["country"] = vendor.get("country", "CH")
     if not isinstance(vendor["country"], str) or not re.fullmatch(r"[A-Z]{2}", vendor["country"]):
         raise SystemExit("refused vendor file: country must be a two-letter upper-case ISO code")
@@ -493,9 +507,88 @@ def check_title_readback(bill, title, expected_lines, before, partner_id, amount
         raise SystemExit("repair read-back failed: VAT total changed")
 
 
+def fill_contact_plan(contact, vendor):
+    if not isinstance(contact, dict):
+        raise SystemExit("bexio answered the contact read without an object")
+    required = {"contact_type_id", "name_1", "user_id", "owner_id"}
+    missing = required - set(contact)
+    if missing:
+        raise SystemExit("refused fill: contact is missing required field(s): {}".format(", ".join(sorted(missing))))
+    file_uid = normalize_uid(vendor.get("vat_number"))
+    contact_contact_uid = contact_uid(contact)
+    if normalize_name(vendor.get("name_1")) != normalize_name(contact.get("name_1")) and not (file_uid and file_uid == contact_contact_uid):
+        raise SystemExit("refused fill: vendor name and UID do not match this contact")
+    if file_uid and contact_contact_uid and file_uid != contact_contact_uid:
+        raise SystemExit("refused fill: contact remarks UID differs from the vendor file")
+    desired = {"mail": vendor.get("mail"), "url": vendor.get("url")}
+    if file_uid:
+        desired["remarks"] = "UID " + canonical_uid(vendor["vat_number"])
+    fills, kept = {}, []
+    for key, value in desired.items():
+        if value is None:
+            continue
+        current = contact.get(key)
+        if current is None or (isinstance(current, str) and not current.strip()):
+            fills[key] = value
+        elif key == "remarks" and not contact_contact_uid:
+            kept.append("kept: remarks, UID not written")
+        elif current != value:
+            kept.append("kept: {}, differs from the file".format(key))
+    body = {key: value for key, value in contact.items() if key in CONTACT_EDIT_FIELDS}
+    body.update(fills)
+    return body, fills, kept
+
+
+def fill_contact(token, contact_id, vendor, yes):
+    path = "/2.0/contact/" + contact_id
+    before = _send("GET", path, token)
+    body, fills, kept = fill_contact_plan(before, vendor)
+    for message in kept:
+        print(message)
+    if not fills:
+        print("nothing to fill")
+        return
+    for key in fills:
+        print("fill: {}".format(key))
+    if not yes:
+        print("dry run: nothing updated; add --yes to fill")
+        return
+    fresh = _send("GET", path, token)
+    if not isinstance(fresh, dict) or fresh != before:
+        raise SystemExit("refused fill: contact changed since planning; run a new dry run")
+    _send("POST", path, token, body=body)
+    summary = "contact fill: id {}, keys {}, read-back {}"
+    try:
+        readback = _send("GET", path, token)
+    except (SystemExit, ValueError, OSError):
+        # The edit already succeeded. Preserve evidence even when its final
+        # read fails, without persisting an API error that may contain values.
+        record_result(summary.format(contact_id, ",".join(sorted(fills)), "no"))
+        raise SystemExit("fill read-back failed: could not read contact; check before running again") from None
+    try:
+        if not isinstance(readback, dict):
+            raise SystemExit("fill read-back failed: expected a contact object")
+        for key, expected in fills.items():
+            if readback.get(key) != expected:
+                raise SystemExit("fill read-back failed: {} changed".format(key))
+        for key in set(before) | set(readback):
+            if key == "updated_at" or key in fills:
+                continue
+            if (key in before) != (key in readback) or before.get(key) != readback.get(key):
+                raise SystemExit("fill read-back failed: {} changed".format(key))
+    except SystemExit as error:
+        record_result(summary.format(contact_id, ",".join(sorted(fills)), "no"))
+        record_result(str(error))
+        raise
+    summary = summary.format(contact_id, ",".join(sorted(fills)), "yes")
+    record_result(summary)
+    print(summary)
+
+
 def main(argv):
     parser = argparse.ArgumentParser(description="Create a supplier contact if needed and a draft bill.")
     parser.add_argument("--repair", help="repair one existing DRAFT by document number")
+    parser.add_argument("--fill-contact", help="fill empty fields on one existing contact id")
     parser.add_argument("--lines", help="JSON line list under private/")
     parser.add_argument("--vendor", help="vendor JSON file under private/")
     parser.add_argument("--vendor-name", help="exact existing contact name (lookup only)")
@@ -513,6 +606,24 @@ def main(argv):
     parser.add_argument("--text", help="bill and line item title")
     parser.add_argument("--yes", action="store_true", help="create for real (default: dry run)")
     args = parser.parse_args(argv)
+
+    if args.fill_contact is not None:
+        create_args = (args.lines, args.vendor_name, args.vendor_uid, args.file_uuid, args.nr, args.date,
+                       args.total, args.account, args.tax, args.currency, args.exchange_rate, args.due_date, args.text)
+        if args.repair is not None or any(value is not None for value in create_args):
+            raise SystemExit("refused fill: --fill-contact cannot be combined with --repair or create arguments")
+        if not re.fullmatch(r"[0-9]+", args.fill_contact):
+            raise SystemExit("refused fill: contact id must contain digits only")
+        if not args.vendor:
+            raise SystemExit("refused fill: pass --vendor <file>")
+        token = os.environ.get("BEXIO_TOKEN")
+        if not token:
+            raise SystemExit("BEXIO_TOKEN is not set; run through av inject (see finance/bexio/README.md)")
+        vendor = load_vendor(args.vendor)
+        if vendor.get("vat_number"):
+            canonical_uid(vendor["vat_number"])
+        fill_contact(token, args.fill_contact, vendor, args.yes)
+        return
 
     token = os.environ.get("BEXIO_TOKEN")
     if not token:

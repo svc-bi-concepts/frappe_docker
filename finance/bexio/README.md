@@ -830,17 +830,27 @@ The yardmaster's first-run sequence is:
      "postcode": "8000",
      "city": "Beispielstadt",
      "country": "CH",
-     "mail": "rechnung@example.invalid"
+     "mail": "rechnung@example.invalid",
+     "url": "https://example.invalid/vendor"
    }
    ```
 
    `name_1` is required; the other vendor fields are optional, and `country` defaults to `CH`.
+   Supply `mail`, `url` and `vat_number` only when they appear on the invoice or the vendor's own website; never guess them.
    `vat_number` is the vendor UID input: a new contact stores it as a canonical `UID CHE-xxx.xxx.xxx`
    line in bexio's `remarks` field; it is never sent as a contact field. Unknown keys and files outside
    `private/` are refused. For an existing contact, use `--vendor-name` and/or `--vendor-uid` instead;
    lookup-only mode never creates a contact. UID lookup reads the `remarks` field first, then falls back
    to an exact name match. A name match with a different recorded UID is refused. Contacts without a
    UID line can still be reused by exact name.
+
+   To fill an existing contact's empty email, website and/or UID remark, run
+   `finance/bexio/create_contact_and_bill.py --fill-contact <digits-only-contact-id> --vendor <file>`
+   as a dry run, then repeat with `--yes` after review. It fills only null, empty or whitespace-only
+   fields and never overwrites a populated value. A contact must match the file by normalized name or
+   UID; the script reads it again before writing and verifies all fields afterwards. UID values are
+   stored in `remarks`. The UI's VAT number field has no writable API field and cannot be set through
+   this script.
 
 3. Run `finance/bexio/create_contact_and_bill.py --vendor <file> --file-uuid <uuid> --nr <number> --date <YYYY-MM-DD> --total <invoice-total> --account <account-no> --tax <input-VAT-code> --text <text>` as a dry run. For ordinary VAT codes, total is the gross invoice total. For a reverse-charge code (BZM77, BZM81, BZB77 or BZB81), total is the amount on the invoice, which is net and also the bill's whole total. The script reads `/3.0/users/me` for `contact_partner_id` and sends `manual_amount: false` with `amount_calc` equal to the line total. After creation it reads the bill back and reports the line count, split flag, partner id, calculated amount presence and VAT total. Review the resolved account, input VAT code, currency and due date, then repeat with `--yes`. For multiple lines, pass a private JSON file with `--lines <file>`; each row has `title`, positive `gross`, and optional `account` and `tax` values, which fall back to the command's defaults. The gross line amounts must sum to `--total`; reverse-charge lines alone use the net basis. The actual line tax codes determine the bill basis; ordinary and reverse-charge lines cannot share one bill because `item_net` applies to the whole bill. For a known contact, replace `--vendor <file>` with `--vendor-name <name>` and/or `--vendor-uid <uid>`. Currency defaults to CHF; due date defaults to 30 days after the bill date. For another currency, also pass `--exchange-rate <CHF-per-unit>` from Benchi; the script includes the required exchange rate and rounded CHF base amount for these CHF books.
 4. Mail Benchi the vendor, invoice number, date, total and bexio ids from the result file. The bill

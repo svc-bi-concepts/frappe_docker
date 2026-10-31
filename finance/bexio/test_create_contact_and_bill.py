@@ -73,6 +73,7 @@ VENDOR = {
     "city": "Beispielstadt",
     "country": "CH",
     "mail": "rechnung@example.invalid",
+    "url": "https://example.invalid/vendor",
 }
 CONTACT = {key: value for key, value in VENDOR.items() if key != "vat_number"}
 CONTACT["remarks"] = "UID CHE-000.000.001"
@@ -298,6 +299,8 @@ class ResultFileTest(unittest.TestCase):
         self.assertIn("bill id " + FAKE_BILL_ID, content)
         self.assertIn("vendor_ref INV-TEST-1 supplier id 77", content)
         self.assertNotIn(TOKEN, content)
+        contact_request = _sent(calls, "POST", "/2.0/contact")[0]
+        self.assertEqual(_body(contact_request)["url"], VENDOR["url"])
 
     def test_an_existing_contact_records_only_the_bill_id(self):
         answers = standard_answers(contacts=[dict(CONTACT, id=12)])
@@ -626,6 +629,12 @@ class PostGuardTest(unittest.TestCase):
             ("PUT", "/4.0/purchase/bills/not-a-uuid"),
             ("DELETE", "/2.0/contact/77"),
             ("POST", "/2.0/contact/search"),
+            ("GET", "/2.0/contact/search"),
+            ("POST", "/2.0/contact/_bulk_create"),
+            ("POST", "/2.0/contact/77/restore"),
+            ("POST", "/2.0/contact/77/additional_address"),
+            ("GET", "/2.0/contact/77/additional_address"),
+            ("POST", "/2.0/contact/77x"),
             ("POST", "/4.0/purchase/bills/88/status"),
             ("GET", "/3.0/files"),
             ("POST", "/3.0/files"),
@@ -1777,6 +1786,360 @@ class ContactBodyTest(unittest.TestCase):
     def test_allowlist_matches_documented_create_schema(self):
         self.assertEqual(cb.CONTACT_CREATE_FIELDS, DOCUMENTED_CONTACT_CREATE_FIELDS)
 
+
+class FillContactTest(unittest.TestCase):
+    def setUp(self):
+        patcher = mock.patch.dict(os.environ, {"BEXIO_TOKEN": TOKEN}, clear=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def contact(self):
+        return {
+            "id": 42,
+            "updated_at": "old",
+            "contact_type_id": 1,
+            "name_1": VENDOR["name_1"],
+            "user_id": 9,
+            "owner_id": 9,
+            "mail": None,
+            "url": "",
+            "remarks": None,
+            "contact_group_ids": "3",
+            "contact_branch_ids": None,
+            "is_lead": False,
+            "address": {"street": "invented"},
+            "unknown_field": "keep",
+        }
+
+    def vendor_file(self, vendor=None):
+        path = os.path.join(cb.PRIVATE, "vendors", "fill-vendor.json")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(vendor or VENDOR, f)
+        return path
+
+    def run_fill(self, answers, extra=(), vendor=None):
+        path = self.vendor_file(vendor)
+        urlopen, calls = fake_bexio(answers)
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            out = _run(["--fill-contact", "42", "--vendor", path] + list(extra))
+        return out, calls
+
+    def test_dry_run_and_yes_fill_empty_fields_without_losing_read_fields(self):
+        before = self.contact()
+        filled = dict(
+            before,
+            mail=VENDOR["mail"],
+            url=VENDOR["url"],
+            remarks="UID CHE-000.000.001",
+            updated_at="new",
+        )
+        answers = {("GET", "/2.0/contact/42"): [before]}
+        out, calls = self.run_fill(answers)
+        self.assertIn("dry run: nothing updated; add --yes to fill", out)
+        self.assertEqual(_sent(calls, "POST", "/2.0/contact/42"), [])
+
+        answers = {
+            ("GET", "/2.0/contact/42"): [before, dict(before), filled],
+            ("POST", "/2.0/contact/42"): [{}],
+        }
+        out, calls = self.run_fill(answers, ["--yes"])
+        body = _body(_sent(calls, "POST", "/2.0/contact/42")[0])
+        self.assertEqual(body["contact_group_ids"], "3")
+        self.assertIsNone(body["contact_branch_ids"])
+        self.assertEqual(body["is_lead"], False)
+        self.assertNotIn("id", body)
+        self.assertNotIn("updated_at", body)
+        self.assertNotIn("address", body)
+        self.assertNotIn("unknown_field", body)
+        self.assertIn("contact fill: id 42, keys mail,remarks,url, read-back yes", out)
+        with open(os.path.join(cb.PRIVATE, "bexio-upload", "last-result.txt")) as f:
+            result = f.read()
+        self.assertIn("keys mail,remarks,url, read-back yes", result)
+        self.assertNotIn(VENDOR["mail"], result)
+
+    def test_empty_variants_filled_fields_and_text_remarks_are_kept(self):
+        for value in (None, "", "   "):
+            with self.subTest(value=value):
+                before = self.contact()
+                before.update(
+                    mail=value, url="https://already.invalid", remarks="operator note"
+                )
+                answers = {("GET", "/2.0/contact/42"): [before]}
+                out, calls = self.run_fill(answers)
+                self.assertIn("fill: mail", out)
+                self.assertIn("kept: url, differs from the file", out)
+                self.assertIn("kept: remarks, UID not written", out)
+                self.assertEqual(_sent(calls, "POST", "/2.0/contact/42"), [])
+
+    def test_populated_mail_is_kept_in_the_full_edit_body(self):
+        before = dict(self.contact(), mail="existing@example.invalid")
+        after = dict(
+            before,
+            url=VENDOR["url"],
+            remarks="UID CHE-000.000.001",
+            updated_at="changed",
+        )
+        answers = {
+            ("GET", "/2.0/contact/42"): [before, dict(before), after],
+            ("POST", "/2.0/contact/42"): [{}],
+        }
+        out, calls = self.run_fill(answers, ["--yes"])
+        body = _body(_sent(calls, "POST", "/2.0/contact/42")[0])
+        self.assertEqual(body["mail"], "existing@example.invalid")
+        self.assertIn("kept: mail, differs from the file", out)
+        self.assertEqual(body["url"], VENDOR["url"])
+
+    def test_null_key_removed_on_readback_is_a_difference(self):
+        before = self.contact()
+        after = dict(
+            before,
+            mail=VENDOR["mail"],
+            url=VENDOR["url"],
+            remarks="UID CHE-000.000.001",
+        )
+        del after["contact_branch_ids"]
+        answers = {
+            ("GET", "/2.0/contact/42"): [before, dict(before), after],
+            ("POST", "/2.0/contact/42"): [{}],
+        }
+        path = self.vendor_file()
+        urlopen, calls = fake_bexio(answers)
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            with self.assertRaisesRegex(SystemExit, "contact_branch_ids changed"):
+                _run(["--fill-contact", "42", "--vendor", path, "--yes"])
+        self.assertEqual(len(_sent(calls, "POST", "/2.0/contact/42")), 1)
+
+    def test_mismatch_uid_name_nothing_to_fill_and_stale_read_refuse(self):
+        for vendor, contact in [
+            (VENDOR, dict(self.contact(), name_1="Other Vendor")),
+            (
+                dict(VENDOR, vat_number="CHE-000.000.002"),
+                dict(self.contact(), remarks="UID CHE-000.000.001"),
+            ),
+        ]:
+            answers = {("GET", "/2.0/contact/42"): [contact]}
+            path = self.vendor_file(vendor)
+            urlopen, calls = fake_bexio(answers)
+            with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+                with self.assertRaises(SystemExit):
+                    _run(["--fill-contact", "42", "--vendor", path])
+            self.assertEqual(_sent(calls, "POST", "/2.0/contact/42"), [])
+
+        no_fill = dict(
+            self.contact(),
+            mail=VENDOR["mail"],
+            url=VENDOR["url"],
+            remarks="UID CHE-000.000.001",
+        )
+        out, calls = self.run_fill({("GET", "/2.0/contact/42"): [no_fill]})
+        self.assertIn("nothing to fill", out)
+        self.assertEqual(_sent(calls, "POST", "/2.0/contact/42"), [])
+
+        before = self.contact()
+        changed = dict(before, mail="newer@example.invalid")
+        answers = {("GET", "/2.0/contact/42"): [before, changed]}
+        path = self.vendor_file()
+        urlopen, calls = fake_bexio(answers)
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            with self.assertRaisesRegex(SystemExit, "changed since planning"):
+                _run(["--fill-contact", "42", "--vendor", path, "--yes"])
+        self.assertEqual(_sent(calls, "POST", "/2.0/contact/42"), [])
+
+    def test_uid_match_allows_different_name_and_bad_arguments_are_refused(self):
+        before = dict(
+            self.contact(),
+            name_1="Other Vendor",
+            remarks="UID CHE-000.000.001",
+            mail=VENDOR["mail"],
+            url=VENDOR["url"],
+        )
+        out, calls = self.run_fill({("GET", "/2.0/contact/42"): [before]})
+        self.assertIn("nothing to fill", out)
+        for argv in (
+            ["--fill-contact", "4x", "--vendor", self.vendor_file()],
+            ["--fill-contact", "42", "--vendor", self.vendor_file(), "--repair", "DOC"],
+            ["--fill-contact", "42", "--vendor", self.vendor_file(), "--repair", ""],
+            ["--fill-contact", "42", "--vendor", self.vendor_file(), "--nr", "X"],
+        ):
+            with self.subTest(argv=argv), mock.patch.object(
+                cb.urllib.request, "urlopen"
+            ) as urlopen:
+                with self.assertRaises(SystemExit):
+                    _run(argv)
+                urlopen.assert_not_called()
+
+    def test_invalid_mail_and_url_are_refused_by_vendor_loader(self):
+        for key, value in (
+            ("mail", "bad mail@example.invalid"),
+            ("mail", "a@@example.invalid"),
+            ("url", "ftp://example.invalid"),
+            ("url", "https://bad url.invalid"),
+        ):
+            path = self.vendor_file(dict(VENDOR, **{key: value}))
+            with self.subTest(key=key, value=value), mock.patch.object(
+                cb.urllib.request, "urlopen"
+            ) as urlopen:
+                with self.assertRaisesRegex(SystemExit, f"refused vendor file: {key}"):
+                    _run(["--fill-contact", "42", "--vendor", path])
+                urlopen.assert_not_called()
+
+    def test_readback_detects_any_change_and_never_retries(self):
+        before = self.contact()
+        planned = dict(
+            before,
+            mail=VENDOR["mail"],
+            url=VENDOR["url"],
+            remarks="UID CHE-000.000.001",
+        )
+        for key, value in (
+            ("mail", "wrong@example.invalid"),
+            ("url", "https://wrong.invalid"),
+            ("remarks", "changed"),
+            ("city", "changed"),
+            ("address", {"street": "changed"}),
+        ):
+            readback = dict(planned, **{key: value})
+            answers = {
+                ("GET", "/2.0/contact/42"): [before, dict(before), readback],
+                ("POST", "/2.0/contact/42"): [{}],
+            }
+            path = self.vendor_file()
+            urlopen, calls = fake_bexio(answers)
+            with self.subTest(key=key), mock.patch.object(
+                cb.urllib.request, "urlopen", side_effect=urlopen
+            ):
+                with self.assertRaisesRegex(
+                    SystemExit, f"read-back failed: {key} changed"
+                ):
+                    _run(["--fill-contact", "42", "--vendor", path, "--yes"])
+            self.assertEqual(len(_sent(calls, "POST", "/2.0/contact/42")), 1)
+
+    def test_failed_read_after_write_records_failure_without_retry_or_values(self):
+        before = self.contact()
+        for failure in (
+            urllib.error.URLError("invented failure"),
+            urllib.error.HTTPError(
+                "https://example.invalid",
+                503,
+                "unavailable",
+                {},
+                io.BytesIO(b'{"message":"private detail"}'),
+            ),
+            json.JSONDecodeError("invalid JSON", "", 0),
+            None,
+        ):
+            answers = {
+                ("GET", "/2.0/contact/42"): [before, dict(before), failure],
+                ("POST", "/2.0/contact/42"): [{}],
+            }
+            path = self.vendor_file()
+            urlopen, calls = fake_bexio(answers)
+            with self.subTest(failure=type(failure).__name__), mock.patch.object(
+                cb.urllib.request, "urlopen", side_effect=urlopen
+            ), mock.patch.object(cb, "record_result") as record:
+                with self.assertRaises(SystemExit):
+                    _run(["--fill-contact", "42", "--vendor", path, "--yes"])
+                record.assert_any_call(
+                    "contact fill: id 42, keys mail,remarks,url, read-back no"
+                )
+                self.assertNotIn("private detail", str(record.call_args_list))
+            self.assertEqual(len(_sent(calls, "POST", "/2.0/contact/42")), 1)
+
+    def test_each_empty_variant_is_filled_and_all_edit_fields_are_preserved(self):
+        self.assertEqual(
+            cb.CONTACT_EDIT_FIELDS, DOCUMENTED_CONTACT_CREATE_FIELDS | {"is_lead"}
+        )
+        for empty in (None, "", " \t\n"):
+            before = dict.fromkeys(DOCUMENTED_CONTACT_CREATE_FIELDS, None)
+            before.update(self.contact(), mail=empty, url=empty, remarks=empty)
+            before["contact_branch_ids"] = "4,5"
+            body, fills, kept = cb.fill_contact_plan(before, VENDOR)
+            self.assertEqual(
+                fills,
+                {
+                    "mail": VENDOR["mail"],
+                    "url": VENDOR["url"],
+                    "remarks": "UID CHE-000.000.001",
+                },
+            )
+            self.assertEqual(
+                body,
+                {key: fills.get(key, before[key]) for key in cb.CONTACT_EDIT_FIELDS},
+            )
+            self.assertEqual(kept, [])
+
+    def test_populated_website_and_text_remarks_survive_the_sent_body(self):
+        before = dict(
+            self.contact(), url="https://existing.invalid", remarks="invented note"
+        )
+        after = dict(before, mail=VENDOR["mail"])
+        out, calls = self.run_fill(
+            {
+                ("GET", "/2.0/contact/42"): [before, dict(before), after],
+                ("POST", "/2.0/contact/42"): [{}],
+            },
+            ["--yes"],
+        )
+        body = _body(_sent(calls, "POST", "/2.0/contact/42")[0])
+        for key in ("url", "remarks"):
+            self.assertEqual(body[key], before[key])
+            self.assertNotIn(before[key], out)
+
+    def test_missing_required_fields_and_every_create_option_refuse(self):
+        for key in ("contact_type_id", "name_1", "user_id", "owner_id"):
+            before = self.contact()
+            del before[key]
+            with self.subTest(key=key), self.assertRaisesRegex(
+                SystemExit, "missing required field"
+            ):
+                cb.fill_contact_plan(before, VENDOR)
+        for flag in (
+            "--lines",
+            "--vendor-name",
+            "--vendor-uid",
+            "--file-uuid",
+            "--nr",
+            "--date",
+            "--total",
+            "--account",
+            "--tax",
+            "--currency",
+            "--exchange-rate",
+            "--due-date",
+            "--text",
+        ):
+            with self.subTest(flag=flag), mock.patch.object(
+                cb.urllib.request, "urlopen"
+            ) as send:
+                with self.assertRaisesRegex(SystemExit, "cannot be combined"):
+                    _run(
+                        [
+                            "--fill-contact",
+                            "42",
+                            "--vendor",
+                            self.vendor_file(),
+                            flag,
+                            "",
+                        ]
+                    )
+                send.assert_not_called()
+
+    def test_timestamp_only_change_refuses_before_post(self):
+        before = self.contact()
+        path = self.vendor_file()
+        urlopen, calls = fake_bexio(
+            {
+                ("GET", "/2.0/contact/42"): [before, dict(before, updated_at="new")],
+            }
+        )
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            with self.assertRaisesRegex(SystemExit, "changed since planning"):
+                _run(["--fill-contact", "42", "--vendor", path, "--yes"])
+        self.assertEqual(_sent(calls, "POST", "/2.0/contact/42"), [])
+
+
+class ContactBodyValidationTest(unittest.TestCase):
     def test_contact_body_refuses_unknown_vendor_fields(self):
         with self.assertRaisesRegex(ValueError, "unsupported fields"):
             cb.contact_body(dict(VENDOR, unexpected="invented"), 9, 5)
@@ -1799,6 +2162,7 @@ class ContactBodyTest(unittest.TestCase):
         self.assertEqual(body["postcode"], "8000")
         self.assertEqual(body["city"], "Beispielstadt")
         self.assertEqual(body["mail"], "rechnung@example.invalid")
+        self.assertEqual(body["url"], "https://example.invalid/vendor")
         self.assertNotIn("country", body)
         self.assertEqual((body["user_id"], body["owner_id"]), (9, 9))
         self.assertTrue(set(body).issubset(cb.CONTACT_CREATE_FIELDS))
