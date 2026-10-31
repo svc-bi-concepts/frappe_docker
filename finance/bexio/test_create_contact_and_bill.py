@@ -150,7 +150,12 @@ def fake_bexio(answers):
             body = json.loads(req.data.decode("utf-8"))
             missing = {"contact_type_id", "name_1", "user_id", "owner_id"} - set(body)
             refused = set(body) - CONTACT_EDIT_ACCEPTED_FIELDS
-            if missing or refused:
+            # Only salutation_id=0 is proven live; rejecting other empty values is a deliberate stricter guess.
+            empty_values = any(
+                value == "" or (type(value) in (int, float) and value == 0)
+                for value in body.values()
+            )
+            if missing or refused or empty_values:
                 raise urllib.error.HTTPError(
                     req.full_url,
                     422,
@@ -1814,6 +1819,7 @@ class FillContactTest(unittest.TestCase):
             "id": 42,
             "updated_at": "old",
             "contact_type_id": 1,
+            "nr": "C-42",
             "name_1": VENDOR["name_1"],
             "user_id": 9,
             "owner_id": 9,
@@ -1862,7 +1868,7 @@ class FillContactTest(unittest.TestCase):
         out, calls = self.run_fill(answers, ["--yes"])
         body = _body(_sent(calls, "POST", "/2.0/contact/42")[0])
         self.assertEqual(body["contact_group_ids"], "3")
-        self.assertIsNone(body["contact_branch_ids"])
+        self.assertNotIn("contact_branch_ids", body)
         self.assertNotIn("title_id", body)
         self.assertNotIn("is_lead", body)
         self.assertNotIn("id", body)
@@ -2069,7 +2075,7 @@ class FillContactTest(unittest.TestCase):
             before = dict.fromkeys(CONTACT_EDIT_ACCEPTED_FIELDS, None)
             before.update(self.contact(), mail=empty, url=empty, remarks=empty)
             before["contact_branch_ids"] = "4,5"
-            body, fills, kept = cb.fill_contact_plan(before, VENDOR)
+            body, fills, kept, omitted = cb.fill_contact_plan(before, VENDOR)
             self.assertEqual(
                 fills,
                 {
@@ -2078,11 +2084,72 @@ class FillContactTest(unittest.TestCase):
                     "remarks": "UID CHE-000.000.001",
                 },
             )
-            self.assertEqual(
-                body,
-                {key: fills.get(key, before[key]) for key in cb.CONTACT_EDIT_FIELDS},
-            )
+            self.assertEqual(set(body), (set(cb.CONTACT_EDIT_FIELDS) - omitted) | set(fills))
+            self.assertFalse(any(value is None or value == "" or value == 0 for value in body.values()))
             self.assertEqual(kept, [])
+
+    def test_company_and_person_salutations_fill_in_dry_run_and_yes(self):
+        shapes = (
+            {"salutation_id": 0, "salutation_form": None},
+            {"salutation_id": 2, "salutation_form": 0},
+        )
+        for shape in shapes:
+            for yes in (False, True):
+                before = dict(self.contact(), **shape)
+                after = dict(before, mail=VENDOR["mail"], url=VENDOR["url"], remarks="UID CHE-000.000.001")
+                answers = {("GET", "/2.0/contact/42"): [before, dict(before), after] if yes else [before]}
+                if yes:
+                    answers[("POST", "/2.0/contact/42")] = [{}]
+                out, calls = self.run_fill(answers, ["--yes"] if yes else [])
+                sent = _sent(calls, "POST", "/2.0/contact/42")
+                self.assertEqual(len(sent), 1 if yes else 0)
+                if yes:
+                    body = _body(sent[0])
+                    self.assertFalse(any(value is None or value == "" or value == 0 for value in body.values()))
+                    if shape["salutation_id"]:
+                        self.assertEqual(body["salutation_id"], shape["salutation_id"])
+                self.assertIn("fill:", out)
+
+    def test_readback_allows_omitted_empty_to_change_form_but_not_gain_value(self):
+        before = dict(self.contact(), salutation_id=0, salutation_form=None)
+        after = dict(before, mail=VENDOR["mail"], url=VENDOR["url"], remarks="UID CHE-000.000.001", salutation_id=None)
+        out, calls = self.run_fill({
+            ("GET", "/2.0/contact/42"): [before, dict(before), after],
+            ("POST", "/2.0/contact/42"): [{}],
+        }, ["--yes"])
+        self.assertIn("read-back yes", out)
+        gained = dict(after, salutation_form=1)
+        answers = {
+            ("GET", "/2.0/contact/42"): [before, dict(before), gained],
+            ("POST", "/2.0/contact/42"): [{}],
+        }
+        path = self.vendor_file()
+        urlopen, calls = fake_bexio(answers)
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            with self.assertRaisesRegex(SystemExit, "salutation_form changed"):
+                _run(["--fill-contact", "42", "--vendor", path, "--yes"])
+        self.assertEqual(len(_sent(calls, "POST", "/2.0/contact/42")), 1)
+
+    def test_fake_probe_rejects_old_full_body_once_without_result(self):
+        before = dict(self.contact(), salutation_id=0, salutation_form=None)
+        answers = {("GET", "/2.0/contact/42"): [before, dict(before)]}
+        path = self.vendor_file()
+        urlopen, calls = fake_bexio(answers)
+        plan = cb.fill_contact_plan
+
+        def old_full_body(contact, vendor):
+            body, fills, kept, omitted = plan(contact, vendor)
+            for key in omitted:
+                body[key] = contact[key]
+            return body, fills, kept, omitted
+
+        with mock.patch.object(cb, "fill_contact_plan", side_effect=old_full_body), mock.patch.object(
+            cb.urllib.request, "urlopen", side_effect=urlopen
+        ), mock.patch.object(cb, "record_result") as record:
+            with self.assertRaisesRegex(SystemExit, "HTTP 422"):
+                _run(["--fill-contact", "42", "--vendor", path, "--yes"])
+        self.assertEqual(len(_sent(calls, "POST", "/2.0/contact/42")), 1)
+        record.assert_not_called()
 
     def test_title_and_lead_flags_refuse_dry_run_and_yes_without_post(self):
         for key, value in (("title_id", 1), ("title_id", 0), ("is_lead", True)):
@@ -2134,9 +2201,9 @@ class FillContactTest(unittest.TestCase):
         plan = cb.fill_contact_plan
 
         def plan_with_refused_field(contact, vendor):
-            body, fills, kept = plan(contact, vendor)
+            body, fills, kept, omitted = plan(contact, vendor)
             body["title_id"] = 1
-            return body, fills, kept
+            return body, fills, kept, omitted
 
         with mock.patch.object(
             cb, "fill_contact_plan", side_effect=plan_with_refused_field
@@ -2153,7 +2220,7 @@ class FillContactTest(unittest.TestCase):
         record.assert_not_called()
 
     def test_fake_rejects_each_unsupported_or_missing_required_edit_field(self):
-        body, _, _ = cb.fill_contact_plan(self.contact(), VENDOR)
+        body, _, _, _ = cb.fill_contact_plan(self.contact(), VENDOR)
         invalid = [dict(body, **{key: None}) for key in ("title_id", "is_lead")]
         for key in ("contact_type_id", "name_1", "user_id", "owner_id"):
             invalid.append(
@@ -2190,13 +2257,20 @@ class FillContactTest(unittest.TestCase):
             self.assertNotIn(before[key], out)
 
     def test_missing_required_fields_and_every_create_option_refuse(self):
-        for key in ("contact_type_id", "name_1", "user_id", "owner_id"):
-            before = self.contact()
-            del before[key]
-            with self.subTest(key=key), self.assertRaisesRegex(
-                SystemExit, "missing required field"
-            ):
-                cb.fill_contact_plan(before, VENDOR)
+        for key in ("contact_type_id", "name_1", "user_id", "owner_id", "nr"):
+            for value in (None, "", 0):
+                for yes in (False, True):
+                    before = dict(self.contact(), nr="C-42")
+                    before[key] = value
+                    answers = {("GET", "/2.0/contact/42"): [before]}
+                    path = self.vendor_file()
+                    urlopen, calls = fake_bexio(answers)
+                    with self.subTest(key=key, value=value, yes=yes), mock.patch.object(
+                        cb.urllib.request, "urlopen", side_effect=urlopen
+                    ):
+                        with self.assertRaisesRegex(SystemExit, "missing required field"):
+                            _run(["--fill-contact", "42", "--vendor", path] + (["--yes"] if yes else []))
+                    self.assertEqual(_sent(calls, "POST", "/2.0/contact/42"), [])
         for flag in (
             "--lines",
             "--vendor-name",
