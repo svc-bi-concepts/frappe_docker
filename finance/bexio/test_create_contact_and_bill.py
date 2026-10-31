@@ -1058,8 +1058,20 @@ class RepairReviewTest(unittest.TestCase):
                 (None, "bill object"),
                 ({"amount_calc": None}, "amount_calc is null"),
                 (
-                    {"amount_calc": 733.3, "split_into_line_items": False},
+                    {
+                        "amount_calc": 733.3,
+                        "line_items": [{}, {}],
+                        "split_into_line_items": False,
+                    },
                     "split_into_line_items",
+                ),
+                (
+                    {
+                        "amount_calc": 733.3,
+                        "line_items": [{}],
+                        "split_into_line_items": True,
+                    },
+                    "expected 2 line items, got 1",
                 ),
             ]:
                 path = self.line_file(

@@ -448,6 +448,9 @@ def report_bill(label, bill, expected_lines):
     record_result(summary)
     if amount is None:
         raise SystemExit("{} read-back failed: amount_calc is null".format(label))
+    if not isinstance(lines, list) or len(lines) != expected_lines:
+        raise SystemExit("{} read-back failed: expected {} line items, got {}".format(
+            label, expected_lines, len(lines) if isinstance(lines, list) else "unknown"))
     if expected_lines > 1 and bill.get("split_into_line_items") is not True:
         raise SystemExit("{} read-back failed: multi-line bill split_into_line_items is false".format(label))
 
