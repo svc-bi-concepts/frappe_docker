@@ -557,9 +557,14 @@ def fill_contact(token, contact_id, vendor, yes):
     if not isinstance(fresh, dict) or fresh != before:
         raise SystemExit("refused fill: contact changed since planning; run a new dry run")
     _send("POST", path, token, body=body)
-    readback = _send("GET", path, token)
-    summary = "contact fill: id {}, keys {}, read-back {}".format(
-        contact_id, ",".join(sorted(fills)), "yes" if isinstance(readback, dict) else "no")
+    summary = "contact fill: id {}, keys {}, read-back {}"
+    try:
+        readback = _send("GET", path, token)
+    except (SystemExit, ValueError, OSError):
+        # The edit already succeeded. Preserve evidence even when its final
+        # read fails, without persisting an API error that may contain values.
+        record_result(summary.format(contact_id, ",".join(sorted(fills)), "no"))
+        raise SystemExit("fill read-back failed: could not read contact; check before running again") from None
     try:
         if not isinstance(readback, dict):
             raise SystemExit("fill read-back failed: expected a contact object")
@@ -572,10 +577,10 @@ def fill_contact(token, contact_id, vendor, yes):
             if (key in before) != (key in readback) or before.get(key) != readback.get(key):
                 raise SystemExit("fill read-back failed: {} changed".format(key))
     except SystemExit as error:
-        summary = "contact fill: id {}, keys {}, read-back no".format(contact_id, ",".join(sorted(fills)))
-        record_result(summary)
+        record_result(summary.format(contact_id, ",".join(sorted(fills)), "no"))
         record_result(str(error))
         raise
+    summary = summary.format(contact_id, ",".join(sorted(fills)), "yes")
     record_result(summary)
     print(summary)
 

@@ -1885,6 +1885,8 @@ class FillContactTest(unittest.TestCase):
         )
         for key, value in (
             ("mail", "wrong@example.invalid"),
+            ("url", "https://wrong.invalid"),
+            ("remarks", "changed"),
             ("city", "changed"),
             ("address", {"street": "changed"}),
         ):
@@ -1903,6 +1905,129 @@ class FillContactTest(unittest.TestCase):
                 ):
                     _run(["--fill-contact", "42", "--vendor", path, "--yes"])
             self.assertEqual(len(_sent(calls, "POST", "/2.0/contact/42")), 1)
+
+    def test_failed_read_after_write_records_failure_without_retry_or_values(self):
+        before = self.contact()
+        for failure in (
+            urllib.error.URLError("invented failure"),
+            urllib.error.HTTPError(
+                "https://example.invalid",
+                503,
+                "unavailable",
+                {},
+                io.BytesIO(b'{"message":"private detail"}'),
+            ),
+            json.JSONDecodeError("invalid JSON", "", 0),
+            None,
+        ):
+            answers = {
+                ("GET", "/2.0/contact/42"): [before, dict(before), failure],
+                ("POST", "/2.0/contact/42"): [{}],
+            }
+            path = self.vendor_file()
+            urlopen, calls = fake_bexio(answers)
+            with self.subTest(failure=type(failure).__name__), mock.patch.object(
+                cb.urllib.request, "urlopen", side_effect=urlopen
+            ), mock.patch.object(cb, "record_result") as record:
+                with self.assertRaises(SystemExit):
+                    _run(["--fill-contact", "42", "--vendor", path, "--yes"])
+                record.assert_any_call(
+                    "contact fill: id 42, keys mail,remarks,url, read-back no"
+                )
+                self.assertNotIn("private detail", str(record.call_args_list))
+            self.assertEqual(len(_sent(calls, "POST", "/2.0/contact/42")), 1)
+
+    def test_each_empty_variant_is_filled_and_all_edit_fields_are_preserved(self):
+        self.assertEqual(
+            cb.CONTACT_EDIT_FIELDS, DOCUMENTED_CONTACT_CREATE_FIELDS | {"is_lead"}
+        )
+        for empty in (None, "", " \t\n"):
+            before = dict.fromkeys(DOCUMENTED_CONTACT_CREATE_FIELDS, None)
+            before.update(self.contact(), mail=empty, url=empty, remarks=empty)
+            before["contact_branch_ids"] = "4,5"
+            body, fills, kept = cb.fill_contact_plan(before, VENDOR)
+            self.assertEqual(
+                fills,
+                {
+                    "mail": VENDOR["mail"],
+                    "url": VENDOR["url"],
+                    "remarks": "UID CHE-000.000.001",
+                },
+            )
+            self.assertEqual(
+                body,
+                {key: fills.get(key, before[key]) for key in cb.CONTACT_EDIT_FIELDS},
+            )
+            self.assertEqual(kept, [])
+
+    def test_populated_website_and_text_remarks_survive_the_sent_body(self):
+        before = dict(
+            self.contact(), url="https://existing.invalid", remarks="invented note"
+        )
+        after = dict(before, mail=VENDOR["mail"])
+        out, calls = self.run_fill(
+            {
+                ("GET", "/2.0/contact/42"): [before, dict(before), after],
+                ("POST", "/2.0/contact/42"): [{}],
+            },
+            ["--yes"],
+        )
+        body = _body(_sent(calls, "POST", "/2.0/contact/42")[0])
+        for key in ("url", "remarks"):
+            self.assertEqual(body[key], before[key])
+            self.assertNotIn(before[key], out)
+
+    def test_missing_required_fields_and_every_create_option_refuse(self):
+        for key in ("contact_type_id", "name_1", "user_id", "owner_id"):
+            before = self.contact()
+            del before[key]
+            with self.subTest(key=key), self.assertRaisesRegex(
+                SystemExit, "missing required field"
+            ):
+                cb.fill_contact_plan(before, VENDOR)
+        for flag in (
+            "--lines",
+            "--vendor-name",
+            "--vendor-uid",
+            "--file-uuid",
+            "--nr",
+            "--date",
+            "--total",
+            "--account",
+            "--tax",
+            "--currency",
+            "--exchange-rate",
+            "--due-date",
+            "--text",
+        ):
+            with self.subTest(flag=flag), mock.patch.object(
+                cb.urllib.request, "urlopen"
+            ) as send:
+                with self.assertRaisesRegex(SystemExit, "cannot be combined"):
+                    _run(
+                        [
+                            "--fill-contact",
+                            "42",
+                            "--vendor",
+                            self.vendor_file(),
+                            flag,
+                            "",
+                        ]
+                    )
+                send.assert_not_called()
+
+    def test_timestamp_only_change_refuses_before_post(self):
+        before = self.contact()
+        path = self.vendor_file()
+        urlopen, calls = fake_bexio(
+            {
+                ("GET", "/2.0/contact/42"): [before, dict(before, updated_at="new")],
+            }
+        )
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            with self.assertRaisesRegex(SystemExit, "changed since planning"):
+                _run(["--fill-contact", "42", "--vendor", path, "--yes"])
+        self.assertEqual(_sent(calls, "POST", "/2.0/contact/42"), [])
 
 
 class ContactBodyValidationTest(unittest.TestCase):

@@ -836,7 +836,7 @@ The yardmaster's first-run sequence is:
    ```
 
    `name_1` is required; the other vendor fields are optional, and `country` defaults to `CH`.
-   Supply `mail` and `url` only when they appear on the invoice or the vendor's own website; never guess them.
+   Supply `mail`, `url` and `vat_number` only when they appear on the invoice or the vendor's own website; never guess them.
    `vat_number` is the vendor UID input: a new contact stores it as a canonical `UID CHE-xxx.xxx.xxx`
    line in bexio's `remarks` field; it is never sent as a contact field. Unknown keys and files outside
    `private/` are refused. For an existing contact, use `--vendor-name` and/or `--vendor-uid` instead;
