@@ -2084,8 +2084,15 @@ class FillContactTest(unittest.TestCase):
                     "remarks": "UID CHE-000.000.001",
                 },
             )
-            self.assertEqual(set(body), (set(cb.CONTACT_EDIT_FIELDS) - omitted) | set(fills))
-            self.assertFalse(any(value is None or value == "" or value == 0 for value in body.values()))
+            self.assertEqual(
+                set(body), (set(cb.CONTACT_EDIT_FIELDS) - omitted) | set(fills)
+            )
+            self.assertFalse(
+                any(
+                    value is None or value == "" or value == 0
+                    for value in body.values()
+                )
+            )
             self.assertEqual(kept, [])
 
     def test_company_and_person_salutations_fill_in_dry_run_and_yes(self):
@@ -2096,8 +2103,17 @@ class FillContactTest(unittest.TestCase):
         for shape in shapes:
             for yes in (False, True):
                 before = dict(self.contact(), **shape)
-                after = dict(before, mail=VENDOR["mail"], url=VENDOR["url"], remarks="UID CHE-000.000.001")
-                answers = {("GET", "/2.0/contact/42"): [before, dict(before), after] if yes else [before]}
+                after = dict(
+                    before,
+                    mail=VENDOR["mail"],
+                    url=VENDOR["url"],
+                    remarks="UID CHE-000.000.001",
+                )
+                answers = {
+                    ("GET", "/2.0/contact/42"): (
+                        [before, dict(before), after] if yes else [before]
+                    )
+                }
                 if yes:
                     answers[("POST", "/2.0/contact/42")] = [{}]
                 out, calls = self.run_fill(answers, ["--yes"] if yes else [])
@@ -2105,18 +2121,32 @@ class FillContactTest(unittest.TestCase):
                 self.assertEqual(len(sent), 1 if yes else 0)
                 if yes:
                     body = _body(sent[0])
-                    self.assertFalse(any(value is None or value == "" or value == 0 for value in body.values()))
+                    self.assertFalse(
+                        any(
+                            value is None or value == "" or value == 0
+                            for value in body.values()
+                        )
+                    )
                     if shape["salutation_id"]:
                         self.assertEqual(body["salutation_id"], shape["salutation_id"])
                 self.assertIn("fill:", out)
 
     def test_readback_allows_omitted_empty_to_change_form_but_not_gain_value(self):
         before = dict(self.contact(), salutation_id=0, salutation_form=None)
-        after = dict(before, mail=VENDOR["mail"], url=VENDOR["url"], remarks="UID CHE-000.000.001", salutation_id=None)
-        out, calls = self.run_fill({
-            ("GET", "/2.0/contact/42"): [before, dict(before), after],
-            ("POST", "/2.0/contact/42"): [{}],
-        }, ["--yes"])
+        after = dict(
+            before,
+            mail=VENDOR["mail"],
+            url=VENDOR["url"],
+            remarks="UID CHE-000.000.001",
+            salutation_id=None,
+        )
+        out, calls = self.run_fill(
+            {
+                ("GET", "/2.0/contact/42"): [before, dict(before), after],
+                ("POST", "/2.0/contact/42"): [{}],
+            },
+            ["--yes"],
+        )
         self.assertIn("read-back yes", out)
         gained = dict(after, salutation_form=1)
         answers = {
@@ -2143,9 +2173,13 @@ class FillContactTest(unittest.TestCase):
                 body[key] = contact[key]
             return body, fills, kept, omitted
 
-        with mock.patch.object(cb, "fill_contact_plan", side_effect=old_full_body), mock.patch.object(
+        with mock.patch.object(
+            cb, "fill_contact_plan", side_effect=old_full_body
+        ), mock.patch.object(
             cb.urllib.request, "urlopen", side_effect=urlopen
-        ), mock.patch.object(cb, "record_result") as record:
+        ), mock.patch.object(
+            cb, "record_result"
+        ) as record:
             with self.assertRaisesRegex(SystemExit, "HTTP 422"):
                 _run(["--fill-contact", "42", "--vendor", path, "--yes"])
         self.assertEqual(len(_sent(calls, "POST", "/2.0/contact/42")), 1)
@@ -2268,8 +2302,13 @@ class FillContactTest(unittest.TestCase):
                     with self.subTest(key=key, value=value, yes=yes), mock.patch.object(
                         cb.urllib.request, "urlopen", side_effect=urlopen
                     ):
-                        with self.assertRaisesRegex(SystemExit, "missing required field"):
-                            _run(["--fill-contact", "42", "--vendor", path] + (["--yes"] if yes else []))
+                        with self.assertRaisesRegex(
+                            SystemExit, "missing required field"
+                        ):
+                            _run(
+                                ["--fill-contact", "42", "--vendor", path]
+                                + (["--yes"] if yes else [])
+                            )
                     self.assertEqual(_sent(calls, "POST", "/2.0/contact/42"), [])
         for flag in (
             "--lines",
