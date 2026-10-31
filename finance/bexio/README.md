@@ -848,9 +848,11 @@ The yardmaster's first-run sequence is:
    `finance/bexio/create_contact_and_bill.py --fill-contact <digits-only-contact-id> --vendor <file>`
    as a dry run, then repeat with `--yes` after review. It fills only null, empty or whitespace-only
    fields and never overwrites a populated value. A contact must match the file by normalized name or
-   UID; the script reads it again before writing and verifies all fields afterwards. UID values are
-   stored in `remarks`. The edit omits empty values and stops if the contact has no number or
-   already has a title or lead flag set. If bexio returns another HTTP 422, it changes nothing there;
+   UID; the script reads it again before writing and verifies the filled fields and existing values
+   afterwards. Omitted empty fields may read back in a different empty form. UID values are stored in
+   `remarks`. The edit omits null, empty-string and zero values; it stops unless `contact_type_id`,
+   `name_1`, `user_id`, `owner_id` and `nr` are populated, or if the contact already has a title or
+   lead flag set. If bexio returns another HTTP 422, it changes nothing there;
    remove the refused field from the edit field list before retrying. The UI's VAT number field
    has no writable API field and cannot be set through this script.
 
