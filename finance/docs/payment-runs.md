@@ -6,7 +6,9 @@ makes the Payment Proposal and the pain.001 file (erpnextswiss); the app
 (`finance/apps/bi_finance/bi_finance/payment_run.py`). Benchi uploads the file in
 UBS e-banking; the camt import later matches the bank lines to the Payment Entries.
 
-Nothing is sent to a bank by ERPNext or by this code.
+ERPNext does not send payments to a bank.
+
+Until 2027-01-01, bexio prepares supplier payments; Benchi releases them in the bank.
 
 ## Set up (once)
 
