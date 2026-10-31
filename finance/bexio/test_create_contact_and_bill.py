@@ -682,6 +682,232 @@ class LinesRepairTest(unittest.TestCase):
         self.assertIn("contact_partner_id: 12 -> 9", out)
         self.assertEqual(_sent(calls, "PUT", "/4.0/purchase/bills/" + FAKE_BILL_ID), [])
 
+    def test_text_rename_single_row_changes_only_titles_and_dry_run_writes_nothing(
+        self,
+    ):
+        before = self.draft()
+        before["line_items"][0]["tax_calc"] = 53.3
+        answers = self.repair_answers(before)
+        urlopen, calls = fake_bexio(answers)
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            out = _run(["--repair", "DOC-TEST-1", "--text", "  New title  "])
+        self.assertIn('bill title: "Invented bill" -> "New title"', out)
+        self.assertIn('row 1 title: "Existing line" -> "New title"', out)
+        self.assertFalse(_sent(calls, "PUT", "/4.0/purchase/bills/" + FAKE_BILL_ID))
+
+    def test_text_rename_multirow_requires_lines(self):
+        before = self.draft()
+        before["line_items"][0]["amount"] = 366.65
+        before["line_items"].append(
+            dict(
+                before["line_items"][0],
+                id="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+                position=1,
+            )
+        )
+        before["split_into_line_items"] = True
+        urlopen, calls = fake_bexio(self.repair_answers(before))
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            with self.assertRaisesRegex(SystemExit, "--lines is needed"):
+                _run(["--repair", "DOC-TEST-1", "--text", "New title"])
+        self.assertFalse(any(key[0] == "PUT" for key, _ in calls))
+
+    def test_text_rename_lines_preserves_all_existing_ids_and_values(self):
+        before = self.draft()
+        before["line_items"][0]["amount"] = 366.65
+        before["line_items"].append(
+            dict(
+                before["line_items"][0],
+                id="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+                position=1,
+            )
+        )
+        before["split_into_line_items"] = True
+        path = os.path.join(cb.PRIVATE, "text-rename-lines.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(
+                [
+                    {
+                        "title": "First invented",
+                        "gross": "366.65",
+                        "account": "6000",
+                        "tax": "VM81",
+                    },
+                    {
+                        "title": "Second invented",
+                        "gross": "366.65",
+                        "account": "6000",
+                        "tax": "VM81",
+                    },
+                ],
+                f,
+            )
+        answers = self.repair_answers(before)
+        readback = dict(
+            before, title="New title", contact_partner_id=9, manual_amount=False
+        )
+        readback["split_into_line_items"] = True
+        readback["line_items"] = [
+            dict(row, title=title)
+            for row, title in zip(
+                before["line_items"], ["First invented", "Second invented"]
+            )
+        ]
+        answers[("GET", "/4.0/purchase/bills/" + FAKE_BILL_ID)][2] = readback
+        answers[("PUT", "/4.0/purchase/bills/" + FAKE_BILL_ID)] = [{}]
+        urlopen, calls = fake_bexio(answers)
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            _run(
+                [
+                    "--repair",
+                    "DOC-TEST-1",
+                    "--text",
+                    "New title",
+                    "--lines",
+                    path,
+                    "--yes",
+                ]
+            )
+        put = _body(_sent(calls, "PUT", "/4.0/purchase/bills/" + FAKE_BILL_ID)[0])
+        self.assertEqual(
+            [r["id"] for r in put["line_items"]],
+            [r["id"] for r in before["line_items"]],
+        )
+        self.assertEqual([r["position"] for r in put["line_items"]], [0, 1])
+        self.assertEqual(
+            [r["title"] for r in put["line_items"]],
+            ["First invented", "Second invented"],
+        )
+        for field in ("amount", "booking_account_id", "tax_id"):
+            self.assertEqual(
+                [r[field] for r in put["line_items"]],
+                [r[field] for r in before["line_items"]],
+            )
+
+    def test_text_validation_happens_before_any_request(self):
+        for value, message in [("   ", "must not be empty"), ("x" * 81, "exceeds 80")]:
+            with mock.patch.object(cb.urllib.request, "urlopen") as send:
+                with self.assertRaisesRegex(SystemExit, message):
+                    _run(["--repair", "DOC-TEST-1", "--text", value])
+                send.assert_not_called()
+
+    def test_text_lines_refuse_count_and_each_row_value_change(self):
+        before = self.draft()
+        before["line_items"][0]["tax_calc"] = 0.0
+        path = os.path.join(cb.PRIVATE, "text-rename-guard.json")
+        cases = [
+            (
+                [
+                    {"title": "One", "gross": "733.30"},
+                    {"title": "Two", "gross": "0.01"},
+                ],
+                "row count",
+                False,
+            ),
+            ([{"title": "One", "gross": "733.29"}], "amount", False),
+            (
+                [{"title": "One", "gross": "733.30", "account": "6100"}],
+                "booking_account_id",
+                True,
+            ),
+            ([{"title": "One", "gross": "733.30", "tax": "VM82"}], "tax_id", True),
+        ]
+        for rows, message, add_reference in cases:
+            with self.subTest(message=message):
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(rows, f)
+                answers = self.repair_answers(before)
+                if add_reference:
+                    answers[("GET", "/2.0/accounts")][0].append(
+                        {
+                            "id": 17,
+                            "account_no": "6100",
+                            "account_type": 2,
+                            "is_active": True,
+                            "is_locked": False,
+                        }
+                    )
+                    answers[("GET", "/3.0/taxes")][0].append(
+                        {
+                            "id": 24,
+                            "code": "VM82",
+                            "type": "pre_tax_material",
+                            "is_active": True,
+                        }
+                    )
+                urlopen, calls = fake_bexio(answers)
+                with mock.patch.object(
+                    cb.urllib.request, "urlopen", side_effect=urlopen
+                ):
+                    with self.assertRaisesRegex(SystemExit, message):
+                        _run(
+                            [
+                                "--repair",
+                                "DOC-TEST-1",
+                                "--text",
+                                "New title",
+                                "--lines",
+                                path,
+                                "--account",
+                                "6000",
+                                "--tax",
+                                "VM81",
+                                "--yes",
+                            ]
+                        )
+                self.assertFalse(any(key[0] == "PUT" for key, _ in calls))
+
+    def test_overlong_title_in_repair_lines_refuses(self):
+        path = os.path.join(cb.PRIVATE, "text-rename-long-row.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump([{"title": "x" * 81, "gross": "733.30"}], f)
+        urlopen, calls = fake_bexio(self.repair_answers())
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            with self.assertRaisesRegex(SystemExit, "exceeds 80"):
+                _run(
+                    [
+                        "--repair",
+                        "DOC-TEST-1",
+                        "--text",
+                        "New title",
+                        "--lines",
+                        path,
+                        "--account",
+                        "6000",
+                        "--tax",
+                        "VM81",
+                    ]
+                )
+        self.assertFalse(any(key[0] == "PUT" for key, _ in calls))
+
+    def test_title_readback_rejects_each_planned_field_difference(self):
+        before = self.draft()
+        before["line_items"][0]["tax_calc"] = 0.0
+        expected = [dict(before["line_items"][0], title="New row title")]
+        valid = dict(before, title="New title", contact_partner_id=9, amount_calc=733.3)
+        valid["line_items"] = [dict(expected[0])]
+        mutations = [
+            (lambda bill: bill.update(title="Wrong"), "bill title"),
+            (lambda bill: bill["line_items"][0].update(title="Wrong"), "row 1 title"),
+            (lambda bill: bill.update(amount_calc=700.0), "amount_calc"),
+            (lambda bill: bill.update(contact_partner_id=12), "contact_partner_id"),
+            (lambda bill: bill.update(item_net=True), "item_net"),
+            (
+                lambda bill: bill["line_items"][0].update(booking_account_id=99),
+                "booking_account_id",
+            ),
+            (lambda bill: bill["line_items"][0].update(tax_id=99), "tax_id"),
+            (lambda bill: bill["line_items"][0].update(tax_calc=1.0), "VAT total"),
+        ]
+        for mutate, message in mutations:
+            with self.subTest(message=message):
+                readback = json.loads(json.dumps(valid))
+                mutate(readback)
+                with self.assertRaisesRegex(SystemExit, message):
+                    cb.check_title_readback(
+                        readback, "New title", expected, before, 9, 733.3
+                    )
+
     def test_repair_lines_preserve_total_and_line_ids(self):
         path = os.path.join(cb.PRIVATE, "lines-test.json")
         with open(path, "w", encoding="utf-8") as f:
@@ -935,7 +1161,6 @@ class RepairReviewTest(unittest.TestCase):
             ("--vendor-name", "Invented"),
             ("--date", "2026-01-01"),
             ("--file-uuid", FAKE_BILL_ID),
-            ("--text", "Invented"),
             ("--account", "6000"),
             ("--tax", "VM81"),
         ]:
@@ -984,6 +1209,30 @@ class RepairReviewTest(unittest.TestCase):
                 with self.assertRaises(SystemExit):
                     _run(["--yes", "--lines", path] + ARGS)
             self.assertFalse(any(key[0] == "POST" for key, _ in calls))
+
+    def test_lines_missing_account_or_tax_has_actionable_message(self):
+        cases = [
+            (
+                [{"title": "Invented service", "gross": "733.30", "tax": "VM81"}],
+                "account is missing",
+            ),
+            (
+                [{"title": "Invented service", "gross": "733.30", "account": "6000"}],
+                "tax is missing",
+            ),
+        ]
+        for rows, message in cases:
+            path = self.line_file(rows)
+            with self.subTest(message=message), self.assertRaisesRegex(
+                SystemExit, message
+            ):
+                cb.load_lines(
+                    path,
+                    "",
+                    "",
+                    standard_answers()[("GET", "/2.0/accounts")][0],
+                    standard_answers()[("GET", "/3.0/taxes")][0],
+                )
 
     def test_line_path_cannot_escape_private_through_symlink(self):
         path = os.path.join(cb.PRIVATE, "review-outside-link.json")

@@ -348,7 +348,7 @@ def check_private_path(path):
     return real
 
 
-def load_lines(path, default_account, default_tax, accounts, taxes):
+def load_lines(path, default_account, default_tax, accounts, taxes, title_limit=False):
     real = check_private_path(path)
     try:
         with open(real, encoding="utf-8") as f:
@@ -363,11 +363,20 @@ def load_lines(path, default_account, default_tax, accounts, taxes):
             raise SystemExit("refused line {}: expected title, gross, optional account and tax".format(index + 1))
         if not isinstance(row.get("title"), str) or not row["title"].strip():
             raise SystemExit("refused line {}: title is required".format(index + 1))
+        title = row["title"].strip()
+        if title_limit and len(title) > 80:
+            raise SystemExit("refused line {}: title exceeds 80 characters".format(index + 1))
         gross = checked_total(str(row.get("gross", "")))
-        account = resolve_account(accounts, str(row.get("account", default_account)))
-        tax = resolve_tax(taxes, str(row.get("tax", default_tax)))
+        account_no = row.get("account", default_account)
+        tax_code = row.get("tax", default_tax)
+        if not account_no:
+            raise SystemExit("refused line {}: account is missing, set it in the row or pass --account".format(index + 1))
+        if not tax_code:
+            raise SystemExit("refused line {}: tax is missing, set it in the row or pass --tax".format(index + 1))
+        account = resolve_account(accounts, str(account_no))
+        tax = resolve_tax(taxes, str(tax_code))
         result.append({"position": index, "amount": float(gross), "booking_account_id": account["id"],
-                       "tax_id": tax["id"], "title": row["title"].strip()})
+                       "tax_id": tax["id"], "title": title})
         total += gross
     return result, total
 
@@ -458,6 +467,30 @@ def report_bill(label, bill, expected_lines, expected_amount=None):
         raise SystemExit("{} read-back failed: multi-line bill split_into_line_items is false".format(label))
 
 
+def check_title_readback(bill, title, expected_lines, before, partner_id, amount_calc):
+    if bill.get("title") != title:
+        raise SystemExit("repair read-back failed: bill title changed")
+    lines = bill.get("line_items")
+    if not isinstance(lines, list) or len(lines) != len(expected_lines):
+        raise SystemExit("repair read-back failed: line count changed")
+    for index, (actual, expected) in enumerate(zip(lines, expected_lines), 1):
+        if not isinstance(actual, dict):
+            raise SystemExit("repair read-back failed: row {} is invalid".format(index))
+        if actual.get("title") != expected["title"]:
+            raise SystemExit("repair read-back failed: row {} title changed".format(index))
+        for field in ("booking_account_id", "tax_id"):
+            if actual.get(field) != expected.get(field):
+                raise SystemExit("repair read-back failed: row {} {} changed".format(index, field))
+    if bill.get("contact_partner_id") != partner_id:
+        raise SystemExit("repair read-back failed: contact_partner_id changed")
+    if bill.get("item_net") != before.get("item_net"):
+        raise SystemExit("repair read-back failed: item_net changed")
+    if bill.get("amount_calc") is None or checked_total(str(bill["amount_calc"])) != checked_total(str(amount_calc)):
+        raise SystemExit("repair read-back failed: amount_calc changed")
+    if vat_total(bill) != vat_total(before):
+        raise SystemExit("repair read-back failed: VAT total changed")
+
+
 def main(argv):
     parser = argparse.ArgumentParser(description="Create a supplier contact if needed and a draft bill.")
     parser.add_argument("--repair", help="repair one existing DRAFT by document number")
@@ -485,8 +518,12 @@ def main(argv):
     required = (args.file_uuid, args.nr, args.date, args.total, args.account, args.tax, args.text)
     if args.repair:
         if any((args.vendor, args.vendor_name, args.vendor_uid, args.file_uuid, args.nr, args.date,
-                args.total, args.text, args.currency is not None, args.exchange_rate, args.due_date)):
+                args.total, args.currency is not None, args.exchange_rate, args.due_date)):
             raise SystemExit("refused repair: create-bill arguments cannot be used with --repair")
+        if args.text is not None and not args.text.strip():
+            raise SystemExit("refused repair: --text must not be empty")
+        if args.text is not None and len(args.text.strip()) > 80:
+            raise SystemExit("refused repair: --text exceeds 80 characters")
         if (args.account or args.tax) and not args.lines:
             raise SystemExit("refused repair: --account and --tax are only defaults for --lines")
         if not args.repair.strip():
@@ -540,14 +577,53 @@ def main(argv):
         accounts, taxes = list_accounts(token), list_taxes(token)
         replacement_lines = None
         if args.lines:
-            replacement_lines, _ = load_lines(args.lines, args.account or "", args.tax or "", accounts, taxes)
+            replacement_lines, _ = load_lines(args.lines, args.account or "", args.tax or "", accounts, taxes,
+                                               title_limit=bool(args.text))
         print("contact partner id: {}".format(partner_id))
-        after = repair_body(before, partner_id, replacement_lines)
-        if replacement_lines is not None:
+        title_lines = None
+        if args.text is not None:
+            old_lines = before.get("line_items")
+            if not isinstance(old_lines, list) or not old_lines:
+                raise SystemExit("refused repair: bill has no line items")
+            try:
+                old_lines = sorted(old_lines, key=lambda line: line.get("position"))
+            except (AttributeError, TypeError):
+                raise SystemExit("refused repair: bill row position is invalid")
+            for index, old in enumerate(old_lines):
+                if not isinstance(old, dict) or old.get("position") != index or not isinstance(old.get("id"), str):
+                    raise SystemExit("refused repair: row {} has invalid id or position".format(index + 1))
+            if replacement_lines is None:
+                if len(old_lines) != 1:
+                    raise SystemExit("refused repair: --lines is needed for a bill with multiple rows")
+                titles = [args.text.strip()]
+            else:
+                if len(replacement_lines) != len(old_lines):
+                    raise SystemExit("refused repair: row count differs")
+                for index, (old, requested) in enumerate(zip(old_lines, replacement_lines), 1):
+                    for field in ("amount", "booking_account_id", "tax_id"):
+                        try:
+                            same = (Decimal(str(old.get(field))).quantize(Decimal("0.01")) == Decimal(str(requested.get(field))).quantize(Decimal("0.01"))) if field == "amount" else old.get(field) == requested.get(field)
+                        except InvalidOperation:
+                            same = False
+                        if not same:
+                            raise SystemExit("refused repair: row {} {} differs".format(index, field))
+                titles = [line["title"] for line in replacement_lines]
+            title_lines = [dict(allow_fields(line, LINE_ITEM_FIELDS), title=title)
+                           for line, title in zip(old_lines, titles)]
+        after = repair_body(before, partner_id, None if title_lines is not None else replacement_lines)
+        if args.text is not None:
+            after["title"] = args.text.strip()
+        if title_lines is not None:
+            after["line_items"] = title_lines
+        if replacement_lines is not None and title_lines is None:
             after["item_net"] = line_basis(replacement_lines, taxes)
         for key in sorted(set(before) | set(after)):
-            if key in after and before.get(key) != after[key]:
+            if key in after and before.get(key) != after[key] and not (args.text is not None and key in {"title", "line_items"}):
                 print("{}: {} -> {}".format(key, json.dumps(before.get(key)), json.dumps(after[key])))
+        if args.text is not None:
+            print("bill title: {} -> {}".format(json.dumps(before.get("title")), json.dumps(after["title"])))
+            for index, (old, new) in enumerate(zip(old_lines, after["line_items"]), 1):
+                print("row {} title: {} -> {}".format(index, json.dumps(old.get("title")), json.dumps(new.get("title"))))
         if not args.yes:
             print("dry run: nothing updated; add --yes to repair")
             return
@@ -563,6 +639,9 @@ def main(argv):
         print(summary)
         record_result(summary)
         report_bill("repair", readback, len(after["line_items"]), Decimal(str(after["amount_calc"])))
+        if args.text is not None:
+            check_title_readback(readback, after["title"], after["line_items"], before,
+                                 partner_id, after["amount_calc"])
         return
 
     contacts = list_contacts(token)
