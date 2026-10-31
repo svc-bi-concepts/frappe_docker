@@ -2085,7 +2085,7 @@ class FillContactTest(unittest.TestCase):
             self.assertEqual(kept, [])
 
     def test_title_and_lead_flags_refuse_dry_run_and_yes_without_post(self):
-        for key, value in (("title_id", 1), ("is_lead", True)):
+        for key, value in (("title_id", 1), ("title_id", 0), ("is_lead", True)):
             for yes in (False, True):
                 before = self.contact()
                 before[key] = value
@@ -2151,6 +2151,26 @@ class FillContactTest(unittest.TestCase):
         self.assertEqual(len(sent), 1)
         self.assertIn("title_id", _body(sent[0]))
         record.assert_not_called()
+
+    def test_fake_rejects_each_unsupported_or_missing_required_edit_field(self):
+        body, _, _ = cb.fill_contact_plan(self.contact(), VENDOR)
+        invalid = [dict(body, **{key: None}) for key in ("title_id", "is_lead")]
+        for key in ("contact_type_id", "name_1", "user_id", "owner_id"):
+            invalid.append(
+                {field: value for field, value in body.items() if field != key}
+            )
+        for candidate in invalid:
+            with self.subTest(fields=sorted(candidate)):
+                urlopen, calls = fake_bexio({("POST", "/2.0/contact/42"): [{}]})
+                request = cb.urllib.request.Request(
+                    "https://example.invalid/2.0/contact/42",
+                    data=json.dumps(candidate).encode("utf-8"),
+                    method="POST",
+                )
+                with self.assertRaises(urllib.error.HTTPError) as error:
+                    urlopen(request)
+                self.assertEqual(error.exception.code, 422)
+                self.assertEqual(len(calls), 1)
 
     def test_populated_website_and_text_remarks_survive_the_sent_body(self):
         before = dict(
