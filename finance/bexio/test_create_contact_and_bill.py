@@ -27,6 +27,22 @@ from private_guard import (  # every test below runs against a temp private fold
 
 TOKEN = "tok-invented-not-real"
 FAKE_BILL_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+BILL_REPLACE_REQUIRED_FIELDS = {
+    "document_no",
+    "title",
+    "supplier_id",
+    "amount_calc",
+    "manual_amount",
+    "contact_partner_id",
+    "bill_date",
+    "due_date",
+    "currency_code",
+    "item_net",
+    "attachment_ids",
+    "address",
+    "line_items",
+    "discounts",
+}
 ARGS = [
     "--vendor",
     os.path.join(
@@ -114,6 +130,11 @@ def fake_bexio(answers):
         url = urllib.parse.urlparse(req.full_url)
         key = (req.get_method(), url.path)
         calls.append((key, req))
+        if req.get_method() == "PUT" and url.path.startswith("/4.0/purchase/bills/"):
+            body = json.loads(req.data.decode("utf-8"))
+            missing = BILL_REPLACE_REQUIRED_FIELDS - set(body)
+            if missing:
+                raise urllib.error.HTTPError(req.full_url, 400, "Bad Request", {}, None)
         if not queues.get(key):
             raise AssertionError("unexpected request {} {}".format(*key))
         item = queues[key].pop(0)
@@ -1048,13 +1069,69 @@ class LinesRepairTest(unittest.TestCase):
                 self.assertEqual(len(puts), int(write))
                 if write:
                     body = _body(puts[0])
-                    self.assertEqual(set(body), {"title", "line_items"})
-                    self.assertEqual(body["title"], "Renamed")
-                    expected = cb.allow_fields(
-                        before["line_items"][0], cb.LINE_ITEM_FIELDS
-                    )
+                    expected = cb.repair_body(before, 9, None)
                     expected["title"] = "Renamed"
-                    self.assertEqual(body["line_items"], [expected])
+                    expected["line_items"][0]["title"] = "Renamed"
+                    self.assertEqual(body, expected)
+
+    def test_text_lines_write_sends_full_bill_with_only_titles_changed(self):
+        path = os.path.join(cb.PRIVATE, "title-lines-test.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(
+                [
+                    {"title": "First renamed row", "gross": "366.65"},
+                    {"title": "Second renamed row", "gross": "366.65"},
+                ],
+                f,
+            )
+        before = self.draft()
+        before.update(
+            contact_partner_id=9, manual_amount=False, split_into_line_items=True
+        )
+        before["line_items"] = [
+            dict(before["line_items"][0], amount=366.65),
+            {
+                "id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+                "position": 1,
+                "title": "Existing second row",
+                "tax_id": 23,
+                "amount": 366.65,
+                "booking_account_id": 16,
+            },
+        ]
+        for row in before["line_items"]:
+            row["tax_calc"] = 0
+        readback = dict(before)
+        readback["title"] = "Renamed"
+        readback["line_items"] = [
+            dict(before["line_items"][0], title="First renamed row"),
+            dict(before["line_items"][1], title="Second renamed row"),
+        ]
+        answers = self.repair_answers(before, readback)
+        answers[("PUT", "/4.0/purchase/bills/" + FAKE_BILL_ID)] = [{}]
+        urlopen, calls = fake_bexio(answers)
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            _run(
+                [
+                    "--repair",
+                    "DOC-TEST-1",
+                    "--text",
+                    "Renamed",
+                    "--lines",
+                    path,
+                    "--account",
+                    "6000",
+                    "--tax",
+                    "VM81",
+                    "--yes",
+                ]
+            )
+        body = _body(_sent(calls, "PUT", "/4.0/purchase/bills/" + FAKE_BILL_ID)[0])
+        expected = cb.repair_body(before, 9, None)
+        expected["title"] = "Renamed"
+        expected["line_items"][0]["title"] = "First renamed row"
+        expected["line_items"][1]["title"] = "Second renamed row"
+        self.assertEqual(body, expected)
 
     def test_text_repair_requires_plain_repair_before_dry_run_or_write(self):
         for field, value in (("amount_calc", None), ("contact_partner_id", 12)):

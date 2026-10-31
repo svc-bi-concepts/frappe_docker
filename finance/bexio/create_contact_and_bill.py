@@ -621,9 +621,10 @@ def main(argv):
                            for line, title in zip(old_lines, titles)]
         after = repair_body(before, partner_id, None if title_lines is not None else replacement_lines)
         if args.text is not None:
-            # A title repair must not resend normalized bill fields: Bexio may
-            # interpret omitted or rewritten fields as edits of their own.
-            after = {"title": args.text.strip(), "line_items": title_lines}
+            # Bill updates replace the full resource, so keep the prepared body
+            # intact and change only the bill and row titles.
+            after["title"] = args.text.strip()
+            after["line_items"] = title_lines
         if replacement_lines is not None and title_lines is None:
             after["item_net"] = line_basis(replacement_lines, taxes)
         for key in sorted(set(before) | set(after)):
