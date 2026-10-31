@@ -614,9 +614,9 @@ def main(argv):
                            for line, title in zip(old_lines, titles)]
         after = repair_body(before, partner_id, None if title_lines is not None else replacement_lines)
         if args.text is not None:
-            after["title"] = args.text.strip()
-        if title_lines is not None:
-            after["line_items"] = title_lines
+            # A title repair must not resend normalized bill fields: Bexio may
+            # interpret omitted or rewritten fields as edits of their own.
+            after = {"title": args.text.strip(), "line_items": title_lines}
         if replacement_lines is not None and title_lines is None:
             after["item_net"] = line_basis(replacement_lines, taxes)
         for key in sorted(set(before) | set(after)):
@@ -641,10 +641,12 @@ def main(argv):
         print(summary)
         record_result(summary)
         try:
-            report_bill("repair", readback, len(after["line_items"]), Decimal(str(after["amount_calc"])))
+            report_bill("repair", readback, len(after["line_items"]),
+                        checked_total(str(before.get("amount_calc"))) if args.text is not None
+                        else Decimal(str(after["amount_calc"])))
             if args.text is not None:
                 check_title_readback(readback, after["title"], after["line_items"], before,
-                                     partner_id, after["amount_calc"])
+                                     before.get("contact_partner_id"), before.get("amount_calc"))
         except SystemExit as error:
             record_result(str(error))
             raise

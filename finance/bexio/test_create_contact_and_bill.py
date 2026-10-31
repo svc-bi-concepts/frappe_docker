@@ -1014,13 +1014,9 @@ class LinesRepairTest(unittest.TestCase):
     def test_text_single_row_write_and_unrepaired_dry_run(self):
         before = self.draft()
         before["line_items"][0]["tax_calc"] = 0
-        before["amount_calc"] = None
         readback = dict(
             before,
             title="Renamed",
-            contact_partner_id=9,
-            manual_amount=False,
-            amount_calc=before["amount_man"],
         )
         readback["line_items"] = [dict(before["line_items"][0], title="Renamed")]
         for write in (False, True):
@@ -1035,12 +1031,13 @@ class LinesRepairTest(unittest.TestCase):
                         ["--repair", "DOC-TEST-1", "--text", "  Renamed  "]
                         + (["--yes"] if write else [])
                     )
-                self.assertIn("amount_calc: null ->", out)
-                self.assertIn("contact_partner_id: 12 -> 9", out)
+                self.assertNotIn("amount_calc:", out)
+                self.assertNotIn("contact_partner_id:", out)
                 puts = _sent(calls, "PUT", "/4.0/purchase/bills/" + FAKE_BILL_ID)
                 self.assertEqual(len(puts), int(write))
                 if write:
                     body = _body(puts[0])
+                    self.assertEqual(set(body), {"title", "line_items"})
                     self.assertEqual(body["title"], "Renamed")
                     expected = cb.allow_fields(
                         before["line_items"][0], cb.LINE_ITEM_FIELDS
