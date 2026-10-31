@@ -1068,7 +1068,7 @@ class RepairReviewTest(unittest.TestCase):
 
     def test_readback_failures_send_one_write_and_never_retry(self):
         for repair in [False, True]:
-            for response, message in [
+            cases = [
                 (None, "bill object"),
                 ({"amount_calc": None}, "amount_calc is null"),
                 (
@@ -1087,7 +1087,19 @@ class RepairReviewTest(unittest.TestCase):
                     },
                     "expected 2 line items, got 1",
                 ),
-            ]:
+            ]
+            if repair:
+                cases.append(
+                    (
+                        {
+                            "amount_calc": 700.0,
+                            "line_items": [{}, {}],
+                            "split_into_line_items": True,
+                        },
+                        "amount_calc changed from 733.3 to 700.0",
+                    )
+                )
+            for response, message in cases:
                 path = self.line_file(
                     [
                         {"title": "Invented A", "gross": "366.65"},

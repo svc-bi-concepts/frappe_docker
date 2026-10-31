@@ -116,7 +116,8 @@ refresh token ride along, so the blessed read script holds nothing write-capable
 `client.py` takes the read token for every GET where it is set. `export.py` injects only
 that name too: it reads everything with the read token (live finding of 2026-10-14, see
 above). The write-capable `BEXIO_TOKEN` stays with
-`upload_bill.py` and `create_contact_and_bill.py`, which POST.
+`upload_bill.py` and `create_contact_and_bill.py`, which POST; repair also PUTs one reviewed
+individual bill endpoint.
 
 ## One run for everything (`--complete`)
 
