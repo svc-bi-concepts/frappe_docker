@@ -720,6 +720,7 @@ class LinesRepairTest(unittest.TestCase):
 
     def test_text_rename_lines_preserves_all_existing_ids_and_values(self):
         before = self.draft()
+        before["line_items"][0]["tax_calc"] = 0
         before["line_items"][0]["amount"] = 366.65
         before["line_items"].append(
             dict(
@@ -1010,6 +1011,7 @@ class LinesRepairTest(unittest.TestCase):
 
     def test_text_single_row_write_and_unrepaired_dry_run(self):
         before = self.draft()
+        before["line_items"][0]["tax_calc"] = 0
         before["amount_calc"] = None
         readback = dict(
             before,
