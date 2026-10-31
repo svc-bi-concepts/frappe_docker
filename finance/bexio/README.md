@@ -746,8 +746,9 @@ and `YARDR_ACTOR=Benchi`, so the mail reaches this yard under launchd's bare env
 ## Supplier bills (the only writes to bexio)
 
 `upload_bill.py` uploads a PDF to bexio's file inbox (Dateneingang), and
-`create_contact_and_bill.py` creates a supplier contact when needed and a draft bill. These are
-the only writers (Benchi, 2026-10-12 and 2026-10-29). `client.py` remains GET-only and OAuth
+`create_contact_and_bill.py` creates a supplier contact when needed, creates draft bills, and repairs
+existing DRAFT bills. These are the only writers (Benchi, 2026-10-12, 2026-10-29 and 2026-10-31).
+`client.py` remains GET-only and OAuth
 `SCOPE` remains read-only.
 
 ```sh
@@ -816,9 +817,11 @@ The yardmaster's first-run sequence is:
    to an exact name match. A name match with a different recorded UID is refused. Contacts without a
    UID line can still be reused by exact name.
 
-3. Run `finance/bexio/create_contact_and_bill.py --vendor <file> --file-uuid <uuid> --nr <number> --date <YYYY-MM-DD> --total <invoice-total> --account <account-no> --tax <input-VAT-code> --text <text>` as a dry run. For ordinary VAT codes, total is the gross invoice total. For a reverse-charge code (BZM77, BZM81, BZB77 or BZB81), total is the amount on the invoice, which is net and also the bill's whole total. Review the resolved account, input VAT code, currency and due date, then repeat with `--yes`. For a known contact, replace `--vendor <file>` with `--vendor-name <name>` and/or `--vendor-uid <uid>`. Currency defaults to CHF; due date defaults to 30 days after the bill date. For another currency, also pass `--exchange-rate <CHF-per-unit>` from Benchi; the script includes the required exchange rate and rounded CHF base amount for these CHF books.
+3. Run `finance/bexio/create_contact_and_bill.py --vendor <file> --file-uuid <uuid> --nr <number> --date <YYYY-MM-DD> --total <invoice-total> --account <account-no> --tax <input-VAT-code> --text <text>` as a dry run. For ordinary VAT codes, total is the gross invoice total. For a reverse-charge code (BZM77, BZM81, BZB77 or BZB81), total is the amount on the invoice, which is net and also the bill's whole total. The script reads `/3.0/users/me` for `contact_partner_id` and sends `manual_amount: false` with `amount_calc` equal to the line total. After creation it reads the bill back and reports the line count, split flag, partner id, calculated amount presence and VAT total. Review the resolved account, input VAT code, currency and due date, then repeat with `--yes`. For multiple lines, pass a private JSON file with `--lines <file>`; each row has `title`, positive `gross`, and optional `account` and `tax` values, which fall back to the command's defaults. The gross line amounts must sum to `--total`; reverse-charge lines alone use the net basis. For a known contact, replace `--vendor <file>` with `--vendor-name <name>` and/or `--vendor-uid <uid>`. Currency defaults to CHF; due date defaults to 30 days after the bill date. For another currency, also pass `--exchange-rate <CHF-per-unit>` from Benchi; the script includes the required exchange rate and rounded CHF base amount for these CHF books.
 4. Mail Benchi the vendor, invoice number, date, total and bexio ids from the result file. The bill
    is a draft only; Benchi books and pays it. Ask Benchi first if the account or VAT code is in doubt.
+
+5. To repair a draft, run `finance/bexio/create_contact_and_bill.py --repair <document-no>` as a dry run; add `--lines <file>` to replace its lines. A replacement must total exactly the current bill amount. Only DRAFT bills are accepted, and `--yes` sends a PUT to the individual bill endpoint after a fresh status read. Repair retains the bill's document number, supplier, dates, currency, attachments, address and discounts. The partner and calculated amount are set for booking, and the result is read back with the VAT total before and after. A bill with multiple lines is marked `split_into_line_items: true`.
 
 ## Tests never touch private/
 
