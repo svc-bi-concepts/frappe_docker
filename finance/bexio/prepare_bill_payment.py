@@ -24,12 +24,15 @@ import client  # noqa: E402
 
 REQUESTS = {
     ("GET", "/4.0/purchase/bills"),
+    ("GET", "/4.0/purchase/bills/{id}"),
+    ("PUT", "/4.0/purchase/bills/{id}/bookings/BOOKED"),
     ("GET", "/4.0/purchase/outgoing-payments"),
     ("GET", "/3.0/banking/accounts"),
     ("POST", "/4.0/purchase/outgoing-payments"),
 }
 BILL_ID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\Z")
 BILL_PATH = re.compile(r"/4\.0/purchase/bills/" + BILL_ID.pattern)
+BOOKING_PATH = re.compile(r"/4\.0/purchase/bills/" + BILL_ID.pattern[:-2] + r"/bookings/BOOKED\Z")
 PRIVATE = os.environ.get("BEXIO_PRIVATE") or "/Users/bsaladin/ws_yardr_finance/private"
 PAYMENT_KEYS = {"type", "iban", "name", "street", "house_no", "postcode", "city", "country", "message", "reference_no", "execution_date"}
 ADDRESS_KEYS = ("name", "street", "house_no", "postcode", "city", "country")
@@ -43,7 +46,13 @@ class RefusedRequest(Exception):
 
 
 def _send(method, path, token, body=None, query=None):
-    if (method, path) not in REQUESTS and not (method == "GET" and BILL_PATH.fullmatch(path)) and not (method == "PUT" and re.fullmatch(r"/4\.0/purchase/bills/" + BILL_ID.pattern[:-2] + r"/bookings/BOOKED", path)):
+    reviewed_path = path
+    if BILL_PATH.fullmatch(path):
+        reviewed_path = "/4.0/purchase/bills/{id}"
+    elif BOOKING_PATH.fullmatch(path):
+        reviewed_path = "/4.0/purchase/bills/{id}/bookings/BOOKED"
+    # Templates document the set; they are never literal request paths.
+    if "{" in path or (method, reviewed_path) not in REQUESTS:
         raise RefusedRequest("refused {} {}: this script does not send it".format(method, path))
     url = client.BASE_URL + path
     if query:
@@ -79,6 +88,23 @@ def check_private_path(path):
     if not os.path.isfile(real) or not real.startswith(os.path.realpath(PRIVATE) + os.sep):
         raise SystemExit("refused {}: payment file must be under the private folder".format(path))
     return real
+
+
+def valid_creditor_reference(value):
+    if not re.fullmatch(r"RF[0-9]{2}[A-Z0-9]{1,21}", value):
+        return False
+    numeric = "".join(str(ord(c) - 55) if c.isalpha() else c for c in value[4:] + value[:4])
+    return int(numeric) % 97 == 1
+
+
+def valid_qr_reference(value):
+    if not re.fullmatch(r"[0-9]{27}", value):
+        return False
+    carry = 0
+    table = (0, 9, 4, 6, 8, 2, 7, 1, 3, 5)
+    for digit in value[:-1]:
+        carry = table[(carry + int(digit)) % 10]
+    return (10 - carry) % 10 == int(value[-1])
 
 
 def load_payment(path):
@@ -121,8 +147,12 @@ def load_payment(path):
             raise SystemExit("refused payment file: QR requires reference_no")
         if payment.get("message"):
             raise SystemExit("refused payment file: message is only valid for IBAN")
-        if not 30000 <= int(iban[4:9]) <= 31999:
-            raise SystemExit("refused payment file: QR requires a QR-IBAN with a creditor reference")
+        reference = payment["reference_no"]
+        if 30000 <= int(iban[4:9]) <= 31999:
+            if not valid_qr_reference(reference):
+                raise SystemExit("refused payment file: QR-IBAN requires a valid QR reference")
+        elif not valid_creditor_reference(reference):
+            raise SystemExit("refused payment file: plain IBAN requires a valid creditor reference")
     payment = dict(payment)
     payment["iban"] = iban
     return payment
@@ -159,6 +189,8 @@ def _payments(token, bill_id):
 
 
 def known_ibans(token, supplier_id):
+    if supplier_id is None:
+        raise SystemExit("refused: bill supplier_id is missing; cannot check receiver history")
     found = set()
     for bill in _list_bills(token, supplier_id):
         bill_id = bill.get("id")
@@ -252,7 +284,13 @@ def validate_bill(bill, outgoing_payments):
 def validate_bank_account(matches):
     if len(matches) != 1 or matches[0].get("type") != "bank" or matches[0].get("currency_id") != CHF_CURRENCY_ID:
         raise SystemExit("refused: sender account must be a CHF bank account")
-    return matches[0]
+    account = matches[0]
+    for key in ("iban_nr", "owner", "owner_address", "owner_zip", "owner_city"):
+        if not str(account.get(key) or "").strip():
+            raise SystemExit("refused: sender account {} is missing".format(key))
+    if not str(account["iban_nr"]).replace(" ", "").upper().startswith("CH"):
+        raise SystemExit("refused: sender account must have a domestic Swiss IBAN")
+    return account
 
 
 def main(argv=None):
@@ -298,7 +336,17 @@ def main(argv=None):
     print(json.dumps(body, ensure_ascii=False, indent=2))
     if not args.yes:
         print("dry run: nothing sent; add --yes to book and create the open payment")
+        record_result("bill payment dry run: checks=passed, first_to_iban={}".format(payment["iban"] not in history))
         return
+    try:
+        prepare_payment(token, bill_id, bill, body, payment["iban"] not in history)
+    except (SystemExit, OSError, ValueError):
+        # No error detail, amount or receiver data belongs in the result log.
+        record_result("bill payment preparation failed; check booking and outgoing payments before rerun")
+        raise
+
+
+def prepare_payment(token, bill_id, bill, body, first_to_iban):
     if bill["status"] == "DRAFT":
         _send("PUT", "/4.0/purchase/bills/{}/bookings/BOOKED".format(bill_id), token)
     # Never retry POST: the server may have stored it before a connection failed.
@@ -311,7 +359,9 @@ def main(argv=None):
         raise SystemExit("payment created but not found in read-back; check outgoing payments")
     status = str(created_row.get("status", "unknown"))
     print("outgoing payment status: {}".format(status))
-    record_result("prepared bill payment: status={}, first_to_iban={}".format(status, payment["iban"] not in history))
+    record_result("prepared bill payment: status={}, first_to_iban={}".format(status, first_to_iban))
+    if status != "PENDING":
+        raise SystemExit("payment is not PENDING; check outgoing payments before running again")
 
 
 if __name__ == "__main__":

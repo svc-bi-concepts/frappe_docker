@@ -7,6 +7,7 @@ import json
 import os
 import tempfile
 import unittest
+import urllib.error
 from unittest import mock
 
 import launcher
@@ -82,7 +83,7 @@ class PaymentFileTest(unittest.TestCase):
     def test_refuses_plain_iban_for_qr_and_qr_iban_for_iban(self):
         with self.assertRaisesRegex(SystemExit, "QR-IBAN"):
             pp.load_payment(self.payment_file(dict(PAYMENT, iban=QR_IBAN)))
-        with self.assertRaisesRegex(SystemExit, "QR-IBAN"):
+        with self.assertRaisesRegex(SystemExit, "creditor reference"):
             pp.load_payment(
                 self.payment_file(
                     dict(
@@ -94,6 +95,23 @@ class PaymentFileTest(unittest.TestCase):
                 )
             )
 
+    def test_plain_iban_with_valid_creditor_reference_is_accepted(self):
+        payment = dict(PAYMENT, type="QR", reference_no="RF18539007547034")
+        payment.pop("message")
+        self.assertEqual(
+            pp.load_payment(self.payment_file(payment))["iban"], NORMAL_IBAN
+        )
+
+    def test_invalid_qr_reference_is_refused(self):
+        payment = dict(PAYMENT, type="QR", iban=QR_IBAN, reference_no="bad")
+        payment.pop("message")
+        with self.assertRaisesRegex(SystemExit, "valid QR reference"):
+            pp.load_payment(self.payment_file(payment))
+
+    def test_payment_file_must_be_private(self):
+        with self.assertRaisesRegex(SystemExit, "private folder"):
+            pp.load_payment(__file__)
+
 
 class PlanTest(unittest.TestCase):
     def test_the_reviewed_request_set_is_exact(self):
@@ -101,6 +119,8 @@ class PlanTest(unittest.TestCase):
             pp.REQUESTS,
             {
                 ("GET", "/4.0/purchase/bills"),
+                ("GET", "/4.0/purchase/bills/{id}"),
+                ("PUT", "/4.0/purchase/bills/{id}/bookings/BOOKED"),
                 ("GET", "/4.0/purchase/outgoing-payments"),
                 ("GET", "/3.0/banking/accounts"),
                 ("POST", "/4.0/purchase/outgoing-payments"),
@@ -110,6 +130,126 @@ class PlanTest(unittest.TestCase):
             pp._send("POST", "/4.0/banking/payments", "token")
         with self.assertRaises(pp.RefusedRequest):
             pp._send("POST", "/4.0/purchase/outgoing-payments/send", "token")
+
+    def test_dynamic_allowlist_only_accepts_bill_get_and_booking_put(self):
+        bill_path = "/4.0/purchase/bills/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        allowed = {
+            (method, path) for method, path in pp.REQUESTS if "{" not in path
+        } | {
+            ("GET", bill_path),
+            ("PUT", bill_path + "/bookings/BOOKED"),
+        }
+        paths = (
+            {path for _, path in allowed}
+            | {path for _, path in pp.REQUESTS}
+            | {
+                bill_path + "/bookings/DRAFT",
+                bill_path + "/send",
+                bill_path + "?send=true",
+                "/4.0/banking/payments",
+            }
+        )
+        for path in paths:
+            for method in ("GET", "POST", "PUT", "DELETE", "PATCH"):
+                with self.subTest(method=method, path=path), mock.patch.object(
+                    pp.urllib.request, "urlopen"
+                ) as http:
+                    http.return_value.__enter__.return_value.read.return_value = b"{}"
+                    if (method, path) in allowed:
+                        pp._send(method, path, "token")
+                        http.assert_called_once()
+                    else:
+                        with self.assertRaises(pp.RefusedRequest):
+                            pp._send(method, path, "token")
+                        http.assert_not_called()
+
+    def test_403_stops_without_retry(self):
+        with mock.patch.object(
+            pp.urllib.request,
+            "urlopen",
+            side_effect=urllib.error.HTTPError("url", 403, "denied", {}, None),
+        ) as http:
+            with self.assertRaisesRegex(SystemExit, "token right is missing"):
+                pp._send("POST", "/4.0/purchase/outgoing-payments", "token", body={})
+            http.assert_called_once()
+
+    def test_supplier_history_reads_each_bill(self):
+        bills = [
+            {"id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"},
+            {"id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"},
+        ]
+        with mock.patch.object(
+            pp, "_list_bills", return_value=bills
+        ) as listing, mock.patch.object(
+            pp,
+            "_payments",
+            side_effect=[
+                [{"receiver_iban": NORMAL_IBAN}],
+                [{"receiver_iban": QR_IBAN}],
+            ],
+        ) as payments:
+            self.assertEqual(pp.known_ibans("token", 12), {NORMAL_IBAN, QR_IBAN})
+            listing.assert_called_once_with("token", 12)
+            self.assertEqual(payments.call_count, 2)
+        with self.assertRaisesRegex(SystemExit, "supplier_id"):
+            pp.known_ibans("token", None)
+
+    def test_missing_sender_fields_are_refused_before_booking(self):
+        account = dict(id=4, type="bank", currency_id=1)
+        with self.assertRaisesRegex(SystemExit, "iban_nr"):
+            pp.validate_bank_account([account])
+
+    def test_execution_date_default_and_future_bill_weekend(self):
+        today = datetime.date(2026, 1, 5)
+        bill = {"bill_date": "2026-01-17", "due_date": "2026-01-18"}
+        self.assertEqual(
+            pp.checked_execution_date(None, bill, today), datetime.date(2026, 1, 19)
+        )
+        for value in ("2026-01-17", "2026-01-18", "2025-12-01"):
+            self.assertEqual(
+                pp.checked_execution_date(
+                    value, {"bill_date": "2026-01-01"}, datetime.date(2026, 1, 18)
+                ),
+                datetime.date(2026, 1, 19),
+            )
+        for value in (None, "not-a-date"):
+            with self.assertRaises(SystemExit):
+                pp.checked_execution_date(value, {"bill_date": "2026-01-01"}, today)
+
+    def test_network_failure_never_retries_post(self):
+        with mock.patch.object(
+            pp.urllib.request, "urlopen", side_effect=urllib.error.URLError("offline")
+        ) as http:
+            with self.assertRaisesRegex(SystemExit, "could not reach"):
+                pp._send("POST", "/4.0/purchase/outgoing-payments", "token", body={})
+            http.assert_called_once()
+
+    def test_pagination_keeps_supplier_and_bill_filters(self):
+        bill_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        for run, path, filters, items in (
+            (
+                lambda: pp._list_bills("token", 12),
+                "/4.0/purchase/bills",
+                {"supplier_id": 12},
+                {"data": [{}] * 500},
+            ),
+            (
+                lambda: pp._payments("token", bill_id),
+                "/4.0/purchase/outgoing-payments",
+                {"bill_id": bill_id},
+                {"data": [{}] * 500},
+            ),
+        ):
+            with mock.patch.object(
+                pp, "_send", side_effect=[items, {"data": []}]
+            ) as send:
+                self.assertEqual(len(run()), 500)
+                self.assertEqual(
+                    send.call_args_list[1],
+                    mock.call(
+                        "GET", path, "token", query=dict(filters, page=2, limit=500)
+                    ),
+                )
 
     def test_draft_amount_calc_null_is_refused_with_repair_instruction(self):
         with self.assertRaisesRegex(SystemExit, "create_contact_and_bill.py --repair"):
@@ -137,7 +277,16 @@ class PlanTest(unittest.TestCase):
         )
 
     def test_sender_must_be_unique_chf_bank_account(self):
-        account = {"id": 4, "type": "bank", "currency_id": 1}
+        account = dict(
+            id=4,
+            type="bank",
+            currency_id=1,
+            iban_nr=NORMAL_IBAN,
+            owner="Example Sender",
+            owner_address="Example Road",
+            owner_zip="8000",
+            owner_city="Exampletown",
+        )
         self.assertEqual(pp.validate_bank_account([account]), account)
         for matches in (
             [],
@@ -252,7 +401,14 @@ class MainSafetyTest(unittest.TestCase):
             "owner_country_code": "CH",
         }
 
-    def run_plan(self, status="DRAFT", yes=False, history=None, send_side_effect=None):
+    def run_plan(
+        self,
+        status="DRAFT",
+        yes=False,
+        history=None,
+        send_side_effect=None,
+        accept=False,
+    ):
         self.bill["status"] = status
         calls = []
         outgoing = [[], [{"id": self.created["id"], "status": "PENDING"}]]
@@ -297,6 +453,7 @@ class MainSafetyTest(unittest.TestCase):
                         "4",
                     ]
                     + (["--yes"] if yes else [])
+                    + (["--accept-new-iban"] if accept else [])
                 )
         return calls, output.getvalue()
 
@@ -337,6 +494,58 @@ class MainSafetyTest(unittest.TestCase):
             self.assertFalse(
                 any(call.args[0] in {"PUT", "POST"} for call in send.call_args_list)
             )
+
+    def test_accept_new_iban_flag_allows_reviewed_override(self):
+        calls, output = self.run_plan(yes=True, history={QR_IBAN}, accept=True)
+        self.assertIn("accepted by yardmaster", output)
+        self.assertEqual(sum(method == "POST" for method, _, _ in calls), 1)
+
+    def test_non_pending_readback_is_a_failure_and_recorded(self):
+        with mock.patch.object(
+            pp, "_payments", return_value=[dict(self.created, status="ERROR")]
+        ), mock.patch.object(pp, "_send", return_value=self.created), mock.patch.object(
+            pp, "record_result"
+        ) as record:
+            with contextlib.redirect_stdout(io.StringIO()), self.assertRaisesRegex(
+                SystemExit, "not PENDING"
+            ):
+                pp.prepare_payment("token", self.bill["id"], self.bill, {}, True)
+        self.assertIn("status=ERROR", record.call_args.args[0])
+
+    def test_missing_or_ambiguous_bill_never_writes(self):
+        for rows in ([], [self.bill, self.bill]):
+            with mock.patch.dict(
+                os.environ, {"BEXIO_TOKEN": "invented-token"}
+            ), mock.patch.object(
+                pp, "_list_bills", return_value=rows
+            ), mock.patch.object(
+                pp, "_send"
+            ) as send:
+                with self.assertRaisesRegex(SystemExit, "expected one bill"):
+                    pp.main(
+                        [
+                            "--bill",
+                            "INV-TEST-1",
+                            "--payment",
+                            self.path,
+                            "--bank-account-id",
+                            "4",
+                            "--yes",
+                        ]
+                    )
+                send.assert_not_called()
+
+    def test_failed_booking_never_posts_and_records_failure(self):
+        def fail(method, *args):
+            if method == "PUT":
+                raise SystemExit("simulated booking failure")
+            return NotImplemented
+
+        with mock.patch.object(pp, "record_result") as record:
+            with self.assertRaisesRegex(SystemExit, "booking failure"):
+                self.run_plan(yes=True, send_side_effect=fail)
+        record.assert_called_once()
+        self.assertNotIn(NORMAL_IBAN, record.call_args.args[0])
 
     def test_draft_and_booked_write_paths(self):
         draft, _ = self.run_plan(yes=True)
