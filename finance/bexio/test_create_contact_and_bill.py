@@ -765,6 +765,16 @@ class LinesRepairTest(unittest.TestCase):
                 )
         self.assertEqual(_sent(calls, "PUT", "/4.0/purchase/bills/" + FAKE_BILL_ID), [])
 
+    def test_repair_readback_rejects_changed_total(self):
+        readback = dict(self.draft(), contact_partner_id=9, manual_amount=False, amount_calc=700.0)
+        answers = self.repair_answers(readback=readback)
+        answers[("PUT", "/4.0/purchase/bills/" + FAKE_BILL_ID)] = [{}]
+        urlopen, calls = fake_bexio(answers)
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            with self.assertRaisesRegex(SystemExit, "amount_calc changed"):
+                _run(["--repair", "DOC-TEST-1", "--yes"])
+        self.assertEqual(len(_sent(calls, "PUT", "/4.0/purchase/bills/" + FAKE_BILL_ID)), 1)
+
     def test_readback_rejects_null_amount_calc(self):
         answers = standard_answers()
         answers[("GET", "/4.0/purchase/bills/" + FAKE_BILL_ID)] = [

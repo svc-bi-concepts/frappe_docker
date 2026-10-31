@@ -436,7 +436,7 @@ def vat_total(bill):
     return sum((Decimal(str(row["tax_calc"])) for row in lines), Decimal("0.00"))
 
 
-def report_bill(label, bill, expected_lines):
+def report_bill(label, bill, expected_lines, expected_amount=None):
     if not isinstance(bill, dict):
         raise SystemExit("{} read-back failed: expected a bill object".format(label))
     lines = bill.get("line_items")
@@ -448,6 +448,9 @@ def report_bill(label, bill, expected_lines):
     record_result(summary)
     if amount is None:
         raise SystemExit("{} read-back failed: amount_calc is null".format(label))
+    if expected_amount is not None and checked_total(str(amount)) != expected_amount:
+        raise SystemExit("{} read-back failed: amount_calc changed from {} to {}".format(
+            label, expected_amount, amount))
     if not isinstance(lines, list) or len(lines) != expected_lines:
         raise SystemExit("{} read-back failed: expected {} line items, got {}".format(
             label, expected_lines, len(lines) if isinstance(lines, list) else "unknown"))
@@ -559,7 +562,7 @@ def main(argv):
         summary = "VAT total: {} -> {}".format(vat_total(before), vat_total(readback))
         print(summary)
         record_result(summary)
-        report_bill("repair", readback, len(after["line_items"]))
+        report_bill("repair", readback, len(after["line_items"]), Decimal(str(after["amount_calc"])))
         return
 
     contacts = list_contacts(token)
