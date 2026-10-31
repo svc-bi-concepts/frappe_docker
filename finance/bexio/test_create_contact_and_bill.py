@@ -998,7 +998,9 @@ class LinesRepairTest(unittest.TestCase):
     def test_text_repair_rejects_unknown_vat_total(self):
         before = self.draft()
         before["line_items"][0].pop("tax_calc", None)
-        readback = dict(before, title="Renamed", contact_partner_id=9, manual_amount=False)
+        readback = dict(
+            before, title="Renamed", contact_partner_id=9, manual_amount=False
+        )
         readback["line_items"] = [dict(before["line_items"][0], title="Renamed")]
         answers = self.repair_answers(before, readback)
         answers[("GET", "/4.0/purchase/bills/" + FAKE_BILL_ID)].append(readback)
