@@ -692,6 +692,7 @@ class LinesRepairTest(unittest.TestCase):
         self,
     ):
         before = self.draft()
+        before["contact_partner_id"] = 9
         before["line_items"][0]["tax_calc"] = 0
         answers = self.repair_answers(before)
         urlopen, calls = fake_bexio(answers)
@@ -703,6 +704,7 @@ class LinesRepairTest(unittest.TestCase):
 
     def test_text_rename_multirow_requires_lines(self):
         before = self.draft()
+        before["contact_partner_id"] = 9
         before["line_items"][0]["amount"] = 366.65
         before["line_items"].append(
             dict(
@@ -720,6 +722,7 @@ class LinesRepairTest(unittest.TestCase):
 
     def test_text_rename_lines_preserves_all_existing_ids_and_values(self):
         before = self.draft()
+        before["contact_partner_id"] = 9
         before["line_items"][0]["tax_calc"] = 0
         before["line_items"][0]["amount"] = 366.65
         before["line_items"].append(
@@ -752,7 +755,7 @@ class LinesRepairTest(unittest.TestCase):
         before["line_items"].reverse()
         answers = self.repair_answers(before)
         readback = dict(
-            before, title="New title", contact_partner_id=9, manual_amount=False
+            before, title="New title", contact_partner_id=9, manual_amount=True
         )
         readback["split_into_line_items"] = True
         readback["line_items"] = [
@@ -810,6 +813,7 @@ class LinesRepairTest(unittest.TestCase):
 
     def test_text_lines_refuse_count_and_each_row_value_change(self):
         before = self.draft()
+        before["contact_partner_id"] = 9
         before["line_items"][0]["tax_calc"] = 0
         path = os.path.join(cb.PRIVATE, "text-rename-guard.json")
         cases = [
@@ -878,7 +882,9 @@ class LinesRepairTest(unittest.TestCase):
         path = os.path.join(cb.PRIVATE, "text-rename-long-row.json")
         with open(path, "w", encoding="utf-8") as f:
             json.dump([{"title": "x" * 81, "gross": "733.30"}], f)
-        urlopen, calls = fake_bexio(self.repair_answers())
+        prepared = self.draft()
+        prepared["contact_partner_id"] = 9
+        urlopen, calls = fake_bexio(self.repair_answers(prepared))
         with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
             with self.assertRaisesRegex(SystemExit, "exceeds 80"):
                 _run(
@@ -899,6 +905,7 @@ class LinesRepairTest(unittest.TestCase):
 
     def test_title_readback_rejects_each_planned_field_difference(self):
         before = self.draft()
+        before["contact_partner_id"] = 9
         before["line_items"][0]["tax_calc"] = 0
         expected = [dict(before["line_items"][0], title="New row title")]
         valid = dict(before, title="New title", contact_partner_id=9, amount_calc=733.3)
@@ -930,6 +937,7 @@ class LinesRepairTest(unittest.TestCase):
 
     def test_text_repair_refuses_fractional_amount_difference_without_rounding(self):
         before = self.draft()
+        before["contact_partner_id"] = 9
         before["line_items"][0]["amount"] = str(
             cb.Decimal(str(before["amount_man"])) + cb.Decimal(1) / 1000
         )
@@ -958,8 +966,9 @@ class LinesRepairTest(unittest.TestCase):
 
     def test_text_repair_readback_failures_are_recorded_without_retry(self):
         before = self.draft()
+        before["contact_partner_id"] = 9
         before["line_items"][0]["tax_calc"] = 0
-        valid = dict(before, title="Renamed", contact_partner_id=9, manual_amount=False)
+        valid = dict(before, title="Renamed", contact_partner_id=9, manual_amount=True)
         valid["line_items"] = [dict(before["line_items"][0], title="Renamed")]
         mutations = [
             (lambda bill: bill.update(title="Wrong"), "bill title"),
@@ -997,9 +1006,10 @@ class LinesRepairTest(unittest.TestCase):
 
     def test_text_repair_rejects_unknown_vat_total(self):
         before = self.draft()
+        before["contact_partner_id"] = 9
         before["line_items"][0].pop("tax_calc", None)
         readback = dict(
-            before, title="Renamed", contact_partner_id=9, manual_amount=False
+            before, title="Renamed", contact_partner_id=9, manual_amount=True
         )
         readback["line_items"] = [dict(before["line_items"][0], title="Renamed")]
         answers = self.repair_answers(before, readback)
@@ -1013,6 +1023,7 @@ class LinesRepairTest(unittest.TestCase):
 
     def test_text_single_row_write_and_unrepaired_dry_run(self):
         before = self.draft()
+        before["contact_partner_id"] = 9
         before["line_items"][0]["tax_calc"] = 0
         readback = dict(
             before,
@@ -1045,6 +1056,23 @@ class LinesRepairTest(unittest.TestCase):
                     expected["title"] = "Renamed"
                     self.assertEqual(body["line_items"], [expected])
 
+    def test_text_repair_requires_plain_repair_before_dry_run_or_write(self):
+        for field, value in (("amount_calc", None), ("contact_partner_id", 12)):
+            for write in (False, True):
+                with self.subTest(field=field, write=write):
+                    before = self.draft()
+                    before[field] = value
+                    urlopen, calls = fake_bexio(self.repair_answers(before))
+                    with mock.patch.object(
+                        cb.urllib.request, "urlopen", side_effect=urlopen
+                    ):
+                        with self.assertRaisesRegex(SystemExit, "run plain --repair first"):
+                            _run(
+                                ["--repair", "DOC-TEST-1", "--text", "Renamed"]
+                                + (["--yes"] if write else [])
+                            )
+                    self.assertFalse(any(key[0] != "GET" for key, _ in calls))
+
     def test_text_repair_keeps_fresh_draft_and_concurrent_edit_refusals(self):
         for field, value, message in [
             ("status", "BOOKED", "no longer DRAFT"),
@@ -1052,6 +1080,7 @@ class LinesRepairTest(unittest.TestCase):
         ]:
             with self.subTest(field=field):
                 before = self.draft()
+                before["contact_partner_id"] = 9
                 answers = self.repair_answers(before)
                 answers[("GET", "/4.0/purchase/bills/" + FAKE_BILL_ID)][1] = dict(
                     before, **{field: value}

@@ -576,6 +576,13 @@ def main(argv):
         partner_id = me.get("id") if isinstance(me, dict) else None
         if partner_id is None:
             raise SystemExit("bexio answered users/me without an id")
+        if args.text is not None and (
+            before.get("amount_calc") is None
+            or before.get("contact_partner_id") != partner_id
+        ):
+            raise SystemExit(
+                "refused title repair: run plain --repair first to prepare the draft"
+            )
         accounts, taxes = list_accounts(token), list_taxes(token)
         replacement_lines = None
         if args.lines:
@@ -627,7 +634,7 @@ def main(argv):
             for index, (old, new) in enumerate(zip(old_lines, after["line_items"]), 1):
                 print("row {} title: {} -> {}".format(index, json.dumps(old.get("title")), json.dumps(new.get("title"))))
         if not args.yes:
-            print("dry run: nothing updated; add --yes to repair")
+            print("dry run: nothing updated; title repair requires a prepared draft (run plain --repair first); add --yes to repair")
             return
         # Refuse a stale plan rather than overwrite an edit made while references were read.
         fresh = _send("GET", "/4.0/purchase/bills/" + bill_id, token)
