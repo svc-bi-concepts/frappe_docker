@@ -107,17 +107,65 @@ def amount_value(raw):
     return value
 
 
-def read_transfers(profile_id, token, recipient_id):
-    rows, offset = [], 0
+def iter_transfer_rows(profile_id, token):
+    offset = 0
     while True:
         page = _send("GET", "/{}/transfers".format(API_VERSION), token,
                      query={"profile": profile_id, "limit": 100, "offset": offset})
         if not isinstance(page, list):
             raise SystemExit("Wise answered the transfer list without rows")
-        rows.extend(row for row in page if str(row.get("targetAccount")) == str(recipient_id))
+        yield from page
         if len(page) < 100:
-            return rows
+            return
         offset += len(page)
+
+
+def read_transfers(profile_id, token, recipient_id):
+    return [row for row in iter_transfer_rows(profile_id, token)
+            if str(row.get("targetAccount")) == str(recipient_id)]
+
+
+def normalized_name(value):
+    return " ".join(str(value or "").casefold().split())
+
+
+def recipient_name(recipient):
+    value = recipient.get("name", "")
+    if isinstance(value, dict):
+        value = value.get("fullName", "")
+    return str(value or "")
+
+
+def find_recipients(profile_id, token, name):
+    completed = {}
+    for row in iter_transfer_rows(profile_id, token):
+        recipient_id = row.get("targetAccount")
+        if (row.get("status") == "outgoing_payment_sent"
+                and re.fullmatch(r"[0-9]+", str(recipient_id))):
+            recipient_id = int(recipient_id)
+            completed[recipient_id] = completed.get(recipient_id, 0) + 1
+
+    matches, unreadable = [], 0
+    needle = normalized_name(name)
+    for recipient_id in sorted(completed):
+        try:
+            recipient = _send("GET", "/{}/accounts/{}".format(API_VERSION, recipient_id), token)
+        except SystemExit:
+            unreadable += 1
+            continue
+        if (isinstance(recipient, dict)
+                and str(recipient.get("profileId")) == str(profile_id)
+                and needle in normalized_name(recipient_name(recipient))):
+            matches.append((recipient, completed[recipient_id]))
+    return matches, len(completed), unreadable
+
+
+def business_profile(token):
+    profiles = _send("GET", "/{}/profiles".format(API_VERSION), token)
+    businesses = [p for p in profiles if p.get("type") == "BUSINESS"] if isinstance(profiles, list) else []
+    if len(businesses) != 1:
+        raise SystemExit("refused: expected exactly one BUSINESS profile")
+    return businesses[0].get("id")
 
 
 def reference_of(row):
@@ -160,20 +208,48 @@ def validate_requirements(answer, details):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Prepare one unfunded Wise transfer.")
-    parser.add_argument("--recipient-id", required=True, type=int)
-    parser.add_argument("--invoice", required=True)
-    parser.add_argument("--amount", required=True)
-    parser.add_argument("--target-currency", required=True)
+    parser = argparse.ArgumentParser(description="Find paid Wise recipients or prepare one unfunded transfer.")
+    parser.add_argument("--find-recipient")
+    parser.add_argument("--recipient-id", type=int)
+    parser.add_argument("--invoice")
+    parser.add_argument("--amount")
+    parser.add_argument("--target-currency")
     parser.add_argument("--source-currency")
-    parser.add_argument("--planned-date", required=True)
+    parser.add_argument("--planned-date")
     parser.add_argument("--detail", action="append", default=[], metavar="KEY=VALUE")
-    parser.add_argument("--attempt", type=int, default=1)
+    parser.add_argument("--attempt", type=int)
     parser.add_argument("--yes", action="store_true")
     args = parser.parse_args(argv)
+    if args.find_recipient is not None:
+        if not args.find_recipient.strip():
+            raise SystemExit("refused: --find-recipient name must not be empty")
+        if (args.recipient_id is not None or args.invoice is not None or args.amount is not None
+                or args.target_currency is not None or args.planned_date is not None
+                or args.source_currency is not None or args.detail or args.attempt is not None or args.yes):
+            raise SystemExit("refused: --find-recipient cannot be combined with transfer arguments")
+    else:
+        for option in ("--recipient-id", "--invoice", "--amount", "--target-currency", "--planned-date"):
+            if getattr(args, option[2:].replace("-", "_")) is None:
+                raise SystemExit("refused: {} is required in transfer mode".format(option))
+        if args.attempt is None:
+            args.attempt = 1
     token = os.environ.get("FINANCE_WISE_TRANSFER_TOKEN")
     if not token:
         raise SystemExit("FINANCE_WISE_TRANSFER_TOKEN is not set; run through av inject")
+    if args.find_recipient is not None:
+        profile_id = business_profile(token)
+        matches, checked, unreadable = find_recipients(profile_id, token, args.find_recipient)
+        for recipient, count in matches:
+            active = "yes" if recipient.get("active") is True else "no"
+            print("id: {}; name: {}; currency: {}; active: {}; {}; completed transfers: {}".format(
+                recipient.get("id", ""), recipient_name(recipient), recipient.get("currency", ""),
+                active, recipient.get("longAccountSummary", ""), count))
+        if not matches:
+            print("no paid recipient matches")
+        print("paid recipients checked: {}, unreadable: {}".format(checked, unreadable))
+        if unreadable:
+            print("unreadable recipients were not matched")
+        return 0
     amount = amount_value(args.amount)
     if args.attempt < 1:
         raise SystemExit("refused: --attempt must be at least 1")
@@ -194,11 +270,7 @@ def main(argv=None):
             raise SystemExit("refused: unsupported --detail key {}".format(key))
         detail.append((key, value))
     args.detail = detail
-    profiles = _send("GET", "/{}/profiles".format(API_VERSION), token)
-    businesses = [p for p in profiles if p.get("type") == "BUSINESS"] if isinstance(profiles, list) else []
-    if len(businesses) != 1:
-        raise SystemExit("refused: expected exactly one BUSINESS profile")
-    profile_id = businesses[0].get("id")
+    profile_id = business_profile(token)
     recipient = _send("GET", "/{}/accounts/{}".format(API_VERSION, args.recipient_id), token)
     if str(recipient.get("profileId")) != str(profile_id) or recipient.get("active") is not True or recipient.get("currency") != args.target_currency:
         raise SystemExit("refused: recipient must be active, belong to the BUSINESS profile and use the target currency; Benchi must add or change recipients in the Wise UI")

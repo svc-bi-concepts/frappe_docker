@@ -1,6 +1,12 @@
 # Wise transfer preparation
 
-`prepare_wise_transfer.py` prepares one unfunded transfer to an existing, active recipient in the single business profile. It refuses unknown recipients, a recipient without completed transfer history, duplicate invoice references, unsupported details, and, with `--yes`, dates outside the allowed window. It never funds, cancels, creates or changes recipients, or writes to bexio or ERPNext.
+`prepare_wise_transfer.py` lists paid recipients matching `--find-recipient NAME` or prepares one unfunded transfer to an existing, active recipient in the single business profile. Search lists paid recipients only; Benchi adds new recipients in the Wise UI. Transfer preparation refuses unknown recipients, a recipient without completed transfer history, duplicate invoice references, unsupported details, and, with `--yes`, dates outside the allowed window. It never funds, cancels, creates or changes recipients, or writes to bexio or ERPNext.
+
+Find an existing paid recipient with a partial name match (case and repeated whitespace are ignored):
+
+```sh
+finance/wise/prepare_wise_transfer.py --find-recipient "Example Ltd"
+```
 
 Run a GET-only preview first:
 
