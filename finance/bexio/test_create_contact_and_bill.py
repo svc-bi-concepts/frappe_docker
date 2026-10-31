@@ -134,7 +134,13 @@ def fake_bexio(answers):
             body = json.loads(req.data.decode("utf-8"))
             missing = BILL_REPLACE_REQUIRED_FIELDS - set(body)
             if missing:
-                raise urllib.error.HTTPError(req.full_url, 400, "Bad Request", {}, None)
+                raise urllib.error.HTTPError(
+                    req.full_url,
+                    400,
+                    "Bad Request",
+                    {},
+                    io.BytesIO(b'{"error": "missing required field"}'),
+                )
         if not queues.get(key):
             raise AssertionError("unexpected request {} {}".format(*key))
         item = queues[key].pop(0)
@@ -689,6 +695,32 @@ class LinesRepairTest(unittest.TestCase):
         ]
         return answers
 
+    def writable_draft(self, before):
+        # Compare against the read bill independently of repair_body's normalization.
+        expected = json.loads(json.dumps(before))
+        for key in ("id", "status", "ignored"):
+            expected.pop(key)
+        expected["address"].pop("ignored")
+        for row in expected["line_items"]:
+            row.pop("tax_calc")
+            row.pop("ignored", None)
+        return expected
+
+    def test_fake_bill_replace_rejects_each_missing_required_field(self):
+        path = "/4.0/purchase/bills/" + FAKE_BILL_ID
+        complete = cb.repair_body(self.draft(), 9)
+        for field in sorted(BILL_REPLACE_REQUIRED_FIELDS):
+            with self.subTest(field=field):
+                body = dict(complete)
+                del body[field]
+                urlopen, calls = fake_bexio({("PUT", path): [{}]})
+                with mock.patch.object(
+                    cb.urllib.request, "urlopen", side_effect=urlopen
+                ):
+                    with self.assertRaisesRegex(SystemExit, "HTTP 400"):
+                        cb._send("PUT", path, TOKEN, body=body)
+                self.assertEqual(len(_sent(calls, "PUT", path)), 1)
+
     def test_non_draft_repair_refuses_before_put(self):
         for extra in ([], ["--text", "Renamed"]):
             with self.subTest(extra=extra):
@@ -1044,7 +1076,7 @@ class LinesRepairTest(unittest.TestCase):
 
     def test_text_single_row_write_and_unrepaired_dry_run(self):
         before = self.draft()
-        before["contact_partner_id"] = 9
+        before.update(contact_partner_id=9, manual_amount=False)
         before["line_items"][0]["tax_calc"] = 0
         readback = dict(
             before,
@@ -1069,7 +1101,7 @@ class LinesRepairTest(unittest.TestCase):
                 self.assertEqual(len(puts), int(write))
                 if write:
                     body = _body(puts[0])
-                    expected = cb.repair_body(before, 9, None)
+                    expected = self.writable_draft(before)
                     expected["title"] = "Renamed"
                     expected["line_items"][0]["title"] = "Renamed"
                     self.assertEqual(body, expected)
@@ -1127,7 +1159,7 @@ class LinesRepairTest(unittest.TestCase):
                 ]
             )
         body = _body(_sent(calls, "PUT", "/4.0/purchase/bills/" + FAKE_BILL_ID)[0])
-        expected = cb.repair_body(before, 9, None)
+        expected = self.writable_draft(before)
         expected["title"] = "Renamed"
         expected["line_items"][0]["title"] = "First renamed row"
         expected["line_items"][1]["title"] = "Second renamed row"
