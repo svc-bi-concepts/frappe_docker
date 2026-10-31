@@ -2075,6 +2075,7 @@ class FillContactTest(unittest.TestCase):
             before = dict.fromkeys(CONTACT_EDIT_ACCEPTED_FIELDS, None)
             before.update(self.contact(), mail=empty, url=empty, remarks=empty)
             before["contact_branch_ids"] = "4,5"
+            before["name_2"] = " \t\n"
             body, fills, kept, omitted = cb.fill_contact_plan(before, VENDOR)
             self.assertEqual(
                 fills,
@@ -2085,7 +2086,16 @@ class FillContactTest(unittest.TestCase):
                 },
             )
             self.assertEqual(
-                set(body), (set(cb.CONTACT_EDIT_FIELDS) - omitted) | set(fills)
+                body,
+                {
+                    **{
+                        key: value
+                        for key, value in before.items()
+                        if key in CONTACT_EDIT_ACCEPTED_FIELDS
+                        and value not in (None, "", 0)
+                    },
+                    **fills,
+                },
             )
             self.assertFalse(
                 any(
@@ -2094,6 +2104,17 @@ class FillContactTest(unittest.TestCase):
                 )
             )
             self.assertEqual(kept, [])
+
+    def test_every_populated_edit_field_is_sent_unchanged(self):
+        before = {key: "invented-" + key for key in CONTACT_EDIT_ACCEPTED_FIELDS}
+        before.update(self.contact())
+        body, fills, _, _ = cb.fill_contact_plan(before, VENDOR)
+        for key, value in before.items():
+            if key in CONTACT_EDIT_ACCEPTED_FIELDS and value not in (None, "", 0):
+                with self.subTest(key=key):
+                    self.assertEqual(body[key], value)
+        for key, value in fills.items():
+            self.assertEqual(body[key], value)
 
     def test_company_and_person_salutations_fill_in_dry_run_and_yes(self):
         shapes = (
@@ -2273,6 +2294,22 @@ class FillContactTest(unittest.TestCase):
                 self.assertEqual(error.exception.code, 422)
                 self.assertEqual(len(calls), 1)
 
+    def test_fake_rejects_zero_and_empty_string_edit_values_independently(self):
+        body = {"contact_type_id": 1, "name_1": "Invented", "user_id": 9, "owner_id": 9}
+        for key in CONTACT_EDIT_ACCEPTED_FIELDS:
+            for value in (0, ""):
+                with self.subTest(key=key, value=value):
+                    urlopen, calls = fake_bexio({("POST", "/2.0/contact/42"): [{}]})
+                    request = cb.urllib.request.Request(
+                        "https://example.invalid/2.0/contact/42",
+                        data=json.dumps(dict(body, **{key: value})).encode("utf-8"),
+                        method="POST",
+                    )
+                    with self.assertRaises(urllib.error.HTTPError) as error:
+                        urlopen(request)
+                    self.assertEqual(error.exception.code, 422)
+                    self.assertEqual(len(calls), 1)
+
     def test_populated_website_and_text_remarks_survive_the_sent_body(self):
         before = dict(
             self.contact(), url="https://existing.invalid", remarks="invented note"
@@ -2291,11 +2328,15 @@ class FillContactTest(unittest.TestCase):
             self.assertNotIn(before[key], out)
 
     def test_missing_required_fields_and_every_create_option_refuse(self):
+        absent = object()
         for key in ("contact_type_id", "name_1", "user_id", "owner_id", "nr"):
-            for value in (None, "", 0):
+            for value in (absent, None, "", 0):
                 for yes in (False, True):
                     before = dict(self.contact(), nr="C-42")
-                    before[key] = value
+                    if value is absent:
+                        del before[key]
+                    else:
+                        before[key] = value
                     answers = {("GET", "/2.0/contact/42"): [before]}
                     path = self.vendor_file()
                     urlopen, calls = fake_bexio(answers)
