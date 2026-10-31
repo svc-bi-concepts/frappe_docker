@@ -602,7 +602,7 @@ def main(argv):
                 for index, (old, requested) in enumerate(zip(old_lines, replacement_lines), 1):
                     for field in ("amount", "booking_account_id", "tax_id"):
                         try:
-                            same = (Decimal(str(old.get(field))).quantize(Decimal("0.01")) == Decimal(str(requested.get(field))).quantize(Decimal("0.01"))) if field == "amount" else old.get(field) == requested.get(field)
+                            same = (Decimal(str(old.get(field))) == Decimal(str(requested.get(field)))) if field == "amount" else old.get(field) == requested.get(field)
                         except InvalidOperation:
                             same = False
                         if not same:
@@ -638,10 +638,14 @@ def main(argv):
         summary = "VAT total: {} -> {}".format(vat_total(before), vat_total(readback))
         print(summary)
         record_result(summary)
-        report_bill("repair", readback, len(after["line_items"]), Decimal(str(after["amount_calc"])))
-        if args.text is not None:
-            check_title_readback(readback, after["title"], after["line_items"], before,
-                                 partner_id, after["amount_calc"])
+        try:
+            report_bill("repair", readback, len(after["line_items"]), Decimal(str(after["amount_calc"])))
+            if args.text is not None:
+                check_title_readback(readback, after["title"], after["line_items"], before,
+                                     partner_id, after["amount_calc"])
+        except SystemExit as error:
+            record_result(str(error))
+            raise
         return
 
     contacts = list_contacts(token)

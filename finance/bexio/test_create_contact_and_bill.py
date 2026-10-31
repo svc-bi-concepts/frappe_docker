@@ -669,11 +669,17 @@ class LinesRepairTest(unittest.TestCase):
         return answers
 
     def test_non_draft_repair_refuses_before_put(self):
-        urlopen, calls = fake_bexio(self.repair_answers(self.draft("BOOKED")))
-        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
-            with self.assertRaisesRegex(SystemExit, "not DRAFT"):
-                _run(["--repair", "DOC-TEST-1", "--yes"])
-        self.assertEqual(_sent(calls, "PUT", "/4.0/purchase/bills/" + FAKE_BILL_ID), [])
+        for extra in ([], ["--text", "Renamed"]):
+            with self.subTest(extra=extra):
+                urlopen, calls = fake_bexio(self.repair_answers(self.draft("BOOKED")))
+                with mock.patch.object(
+                    cb.urllib.request, "urlopen", side_effect=urlopen
+                ):
+                    with self.assertRaisesRegex(SystemExit, "not DRAFT"):
+                        _run(["--repair", "DOC-TEST-1", "--yes"] + extra)
+                self.assertEqual(
+                    _sent(calls, "PUT", "/4.0/purchase/bills/" + FAKE_BILL_ID), []
+                )
 
     def test_repair_dry_run_keeps_values_drops_nulls_and_sends_nothing(self):
         urlopen, calls = fake_bexio(self.repair_answers())
@@ -686,7 +692,7 @@ class LinesRepairTest(unittest.TestCase):
         self,
     ):
         before = self.draft()
-        before["line_items"][0]["tax_calc"] = 53.3
+        before["line_items"][0]["tax_calc"] = 0
         answers = self.repair_answers(before)
         urlopen, calls = fake_bexio(answers)
         with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
@@ -742,6 +748,7 @@ class LinesRepairTest(unittest.TestCase):
                 ],
                 f,
             )
+        before["line_items"].reverse()
         answers = self.repair_answers(before)
         readback = dict(
             before, title="New title", contact_partner_id=9, manual_amount=False
@@ -750,7 +757,8 @@ class LinesRepairTest(unittest.TestCase):
         readback["line_items"] = [
             dict(row, title=title)
             for row, title in zip(
-                before["line_items"], ["First invented", "Second invented"]
+                sorted(before["line_items"], key=lambda row: row["position"]),
+                ["First invented", "Second invented"],
             )
         ]
         answers[("GET", "/4.0/purchase/bills/" + FAKE_BILL_ID)][2] = readback
@@ -771,7 +779,10 @@ class LinesRepairTest(unittest.TestCase):
         put = _body(_sent(calls, "PUT", "/4.0/purchase/bills/" + FAKE_BILL_ID)[0])
         self.assertEqual(
             [r["id"] for r in put["line_items"]],
-            [r["id"] for r in before["line_items"]],
+            [
+                r["id"]
+                for r in sorted(before["line_items"], key=lambda row: row["position"])
+            ],
         )
         self.assertEqual([r["position"] for r in put["line_items"]], [0, 1])
         self.assertEqual(
@@ -781,7 +792,12 @@ class LinesRepairTest(unittest.TestCase):
         for field in ("amount", "booking_account_id", "tax_id"):
             self.assertEqual(
                 [r[field] for r in put["line_items"]],
-                [r[field] for r in before["line_items"]],
+                [
+                    r[field]
+                    for r in sorted(
+                        before["line_items"], key=lambda row: row["position"]
+                    )
+                ],
             )
 
     def test_text_validation_happens_before_any_request(self):
@@ -793,13 +809,13 @@ class LinesRepairTest(unittest.TestCase):
 
     def test_text_lines_refuse_count_and_each_row_value_change(self):
         before = self.draft()
-        before["line_items"][0]["tax_calc"] = 0.0
+        before["line_items"][0]["tax_calc"] = 0
         path = os.path.join(cb.PRIVATE, "text-rename-guard.json")
         cases = [
             (
                 [
                     {"title": "One", "gross": "733.30"},
-                    {"title": "Two", "gross": "0.01"},
+                    {"title": "Two", "gross": "733.30"},
                 ],
                 "row count",
                 False,
@@ -882,14 +898,17 @@ class LinesRepairTest(unittest.TestCase):
 
     def test_title_readback_rejects_each_planned_field_difference(self):
         before = self.draft()
-        before["line_items"][0]["tax_calc"] = 0.0
+        before["line_items"][0]["tax_calc"] = 0
         expected = [dict(before["line_items"][0], title="New row title")]
         valid = dict(before, title="New title", contact_partner_id=9, amount_calc=733.3)
         valid["line_items"] = [dict(expected[0])]
         mutations = [
             (lambda bill: bill.update(title="Wrong"), "bill title"),
             (lambda bill: bill["line_items"][0].update(title="Wrong"), "row 1 title"),
-            (lambda bill: bill.update(amount_calc=700.0), "amount_calc"),
+            (
+                lambda bill: bill.update(amount_calc=before["amount_calc"] + 1),
+                "amount_calc",
+            ),
             (lambda bill: bill.update(contact_partner_id=12), "contact_partner_id"),
             (lambda bill: bill.update(item_net=True), "item_net"),
             (
@@ -897,7 +916,7 @@ class LinesRepairTest(unittest.TestCase):
                 "booking_account_id",
             ),
             (lambda bill: bill["line_items"][0].update(tax_id=99), "tax_id"),
-            (lambda bill: bill["line_items"][0].update(tax_calc=1.0), "VAT total"),
+            (lambda bill: bill["line_items"][0].update(tax_calc=1), "VAT total"),
         ]
         for mutate, message in mutations:
             with self.subTest(message=message):
@@ -907,6 +926,128 @@ class LinesRepairTest(unittest.TestCase):
                     cb.check_title_readback(
                         readback, "New title", expected, before, 9, 733.3
                     )
+
+    def test_text_repair_refuses_fractional_amount_difference_without_rounding(self):
+        before = self.draft()
+        before["line_items"][0]["amount"] = str(
+            cb.Decimal(str(before["amount_man"])) + cb.Decimal(1) / 1000
+        )
+        path = os.path.join(cb.PRIVATE, "fractional-rename.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump([{"title": "Renamed", "gross": str(before["amount_man"])}], f)
+        urlopen, calls = fake_bexio(self.repair_answers(before))
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            with self.assertRaisesRegex(SystemExit, "row 1 amount differs"):
+                _run(
+                    [
+                        "--repair",
+                        "DOC-TEST-1",
+                        "--text",
+                        "Renamed",
+                        "--lines",
+                        path,
+                        "--account",
+                        "6000",
+                        "--tax",
+                        "VM81",
+                        "--yes",
+                    ]
+                )
+        self.assertFalse(any(key[0] != "GET" for key, _ in calls))
+
+    def test_text_repair_readback_failures_are_recorded_without_retry(self):
+        before = self.draft()
+        before["line_items"][0]["tax_calc"] = 0
+        valid = dict(before, title="Renamed", contact_partner_id=9, manual_amount=False)
+        valid["line_items"] = [dict(before["line_items"][0], title="Renamed")]
+        mutations = [
+            (lambda bill: bill.update(title="Wrong"), "bill title"),
+            (lambda bill: bill["line_items"][0].update(title="Wrong"), "row 1 title"),
+            (lambda bill: bill.update(amount_calc=None), "amount_calc"),
+            (
+                lambda bill: bill.update(amount_calc=before["amount_calc"] + 1),
+                "amount_calc",
+            ),
+            (lambda bill: bill.update(contact_partner_id=12), "contact_partner_id"),
+            (lambda bill: bill.update(item_net=True), "item_net"),
+            (
+                lambda bill: bill["line_items"][0].update(booking_account_id=99),
+                "booking_account_id",
+            ),
+            (lambda bill: bill["line_items"][0].update(tax_id=99), "tax_id"),
+            (lambda bill: bill["line_items"][0].update(tax_calc=1), "VAT total"),
+        ]
+        for mutate, message in mutations:
+            with self.subTest(message=message):
+                readback = json.loads(json.dumps(valid))
+                mutate(readback)
+                answers = self.repair_answers(before, readback)
+                answers[("PUT", "/4.0/purchase/bills/" + FAKE_BILL_ID)] = [{}]
+                urlopen, calls = fake_bexio(answers)
+                with mock.patch.object(
+                    cb.urllib.request, "urlopen", side_effect=urlopen
+                ), mock.patch.object(cb, "record_result") as record:
+                    with self.assertRaisesRegex(SystemExit, message) as error:
+                        _run(["--repair", "DOC-TEST-1", "--text", "Renamed", "--yes"])
+                record.assert_any_call(str(error.exception))
+                self.assertEqual(
+                    [key[0] for key, _ in calls if key[0] != "GET"], ["PUT"]
+                )
+
+    def test_text_single_row_write_and_unrepaired_dry_run(self):
+        before = self.draft()
+        before["amount_calc"] = None
+        readback = dict(
+            before,
+            title="Renamed",
+            contact_partner_id=9,
+            manual_amount=False,
+            amount_calc=before["amount_man"],
+        )
+        readback["line_items"] = [dict(before["line_items"][0], title="Renamed")]
+        for write in (False, True):
+            with self.subTest(write=write):
+                answers = self.repair_answers(before, readback)
+                answers[("PUT", "/4.0/purchase/bills/" + FAKE_BILL_ID)] = [{}]
+                urlopen, calls = fake_bexio(answers)
+                with mock.patch.object(
+                    cb.urllib.request, "urlopen", side_effect=urlopen
+                ):
+                    out = _run(
+                        ["--repair", "DOC-TEST-1", "--text", "  Renamed  "]
+                        + (["--yes"] if write else [])
+                    )
+                self.assertIn("amount_calc: null ->", out)
+                self.assertIn("contact_partner_id: 12 -> 9", out)
+                puts = _sent(calls, "PUT", "/4.0/purchase/bills/" + FAKE_BILL_ID)
+                self.assertEqual(len(puts), int(write))
+                if write:
+                    body = _body(puts[0])
+                    self.assertEqual(body["title"], "Renamed")
+                    expected = cb.allow_fields(
+                        before["line_items"][0], cb.LINE_ITEM_FIELDS
+                    )
+                    expected["title"] = "Renamed"
+                    self.assertEqual(body["line_items"], [expected])
+
+    def test_text_repair_keeps_fresh_draft_and_concurrent_edit_refusals(self):
+        for field, value, message in [
+            ("status", "BOOKED", "no longer DRAFT"),
+            ("title", "Concurrent edit", "changed since planning"),
+        ]:
+            with self.subTest(field=field):
+                before = self.draft()
+                answers = self.repair_answers(before)
+                answers[("GET", "/4.0/purchase/bills/" + FAKE_BILL_ID)][1] = dict(
+                    before, **{field: value}
+                )
+                urlopen, calls = fake_bexio(answers)
+                with mock.patch.object(
+                    cb.urllib.request, "urlopen", side_effect=urlopen
+                ):
+                    with self.assertRaisesRegex(SystemExit, message):
+                        _run(["--repair", "DOC-TEST-1", "--text", "Renamed", "--yes"])
+                self.assertFalse(any(key[0] != "GET" for key, _ in calls))
 
     def test_repair_lines_preserve_total_and_line_ids(self):
         path = os.path.join(cb.PRIVATE, "lines-test.json")
