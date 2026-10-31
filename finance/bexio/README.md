@@ -748,9 +748,20 @@ and `YARDR_ACTOR=Benchi`, so the mail reaches this yard under launchd's bare env
 
 `upload_bill.py` uploads a PDF to bexio's file inbox (Dateneingang), and
 `create_contact_and_bill.py` creates a supplier contact when needed, creates draft bills, and repairs
-existing DRAFT bills. These are the only writers (Benchi, 2026-10-12, 2026-10-29 and 2026-10-31).
+existing DRAFT bills. `prepare_bill_payment.py` books a reviewed bill and creates its open outgoing
+payment in bexio; Benchi alone releases payments in the bank. These are the only writers (Benchi,
+2026-10-12, 2026-10-29 and 2026-10-31).
 `client.py` remains GET-only and OAuth
 `SCOPE` remains read-only.
+
+```sh
+finance/bexio/prepare_bill_payment.py --bill <document-no> --payment <private-payment.json> --bank-account-id <id>  # dry run
+finance/bexio/prepare_bill_payment.py --bill <document-no> --payment <private-payment.json> --bank-account-id <id> --yes
+```
+
+The payment file is private JSON. `--yes` books a DRAFT bill if necessary and creates one open payment;
+it never sends or releases it. Only Benchi releases it in the bank. A new receiver IBAN needs the
+yardmaster's `--accept-new-iban` after Benchi confirms it for that bill.
 
 ```sh
 finance/bexio/upload_bill.py <file>.pdf        # dry run

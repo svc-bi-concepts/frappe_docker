@@ -8,6 +8,8 @@ UBS e-banking; the camt import later matches the bank lines to the Payment Entri
 
 Nothing is sent to a bank by ERPNext or by this code.
 
+Until 2027-01-01, bexio prepares supplier payments; Benchi releases them in the bank.
+
 ## Set up (once)
 
 1. The Bank Account "UBS Kontokorrent - UBS Switzerland AG" holds the IBAN. The

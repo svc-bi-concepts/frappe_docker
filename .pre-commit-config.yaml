@@ -21,19 +21,19 @@ repos:
       # above: the content's language decides, not the extension.
       - id: pyupgrade
         args: [--py37-plus]
-        exclude: ^finance/(bexio/(create_contact_and_bill|export|inventory|login_helper|oauth|upload_bill)|sharepoint/sp_read|mail/mail)\.py$
+        exclude: ^finance/(bexio/(create_contact_and_bill|prepare_bill_payment|export|inventory|login_helper|oauth|upload_bill)|sharepoint/sp_read|mail/mail)\.py$
 
   - repo: https://github.com/psf/black
     rev: 26.5.1
     hooks:
       - id: black
-        exclude: ^finance/(bexio/(create_contact_and_bill|export|inventory|login_helper|oauth|upload_bill)|sharepoint/sp_read|mail/mail)\.py$
+        exclude: ^finance/(bexio/(create_contact_and_bill|prepare_bill_payment|export|inventory|login_helper|oauth|upload_bill)|sharepoint/sp_read|mail/mail)\.py$
 
   - repo: https://github.com/pycqa/isort
     rev: 9.0.2
     hooks:
       - id: isort
-        exclude: ^finance/(bexio/(create_contact_and_bill|export|inventory|login_helper|oauth|upload_bill)|sharepoint/sp_read|mail/mail)\.py$
+        exclude: ^finance/(bexio/(create_contact_and_bill|prepare_bill_payment|export|inventory|login_helper|oauth|upload_bill)|sharepoint/sp_read|mail/mail)\.py$
 
   - repo: https://github.com/pre-commit/mirrors-prettier
     rev: v4.0.0-alpha.8
