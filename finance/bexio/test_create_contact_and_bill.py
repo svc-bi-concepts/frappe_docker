@@ -26,6 +26,7 @@ from private_guard import (  # every test below runs against a temp private fold
 )
 
 TOKEN = "tok-invented-not-real"
+FAKE_BILL_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 ARGS = [
     "--vendor",
     os.path.join(
@@ -196,7 +197,17 @@ def standard_answers(contacts=None, bills=None):
             ]
         ],
         ("POST", "/2.0/contact"): [{"id": 77}],
-        ("POST", "/4.0/purchase/bills"): [{"id": 88}],
+        ("POST", "/4.0/purchase/bills"): [{"id": FAKE_BILL_ID}],
+        ("GET", "/4.0/purchase/bills/" + FAKE_BILL_ID): [
+            {
+                "id": FAKE_BILL_ID,
+                "status": "DRAFT",
+                "amount_calc": 733.3,
+                "line_items": [{"amount": 733.3, "tax_calc": 0.0}],
+                "split_into_line_items": False,
+                "contact_partner_id": 9,
+            }
+        ],
     }
 
 
@@ -257,19 +268,19 @@ class ResultFileTest(unittest.TestCase):
             _run(["--yes"] + ARGS)
         content = self.result()
         self.assertIn("contact id 77", content)
-        self.assertIn("bill id 88", content)
+        self.assertIn("bill id " + FAKE_BILL_ID, content)
         self.assertIn("vendor_ref INV-TEST-1 supplier id 77", content)
         self.assertNotIn(TOKEN, content)
 
     def test_an_existing_contact_records_only_the_bill_id(self):
         answers = standard_answers(contacts=[dict(CONTACT, id=12)])
-        del answers[("GET", "/2.0/country")], answers[("GET", "/3.0/users/me")]
+        del answers[("GET", "/2.0/country")]
         urlopen, calls = fake_bexio(answers)
         with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
             _run(["--yes"] + ARGS)
         content = self.result()
         self.assertNotIn("contact id 77", content)
-        self.assertIn("bill id 88", content)
+        self.assertIn("bill id " + FAKE_BILL_ID, content)
 
     def test_a_dry_run_writes_no_result_file(self):
         urlopen, calls = fake_bexio(standard_answers())
@@ -300,7 +311,7 @@ class PlanDryRunTest(unittest.TestCase):
         self.assertIn('"country_id": 5', out)
         self.assertIn('"owner_id": 9', out)
         self.assertIn('"attachment_ids": [\n    "uuid-invented-1"', out)
-        self.assertIn('"amount_man": 733.3', out)
+        self.assertIn('"amount_calc": 733.3', out)
         self.assertIn('"booking_account_id": 16', out)
         self.assertIn('"tax_id": 23', out)
         self.assertNotIn(TOKEN, out)
@@ -342,8 +353,8 @@ class ReverseChargeTest(unittest.TestCase):
                 out, calls = self.run_with_tax(code, tax_type="unknown_fixture_type")
                 self.assertIn("amount basis: net, reverse charge (Bezugsteuer)", out)
                 self.assertIn('"item_net": true', out)
-                self.assertIn('"amount_man": 733.3', out)
-                self.assertIn('"manual_amount": true', out)
+                self.assertIn('"amount_calc": 733.3', out)
+                self.assertIn('"manual_amount": false', out)
                 bill_json = out.split('"line_items": [', 1)[1]
                 self.assertIn('"amount": 733.3', bill_json)
                 self.assertEqual(_sent(calls, "POST", "/4.0/purchase/bills"), [])
@@ -358,11 +369,11 @@ class ReverseChargeTest(unittest.TestCase):
                 self.assertEqual(len(bills), 1)
                 bill = _body(bills[0])
                 self.assertTrue(bill["item_net"])
-                self.assertTrue(bill["manual_amount"])
+                self.assertFalse(bill["manual_amount"])
                 self.assertEqual(
-                    bill["amount_man"], float(ARGS[ARGS.index("--total") + 1])
+                    bill["amount_calc"], float(ARGS[ARGS.index("--total") + 1])
                 )
-                self.assertEqual(bill["line_items"][0]["amount"], bill["amount_man"])
+                self.assertEqual(bill["line_items"][0]["amount"], bill["amount_calc"])
 
     def test_reverse_charge_tax_must_be_known_and_unique(self):
         tax = {"code": "BZM81", "type": "unknown_fixture_type", "is_active": True}
@@ -445,10 +456,12 @@ class PlanTest(unittest.TestCase):
         self.assertTrue(set(contact).issubset(cb.CONTACT_CREATE_FIELDS))
         bill = _body(_sent(calls, "POST", "/4.0/purchase/bills")[0])
         self.assertEqual(bill["supplier_id"], 77)
+        self.assertEqual(bill["contact_partner_id"], 9)
         self.assertEqual(bill["vendor_ref"], "INV-TEST-1")
         self.assertEqual(bill["bill_date"], "2026-01-15")
         self.assertEqual(bill["currency_code"], "CHF")
-        self.assertEqual(bill["amount_man"], 733.3)
+        self.assertEqual(bill["amount_calc"], 733.3)
+        self.assertNotIn("amount_man", bill)
         self.assertEqual(bill["title"], "Invented supplier service")
         self.assertEqual(bill["attachment_ids"], ["uuid-invented-1"])
         self.assertNotIn("status", bill)
@@ -458,12 +471,12 @@ class PlanTest(unittest.TestCase):
         self.assertEqual(bill["currency_code"], "CHF")
         self.assertEqual(bill["due_date"], "2026-02-14")
         self.assertFalse(bill["item_net"])
-        self.assertTrue(bill["manual_amount"])
+        self.assertFalse(bill["manual_amount"])
         self.assertEqual(bill["discounts"], [])
         self.assertNotIn("split_into_line_items", bill)
         self.assertNotIn("status", bill)
         self.assertIn("created bexio contact id 77", out)
-        self.assertIn("created bexio bill id 88", out)
+        self.assertIn("created bexio bill id " + FAKE_BILL_ID, out)
         self.assertNotIn(TOKEN, out)
 
     def test_an_existing_contact_is_found_and_not_created(self):
@@ -473,7 +486,7 @@ class PlanTest(unittest.TestCase):
             contacts,
             [dict(CONTACT, id=12)],
         ]
-        del answers[("GET", "/2.0/country")], answers[("GET", "/3.0/users/me")]
+        del answers[("GET", "/2.0/country")]
         urlopen, calls = fake_bexio(answers)
         with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
             out = _run(["--yes"] + ARGS)
@@ -484,6 +497,17 @@ class PlanTest(unittest.TestCase):
         self.assertIn(
             "found 'Muster Reinigung AG' as bexio contact id 12; not created", out
         )
+
+    def test_existing_contact_partner_is_never_used_as_bill_partner(self):
+        answers = standard_answers(
+            contacts=[dict(CONTACT, id=12, contact_partner_id=888)]
+        )
+        urlopen, calls = fake_bexio(answers)
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            _run(["--yes"] + ARGS)
+        body = _body(_sent(calls, "POST", "/4.0/purchase/bills")[0])
+        self.assertEqual(body["supplier_id"], 12)
+        self.assertEqual(body["contact_partner_id"], 9)
 
     def test_two_matching_contacts_refuse_before_any_write(self):
         answers = standard_answers(
@@ -570,7 +594,9 @@ class PostGuardTest(unittest.TestCase):
     def test_only_the_reviewed_requests_are_sent(self):
         refused = [
             ("PUT", "/4.0/purchase/bills"),
-            ("PUT", "/4.0/purchase/bills/88"),
+            ("POST", "/4.0/purchase/bills/" + FAKE_BILL_ID),
+            ("GET", "/4.0/purchase/bills/88"),
+            ("PUT", "/4.0/purchase/bills/not-a-uuid"),
             ("DELETE", "/2.0/contact/77"),
             ("POST", "/2.0/contact/search"),
             ("POST", "/4.0/purchase/bills/88/status"),
@@ -584,6 +610,561 @@ class PostGuardTest(unittest.TestCase):
                 with self.assertRaises(cb.RefusedRequest):
                     cb._send(method, path, TOKEN, body={})
                 urlopen.assert_not_called()
+
+
+class LinesRepairTest(unittest.TestCase):
+    def setUp(self):
+        patcher = mock.patch.dict(os.environ, {"BEXIO_TOKEN": TOKEN}, clear=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def draft(self, status="DRAFT"):
+        return {
+            "id": FAKE_BILL_ID,
+            "document_no": "DOC-TEST-1",
+            "status": status,
+            "title": "Invented bill",
+            "supplier_id": 12,
+            "vendor_ref": "KEEP-REF",
+            "contact_partner_id": 12,
+            "bill_date": "2026-01-01",
+            "due_date": "2026-02-01",
+            "currency_code": "CHF",
+            "manual_amount": True,
+            "amount_man": 733.3,
+            "amount_calc": 733.3,
+            "item_net": False,
+            "split_into_line_items": False,
+            "attachment_ids": ["bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"],
+            "address": {
+                "lastname_company": "Invented supplier",
+                "type": "COMPANY",
+                "ignored": "drop",
+            },
+            "line_items": [
+                {
+                    "id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+                    "position": 0,
+                    "title": "Existing line",
+                    "tax_id": 23,
+                    "amount": 733.3,
+                    "booking_account_id": 16,
+                    "tax_calc": None,
+                    "ignored": "drop",
+                }
+            ],
+            "discounts": [],
+            "ignored": "drop",
+        }
+
+    def repair_answers(self, draft=None, readback=None):
+        before = draft or self.draft()
+        answers = standard_answers()
+        answers[("GET", "/4.0/purchase/bills")] = [{"data": [before]}]
+        answers[("GET", "/4.0/purchase/bills/" + FAKE_BILL_ID)] = [
+            before,
+            before,
+            readback or dict(before, contact_partner_id=9, manual_amount=False),
+        ]
+        return answers
+
+    def test_non_draft_repair_refuses_before_put(self):
+        urlopen, calls = fake_bexio(self.repair_answers(self.draft("BOOKED")))
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            with self.assertRaisesRegex(SystemExit, "not DRAFT"):
+                _run(["--repair", "DOC-TEST-1", "--yes"])
+        self.assertEqual(_sent(calls, "PUT", "/4.0/purchase/bills/" + FAKE_BILL_ID), [])
+
+    def test_repair_dry_run_keeps_values_drops_nulls_and_sends_nothing(self):
+        urlopen, calls = fake_bexio(self.repair_answers())
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            out = _run(["--repair", "DOC-TEST-1"])
+        self.assertIn("contact_partner_id: 12 -> 9", out)
+        self.assertEqual(_sent(calls, "PUT", "/4.0/purchase/bills/" + FAKE_BILL_ID), [])
+
+    def test_repair_lines_preserve_total_and_line_ids(self):
+        path = os.path.join(cb.PRIVATE, "lines-test.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(
+                [
+                    {"title": "First invented service", "gross": "366.65"},
+                    {"title": "Second invented service", "gross": "366.65"},
+                ],
+                f,
+            )
+        before = self.draft()
+        answers = self.repair_answers(before)
+        # Fresh status read and final read-back use independent API responses.
+        answers[("GET", "/4.0/purchase/bills/" + FAKE_BILL_ID)] = [
+            before,
+            before,
+            dict(
+                before,
+                contact_partner_id=9,
+                manual_amount=False,
+                split_into_line_items=True,
+                line_items=[
+                    {
+                        "id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+                        "amount": 366.65,
+                        "tax_calc": 0.0,
+                    },
+                    {"id": None, "amount": 366.65, "tax_calc": 0.0},
+                ],
+            ),
+        ]
+        answers[("PUT", "/4.0/purchase/bills/" + FAKE_BILL_ID)] = [
+            dict(before, manual_amount=False)
+        ]
+        urlopen, calls = fake_bexio(answers)
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            _run(
+                [
+                    "--repair",
+                    "DOC-TEST-1",
+                    "--lines",
+                    path,
+                    "--account",
+                    "6000",
+                    "--tax",
+                    "VM81",
+                    "--yes",
+                ]
+            )
+        put = _body(_sent(calls, "PUT", "/4.0/purchase/bills/" + FAKE_BILL_ID)[0])
+        self.assertEqual(
+            [line["id"] for line in put["line_items"]],
+            [before["line_items"][0]["id"], None],
+        )
+        self.assertEqual(put["amount_calc"], 733.3)
+        self.assertTrue(put["split_into_line_items"])
+        self.assertEqual(put["document_no"], before["document_no"])
+        self.assertEqual(put["supplier_id"], before["supplier_id"])
+        self.assertNotIn("ignored", put)
+        self.assertNotIn("tax_calc", put["line_items"][0])
+
+    def test_repair_lines_with_wrong_total_refuses(self):
+        path = os.path.join(cb.PRIVATE, "lines-wrong-total.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump([{"title": "Invented service", "gross": "366.64"}], f)
+        urlopen, calls = fake_bexio(self.repair_answers())
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            with self.assertRaisesRegex(SystemExit, "current total"):
+                _run(
+                    [
+                        "--repair",
+                        "DOC-TEST-1",
+                        "--lines",
+                        path,
+                        "--account",
+                        "6000",
+                        "--tax",
+                        "VM81",
+                        "--yes",
+                    ]
+                )
+        self.assertEqual(_sent(calls, "PUT", "/4.0/purchase/bills/" + FAKE_BILL_ID), [])
+
+    def test_repair_readback_rejects_changed_total(self):
+        readback = dict(
+            self.draft(), contact_partner_id=9, manual_amount=False, amount_calc=700.0
+        )
+        answers = self.repair_answers(readback=readback)
+        answers[("PUT", "/4.0/purchase/bills/" + FAKE_BILL_ID)] = [{}]
+        urlopen, calls = fake_bexio(answers)
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            with self.assertRaisesRegex(SystemExit, "amount_calc changed"):
+                _run(["--repair", "DOC-TEST-1", "--yes"])
+        self.assertEqual(
+            len(_sent(calls, "PUT", "/4.0/purchase/bills/" + FAKE_BILL_ID)), 1
+        )
+
+    def test_readback_rejects_null_amount_calc(self):
+        answers = standard_answers()
+        answers[("GET", "/4.0/purchase/bills/" + FAKE_BILL_ID)] = [
+            {"amount_calc": None, "line_items": [], "split_into_line_items": False}
+        ]
+        urlopen, _ = fake_bexio(answers)
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            with self.assertRaisesRegex(SystemExit, "amount_calc is null"):
+                cb.report_bill("create", {"amount_calc": None}, 1)
+
+    def test_create_lines_are_gross_resolved_and_must_sum_to_total(self):
+        path = os.path.join(cb.PRIVATE, "create-lines-test.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(
+                [
+                    {"title": "Invented first service", "gross": "366.65"},
+                    {"title": "Invented second service", "gross": "366.65"},
+                ],
+                f,
+            )
+        urlopen, calls = fake_bexio(standard_answers())
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            out = _run(["--lines", path] + ARGS)
+        self.assertIn('"split_into_line_items": true', out)
+        self.assertEqual(_sent(calls, "POST", "/4.0/purchase/bills"), [])
+        with open(path, encoding="utf-8") as f:
+            rows = json.load(f)
+        rows[1]["gross"] = "366.64"
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(rows, f)
+        urlopen, calls = fake_bexio(standard_answers())
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            with self.assertRaisesRegex(SystemExit, "sum to --total"):
+                _run(["--lines", path] + ARGS)
+        self.assertEqual(_sent(calls, "POST", "/4.0/purchase/bills"), [])
+
+
+class RepairReviewTest(unittest.TestCase):
+    setUp = LinesRepairTest.setUp
+    draft = LinesRepairTest.draft
+    repair_answers = LinesRepairTest.repair_answers
+
+    def line_file(self, rows):
+        path = os.path.join(cb.PRIVATE, "review-lines.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(rows, f)
+        return path
+
+    def run_fake(self, argv, answers):
+        urlopen, calls = fake_bexio(answers)
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            out = _run(argv)
+        return out, calls
+
+    def test_no_replacement_refuses_to_change_manual_total(self):
+        before = self.draft()
+        before["line_items"][0]["amount"] = 366.65
+        urlopen, calls = fake_bexio(self.repair_answers(before))
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            with self.assertRaisesRegex(SystemExit, "current total"):
+                _run(["--repair", "DOC-TEST-1", "--yes"])
+        self.assertFalse(any(key[0] == "PUT" for key, _ in calls))
+
+    def test_missing_current_total_refuses(self):
+        for manual in [True, False]:
+            before = dict(
+                self.draft(), manual_amount=manual, amount_man=None, amount_calc=None
+            )
+            with self.subTest(manual=manual):
+                with self.assertRaisesRegex(
+                    SystemExit, "current total is missing or invalid"
+                ):
+                    cb.repair_body(before, 9)
+
+    def test_fresh_get_refuses_status_or_content_changes(self):
+        before = self.draft()
+        for changed in [
+            dict(before, status="BOOKED"),
+            dict(before, vendor_ref="EDITED-REF"),
+            dict(before, amount_man=366.65),
+        ]:
+            answers = self.repair_answers(before)
+            answers[("GET", "/4.0/purchase/bills/" + FAKE_BILL_ID)][1] = changed
+            urlopen, calls = fake_bexio(answers)
+            with self.subTest(changed=changed), mock.patch.object(
+                cb.urllib.request, "urlopen", side_effect=urlopen
+            ):
+                with self.assertRaisesRegex(SystemExit, "status changed|bill changed"):
+                    _run(["--repair", "DOC-TEST-1", "--yes"])
+            self.assertFalse(any(key[0] == "PUT" for key, _ in calls))
+
+    def test_repair_preserves_fields_ids_and_drops_nulls_at_each_level(self):
+        before = self.draft()
+        before.update(
+            amount_calc=None,
+            exchange_rate=None,
+            base_currency_amount=None,
+            payment={
+                "type": "MANUAL",
+                "execution_date": "2026-02-01",
+                "amount": 733.3,
+                "salary_payment": False,
+                "note": None,
+                "ignored": "drop",
+            },
+        )
+        before["address"].update(title=None, city="Invented city")
+        before["line_items"][0]["title"] = None
+        before["discounts"] = [
+            {
+                "id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+                "position": 0,
+                "amount": 0.0,
+                "ignored": None,
+            }
+        ]
+        answers = self.repair_answers(
+            before, dict(before, amount_calc=733.3, manual_amount=False)
+        )
+        answers[("PUT", "/4.0/purchase/bills/" + FAKE_BILL_ID)] = [{}]
+        out, calls = self.run_fake(["--repair", "DOC-TEST-1", "--yes"], answers)
+        put = _body(_sent(calls, "PUT", "/4.0/purchase/bills/" + FAKE_BILL_ID)[0])
+        for key in [
+            "document_no",
+            "supplier_id",
+            "vendor_ref",
+            "title",
+            "bill_date",
+            "due_date",
+            "currency_code",
+            "attachment_ids",
+            "item_net",
+            "split_into_line_items",
+        ]:
+            self.assertEqual(put[key], before[key])
+        self.assertEqual(put["line_items"][0]["id"], before["line_items"][0]["id"])
+        self.assertEqual(put["discounts"][0]["id"], before["discounts"][0]["id"])
+        self.assertNotIn("exchange_rate", put)
+        self.assertNotIn("title", put["address"])
+        self.assertNotIn("title", put["line_items"][0])
+        self.assertNotIn("note", put["payment"])
+        self.assertNotIn("ignored", put["payment"])
+        self.assertNotIn("ignored", put["discounts"][0])
+        self.assertEqual(put["address"]["city"], before["address"]["city"])
+        self.assertIn("VAT total:", out)
+        with open(os.path.join(cb.PRIVATE, cb.RESULT_FOLDER, cb.RESULT_FILE)) as f:
+            self.assertIn("VAT total:", f.read())
+
+    def test_repair_refuses_create_arguments_including_explicit_default_currency(self):
+        for flag, value in [
+            ("--currency", "CHF"),
+            ("--total", "733.30"),
+            ("--nr", "TEST"),
+            ("--vendor-name", "Invented"),
+            ("--date", "2026-01-01"),
+            ("--file-uuid", FAKE_BILL_ID),
+            ("--text", "Invented"),
+            ("--account", "6000"),
+            ("--tax", "VM81"),
+        ]:
+            with self.subTest(flag=flag), mock.patch.object(
+                cb.urllib.request, "urlopen"
+            ) as send:
+                with self.assertRaises(SystemExit):
+                    _run(["--repair", "DOC-TEST-1", flag, value])
+                send.assert_not_called()
+
+    def test_repair_requires_unique_document_number_and_uuid(self):
+        for rows in [
+            [],
+            [self.draft(), self.draft()],
+            [dict(self.draft(), id="-" * 36)],
+        ]:
+            answers = self.repair_answers()
+            answers[("GET", "/4.0/purchase/bills")] = [{"data": rows}]
+            urlopen, calls = fake_bexio(answers)
+            with self.subTest(count=len(rows)), mock.patch.object(
+                cb.urllib.request, "urlopen", side_effect=urlopen
+            ):
+                with self.assertRaisesRegex(SystemExit, "exactly one|not a UUID"):
+                    _run(["--repair", "DOC-TEST-1", "--yes"])
+            self.assertFalse(any(key[0] == "PUT" for key, _ in calls))
+
+    def test_line_file_shape_and_amount_guards(self):
+        good = {"title": "Invented service", "gross": "733.30"}
+        for rows in [
+            {},
+            [],
+            [good] * 101,
+            [dict(good, extra=True)],
+            [dict(good, title=" ")],
+            [dict(good, gross="0")],
+            [dict(good, gross="-1")],
+            [dict(good, gross="NaN")],
+            [dict(good, gross="invalid")],
+            [dict(good, gross="0.001")],
+        ]:
+            path = self.line_file(rows)
+            urlopen, calls = fake_bexio(standard_answers())
+            with self.subTest(
+                rows=rows[:1] if isinstance(rows, list) else rows
+            ), mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+                with self.assertRaises(SystemExit):
+                    _run(["--yes", "--lines", path] + ARGS)
+            self.assertFalse(any(key[0] == "POST" for key, _ in calls))
+
+    def test_line_path_cannot_escape_private_through_symlink(self):
+        path = os.path.join(cb.PRIVATE, "review-outside-link.json")
+        os.symlink(__file__, path)
+        with self.assertRaisesRegex(SystemExit, "under the private"):
+            cb.load_lines(path, "", "", [], [])
+
+    def test_overridden_accounts_and_taxes_are_resolved_before_writes(self):
+        for row in [
+            {"title": "Invented", "gross": "733.30", "account": "missing"},
+            {"title": "Invented", "gross": "733.30", "tax": "missing"},
+        ]:
+            path = self.line_file([row])
+            urlopen, calls = fake_bexio(standard_answers())
+            with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+                with self.assertRaisesRegex(SystemExit, "unknown account|unknown tax"):
+                    _run(["--yes", "--lines", path] + ARGS)
+            self.assertFalse(any(key[0] == "POST" for key, _ in calls))
+
+    def test_actual_line_tax_controls_create_and_repair_basis(self):
+        for repair in [False, True]:
+            for code in ["VM81", "BZB81"]:
+                path = self.line_file(
+                    [
+                        {
+                            "title": "Invented",
+                            "gross": "733.30",
+                            "account": "6000",
+                            "tax": code,
+                        }
+                    ]
+                )
+                answers = self.repair_answers() if repair else standard_answers()
+                answers[("GET", "/3.0/taxes")][0].append(
+                    {"id": 24, "code": "BZB81", "is_active": True}
+                )
+                if repair:
+                    args = ["--repair", "DOC-TEST-1", "--lines", path, "--yes"]
+                    answers[("PUT", "/4.0/purchase/bills/" + FAKE_BILL_ID)] = [{}]
+                else:
+                    args = ["--yes", "--lines", path] + ARGS
+                out, calls = self.run_fake(args, answers)
+                method, route = (
+                    ("PUT", "/4.0/purchase/bills/" + FAKE_BILL_ID)
+                    if repair
+                    else ("POST", "/4.0/purchase/bills")
+                )
+                self.assertEqual(
+                    _body(_sent(calls, method, route)[0])["item_net"], code == "BZB81"
+                )
+
+    def test_mixed_line_bases_refuse_before_contact_creation(self):
+        path = self.line_file(
+            [
+                {"title": "Invented gross", "gross": "366.65", "tax": "VM81"},
+                {"title": "Invented net", "gross": "366.65", "tax": "BZB81"},
+            ]
+        )
+        answers = standard_answers()
+        answers[("GET", "/3.0/taxes")][0].append(
+            {"id": 24, "code": "BZB81", "is_active": True}
+        )
+        urlopen, calls = fake_bexio(answers)
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            with self.assertRaisesRegex(SystemExit, "cannot share a bill"):
+                _run(["--yes", "--lines", path] + ARGS)
+        self.assertFalse(any(key[0] == "POST" for key, _ in calls))
+
+    def test_users_me_missing_id_refuses_before_any_write(self):
+        for repair in [False, True]:
+            answers = self.repair_answers() if repair else standard_answers()
+            answers[("GET", "/3.0/users/me")] = [{}]
+            urlopen, calls = fake_bexio(answers)
+            with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+                with self.assertRaisesRegex(SystemExit, "users/me without an id"):
+                    _run(
+                        ["--repair", "DOC-TEST-1", "--yes"]
+                        if repair
+                        else ["--yes"] + ARGS
+                    )
+            self.assertFalse(any(key[0] in {"POST", "PUT"} for key, _ in calls))
+
+    def test_readback_failures_send_one_write_and_never_retry(self):
+        for repair in [False, True]:
+            cases = [
+                (None, "bill object"),
+                ({"amount_calc": None}, "amount_calc is null"),
+                (
+                    {
+                        "amount_calc": 733.3,
+                        "line_items": [{}, {}],
+                        "split_into_line_items": False,
+                    },
+                    "split_into_line_items",
+                ),
+                (
+                    {
+                        "amount_calc": 733.3,
+                        "line_items": [{}],
+                        "split_into_line_items": True,
+                    },
+                    "expected 2 line items, got 1",
+                ),
+            ]
+            if repair:
+                cases.append(
+                    (
+                        {
+                            "amount_calc": 700.0,
+                            "line_items": [{}, {}],
+                            "split_into_line_items": True,
+                        },
+                        "amount_calc changed from 733.3 to 700.0",
+                    )
+                )
+            for response, message in cases:
+                path = self.line_file(
+                    [
+                        {"title": "Invented A", "gross": "366.65"},
+                        {"title": "Invented B", "gross": "366.65"},
+                    ]
+                )
+                answers = self.repair_answers() if repair else standard_answers()
+                route = "/4.0/purchase/bills/" + FAKE_BILL_ID
+                if repair:
+                    answers[("GET", route)][2] = response
+                    answers[("PUT", route)] = [{}]
+                    args = [
+                        "--repair",
+                        "DOC-TEST-1",
+                        "--yes",
+                        "--lines",
+                        path,
+                        "--account",
+                        "6000",
+                        "--tax",
+                        "VM81",
+                    ]
+                else:
+                    answers[("GET", route)] = [response]
+                    args = ["--yes", "--lines", path] + ARGS
+                urlopen, calls = fake_bexio(answers)
+                with self.subTest(repair=repair, response=response), mock.patch.object(
+                    cb.urllib.request, "urlopen", side_effect=urlopen
+                ):
+                    with self.assertRaisesRegex(SystemExit, message):
+                        _run(args)
+                writes = [
+                    key
+                    for key, _ in calls
+                    if key[0] == ("PUT" if repair else "POST")
+                    and key[1].startswith("/4.0")
+                ]
+                self.assertEqual(len(writes), 1)
+                if not repair:
+                    self.assertFalse(any(key[0] == "PUT" for key, _ in calls))
+
+    def test_bookings_paths_are_never_reviewed(self):
+        for method in ["GET", "PUT", "POST"]:
+            with mock.patch.object(cb.urllib.request, "urlopen") as send:
+                with self.assertRaises(cb.RefusedRequest):
+                    cb._send(
+                        method,
+                        "/4.0/purchase/bills/" + FAKE_BILL_ID + "/bookings/BOOKED",
+                        TOKEN,
+                    )
+                send.assert_not_called()
+
+    def test_create_readback_summary_is_recorded(self):
+        with mock.patch.object(cb, "record_result") as record:
+            out, _ = self.run_fake(["--yes"] + ARGS, standard_answers())
+        summary = record.call_args_list[-1].args[0]
+        for field in [
+            "line_count=1",
+            "split_into_line_items=False",
+            "contact_partner_id=9",
+            "amount_calc_set=True",
+            "VAT total=0.0",
+        ]:
+            self.assertIn(field, summary)
+        self.assertIn(summary, out)
 
 
 class ArgumentTest(unittest.TestCase):
@@ -755,7 +1336,7 @@ class GeneralizationTest(unittest.TestCase):
                 },
             ]
         )
-        del answers[("GET", "/2.0/country")], answers[("GET", "/3.0/users/me")]
+        del answers[("GET", "/2.0/country")]
         urlopen, calls = fake_bexio(answers)
         with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
             out = _run(["--yes"] + ARGS)
@@ -774,7 +1355,7 @@ class GeneralizationTest(unittest.TestCase):
                 }
             ]
         )
-        del answers[("GET", "/2.0/country")], answers[("GET", "/3.0/users/me")]
+        del answers[("GET", "/2.0/country")]
         urlopen, calls = fake_bexio(answers)
         with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
             _run(["--yes"] + ARGS)
@@ -807,7 +1388,7 @@ class GeneralizationTest(unittest.TestCase):
 
     def test_name_without_remarks_falls_back_to_exact_name(self):
         answers = standard_answers(contacts=[{"id": 62, "name_1": VENDOR["name_1"]}])
-        del answers[("GET", "/2.0/country")], answers[("GET", "/3.0/users/me")]
+        del answers[("GET", "/2.0/country")]
         urlopen, calls = fake_bexio(answers)
         with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
             _run(["--yes"] + ARGS)
@@ -819,7 +1400,7 @@ class GeneralizationTest(unittest.TestCase):
         exact = standard_answers(
             contacts=[{"id": 41, "name_1": "  MUSTER   REINIGUNG AG "}]
         )
-        del exact[("GET", "/2.0/country")], exact[("GET", "/3.0/users/me")]
+        del exact[("GET", "/2.0/country")]
         urlopen, calls = fake_bexio(exact)
         with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
             _run(["--yes"] + ARGS)
@@ -964,7 +1545,10 @@ class ReviewRegressionTest(unittest.TestCase):
         self.assertEqual(address["country_code"], "DE")
         first_post = next(i for i, (key, _) in enumerate(calls) if key[0] == "POST")
         self.assertTrue(all(key[0] == "GET" for key, _ in calls[:first_post]))
-        self.assertTrue(all(key[0] == "POST" for key, _ in calls[first_post:]))
+        self.assertTrue(all(key[0] in {"POST", "GET"} for key, _ in calls[first_post:]))
+        self.assertEqual(
+            len(_sent(calls, "GET", "/4.0/purchase/bills/" + FAKE_BILL_ID)), 1
+        )
 
     def test_minimal_address_has_required_type_and_omits_empty_fields(self):
         self.assertEqual(
@@ -994,7 +1578,7 @@ class ReviewRegressionTest(unittest.TestCase):
         bill = _body(_sent(calls, "POST", "/4.0/purchase/bills")[0])
         self.assertEqual(bill["currency_code"], "EUR")
         self.assertEqual(bill["exchange_rate"], 1)
-        self.assertEqual(bill["base_currency_amount"], bill["amount_man"])
+        self.assertEqual(bill["base_currency_amount"], bill["amount_calc"])
 
     def test_other_supplier_reference_warns_with_realistic_list_rows(self):
         answers = standard_answers(contacts=[dict(CONTACT, id=12)])

@@ -4,10 +4,10 @@
 # /dev/fd script from where its zip check left the shared offset: a script of
 # more than a few bytes then runs empty and exits 0 (IT, 2026-10-14).
 exec /usr/bin/python3 -I - "$@" <<'__BEXIO_CONTACT_BILL_PY__'
-"""Create a supplier contact when needed and prepare a draft bill for an uploaded file.
+"""Create or repair a supplier draft bill for an uploaded file.
 
 The vendor is supplied by a private JSON file or identified by an existing name/UID.
-The bill uses one line item, gross for ordinary VAT and net for reverse charge. Reads are completed before either approved write;
+The bill uses gross line items for ordinary VAT and net for reverse charge. Reads are completed before any write;
 POST requests are never retried because an error may follow a successful store.
 
 Authentication is the personal access token BEXIO_TOKEN injected by av. Dry run is
@@ -46,6 +46,7 @@ REQUESTS = {
     ("POST", "/2.0/contact"),
     ("POST", "/4.0/purchase/bills"),
 }
+REVIEWED_BILL_ID = re.compile(r"/4\.0/purchase/bills/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\Z")
 PAGE_SIZE = 500
 BILL_STATUS = "DRAFT"
 REVERSE_CHARGE_CODES = {"BZM77", "BZM81", "BZB77", "BZB81"}
@@ -77,7 +78,9 @@ class RefusedRequest(Exception):
 
 def _send(method, path, token, body=None, query=None):
     """Send one reviewed request; this is the only place a request leaves this script."""
-    if (method, path) not in REQUESTS:
+    if (method, path) not in REQUESTS and not (
+        method in {"GET", "PUT"} and REVIEWED_BILL_ID.fullmatch(path)
+    ):
         raise RefusedRequest("refused {} {}: this script does not send it".format(method, path))
     url = client.BASE_URL + path
     if query:
@@ -293,8 +296,8 @@ def bill_body(supplier_id, partner_id, vendor, file_uuid, nr, date, due_date, to
         "contact_partner_id": partner_id,
         "bill_date": date,
         "due_date": due_date,
-        "amount_man": float(total),
-        "manual_amount": True,
+        "amount_calc": float(total),
+        "manual_amount": False,
         "currency_code": currency,
         "item_net": tax["code"] in REVERSE_CHARGE_CODES,
         "attachment_ids": [file_uuid],
@@ -321,36 +324,189 @@ def checked_date(text):
         raise SystemExit("refused date {!r}: use YYYY-MM-DD".format(text))
 
 
+LINE_KEYS = {"title", "gross", "account", "tax"}
+PUT_FIELDS = {
+    "document_no", "title", "supplier_id", "vendor_ref", "amount_man", "amount_calc",
+    "manual_amount", "contact_partner_id", "bill_date", "due_date", "currency_code",
+    "exchange_rate", "item_net", "split_into_line_items", "base_currency_amount",
+    "attachment_ids", "address", "line_items", "discounts",
+    "payment",
+}
+ADDRESS_FIELDS = {"title", "salutation", "firstname_suffix", "lastname_company", "address_line",
+                  "postcode", "city", "country_code", "main_contact_id", "contact_address_id", "type"}
+LINE_ITEM_FIELDS = {"id", "position", "title", "tax_id", "amount", "booking_account_id"}
+DISCOUNT_FIELDS = {"id", "position", "amount"}
+PAYMENT_FIELDS = {"type", "bank_account_id", "fee", "execution_date", "exchange_rate", "amount",
+                  "account_no", "iban", "name", "address", "street", "house_no", "postcode", "city",
+                  "country_code", "message", "booking_text", "salary_payment", "reference_no", "note"}
+
+
+def check_private_path(path):
+    real = os.path.realpath(path)
+    if not os.path.isfile(real) or not real.startswith(os.path.realpath(PRIVATE) + os.sep):
+        raise SystemExit("refused {}: a file must be under the private folder".format(path))
+    return real
+
+
+def load_lines(path, default_account, default_tax, accounts, taxes):
+    real = check_private_path(path)
+    try:
+        with open(real, encoding="utf-8") as f:
+            rows = json.load(f)
+    except (OSError, ValueError) as err:
+        raise SystemExit("refused lines file: {}".format(err))
+    if not isinstance(rows, list) or not 1 <= len(rows) <= 100:
+        raise SystemExit("refused lines file: expected 1 to 100 rows")
+    result, total = [], Decimal("0.00")
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict) or set(row) - LINE_KEYS:
+            raise SystemExit("refused line {}: expected title, gross, optional account and tax".format(index + 1))
+        if not isinstance(row.get("title"), str) or not row["title"].strip():
+            raise SystemExit("refused line {}: title is required".format(index + 1))
+        gross = checked_total(str(row.get("gross", "")))
+        account = resolve_account(accounts, str(row.get("account", default_account)))
+        tax = resolve_tax(taxes, str(row.get("tax", default_tax)))
+        result.append({"position": index, "amount": float(gross), "booking_account_id": account["id"],
+                       "tax_id": tax["id"], "title": row["title"].strip()})
+        total += gross
+    return result, total
+
+
+def allow_fields(value, fields):
+    if not isinstance(value, dict):
+        return {}
+    return {key: item for key, item in value.items() if key in fields and item is not None}
+
+
+def line_basis(lines, taxes):
+    codes = {tax["id"]: tax["code"] for tax in taxes}
+    bases = {codes[row["tax_id"]] in REVERSE_CHARGE_CODES for row in lines}
+    # item_net applies to the entire bill, so gross and reverse-charge net rows cannot mix.
+    if len(bases) != 1:
+        raise SystemExit("refused lines: ordinary gross and reverse-charge net lines cannot share a bill")
+    return bases.pop()
+
+
+def repair_body(before, partner_id, lines=None):
+    body = allow_fields(before, PUT_FIELDS)
+    body["address"] = allow_fields(before.get("address"), ADDRESS_FIELDS)
+    old_lines = before.get("line_items")
+    if not isinstance(old_lines, list) or not old_lines:
+        raise SystemExit("refused repair: bill has no line items")
+    if lines is None:
+        body["line_items"] = [allow_fields(line, LINE_ITEM_FIELDS) for line in old_lines]
+    else:
+        if not lines:
+            raise SystemExit("refused repair: at least one line is required")
+        body["line_items"] = []
+        for index, line in enumerate(lines):
+            item = dict(line)
+            item["id"] = old_lines[0].get("id") if index == 0 else None
+            cleaned = allow_fields(item, LINE_ITEM_FIELDS)
+            if index > 0:
+                # Null is the API's explicit signal to create a line; other null schema values are dropped.
+                cleaned["id"] = None
+            body["line_items"].append(cleaned)
+    body["discounts"] = [allow_fields(row, DISCOUNT_FIELDS) for row in before.get("discounts", [])]
+    if isinstance(before.get("payment"), dict):
+        body["payment"] = allow_fields(before["payment"], PAYMENT_FIELDS)
+    body["contact_partner_id"] = partner_id
+    body["manual_amount"] = False
+    body["amount_calc"] = float(sum((Decimal(str(row["amount"])) for row in body["line_items"]), Decimal("0.00")))
+    if len(body["line_items"]) > 1:
+        body["split_into_line_items"] = True
+    bill_amount = before.get("amount_man") if before.get("manual_amount") else before.get("amount_calc")
+    try:
+        current_total = checked_total(str(bill_amount))
+    except SystemExit:
+        raise SystemExit("refused repair: bill's current total is missing or invalid")
+    if Decimal(str(body["amount_calc"])) != current_total:
+        raise SystemExit("refused repair: line total must equal the bill's current total")
+    return body
+
+
+def vat_total(bill):
+    if not isinstance(bill, dict):
+        return "unknown"
+    lines = bill.get("line_items")
+    if not isinstance(lines, list) or not lines or any(
+        not isinstance(row, dict) or row.get("tax_calc") is None for row in lines
+    ):
+        return "unknown"
+    return sum((Decimal(str(row["tax_calc"])) for row in lines), Decimal("0.00"))
+
+
+def report_bill(label, bill, expected_lines, expected_amount=None):
+    if not isinstance(bill, dict):
+        raise SystemExit("{} read-back failed: expected a bill object".format(label))
+    lines = bill.get("line_items")
+    amount = bill.get("amount_calc")
+    summary = "{}: line_count={}, split_into_line_items={}, contact_partner_id={}, amount_calc_set={}, VAT total={}".format(
+        label, len(lines) if isinstance(lines, list) else "unknown", bill.get("split_into_line_items"),
+        bill.get("contact_partner_id"), amount is not None, vat_total(bill))
+    print(summary)
+    record_result(summary)
+    if amount is None:
+        raise SystemExit("{} read-back failed: amount_calc is null".format(label))
+    if expected_amount is not None and checked_total(str(amount)) != expected_amount:
+        raise SystemExit("{} read-back failed: amount_calc changed from {} to {}".format(
+            label, expected_amount, amount))
+    if not isinstance(lines, list) or len(lines) != expected_lines:
+        raise SystemExit("{} read-back failed: expected {} line items, got {}".format(
+            label, expected_lines, len(lines) if isinstance(lines, list) else "unknown"))
+    if expected_lines > 1 and bill.get("split_into_line_items") is not True:
+        raise SystemExit("{} read-back failed: multi-line bill split_into_line_items is false".format(label))
+
+
 def main(argv):
     parser = argparse.ArgumentParser(description="Create a supplier contact if needed and a draft bill.")
+    parser.add_argument("--repair", help="repair one existing DRAFT by document number")
+    parser.add_argument("--lines", help="JSON line list under private/")
     parser.add_argument("--vendor", help="vendor JSON file under private/")
     parser.add_argument("--vendor-name", help="exact existing contact name (lookup only)")
     parser.add_argument("--vendor-uid", help="existing contact UID (lookup only)")
-    parser.add_argument("--file-uuid", required=True, help="uuid from upload_bill.py's result line")
-    parser.add_argument("--nr", required=True, help="vendor invoice number")
-    parser.add_argument("--date", required=True, help="invoice date, YYYY-MM-DD")
-    parser.add_argument("--total", required=True,
+    parser.add_argument("--file-uuid", help="uuid from upload_bill.py's result line")
+    parser.add_argument("--nr", help="vendor invoice number")
+    parser.add_argument("--date", help="invoice date, YYYY-MM-DD")
+    parser.add_argument("--total",
                         help="invoice total; for reverse charge, the invoice amount is net and the whole bill total")
-    parser.add_argument("--account", required=True, help="expense account number")
-    parser.add_argument("--tax", required=True, help="input VAT code")
-    parser.add_argument("--currency", default="CHF", help="three-letter upper-case currency (default: CHF)")
+    parser.add_argument("--account", help="expense account number")
+    parser.add_argument("--tax", help="input VAT code")
+    parser.add_argument("--currency", help="three-letter upper-case currency (default: CHF)")
     parser.add_argument("--exchange-rate", help="CHF per currency unit; required for non-CHF bills")
     parser.add_argument("--due-date", help="due date, YYYY-MM-DD (default: bill date plus 30 days)")
-    parser.add_argument("--text", required=True, help="bill and line item title")
+    parser.add_argument("--text", help="bill and line item title")
     parser.add_argument("--yes", action="store_true", help="create for real (default: dry run)")
     args = parser.parse_args(argv)
 
     token = os.environ.get("BEXIO_TOKEN")
     if not token:
         raise SystemExit("BEXIO_TOKEN is not set; run through av inject (see finance/bexio/README.md)")
-    vendor, can_create = vendor_from_args(args)
-    if not args.file_uuid.strip() or not args.nr.strip() or not args.text.strip():
+    required = (args.file_uuid, args.nr, args.date, args.total, args.account, args.tax, args.text)
+    if args.repair:
+        if any((args.vendor, args.vendor_name, args.vendor_uid, args.file_uuid, args.nr, args.date,
+                args.total, args.text, args.currency is not None, args.exchange_rate, args.due_date)):
+            raise SystemExit("refused repair: create-bill arguments cannot be used with --repair")
+        if (args.account or args.tax) and not args.lines:
+            raise SystemExit("refused repair: --account and --tax are only defaults for --lines")
+        if not args.repair.strip():
+            raise SystemExit("refused repair: document number is empty")
+    elif not all(required):
+        raise SystemExit("refused: create requires --file-uuid, --nr, --date, --total, --account, --tax and --text")
+    if args.repair:
+        vendor = None
+    else:
+        vendor, can_create = vendor_from_args(args)
+    if not args.repair and (not args.file_uuid.strip() or not args.nr.strip() or not args.text.strip()):
         raise SystemExit("refused: file uuid, invoice number and text must not be empty")
+    args.currency = args.currency or "CHF"
     if not re.fullmatch(r"[A-Z]{3}", args.currency):
         raise SystemExit("refused currency: use three upper-case letters")
-    total = checked_total(args.total)
+    total = checked_total(args.total) if args.total else None
     exchange_rate = None
-    if args.currency != "CHF":
+    if args.repair:
+        pass
+    elif args.currency != "CHF":
         try:
             exchange_rate = Decimal(args.exchange_rate or "")
         except InvalidOperation:
@@ -359,23 +515,73 @@ def main(argv):
             raise SystemExit("refused exchange rate: use a positive rate with at most 5 integer and 10 decimal digits")
     elif args.exchange_rate is not None:
         raise SystemExit("refused: --exchange-rate is only used for non-CHF bills")
-    bill_date = checked_date(args.date)
-    due_date = checked_date(args.due_date) if args.due_date else bill_date + datetime.timedelta(days=30)
-    if due_date < bill_date:
+    bill_date = checked_date(args.date) if args.date else None
+    due_date = (checked_date(args.due_date) if args.due_date else bill_date + datetime.timedelta(days=30)) if bill_date else None
+    if bill_date and due_date < bill_date:
         raise SystemExit("refused due date: it must be on or after the bill date")
 
     # Finish all reads before any write, so a refusal cannot leave a partial contact/bill.
+    if args.repair:
+        matches = [b for b in list_bills(token) if str(b.get("document_no") or "") == args.repair]
+        if len(matches) != 1:
+            raise SystemExit("refused repair: expected exactly one bill with that document_no, found {}".format(len(matches)))
+        bill_id = matches[0].get("id")
+        if not isinstance(bill_id, str) or not REVIEWED_BILL_ID.fullmatch("/4.0/purchase/bills/" + bill_id):
+            raise SystemExit("refused repair: bill id is not a UUID")
+        before = _send("GET", "/4.0/purchase/bills/" + bill_id, token)
+        if not isinstance(before, dict):
+            raise SystemExit("bexio answered the bill read without an object")
+        if before.get("status") != BILL_STATUS:
+            raise SystemExit("refused repair: bill status is not DRAFT")
+        me = _send("GET", "/3.0/users/me", token)
+        partner_id = me.get("id") if isinstance(me, dict) else None
+        if partner_id is None:
+            raise SystemExit("bexio answered users/me without an id")
+        accounts, taxes = list_accounts(token), list_taxes(token)
+        replacement_lines = None
+        if args.lines:
+            replacement_lines, _ = load_lines(args.lines, args.account or "", args.tax or "", accounts, taxes)
+        print("contact partner id: {}".format(partner_id))
+        after = repair_body(before, partner_id, replacement_lines)
+        if replacement_lines is not None:
+            after["item_net"] = line_basis(replacement_lines, taxes)
+        for key in sorted(set(before) | set(after)):
+            if key in after and before.get(key) != after[key]:
+                print("{}: {} -> {}".format(key, json.dumps(before.get(key)), json.dumps(after[key])))
+        if not args.yes:
+            print("dry run: nothing updated; add --yes to repair")
+            return
+        # Refuse a stale plan rather than overwrite an edit made while references were read.
+        fresh = _send("GET", "/4.0/purchase/bills/" + bill_id, token)
+        if not isinstance(fresh, dict) or fresh.get("status") != BILL_STATUS:
+            raise SystemExit("refused repair: bill status changed; it is no longer DRAFT")
+        if any(fresh.get(key) != before.get(key) for key in PUT_FIELDS):
+            raise SystemExit("refused repair: bill changed since planning; run a new dry run")
+        _send("PUT", "/4.0/purchase/bills/" + bill_id, token, body=after)
+        readback = _send("GET", "/4.0/purchase/bills/" + bill_id, token)
+        summary = "VAT total: {} -> {}".format(vat_total(before), vat_total(readback))
+        print(summary)
+        record_result(summary)
+        report_bill("repair", readback, len(after["line_items"]), Decimal(str(after["amount_calc"])))
+        return
+
     contacts = list_contacts(token)
     bills = list_bills(token)
     accounts = list_accounts(token)
     taxes = list_taxes(token)
     account = resolve_account(accounts, args.account)
     tax = resolve_tax(taxes, args.tax)
+    lines, line_total = load_lines(args.lines, args.account, args.tax, accounts, taxes) if args.lines else (None, total)
+    if line_total != total:
+        raise SystemExit("refused: line amounts must sum to --total")
+    me = _send("GET", "/3.0/users/me", token)
+    partner_id = me.get("id") if isinstance(me, dict) else None
+    if partner_id is None:
+        raise SystemExit("bexio answered users/me without an id")
     existing = find_vendor(contacts, vendor)
     contact_plan = None
     if existing:
         supplier_id = existing["id"]
-        partner_id = existing.get("contact_partner_id") or supplier_id
         # A UID match can have a different current name/address from the input file.
         vendor_for_bill = dict(existing)
         vendor_for_bill["country"] = existing.get("country_code") or existing.get("country")
@@ -390,10 +596,8 @@ def main(argv):
         country = [c for c in _send("GET", "/2.0/country", token) if c.get("iso_3166_alpha2") == vendor["country"]]
         if len(country) != 1:
             raise SystemExit("bexio has no single country for {}".format(vendor["country"]))
-        me = _send("GET", "/3.0/users/me", token)
         contact_plan = contact_body(vendor, me["id"], country[0]["id"])
         supplier_id = None
-        partner_id = None
         vendor_for_bill = vendor
         print("contact: no exact UID or name match; would create:")
         print(json.dumps(contact_plan, ensure_ascii=False, indent=2))
@@ -415,11 +619,16 @@ def main(argv):
     print("tax: {} — {} ({}%)".format(tax.get("code"), tax.get("display_name"), tax.get("value")))
     print("due date: {}".format(due_iso))
     bill_plan = bill_body(supplier_id, partner_id, vendor_for_bill, args.file_uuid, args.nr, bill_date.isoformat(), due_iso, total, args.text, args.currency, account, tax)
+    if lines is not None:
+        bill_plan["line_items"] = lines
+        bill_plan["item_net"] = line_basis(lines, taxes)
+        if len(lines) > 1:
+            bill_plan["split_into_line_items"] = True
     if exchange_rate is not None:
         bill_plan["exchange_rate"] = float(exchange_rate)
         bill_plan["base_currency_amount"] = float((total * exchange_rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
     print("bill: would create as {}:".format(BILL_STATUS))
-    print("amount basis: net, reverse charge (Bezugsteuer)" if tax["code"] in REVERSE_CHARGE_CODES
+    print("amount basis: net, reverse charge (Bezugsteuer)" if bill_plan["item_net"]
           else "amount basis: gross")
     print(json.dumps(bill_plan, ensure_ascii=False, indent=2))
     if not args.yes:
@@ -431,7 +640,7 @@ def main(argv):
         if not isinstance(created, dict) or created.get("id") is None:
             raise SystemExit("bexio answered the contact without an id; check contacts before running again")
         supplier_id = created["id"]
-        partner_id = created.get("contact_partner_id") or supplier_id
+        partner_id = me["id"]
         line = "contact: created bexio contact id {} ({})".format(supplier_id, vendor["name_1"])
         print(line)
         record_result(line)
@@ -443,6 +652,8 @@ def main(argv):
     line = "bill: created bexio bill id {} vendor_ref {} supplier id {} as {}".format(bill["id"], args.nr, supplier_id, BILL_STATUS)
     print(line)
     record_result(line)
+    readback = _send("GET", "/4.0/purchase/bills/" + str(bill["id"]), token)
+    report_bill("create", readback, len(bill_plan["line_items"]))
 
 
 if __name__ == "__main__":
