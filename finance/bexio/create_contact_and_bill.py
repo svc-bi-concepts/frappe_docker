@@ -378,6 +378,15 @@ def allow_fields(value, fields):
     return {key: item for key, item in value.items() if key in fields and item is not None}
 
 
+def line_basis(lines, taxes):
+    codes = {tax["id"]: tax["code"] for tax in taxes}
+    bases = {codes[row["tax_id"]] in REVERSE_CHARGE_CODES for row in lines}
+    # item_net applies to the entire bill, so gross and reverse-charge net rows cannot mix.
+    if len(bases) != 1:
+        raise SystemExit("refused lines: ordinary gross and reverse-charge net lines cannot share a bill")
+    return bases.pop()
+
+
 def repair_body(before, partner_id, lines=None):
     body = allow_fields(before, PUT_FIELDS)
     body["address"] = allow_fields(before.get("address"), ADDRESS_FIELDS)
@@ -387,7 +396,7 @@ def repair_body(before, partner_id, lines=None):
     if lines is None:
         body["line_items"] = [allow_fields(line, LINE_ITEM_FIELDS) for line in old_lines]
     else:
-        if len(lines) != len(old_lines) and not lines:
+        if not lines:
             raise SystemExit("refused repair: at least one line is required")
         body["line_items"] = []
         for index, line in enumerate(lines):
@@ -406,18 +415,37 @@ def repair_body(before, partner_id, lines=None):
     body["amount_calc"] = float(sum((Decimal(str(row["amount"])) for row in body["line_items"]), Decimal("0.00")))
     if len(body["line_items"]) > 1:
         body["split_into_line_items"] = True
+    bill_amount = before.get("amount_man") if before.get("manual_amount") else before.get("amount_calc")
+    try:
+        current_total = checked_total(str(bill_amount))
+    except SystemExit:
+        raise SystemExit("refused repair: bill's current total is missing or invalid")
+    if Decimal(str(body["amount_calc"])) != current_total:
+        raise SystemExit("refused repair: line total must equal the bill's current total")
     return body
 
 
+def vat_total(bill):
+    if not isinstance(bill, dict):
+        return "unknown"
+    lines = bill.get("line_items")
+    if not isinstance(lines, list) or not lines or any(
+        not isinstance(row, dict) or row.get("tax_calc") is None for row in lines
+    ):
+        return "unknown"
+    return sum((Decimal(str(row["tax_calc"])) for row in lines), Decimal("0.00"))
+
+
 def report_bill(label, bill, expected_lines):
+    if not isinstance(bill, dict):
+        raise SystemExit("{} read-back failed: expected a bill object".format(label))
     lines = bill.get("line_items")
     amount = bill.get("amount_calc")
-    tax_values = [row.get("tax_calc") for row in lines if isinstance(row, dict)] if isinstance(lines, list) else []
-    vat_total = (sum((Decimal(str(value)) for value in tax_values if value is not None), Decimal("0.00"))
-                 if tax_values and all(value is not None for value in tax_values) else "unknown")
-    print("{}: line_count={}, split_into_line_items={}, contact_partner_id={}, amount_calc_set={}, VAT total={}".format(
+    summary = "{}: line_count={}, split_into_line_items={}, contact_partner_id={}, amount_calc_set={}, VAT total={}".format(
         label, len(lines) if isinstance(lines, list) else "unknown", bill.get("split_into_line_items"),
-        bill.get("contact_partner_id"), amount is not None, vat_total))
+        bill.get("contact_partner_id"), amount is not None, vat_total(bill))
+    print(summary)
+    record_result(summary)
     if amount is None:
         raise SystemExit("{} read-back failed: amount_calc is null".format(label))
     if expected_lines > 1 and bill.get("split_into_line_items") is not True:
@@ -438,7 +466,7 @@ def main(argv):
                         help="invoice total; for reverse charge, the invoice amount is net and the whole bill total")
     parser.add_argument("--account", help="expense account number")
     parser.add_argument("--tax", help="input VAT code")
-    parser.add_argument("--currency", default="CHF", help="three-letter upper-case currency (default: CHF)")
+    parser.add_argument("--currency", help="three-letter upper-case currency (default: CHF)")
     parser.add_argument("--exchange-rate", help="CHF per currency unit; required for non-CHF bills")
     parser.add_argument("--due-date", help="due date, YYYY-MM-DD (default: bill date plus 30 days)")
     parser.add_argument("--text", help="bill and line item title")
@@ -451,7 +479,7 @@ def main(argv):
     required = (args.file_uuid, args.nr, args.date, args.total, args.account, args.tax, args.text)
     if args.repair:
         if any((args.vendor, args.vendor_name, args.vendor_uid, args.file_uuid, args.nr, args.date,
-                args.total, args.text, args.currency != "CHF", args.exchange_rate, args.due_date)):
+                args.total, args.text, args.currency is not None, args.exchange_rate, args.due_date)):
             raise SystemExit("refused repair: create-bill arguments cannot be used with --repair")
         if (args.account or args.tax) and not args.lines:
             raise SystemExit("refused repair: --account and --tax are only defaults for --lines")
@@ -459,14 +487,13 @@ def main(argv):
             raise SystemExit("refused repair: document number is empty")
     elif not all(required):
         raise SystemExit("refused: create requires --file-uuid, --nr, --date, --total, --account, --tax and --text")
-    if args.lines and (not args.repair and not all(required)):
-        raise SystemExit("refused: --lines still requires the create bill arguments")
     if args.repair:
         vendor = None
     else:
         vendor, can_create = vendor_from_args(args)
     if not args.repair and (not args.file_uuid.strip() or not args.nr.strip() or not args.text.strip()):
         raise SystemExit("refused: file uuid, invoice number and text must not be empty")
+    args.currency = args.currency or "CHF"
     if not re.fullmatch(r"[A-Z]{3}", args.currency):
         raise SystemExit("refused currency: use three upper-case letters")
     total = checked_total(args.total) if args.total else None
@@ -493,7 +520,7 @@ def main(argv):
         if len(matches) != 1:
             raise SystemExit("refused repair: expected exactly one bill with that document_no, found {}".format(len(matches)))
         bill_id = matches[0].get("id")
-        if not isinstance(bill_id, str) or not re.fullmatch(r"[0-9a-fA-F-]{36}", bill_id):
+        if not isinstance(bill_id, str) or not REVIEWED_BILL_ID.fullmatch("/4.0/purchase/bills/" + bill_id):
             raise SystemExit("refused repair: bill id is not a UUID")
         before = _send("GET", "/4.0/purchase/bills/" + bill_id, token)
         if not isinstance(before, dict):
@@ -507,36 +534,29 @@ def main(argv):
         accounts, taxes = list_accounts(token), list_taxes(token)
         replacement_lines = None
         if args.lines:
-            replacement_lines, line_total = load_lines(args.lines, args.account or "", args.tax or "", accounts, taxes)
-            bill_amount = before.get("amount_man") if before.get("manual_amount") else before.get("amount_calc")
-            current_total = Decimal(str(bill_amount))
-            if line_total != current_total:
-                raise SystemExit("refused repair: line total must equal the bill's current total")
+            replacement_lines, _ = load_lines(args.lines, args.account or "", args.tax or "", accounts, taxes)
+        print("contact partner id: {}".format(partner_id))
         after = repair_body(before, partner_id, replacement_lines)
-        if replacement_lines is None and before.get("amount_calc") is None:
-            after["amount_calc"] = float(sum((Decimal(str(row["amount"])) for row in after["line_items"]), Decimal("0.00")))
+        if replacement_lines is not None:
+            after["item_net"] = line_basis(replacement_lines, taxes)
         for key in sorted(set(before) | set(after)):
             if key in after and before.get(key) != after[key]:
                 print("{}: {} -> {}".format(key, json.dumps(before.get(key)), json.dumps(after[key])))
         if not args.yes:
             print("dry run: nothing updated; add --yes to repair")
             return
-        # The status check above is intentionally adjacent to this write.
+        # Refuse a stale plan rather than overwrite an edit made while references were read.
         fresh = _send("GET", "/4.0/purchase/bills/" + bill_id, token)
         if not isinstance(fresh, dict) or fresh.get("status") != BILL_STATUS:
             raise SystemExit("refused repair: bill status changed; it is no longer DRAFT")
-        vat_before_lines = before.get("line_items")
-        vat_before_values = [row.get("tax_calc") for row in vat_before_lines if isinstance(row, dict)] if isinstance(vat_before_lines, list) else []
-        vat_before = (sum((Decimal(str(value)) for value in vat_before_values if value is not None), Decimal("0.00"))
-                      if vat_before_values and all(value is not None for value in vat_before_values) else "unknown")
+        if any(fresh.get(key) != before.get(key) for key in PUT_FIELDS):
+            raise SystemExit("refused repair: bill changed since planning; run a new dry run")
         _send("PUT", "/4.0/purchase/bills/" + bill_id, token, body=after)
         readback = _send("GET", "/4.0/purchase/bills/" + bill_id, token)
+        summary = "VAT total: {} -> {}".format(vat_total(before), vat_total(readback))
+        print(summary)
+        record_result(summary)
         report_bill("repair", readback, len(after["line_items"]))
-        vat_after_lines = readback.get("line_items")
-        vat_after_values = [row.get("tax_calc") for row in vat_after_lines if isinstance(row, dict)] if isinstance(vat_after_lines, list) else []
-        vat_after = (sum((Decimal(str(value)) for value in vat_after_values if value is not None), Decimal("0.00"))
-                     if vat_after_values and all(value is not None for value in vat_after_values) else "unknown")
-        print("VAT total: {} -> {}".format(vat_before, vat_after))
         return
 
     contacts = list_contacts(token)
@@ -595,13 +615,14 @@ def main(argv):
     bill_plan = bill_body(supplier_id, partner_id, vendor_for_bill, args.file_uuid, args.nr, bill_date.isoformat(), due_iso, total, args.text, args.currency, account, tax)
     if lines is not None:
         bill_plan["line_items"] = lines
+        bill_plan["item_net"] = line_basis(lines, taxes)
         if len(lines) > 1:
             bill_plan["split_into_line_items"] = True
     if exchange_rate is not None:
         bill_plan["exchange_rate"] = float(exchange_rate)
         bill_plan["base_currency_amount"] = float((total * exchange_rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
     print("bill: would create as {}:".format(BILL_STATUS))
-    print("amount basis: net, reverse charge (Bezugsteuer)" if tax["code"] in REVERSE_CHARGE_CODES
+    print("amount basis: net, reverse charge (Bezugsteuer)" if bill_plan["item_net"]
           else "amount basis: gross")
     print(json.dumps(bill_plan, ensure_ascii=False, indent=2))
     if not args.yes:
