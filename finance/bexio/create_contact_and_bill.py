@@ -487,7 +487,9 @@ def check_title_readback(bill, title, expected_lines, before, partner_id, amount
         raise SystemExit("repair read-back failed: item_net changed")
     if bill.get("amount_calc") is None or checked_total(str(bill["amount_calc"])) != checked_total(str(amount_calc)):
         raise SystemExit("repair read-back failed: amount_calc changed")
-    if vat_total(bill) != vat_total(before):
+    actual_vat = vat_total(bill)
+    expected_vat = vat_total(before)
+    if actual_vat == "unknown" or expected_vat == "unknown" or actual_vat != expected_vat:
         raise SystemExit("repair read-back failed: VAT total changed")
 
 

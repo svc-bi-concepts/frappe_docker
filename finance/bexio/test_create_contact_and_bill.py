@@ -994,6 +994,20 @@ class LinesRepairTest(unittest.TestCase):
                     [key[0] for key, _ in calls if key[0] != "GET"], ["PUT"]
                 )
 
+    def test_text_repair_rejects_unknown_vat_total(self):
+        before = self.draft()
+        before["line_items"][0].pop("tax_calc", None)
+        readback = dict(before, title="Renamed", contact_partner_id=9, manual_amount=False)
+        readback["line_items"] = [dict(before["line_items"][0], title="Renamed")]
+        answers = self.repair_answers(before, readback)
+        answers[("GET", "/4.0/purchase/bills/" + FAKE_BILL_ID)].append(readback)
+        answers[("PUT", "/4.0/purchase/bills/" + FAKE_BILL_ID)] = [{}]
+        urlopen, calls = fake_bexio(answers)
+        with mock.patch.object(cb.urllib.request, "urlopen", side_effect=urlopen):
+            with self.assertRaisesRegex(SystemExit, "VAT total"):
+                _run(["--repair", "DOC-TEST-1", "--text", "Renamed", "--yes"])
+        self.assertEqual([key[0] for key, _ in calls if key[0] != "GET"], ["PUT"])
+
     def test_text_single_row_write_and_unrepaired_dry_run(self):
         before = self.draft()
         before["amount_calc"] = None
