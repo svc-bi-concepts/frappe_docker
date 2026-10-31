@@ -141,7 +141,7 @@ def find_recipients(profile_id, token, name):
     for row in iter_transfer_rows(profile_id, token):
         recipient_id = row.get("targetAccount")
         if (row.get("status") == "outgoing_payment_sent"
-                and str(recipient_id if recipient_id is not None else "").isdigit()):
+                and re.fullmatch(r"[0-9]+", str(recipient_id))):
             recipient_id = int(recipient_id)
             completed[recipient_id] = completed.get(recipient_id, 0) + 1
 

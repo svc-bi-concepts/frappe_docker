@@ -132,7 +132,7 @@ class WiseTest(unittest.TestCase):
     def run_main(self, args=None):
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            wise.main(self.args if args is None else args)
+            self.assertEqual(wise.main(self.args if args is None else args), 0)
         return out.getvalue()
 
     def test_first_line_token_and_request_hosts(self):
@@ -227,10 +227,28 @@ class WiseTest(unittest.TestCase):
         self.assertIn("paid recipients checked: 2, unreadable: 1", output)
         self.assertIn("unreadable recipients were not matched", output)
         self.assertTrue(any(path.endswith("/accounts/5") for _, path, *_ in self.calls))
+        output = self.run_main(["--find-recipient", "person"])
+        self.assertIn("name: Other Person", output)
+        self.assertIn("paid recipients checked: 2, unreadable: 1", output)
+
+    def test_reviewed_request_set_is_unchanged(self):
+        self.assertEqual(
+            wise.REQUESTS,
+            {
+                ("GET", "/2026Q4/profiles"),
+                ("GET", "/2026Q4/accounts/{id}"),
+                ("GET", "/2026Q4/transfers"),
+                ("GET", "/2026Q4/transfers/{id}"),
+                ("POST", "/2026Q4/profiles/{id}/quotes"),
+                ("POST", "/2026Q4/transfer-requirements"),
+                ("POST", "/2026Q4/transfers"),
+            },
+        )
 
     def test_find_recipient_rejects_mixed_and_empty_arguments_without_requests(self):
+        core_arguments = [self.args[i : i + 2] for i in range(0, len(self.args), 2)]
         for extra in (
-            self.args,
+            *core_arguments,
             ["--yes"],
             ["--detail", "sourceOfFunds=salary"],
             ["--source-currency", "CHF"],
@@ -239,9 +257,70 @@ class WiseTest(unittest.TestCase):
             with self.subTest(extra=extra), self.assertRaises(SystemExit):
                 wise.main(["--find-recipient", "Example"] + extra)
             self.assertEqual(self.calls, [])
-        with self.assertRaises(SystemExit):
-            wise.main(["--find-recipient", "  "])
+        for name in ("", "  "):
+            with self.subTest(name=name), self.assertRaises(SystemExit):
+                wise.main(["--find-recipient", name])
         self.assertEqual(self.calls, [])
+
+    def test_find_recipient_object_name_and_no_files(self):
+        out, err = io.StringIO(), io.StringIO()
+        with (
+            contextlib.redirect_stdout(out),
+            contextlib.redirect_stderr(err),
+            mock.patch.object(wise, "record_result") as record,
+        ):
+            self.assertEqual(wise.main(["--find-recipient", "aMPle"]), 0)
+        self.assertIn("name: Example Ltd; currency: EUR; active: yes", out.getvalue())
+        self.assertIn("••1234; completed transfers: 1", out.getvalue())
+        self.assertNotIn("invented-token", out.getvalue() + err.getvalue())
+        record.assert_not_called()
+        self.assertEqual(os.listdir(self.root), [])
+
+    def test_find_recipient_skips_invalid_ids_and_merges_numeric_ids(self):
+        self.responses[("GET", "/2026Q4/transfers")] = [
+            {"targetAccount": value, "status": "outgoing_payment_sent"}
+            for value in (None, "", "bad", "²", True, -1, 1.5, "42", 42)
+        ]
+        output = self.run_main(["--find-recipient", "example"])
+        self.assertIn("completed transfers: 2", output)
+        self.assertIn("paid recipients checked: 1, unreadable: 0", output)
+        self.assertEqual(
+            [path for _, path, *_ in self.calls if "/accounts/" in path],
+            ["/2026Q4/accounts/42"],
+        )
+
+    def test_find_recipient_profile_and_transfer_list_errors(self):
+        for profiles in (
+            [],
+            [{"id": 7, "type": "PERSONAL"}],
+            [{"id": 7, "type": "BUSINESS"}, {"id": 8, "type": "BUSINESS"}],
+        ):
+            with self.subTest(profiles=profiles):
+                self.calls.clear()
+                self.responses[("GET", "/2026Q4/profiles")] = profiles
+                self.refuse("exactly one BUSINESS", ["--find-recipient", "Example"])
+                self.assertEqual(len(self.calls), 1)
+        self.responses.clear()
+        self.responses[("GET", "/2026Q4/transfers")] = {}
+        self.refuse("without rows", ["--find-recipient", "Example"])
+        self.assertEqual(os.listdir(self.root), [])
+
+    def test_find_recipient_http_error_redacts_token_and_writes_no_file(self):
+        self.responses[("GET", "/2026Q4/profiles")] = urllib.error.HTTPError(
+            "https://api.wise.com/2026Q4/profiles",
+            403,
+            "invented-token",
+            {},
+            io.BytesIO(b'{"errors":[{"code":"invented-token"}]}'),
+        )
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            with self.assertRaisesRegex(SystemExit, "HTTP 403") as raised:
+                wise.main(["--find-recipient", "Example"])
+        self.assertNotIn(
+            "invented-token", out.getvalue() + err.getvalue() + str(raised.exception)
+        )
+        self.assertEqual(os.listdir(self.root), [])
 
     def test_transfer_mode_requires_each_core_argument_without_requests(self):
         for option in (
@@ -254,8 +333,9 @@ class WiseTest(unittest.TestCase):
             args = list(self.args)
             index = args.index(option)
             del args[index : index + 2]
-            with self.subTest(option=option), self.assertRaisesRegex(
-                SystemExit, option
+            with (
+                self.subTest(option=option),
+                self.assertRaisesRegex(SystemExit, option),
             ):
                 wise.main(args)
             self.assertEqual(self.calls, [])
@@ -338,6 +418,7 @@ class WiseTest(unittest.TestCase):
     def test_token_required_before_any_request(self):
         with mock.patch.dict(os.environ, {}, clear=True):
             self.refuse("FINANCE_WISE_TRANSFER_TOKEN")
+            self.refuse("FINANCE_WISE_TRANSFER_TOKEN", ["--find-recipient", "Example"])
         self.assertEqual(self.calls, [])
 
     def test_business_profile_count(self):
