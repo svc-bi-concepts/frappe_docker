@@ -212,6 +212,13 @@ class RequestBoundaryTest(unittest.TestCase):
 
 
 class FileValidationTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="sales-invoice-file-test-")
+        self.addCleanup(self.temp.cleanup)
+        patch = mock.patch.object(si, "PRIVATE", self.temp.name)
+        patch.start()
+        self.addCleanup(patch.stop)
+
     def test_no_token_stops_before_network(self):
         with mock.patch.dict(os.environ, {}, clear=True), mock.patch.object(
             si.urllib.request, "urlopen"
@@ -633,6 +640,7 @@ class CreationTest(unittest.TestCase):
             "http",
             "timeout",
             "bad-row",
+            "unit",
         ):
             self.fake, self.calls = fake_bexio()
 
@@ -658,11 +666,15 @@ class CreationTest(unittest.TestCase):
                         actual["positions"][0]["position_total"] = "0"
                     elif failure == "bad-row":
                         actual["positions"][0] = None
+                    elif failure == "unit":
+                        actual["positions"][0]["unit_id"] = 999
                     else:
                         actual["positions"][0]["text"] = "Invented changed row"
                 return self.fake(req, timeout)
 
             data = invoice()
+            if failure == "unit":
+                data["positions"][0]["unit"] = "h"
             second = copy.deepcopy(data["positions"][0])
             second["text"] = "Invented second row"
             data["positions"].append(second)

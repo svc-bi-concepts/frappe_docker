@@ -422,6 +422,8 @@ def _verify(expected, actual):
                     raise ValueError(f"read-back position {key} changed")
             elif wanted.get(key) != got.get(key):
                 raise ValueError(f"read-back position {key} changed")
+        if "unit_id" in wanted and wanted["unit_id"] != got.get("unit_id"):
+            raise ValueError("read-back position unit_id changed")
         total = (Decimal(wanted["amount"]) * Decimal(wanted["unit_price"])).quantize(
             Decimal("0.01"), rounding=ROUND_HALF_UP
         )
