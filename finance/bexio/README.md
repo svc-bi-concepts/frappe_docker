@@ -115,9 +115,9 @@ does not come from a proxy at all: it comes from the credential. The Automic Vau
 refresh token ride along, so the blessed read script holds nothing write-capable — and
 `client.py` takes the read token for every GET where it is set. `export.py` injects only
 that name too: it reads everything with the read token (live finding of 2026-10-14, see
-above). The write-capable `BEXIO_TOKEN` stays with
-`upload_bill.py` and `create_contact_and_bill.py`, which POST; repair also PUTs one reviewed
-individual bill endpoint.
+above). The write-capable `BEXIO_TOKEN` is used by `upload_bill.py`,
+`create_contact_and_bill.py` and `create_sales_invoice.py`; repair in
+`create_contact_and_bill.py` also PUTs one reviewed individual bill endpoint.
 
 ## One run for everything (`--complete`)
 
@@ -163,7 +163,7 @@ Reads prefer `BEXIO_READ_TOKEN`, the read-scoped personal access token the launc
 inject from the Automic Vault; it can only read, and using it never touches the vault.
 Where no read token is set, the read-only OAuth login runs as before — only then is a
 refresh, and with it the rotation of the stored token, possible. `client.py` never reads
-`BEXIO_TOKEN`, the write-capable token of the upload scripts.
+`BEXIO_TOKEN`, the write-capable token used by the bexio writer scripts.
 
 ## Log in again
 
@@ -744,15 +744,48 @@ The failure mail is pinned in the wrapper, not in the plist: `sync_hourly.sh` ca
 and `YARDR_ACTOR=Benchi`, so the mail reaches this yard under launchd's bare env as well as by hand
 (erp-xgpk, erp-xwht).
 
-## Supplier bills (the only writes to bexio)
+## Supplier bills and sales invoice drafts (bexio writers)
 
 `upload_bill.py` uploads a PDF to bexio's file inbox (Dateneingang), and
 `create_contact_and_bill.py` creates a supplier contact when needed, creates draft bills, and repairs
 existing DRAFT bills. `prepare_bill_payment.py` books a reviewed bill and creates its open outgoing
-payment in bexio; Benchi alone releases payments in the bank. These are the only writers (Benchi,
-2026-10-12, 2026-10-29 and 2026-10-31).
+payment in bexio; Benchi alone releases payments in the bank. `create_sales_invoice.py` creates one
+sales invoice as a DRAFT from a private JSON file; it only POSTs `/2.0/kb_invoice` and reads the
+contact, account, tax, unit and reference data needed to validate and read the draft back. It cannot
+issue, send, mail, pay, edit or delete an invoice. A new or changed launcher waits for Benchi's bless
+before any run, including `--help`. These are the bexio writers (Benchi,
+2026-10-12, 2026-10-29, 2026-10-31 and 2026-11-01).
 `client.py` remains GET-only and OAuth
 `SCOPE` remains read-only.
+
+The invoice file stays under `private/` and contains IDs and line details, for example:
+
+```json
+{
+  "contact_id": 42,
+  "title": "Invented consulting work",
+  "date": "2026-01-15",
+  "due_date": "2026-02-14",
+  "vat_mode": "net",
+  "bank_account_id": 1,
+  "payment_type_id": 1,
+  "language_id": 1,
+  "currency_id": 1,
+  "positions": [
+    {
+      "text": "Invented service",
+      "amount": "2",
+      "unit_price": "6739.428516",
+      "account": "3000",
+      "tax": "VAT81",
+      "unit": "h"
+    }
+  ]
+}
+```
+
+Run without `--yes` to resolve and print the plan. After reviewing it, `--yes` creates the draft once
+and checks it by reading it back. A failed POST is never retried; check bexio before another attempt.
 
 ```sh
 finance/bexio/prepare_bill_payment.py --bill <document-no> --payment <private-payment.json> --bank-account-id <id>  # dry run
