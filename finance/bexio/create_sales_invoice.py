@@ -1,6 +1,5 @@
 #!/usr/local/bin/av inject +BEXIO_TOKEN /bin/bash
 # Keep the blessed program in this file: av executes the launcher from stdin.
-# fmt: off
 exec /usr/bin/python3 -I - "$@" <<'__BEXIO_SALES_INVOICE_PY__'
 """Create one reviewed sales invoice as a bexio draft. Never issue or edit it."""
 
@@ -106,14 +105,26 @@ def _send(method, path, token, body=None, query=None):
             raw = response.read()
             return json.loads(raw.decode("utf-8")) if raw else None
     except urllib.error.HTTPError as err:
+        permission = (
+            "; token lacks kb_invoice_edit; no fallback was tried"
+            if method == "POST" and err.code == 403
+            else ""
+        )
         raise SystemExit(
             "bexio refused {} {} (HTTP {}): {}".format(
-                method, path, err.code, client._error_detail(err) or "no detail"
+                method, path, err.code,
+                (client._error_detail(err) or "no detail") + permission
             )
         )
-    except urllib.error.URLError:
+    except (urllib.error.URLError, OSError, ValueError):
+        advice = (
+            "; creation may have succeeded; check bexio before running again"
+            if method == "POST"
+            else ""
+        )
         raise SystemExit(
-            f"could not reach bexio on {method} {path}; no further request was sent"
+            f"could not read bexio response on {method} {path}; "
+            f"no further request was sent{advice}"
         )
 
 
@@ -204,7 +215,7 @@ def load_invoice(path):
     start, end = _date(data["date"], "date"), _date(data["due_date"], "due_date")
     if end < start:
         raise SystemExit("refused invoice file: due_date must be on or after date")
-    if data["vat_mode"] not in {"net", "gross", "exempt"}:
+    if data["vat_mode"] not in ("net", "gross", "exempt"):
         raise SystemExit("refused invoice file: vat_mode must be net, gross or exempt")
     positions = data["positions"]
     if not isinstance(positions, list) or not 1 <= len(positions) <= 100:
@@ -374,7 +385,7 @@ def _resolve(data, start, end, token):
     return body
 
 
-def _record(line):
+def record_result(line):
     folder = os.path.join(PRIVATE, os.path.dirname(RESULT))
     os.makedirs(folder, exist_ok=True)
     with open(os.path.join(PRIVATE, RESULT), "a", encoding="utf-8") as out:
@@ -403,6 +414,8 @@ def _verify(expected, actual):
     if not isinstance(actual_rows, list) or len(expected_rows) != len(actual_rows):
         raise ValueError("read-back position count changed")
     for wanted, got in zip(expected_rows, actual_rows):
+        if not isinstance(got, dict) or got.get("type") != "KbPositionCustom":
+            raise ValueError("read-back position is not custom")
         for key in ("text", "account_id", "tax_id", "amount", "unit_price"):
             if key in {"amount", "unit_price"}:
                 if Decimal(str(wanted[key])) != Decimal(str(got.get(key))):
@@ -443,21 +456,37 @@ def main(argv=None):
     doc = created.get("document_nr")
     record = "sales invoice id {} document_nr {}".format(ident, doc or "(none)")
     try:
+        record_result(record + " read-back pending")
+    except OSError:
+        raise SystemExit(
+            f"draft id {ident} exists; could not record result; do not run again"
+        )
+    try:
         actual = _send("GET", "/2.0/kb_invoice/" + str(ident), token)
         _verify(body, actual)
-    except (ValueError, RefusedRequest) as err:
-        _record(record + " read-back failed")
-        raise SystemExit(f"draft exists; read-back failed: {err}; do not run again")
+    except (ValueError, InvalidOperation, RefusedRequest, SystemExit, OSError) as err:
+        try:
+            record_result(record + " read-back failed")
+        finally:
+            raise SystemExit(
+                f"draft id {ident} exists; read-back failed: {err}; do not run again"
+            )
     optional = {
         key: "yes" if actual.get(key) else "no"
         for key in ("document_nr", "header", "footer", "template_slug")
     }
-    _record(
+    result = (
         record
         + " document_nr={} header={} footer={} template_slug={}".format(
             *(optional[k] for k in ("document_nr", "header", "footer", "template_slug"))
         )
     )
+    try:
+        record_result(result)
+    except OSError:
+        raise SystemExit(
+            f"draft id {ident} exists; could not record read-back result; do not run again"
+        )
     print(f"created draft id {ident}")
     print(
         "total: {}; total_taxes: {}".format(
@@ -477,4 +506,3 @@ def main(argv=None):
 if __name__ == "__main__":
     main()
 __BEXIO_SALES_INVOICE_PY__
-# fmt: on

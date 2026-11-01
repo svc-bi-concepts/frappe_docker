@@ -753,8 +753,8 @@ payment in bexio; Benchi alone releases payments in the bank. `create_sales_invo
 sales invoice as a DRAFT from a private JSON file; it only POSTs `/2.0/kb_invoice` and reads the
 contact, account, tax, unit and reference data needed to validate and read the draft back. It cannot
 issue, send, mail, pay, edit or delete an invoice. A new or changed launcher waits for Benchi's bless
-before any live run. These are the bexio writers (Benchi,
-2026-10-12, 2026-10-29 and 2026-10-31).
+before any run, including `--help`. These are the bexio writers (Benchi,
+2026-10-12, 2026-10-29, 2026-10-31 and 2026-11-01).
 `client.py` remains GET-only and OAuth
 `SCOPE` remains read-only.
 
@@ -774,8 +774,8 @@ The invoice file stays under `private/` and contains IDs and line details, for e
   "positions": [
     {
       "text": "Invented service",
-      "amount": "1.00",
-      "unit_price": "1000.00",
+      "amount": "2",
+      "unit_price": "6739.428516",
       "account": "3000",
       "tax": "VAT81",
       "unit": "h"
