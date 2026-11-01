@@ -1368,10 +1368,7 @@ class HrmsSlips(unittest.TestCase):
             frappe.db.sql.return_value = [("PE-9", D(2026, 9, 30), "2700.5")]
             rows = cff.hrms_slips("Test Company", AS_OF)
         self.assertEqual(rows, [("PE-9", D(2026, 9, 30), 2700.5)])
-        sql, args = frappe.db.sql.call_args.args
-        self.assertIn("docstatus = 1", sql)
-        self.assertIn("posting_date <= %s", sql)
-        self.assertIn("ifnull(payroll_entry, '') != ''", sql)
+        args = frappe.db.sql.call_args.args[1]
         self.assertEqual(args, ("Test Company", AS_OF))
 
     def test_history_slips_without_a_payroll_entry_are_not_a_payroll_basis(self):

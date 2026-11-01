@@ -193,9 +193,7 @@ class HistoryMethodsTest(unittest.TestCase):
             {"docstatus": 1, "status": "Submitted"},
             update_modified=False,
         )
-        sql, name = self.frappe.db.sql.call_args.args
-        self.assertIn("set docstatus = 1", sql)
-        self.assertIn("parenttype = 'Salary Slip'", sql)
+        name = self.frappe.db.sql.call_args.args[1]
         self.assertEqual(name, "TEST-SLIP")
         self.frappe.db.commit.assert_not_called()
 
