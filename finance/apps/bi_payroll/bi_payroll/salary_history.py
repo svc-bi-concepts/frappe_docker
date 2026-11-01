@@ -127,14 +127,16 @@ def load_slip(slip):
         start, end, earnings, deductions = validate_slip(
             slip,
             lambda name: bool(name and frappe.db.exists("Employee", name)),
-            lambda name: frappe.db.get_value(
-                "Salary Component",
-                name,
-                ["type", "do_not_include_in_total"],
-                as_dict=True,
-            )
-            if name
-            else None,
+            lambda name: (
+                frappe.db.get_value(
+                    "Salary Component",
+                    name,
+                    ["type", "do_not_include_in_total"],
+                    as_dict=True,
+                )
+                if name
+                else None
+            ),
             lambda key: frappe.db.exists("Salary Slip", {"swiss_bexio_id": key}),
         )
     except ValueError as exc:
