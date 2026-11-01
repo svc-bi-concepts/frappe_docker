@@ -17,11 +17,27 @@ def _whitelist(function):
     return frappe.whitelist(methods=["POST"])(function) if frappe else function
 
 
+def history_key(value):
+    """Reject empty keys before querying, especially when removing a snapshot."""
+    if (
+        not isinstance(value, str)
+        or not value.startswith("paystub-")
+        or value != value.strip()
+    ):
+        raise ValueError("bexio_id must start with paystub-")
+    return value
+
+
+def _amount(value):
+    amount = Decimal(str(value))
+    if not amount.is_finite():
+        raise ValueError("invalid totals or row amount")
+    return amount
+
+
 def validate_slip(slip, employee_exists, component_exists, bexio_exists):
     """Validate a paystub payload before any database write."""
-    key = str(slip.get("bexio_id") or "").strip()
-    if not key.startswith("paystub-"):
-        raise ValueError("bexio_id must start with paystub-")
+    key = history_key(slip.get("bexio_id"))
     if bexio_exists(key):
         raise ValueError("exists")
     try:
@@ -29,10 +45,15 @@ def validate_slip(slip, employee_exists, component_exists, bexio_exists):
         end = date.fromisoformat(str(slip["end_date"])[:10])
     except (KeyError, TypeError, ValueError):
         raise ValueError("invalid period") from None
-    if (start.year, start.month) != (
-        end.year,
-        end.month,
-    ) or end.day != calendar.monthrange(end.year, end.month)[1]:
+    if (
+        start.day != 1
+        or (start.year, start.month)
+        != (
+            end.year,
+            end.month,
+        )
+        or end.day != calendar.monthrange(end.year, end.month)[1]
+    ):
         raise ValueError("period must be one calendar month")
     if end > date(2026, 12, 31):
         raise ValueError("history slips must end by 2026-12-31")
@@ -42,15 +63,23 @@ def validate_slip(slip, employee_exists, component_exists, bexio_exists):
         if not isinstance(slip.get(field), list):
             raise ValueError(f"{field} must be a list")
         for row in slip[field]:
+            if not isinstance(row, dict):
+                raise ValueError("salary row must be an object")
+            if row.get("do_not_include_in_total", 0) not in (0, 1):
+                raise ValueError("do_not_include_in_total must be 0 or 1")
             if not component_exists(row.get("salary_component")):
                 raise ValueError("unknown Salary Component")
     try:
-        gross = Decimal(str(slip["gross_pay"]))
-        deduction = Decimal(str(slip["total_deduction"]))
-        net = Decimal(str(slip["net_pay"]))
+        gross = _amount(slip["gross_pay"])
+        deduction = _amount(slip["total_deduction"])
+        net = _amount(slip["net_pay"])
+        _amount(slip["paid_out"])
+        # Excluded rows are still stored: validate their amounts as well.
+        for row in slip["earnings"] + slip["deductions"]:
+            _amount(row["amount"])
         included_earnings = sum(
             (
-                Decimal(str(r["amount"]))
+                _amount(r["amount"])
                 for r in slip["earnings"]
                 if not r.get("do_not_include_in_total")
             ),
@@ -58,7 +87,7 @@ def validate_slip(slip, employee_exists, component_exists, bexio_exists):
         )
         included_deductions = sum(
             (
-                Decimal(str(r["amount"]))
+                _amount(r["amount"])
                 for r in slip["deductions"]
                 if not r.get("do_not_include_in_total")
             ),
@@ -91,6 +120,8 @@ def load_slip(slip):
             lambda key: frappe.db.exists("Salary Slip", {"swiss_bexio_id": key}),
         )
     except ValueError as exc:
+        if str(exc) == "exists":
+            return "exists"
         frappe.throw(_(str(exc)))
 
     employee = frappe.get_doc("Employee", slip["employee"])
@@ -164,6 +195,10 @@ def remove_slip(bexio_id):
     from frappe import _
 
     frappe.only_for("System Manager")
+    try:
+        bexio_id = history_key(bexio_id)
+    except ValueError as exc:
+        frappe.throw(_(str(exc)))
     docname = frappe.db.get_value("Salary Slip", {"swiss_bexio_id": bexio_id}, "name")
     if not docname:
         frappe.throw(_("History Salary Slip not found"))

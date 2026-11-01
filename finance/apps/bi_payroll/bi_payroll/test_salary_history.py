@@ -1,8 +1,11 @@
 """Pure validation tests for historical paystub payloads; all values are invented."""
 
+import sys
 import unittest
+from types import SimpleNamespace
+from unittest import mock
 
-from bi_payroll.salary_history import validate_slip
+from bi_payroll.salary_history import load_slip, remove_slip, validate_slip
 
 
 class ValidateSlipTest(unittest.TestCase):
@@ -73,6 +76,8 @@ class ValidateSlipTest(unittest.TestCase):
     def test_refuses_period_outside_one_month_or_after_2026(self):
         for start, end in (
             ("2026-10-01", "2026-11-01"),
+            ("2026-10-02", "2026-10-31"),
+            ("2026-10-01", "2026-10-30"),
             ("2027-01-01", "2027-01-31"),
         ):
             slip = {**self.payload(), "start_date": start, "end_date": end}
@@ -89,6 +94,170 @@ class ValidateSlipTest(unittest.TestCase):
                 ValueError, "totals"
             ):
                 self.validate({**self.payload(), field: value})
+
+
+class MalformedSlipTest(unittest.TestCase):
+    payload = ValidateSlipTest.payload
+    validate = ValidateSlipTest.validate
+
+    def test_all_stored_amounts_must_be_finite_numbers(self):
+        for value in ("NaN", "Infinity", "-Infinity", "invalid", None):
+            for field in ("gross_pay", "total_deduction", "net_pay", "paid_out"):
+                with self.subTest(field=field, value=value), self.assertRaises(
+                    ValueError
+                ):
+                    self.validate({**self.payload(), field: value})
+            slip = self.payload()
+            slip["earnings"].append(
+                {
+                    "salary_component": "Hourly Wage",
+                    "amount": value,
+                    "do_not_include_in_total": 1,
+                }
+            )
+            with self.subTest(row=value), self.assertRaises(ValueError):
+                self.validate(slip)
+
+    def test_bad_row_and_exclusion_flag_are_refused(self):
+        for row in (
+            None,
+            "bad",
+            {
+                "salary_component": "Hourly Wage",
+                "amount": 0,
+                "do_not_include_in_total": "0",
+            },
+        ):
+            slip = self.payload()
+            slip["earnings"].append(row)
+            with self.subTest(row=row), self.assertRaises(ValueError):
+                self.validate(slip)
+
+
+class HistoryMethodsTest(unittest.TestCase):
+    def setUp(self):
+        self.frappe = mock.MagicMock()
+        self.frappe._ = lambda message: message
+
+        def throw(message):
+            raise ValueError(message)
+
+        self.frappe.throw.side_effect = throw
+        self.frappe.db.exists.side_effect = lambda dt, key: dt != "Salary Slip"
+        self.employee = SimpleNamespace(
+            name="EMP-TEST-001", employee_name="Test Employee", company="Test Company"
+        )
+        self.doc = mock.MagicMock(name="history_doc")
+        self.doc.name = "TEST-SLIP"
+        self.frappe.get_doc.side_effect = lambda *args: (
+            self.employee if args[0] == "Employee" else self.doc
+        )
+        self.patch = mock.patch.dict(sys.modules, {"frappe": self.frappe})
+        self.patch.start()
+        self.addCleanup(self.patch.stop)
+        self.slip = ValidateSlipTest().payload()
+
+    def test_snapshot_is_inserted_and_submitted_without_submit_hook(self):
+        self.assertEqual(load_slip(self.slip), "TEST-SLIP")
+        self.frappe.only_for.assert_called_once_with("System Manager")
+        data = self.frappe.get_doc.call_args.args[0]
+        for field in ("gross_pay", "total_deduction", "net_pay"):
+            self.assertEqual(data[field], self.slip[field])
+            self.assertEqual(data["base_" + field], self.slip[field])
+        self.assertEqual(data["rounded_total"], self.slip["paid_out"])
+        self.assertEqual(data["base_rounded_total"], self.slip["paid_out"])
+        self.assertEqual(data["employee_name"], self.employee.employee_name)
+        self.assertEqual(data["company"], self.employee.company)
+        self.assertEqual(data["posting_date"].isoformat(), self.slip["end_date"])
+        self.assertEqual(data["payment_days"], 31)
+        self.assertEqual(data["total_working_days"], 31)
+        self.assertEqual(data["currency"], "CHF")
+        self.assertEqual(data["exchange_rate"], 1)
+        self.assertEqual(data["payroll_frequency"], "Monthly")
+        self.assertEqual(data["salary_structure"], "")
+        self.assertEqual(data["is_proposed"], 1)
+        self.assertEqual(data["swiss_bexio_id"], self.slip["bexio_id"])
+        self.assertEqual(len(data["earnings"]), len(self.slip["earnings"]))
+        for flag in (
+            "ignore_validate",
+            "ignore_mandatory",
+            "ignore_permissions",
+            "ignore_links",
+        ):
+            self.assertIs(getattr(self.doc.flags, flag), True)
+        self.doc.insert.assert_called_once_with()
+        self.doc.submit.assert_not_called()
+        self.frappe.db.set_value.assert_called_once_with(
+            "Salary Slip",
+            "TEST-SLIP",
+            {"docstatus": 1, "status": "Submitted"},
+            update_modified=False,
+        )
+        sql, name = self.frappe.db.sql.call_args.args
+        self.assertIn("set docstatus = 1", sql)
+        self.assertIn("parenttype = 'Salary Slip'", sql)
+        self.assertEqual(name, "TEST-SLIP")
+        self.frappe.db.commit.assert_not_called()
+
+    def test_duplicate_returns_exists_without_writes(self):
+        self.frappe.db.exists.return_value = True
+        self.frappe.db.exists.side_effect = None
+        self.assertEqual(load_slip(self.slip), "exists")
+        self.frappe.get_doc.assert_not_called()
+        self.frappe.db.set_value.assert_not_called()
+
+    def test_invalid_payload_never_reaches_insert(self):
+        for slip in (
+            None,
+            {**self.slip, "paid_out": "NaN"},
+            {**self.slip, "bexio_id": " paystub-test "},
+        ):
+            with self.subTest(slip=slip), self.assertRaises(ValueError):
+                load_slip(slip)
+        self.frappe.get_doc.assert_not_called()
+
+    def test_remove_rejects_empty_and_non_history_keys_before_lookup(self):
+        for key in (None, "", "ordinary-slip", " paystub-test "):
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                remove_slip(key)
+        self.frappe.db.get_value.assert_not_called()
+        self.frappe.delete_doc.assert_not_called()
+
+    def test_remove_looks_up_only_the_history_key_and_cancels_before_delete(self):
+        self.frappe.db.get_value.return_value = "TEST-SLIP"
+        self.assertEqual(remove_slip(self.slip["bexio_id"]), "TEST-SLIP")
+        self.frappe.only_for.assert_called_once_with("System Manager")
+        self.frappe.db.get_value.assert_called_once_with(
+            "Salary Slip", {"swiss_bexio_id": self.slip["bexio_id"]}, "name"
+        )
+        self.doc.cancel.assert_called_once_with()
+        for flag in (
+            "ignore_validate",
+            "ignore_mandatory",
+            "ignore_permissions",
+            "ignore_links",
+        ):
+            self.assertIs(getattr(self.doc.flags, flag), True)
+        self.frappe.delete_doc.assert_called_once_with(
+            "Salary Slip", "TEST-SLIP", ignore_permissions=True, force=True
+        )
+
+    def test_remove_missing_history_does_not_delete(self):
+        self.frappe.db.get_value.return_value = None
+        with self.assertRaisesRegex(ValueError, "not found"):
+            remove_slip(self.slip["bexio_id"])
+        self.frappe.delete_doc.assert_not_called()
+
+    def test_both_methods_require_system_manager_before_database_access(self):
+        self.frappe.only_for.side_effect = PermissionError
+        for function, arg in (
+            (load_slip, self.slip),
+            (remove_slip, self.slip["bexio_id"]),
+        ):
+            with self.assertRaises(PermissionError):
+                function(arg)
+        self.frappe.db.exists.assert_not_called()
+        self.frappe.db.get_value.assert_not_called()
 
 
 if __name__ == "__main__":
