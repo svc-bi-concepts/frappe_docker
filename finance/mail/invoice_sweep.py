@@ -293,7 +293,10 @@ def run_sweep(
     runner=subprocess.run,
     opener_factory=safe_opener,
     today=None,
+    recheck=False,
 ):
+    if recheck and not since:
+        raise ValueError("--recheck requires --since YYYY-MM-DD")
     root = PRIVATE
     config_path = config_path or os.path.join(root, "sweep.json")
     incoming = incoming or os.path.join(root, "incoming")
@@ -350,7 +353,17 @@ def run_sweep(
             for line in result.stdout.splitlines():
                 row = line.split("\t")
                 mid = row[0] if row else ""
-                if mid and mid not in state.get("mails", {}) and mid not in rows_seen:
+                remembered = state.get("mails", {}).get(mid, {})
+                retry_dropped = (
+                    recheck
+                    and remembered.get("status") == "done"
+                    and "completed" not in remembered
+                )
+                if (
+                    mid
+                    and (mid not in state.get("mails", {}) or retry_dropped)
+                    and mid not in rows_seen
+                ):
                     rows_seen[mid] = {
                         "received": row[1] if len(row) > 1 else "",
                         "sender": row[2] if len(row) > 2 else "",
@@ -486,7 +499,6 @@ def run_sweep(
                         (a.get("name") or "").lower().endswith(".pdf")
                         for a in noninline
                     )
-                    and has_word(mail.get("text", ""))
                 )
             )
             if not candidate:
@@ -776,9 +788,10 @@ def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--since")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--recheck", action="store_true")
     args = parser.parse_args(argv)
     try:
-        return run_sweep(since=args.since, dry_run=args.dry_run)
+        return run_sweep(since=args.since, dry_run=args.dry_run, recheck=args.recheck)
     except (OSError, ValueError, RuntimeError, json.JSONDecodeError) as exc:
         print(str(exc), file=sys.stderr)
         return (
@@ -789,6 +802,7 @@ def main(argv=None):
                     "missing config",
                     "already-running",
                     "first run requires",
+                    "--recheck requires",
                 )
             )
             else 1
