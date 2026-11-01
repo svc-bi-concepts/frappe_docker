@@ -692,7 +692,7 @@ runs on the hour:
     sh finance/bexio/sync_hourly.sh --dry-run   the same run, nothing written to ERPNext
 
 One run exports from bexio through the blessed launcher `export.py --only invoices --only credit_vouchers --only orders --only offers --only deliveries --only currencies --only accounts --only journal --only bills --only expenses` (exactly what the two loaders read, one entity per repeated flag; no files, no PDFs, no payroll) into the day's `private/bexio-export/<date>/`, then runs `import_sales.py` and
-`import_purchase.py` in `--apply` mode (drafts only), then reads `delta_counts.py` before and after as the gate:
+`import_purchase.py` in `--apply` mode (drafts only); bexio invoices still in draft status are left out until issued. Then it reads `delta_counts.py` before and after as the gate:
 in write mode each counted doctype must move exactly by what the loaders report as created, in dry mode nothing
 may move. A loader that exits 1 for its accepted differences (the sales differences lines, the purchase
 problems list) is not a failure - the same stance as the delta's rerun; exit 2, a traceback or a failing export

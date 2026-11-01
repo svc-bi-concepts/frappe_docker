@@ -65,6 +65,8 @@ PLANNED = "(planned)"
 # the credit note's link to its invoice; the field name is taken from the bexio record and
 # still needs confirming against the full export (see README)
 ORIGINAL = "invoice_id"
+# A draft invoice is not an issued receivable and must not enter ERPNext.
+DRAFT_INVOICE_STATUS = 7
 
 # the documents of the export: file, ERPNext doctype, and whether a credit note
 DOCUMENTS = (
@@ -583,6 +585,10 @@ def plan(data, lookups, metas=None):
     results = []
     for key, doctype, credit in DOCUMENTS:
         for record in data.get(key, []):
+            if key == "invoices" and str(record.get("kb_item_status_id")) == str(
+                DRAFT_INVOICE_STATUS
+            ):
+                continue
             bexio_id = ("credit-" if credit else "") + str(record["id"])
             result = {
                 "key": key,
@@ -700,7 +706,7 @@ def doctype_fields(erp, doctype):
     return {f["fieldname"] for f in erp.meta(doctype)["fields"]}
 
 
-def summary(results, lookups):
+def summary(results, lookups, drafts_left_out=0):
     """The totals of a dry run, one line per export file and per year; no names, no bexio ids."""
     lines = [
         "{:<17}{:>9}{:>8}{:>10}{:>13}{:>12}{:>11}".format(
@@ -740,6 +746,7 @@ def summary(results, lookups):
         for i, value in enumerate(r["chf"]):
             acc[i + 1] += value
     lines.append("")
+    lines.append(f"invoices left out: {drafts_left_out} bexio drafts")
     lines.append("CHF by year of the document date (net, tax, gross):")
     for (key, year), (count, net, tax, gross) in per_year.items():
         lines.append(
@@ -847,6 +854,11 @@ def main(argv):
 
     export_dir = args.export or im.newest_export()
     data = load_documents(export_dir)
+    drafts_left_out = sum(
+        1
+        for record in data.get("invoices", [])
+        if str(record.get("kb_item_status_id")) == str(DRAFT_INVOICE_STATUS)
+    )
     erp = im.Erp.from_file(args.token_file)
     try:
         lookups = lookups_from_erp(erp, data)
@@ -870,7 +882,7 @@ def main(argv):
 
     results = plan(data, lookups, metas)
     print(f"sales documents from {export_dir}")
-    print(summary(results, lookups))
+    print(summary(results, lookups, drafts_left_out))
     lines = detail_lines(results)
     fd = os.open(args.report, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as f:

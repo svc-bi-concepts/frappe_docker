@@ -212,6 +212,44 @@ class ReceiptSharesTest(unittest.TestCase):
 
 
 class SalesTest(unittest.TestCase):
+    def test_build_leaves_drafts_out_of_vat_until_issued(self):
+        record = invoice(
+            7,
+            "798992.45",
+            "739123.45",
+            [{"percentage": str(TAXES[28]["value"]), "value": "59869.00"}],
+            [position(28, "739123.45")],
+        )
+        data = {
+            "invoices": [record],
+            "invoice_payments": [
+                {
+                    "parent_id": record["id"],
+                    "rows": [payrow("2037-02-10", record["total"])],
+                }
+            ],
+            "taxes": list(TAXES.values()),
+            "accounts": ACCOUNTS,
+            "journal": [],
+            "bills": [],
+            "manual_entries": [],
+        }
+        for status in (7, "7", 8):
+            with self.subTest(status=status):
+                record["kb_item_status_id"] = status
+                quarters = mb.build(data)
+                if status == 8:
+                    totals = quarters.rows["2037Q1"]
+                    self.assertEqual(
+                        totals.rows["200"][0], Decimal(record["total_net"])
+                    )
+                    self.assertEqual(
+                        totals.rows["303"][1], Decimal(record["taxs"][0]["value"])
+                    )
+                else:
+                    self.assertFalse(quarters.rows)
+                    self.assertEqual(quarters.counts["receipts counted"], 0)
+
     def test_two_rates_on_one_invoice_count_in_their_rows(self):
         quarters = mb.Quarters()
         invoices = {

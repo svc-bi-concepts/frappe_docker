@@ -3,12 +3,15 @@
 Run with: python3 -m unittest discover -s finance/bexio -p 'test_*.py'
 """
 
+import contextlib
 import copy
+import io
 import json
 import os
 import tempfile
 import unittest
 from decimal import Decimal
+from unittest import mock
 
 import import_master as im
 import import_sales as isl
@@ -980,6 +983,51 @@ class FieldCheck(unittest.TestCase):
 
 
 class Plan(unittest.TestCase):
+    def test_main_counts_drafts_without_reporting_a_difference(self):
+        data = {
+            "invoices": [
+                record(INVOICE, kb_item_status_id=status, contact_id=999)
+                for status in (7, "7")
+            ]
+        }
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            mock.patch.object(isl, "load_documents", return_value=data),
+            mock.patch.object(im.Erp, "from_file"),
+            mock.patch.object(isl, "lookups_from_erp", return_value=LOOKUPS),
+            mock.patch.object(isl, "doctype_fields", return_value=set()),
+            contextlib.redirect_stdout(io.StringIO()) as output,
+        ):
+            report = os.path.join(tmp, "differences.txt")
+            status = isl.main(["--export", tmp, "--report", report, "--dry-run"])
+            self.assertEqual(status, 0)
+            self.assertIn("invoices left out: 2 bexio drafts", output.getvalue())
+            with open(report, encoding="utf-8") as f:
+                self.assertEqual(f.read(), "")
+
+    def test_draft_invoice_is_left_out_before_mapping_and_reported(self):
+        draft = record(INVOICE, kb_item_status_id=7, contact_id=999)
+        results = isl.plan({"invoices": [draft]}, LOOKUPS)
+        self.assertEqual(results, [])
+        self.assertEqual(isl.detail_lines(results), [])
+        count, out = Drafts().write(results)
+        self.assertEqual(count, 0)
+        self.assertEqual(out["documents"], [])
+        self.assertIn(
+            "invoices left out: 1 bexio drafts", isl.summary(results, LOOKUPS, 1)
+        )
+
+    def test_invoice_issued_later_is_mapped(self):
+        issued = record(INVOICE, kb_item_status_id=8)
+        (result,) = isl.plan({"invoices": [issued]}, LOOKUPS)
+        self.assertIsNotNone(result["doc"])
+
+    def test_status_seven_on_other_document_kinds_is_unchanged(self):
+        order = record(INVOICE, kb_item_status_id=7)
+        results = isl.plan({"orders": [order]}, LOOKUPS)
+        self.assertEqual([r["key"] for r in results], ["orders"])
+        self.assertIsNotNone(results[0]["doc"])
+
     def test_one_unmapped_record_is_counted_and_listed_by_id_only(self):
         bad = record(INVOICE, id=501, contact_id=999)
         data = {

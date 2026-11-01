@@ -194,6 +194,9 @@ class CreditNoteRefused(unittest.TestCase):
     def test_the_invoice_must_be_in_erpnext(self):
         self.assertRefused(look=lookups(invoice={}))
 
+    def test_the_invoice_must_not_still_be_a_bexio_draft(self):
+        self.assertRefused(invoices=[copied(INVOICE, kb_item_status_id=7)])
+
     def test_the_invoice_must_be_in_chf(self):
         self.assertRefused(invoices=[copied(INVOICE, currency_id=2)])
 
