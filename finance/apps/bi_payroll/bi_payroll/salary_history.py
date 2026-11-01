@@ -35,7 +35,7 @@ def _amount(value):
     return amount
 
 
-def validate_slip(slip, employee_exists, component_exists, bexio_exists):
+def validate_slip(slip, employee_exists, component_lookup, bexio_exists):
     """Validate a paystub payload before any database write."""
     key = history_key(slip.get("bexio_id"))
     if bexio_exists(key):
@@ -59,28 +59,39 @@ def validate_slip(slip, employee_exists, component_exists, bexio_exists):
         raise ValueError("history slips must end by 2026-12-31")
     if not employee_exists(slip.get("employee")):
         raise ValueError("unknown Employee")
-    for field in ("earnings", "deductions"):
+    normalized_rows = {}
+    for field, component_type in (
+        ("earnings", "Earning"),
+        ("deductions", "Deduction"),
+    ):
         if not isinstance(slip.get(field), list):
             raise ValueError(f"{field} must be a list")
+        normalized_rows[field] = []
         for row in slip[field]:
             if not isinstance(row, dict):
                 raise ValueError("salary row must be an object")
-            if row.get("do_not_include_in_total", 0) not in (0, 1):
-                raise ValueError("do_not_include_in_total must be 0 or 1")
-            if not component_exists(row.get("salary_component")):
+            component = component_lookup(row.get("salary_component"))
+            if not component:
                 raise ValueError("unknown Salary Component")
+            if component["type"] != component_type:
+                raise ValueError(f"Salary Component must be an {component_type}")
+            default_excluded = component["do_not_include_in_total"]
+            excluded = row.get("do_not_include_in_total", default_excluded)
+            if excluded not in (0, 1):
+                raise ValueError("do_not_include_in_total must be 0 or 1")
+            normalized_rows[field].append({**row, "do_not_include_in_total": excluded})
     try:
         gross = _amount(slip["gross_pay"])
         deduction = _amount(slip["total_deduction"])
         net = _amount(slip["net_pay"])
         _amount(slip["paid_out"])
         # Excluded rows are still stored: validate their amounts as well.
-        for row in slip["earnings"] + slip["deductions"]:
+        for row in normalized_rows["earnings"] + normalized_rows["deductions"]:
             _amount(row["amount"])
         included_earnings = sum(
             (
                 _amount(r["amount"])
-                for r in slip["earnings"]
+                for r in normalized_rows["earnings"]
                 if not r.get("do_not_include_in_total")
             ),
             Decimal(0),
@@ -88,7 +99,7 @@ def validate_slip(slip, employee_exists, component_exists, bexio_exists):
         included_deductions = sum(
             (
                 _amount(r["amount"])
-                for r in slip["deductions"]
+                for r in normalized_rows["deductions"]
                 if not r.get("do_not_include_in_total")
             ),
             Decimal(0),
@@ -101,7 +112,7 @@ def validate_slip(slip, employee_exists, component_exists, bexio_exists):
         or gross - deduction != net
     ):
         raise ValueError("salary rows do not match totals")
-    return start, end
+    return start, end, normalized_rows["earnings"], normalized_rows["deductions"]
 
 
 @_whitelist
@@ -113,10 +124,17 @@ def load_slip(slip):
     if not isinstance(slip, dict):
         frappe.throw(_("Slip must be a JSON object"))
     try:
-        start, end = validate_slip(
+        start, end, earnings, deductions = validate_slip(
             slip,
             lambda name: bool(name and frappe.db.exists("Employee", name)),
-            lambda name: bool(name and frappe.db.exists("Salary Component", name)),
+            lambda name: frappe.db.get_value(
+                "Salary Component",
+                name,
+                ["type", "do_not_include_in_total"],
+                as_dict=True,
+            )
+            if name
+            else None,
             lambda key: frappe.db.exists("Salary Slip", {"swiss_bexio_id": key}),
         )
     except ValueError as exc:
@@ -155,17 +173,17 @@ def load_slip(slip):
                 {
                     "salary_component": r["salary_component"],
                     "amount": r["amount"],
-                    "do_not_include_in_total": r.get("do_not_include_in_total", 0),
+                    "do_not_include_in_total": r["do_not_include_in_total"],
                 }
-                for r in slip["earnings"]
+                for r in earnings
             ],
             "deductions": [
                 {
                     "salary_component": r["salary_component"],
                     "amount": r["amount"],
-                    "do_not_include_in_total": r.get("do_not_include_in_total", 0),
+                    "do_not_include_in_total": r["do_not_include_in_total"],
                 }
-                for r in slip["deductions"]
+                for r in deductions
             ],
         }
     )

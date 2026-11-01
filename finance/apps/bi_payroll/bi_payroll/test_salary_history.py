@@ -16,8 +16,8 @@ class ValidateSlipTest(unittest.TestCase):
             "start_date": "2026-10-01",
             "end_date": "2026-10-31",
             "gross_pay": 1000,
-            "total_deduction": 120,
-            "net_pay": 880,
+            "total_deduction": 0,
+            "net_pay": 1000,
             "paid_out": 880,
             "earnings": [
                 {"salary_component": "Hourly Wage", "amount": 1100},
@@ -30,7 +30,14 @@ class ValidateSlipTest(unittest.TestCase):
         return validate_slip(
             slip,
             lambda name: name == "EMP-TEST-001",
-            lambda name: name in {"Hourly Wage", "Advance Payment"},
+            lambda name: {
+                "Hourly Wage": {"type": "Earning", "do_not_include_in_total": 0},
+                "Advance Payment": {"type": "Deduction", "do_not_include_in_total": 1},
+                "Rent Deduction": {"type": "Deduction", "do_not_include_in_total": 1},
+                "Test Deduction": {"type": "Deduction", "do_not_include_in_total": 0},
+                "Expenses Effective": {"type": "Earning", "do_not_include_in_total": 1},
+                "Expenses Lump Sum": {"type": "Earning", "do_not_include_in_total": 1},
+            }.get(name),
             lambda key: exists,
         )
 
@@ -42,7 +49,7 @@ class ValidateSlipTest(unittest.TestCase):
         slip["total_deduction"] = 1200
         slip["net_pay"] = -200
         slip["paid_out"] = -200
-        slip["deductions"] = [{"salary_component": "Advance Payment", "amount": 1200}]
+        slip["deductions"] = [{"salary_component": "Test Deduction", "amount": 1200}]
         self.assertEqual(self.validate(slip)[1].isoformat(), "2026-10-31")
 
     def test_ignored_rows_do_not_change_totals(self):
@@ -55,6 +62,47 @@ class ValidateSlipTest(unittest.TestCase):
             }
         )
         self.assertEqual(self.validate(slip)[1].isoformat(), "2026-10-31")
+
+    def test_component_type_must_match_its_salary_table(self):
+        for table, component, amount, gross, deduction in (
+            ("earnings", "Advance Payment", 1000, 1000, 0),
+            ("deductions", "Hourly Wage", 120, 0, 120),
+        ):
+            slip = self.payload()
+            slip["earnings"] = []
+            slip["deductions"] = []
+            slip[table] = [{"salary_component": component, "amount": amount}]
+            slip["gross_pay"] = gross
+            slip["total_deduction"] = deduction
+            slip["net_pay"] = gross - deduction
+            slip["paid_out"] = gross - deduction
+            with self.subTest(table=table), self.assertRaisesRegex(
+                ValueError, "must be an"
+            ):
+                self.validate(slip)
+
+    def test_component_exclusion_default_is_applied_and_explicit_flag_is_kept(self):
+        for table, component in (
+            ("earnings", "Expenses Effective"),
+            ("earnings", "Expenses Lump Sum"),
+            ("deductions", "Rent Deduction"),
+        ):
+            slip = self.payload()
+            slip[table].append({"salary_component": component, "amount": 50})
+            normalized = self.validate(slip)
+            rows = normalized[2] if table == "earnings" else normalized[3]
+            self.assertEqual(rows[-1]["do_not_include_in_total"], 1)
+            slip[table][-1]["do_not_include_in_total"] = 0
+            if table == "earnings":
+                slip["gross_pay"] += 50
+                slip["net_pay"] += 50
+                slip["paid_out"] += 50
+            else:
+                slip["total_deduction"] += 50
+                slip["net_pay"] -= 50
+                slip["paid_out"] -= 50
+            with self.subTest(table=table):
+                self.assertEqual(self.validate(slip)[1].isoformat(), "2026-10-31")
 
     def test_refuses_missing_or_malformed_key(self):
         for key in ("", "wrong-key"):
@@ -152,6 +200,15 @@ class HistoryMethodsTest(unittest.TestCase):
         self.frappe.get_doc.side_effect = lambda *args: (
             self.employee if args[0] == "Employee" else self.doc
         )
+        components = {
+            "Hourly Wage": {"type": "Earning", "do_not_include_in_total": 0},
+            "Advance Payment": {"type": "Deduction", "do_not_include_in_total": 1},
+            "Rent Deduction": {"type": "Deduction", "do_not_include_in_total": 1},
+            "Expenses Effective": {"type": "Earning", "do_not_include_in_total": 1},
+        }
+        self.frappe.db.get_value.side_effect = lambda doctype, name, *args, **kwargs: (
+            components.get(name) if doctype == "Salary Component" else None
+        )
         self.patch = mock.patch.dict(sys.modules, {"frappe": self.frappe})
         self.patch.start()
         self.addCleanup(self.patch.stop)
@@ -178,6 +235,7 @@ class HistoryMethodsTest(unittest.TestCase):
         self.assertEqual(data["is_proposed"], 1)
         self.assertEqual(data["swiss_bexio_id"], self.slip["bexio_id"])
         self.assertEqual(len(data["earnings"]), len(self.slip["earnings"]))
+        self.assertEqual(data["deductions"][0]["do_not_include_in_total"], 1)
         for flag in (
             "ignore_validate",
             "ignore_mandatory",
@@ -222,7 +280,7 @@ class HistoryMethodsTest(unittest.TestCase):
         self.frappe.delete_doc.assert_not_called()
 
     def test_remove_looks_up_only_the_history_key_and_cancels_before_delete(self):
-        self.frappe.db.get_value.return_value = "TEST-SLIP"
+        self.frappe.db.get_value.side_effect = lambda *args, **kwargs: "TEST-SLIP"
         self.assertEqual(remove_slip(self.slip["bexio_id"]), "TEST-SLIP")
         self.frappe.only_for.assert_called_once_with("System Manager")
         self.frappe.db.get_value.assert_called_once_with(
