@@ -744,15 +744,48 @@ The failure mail is pinned in the wrapper, not in the plist: `sync_hourly.sh` ca
 and `YARDR_ACTOR=Benchi`, so the mail reaches this yard under launchd's bare env as well as by hand
 (erp-xgpk, erp-xwht).
 
-## Supplier bills (the only writes to bexio)
+## Supplier bills and sales invoice drafts (bexio writers)
 
 `upload_bill.py` uploads a PDF to bexio's file inbox (Dateneingang), and
 `create_contact_and_bill.py` creates a supplier contact when needed, creates draft bills, and repairs
 existing DRAFT bills. `prepare_bill_payment.py` books a reviewed bill and creates its open outgoing
-payment in bexio; Benchi alone releases payments in the bank. These are the only writers (Benchi,
+payment in bexio; Benchi alone releases payments in the bank. `create_sales_invoice.py` creates one
+sales invoice as a DRAFT from a private JSON file; it only POSTs `/2.0/kb_invoice` and reads the
+contact, account, tax, unit and reference data needed to validate and read the draft back. It cannot
+issue, send, mail, pay, edit or delete an invoice. A new or changed launcher waits for Benchi's bless
+before any live run. These are the bexio writers (Benchi,
 2026-10-12, 2026-10-29 and 2026-10-31).
 `client.py` remains GET-only and OAuth
 `SCOPE` remains read-only.
+
+The invoice file stays under `private/` and contains IDs and line details, for example:
+
+```json
+{
+  "contact_id": 42,
+  "title": "Invented consulting work",
+  "date": "2026-01-15",
+  "due_date": "2026-02-14",
+  "vat_mode": "net",
+  "bank_account_id": 1,
+  "payment_type_id": 1,
+  "language_id": 1,
+  "currency_id": 1,
+  "positions": [
+    {
+      "text": "Invented service",
+      "amount": "1.00",
+      "unit_price": "1000.00",
+      "account": "3000",
+      "tax": "VAT81",
+      "unit": "h"
+    }
+  ]
+}
+```
+
+Run without `--yes` to resolve and print the plan. After reviewing it, `--yes` creates the draft once
+and checks it by reading it back. A failed POST is never retried; check bexio before another attempt.
 
 ```sh
 finance/bexio/prepare_bill_payment.py --bill <document-no> --payment <private-payment.json> --bank-account-id <id>  # dry run
