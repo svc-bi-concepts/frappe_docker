@@ -3,12 +3,15 @@
 Run with: python3 -m unittest discover -s finance/bexio -p 'test_*.py'
 """
 
+import contextlib
 import copy
+import io
 import json
 import os
 import tempfile
 import unittest
 from decimal import Decimal
+from unittest import mock
 
 import import_master as im
 import import_sales as isl
@@ -980,6 +983,28 @@ class FieldCheck(unittest.TestCase):
 
 
 class Plan(unittest.TestCase):
+    def test_main_counts_drafts_without_reporting_a_difference(self):
+        data = {
+            "invoices": [
+                record(INVOICE, kb_item_status_id=status, contact_id=999)
+                for status in (7, "7")
+            ]
+        }
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            mock.patch.object(isl, "load_documents", return_value=data),
+            mock.patch.object(im.Erp, "from_file"),
+            mock.patch.object(isl, "lookups_from_erp", return_value=LOOKUPS),
+            mock.patch.object(isl, "doctype_fields", return_value=set()),
+            contextlib.redirect_stdout(io.StringIO()) as output,
+        ):
+            report = os.path.join(tmp, "differences.txt")
+            status = isl.main(["--export", tmp, "--report", report, "--dry-run"])
+            self.assertEqual(status, 0)
+            self.assertIn("invoices left out: 2 bexio drafts", output.getvalue())
+            with open(report, encoding="utf-8") as f:
+                self.assertEqual(f.read(), "")
+
     def test_draft_invoice_is_left_out_before_mapping_and_reported(self):
         draft = record(INVOICE, kb_item_status_id=7, contact_id=999)
         results = isl.plan({"invoices": [draft]}, LOOKUPS)

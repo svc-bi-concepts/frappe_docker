@@ -96,6 +96,24 @@ def export(payments, invoices=(INVOICE, INVOICE_USD)):
 
 
 class ChfPayment(unittest.TestCase):
+    def test_draft_invoice_cannot_receive_payment_until_issued(self):
+        for status in (7, "7", 8):
+            with self.subTest(status=status):
+                data = export(
+                    [row()], invoices=[dict(INVOICE, kb_item_status_id=status)]
+                )
+                (result,) = ipi.plan(data, lookups())
+                if status == 8:
+                    self.assertIsNotNone(result["doc"])
+                    self.assertIsNone(result["error"])
+                else:
+                    self.assertIsNone(result["doc"])
+                    self.assertIsNotNone(result["error"])
+                    documents, _ = ipi.write_plan(
+                        [result], set(LOOKUPS["invoice"].values())
+                    )
+                    self.assertEqual(documents, [])
+
     def test_receipt_is_allocated_to_the_planned_invoice_name(self):
         # not drafted in ERPNext yet: the name is bexio's document number
         doc, received = ipi.map_payment(
