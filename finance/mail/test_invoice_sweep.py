@@ -87,6 +87,14 @@ class SweepTests(unittest.TestCase):
                     "",
                 )
             if args[0] == "read":
+                if "--attachment" in args:
+                    target = os.path.join(
+                        args[args.index("--out") + 1],
+                        args[args.index("--attachment") + 1],
+                    )
+                    with open(target, "wb") as out:
+                        out.write(b"%PDF-1.7 synthetic")
+                    return sweep.subprocess.CompletedProcess(argv, 0, "", "")
                 value = mails.get(args[1])
                 return sweep.subprocess.CompletedProcess(
                     argv, 0 if value is not None else 1, json.dumps(value or {}), ""
@@ -502,6 +510,7 @@ class SweepTests(unittest.TestCase):
         )
 
     def execute(self, runner, **kwargs):
+        options = {"since": "2042-04-30", "today": "2042-04-30", **kwargs}
         with mock.patch("builtins.print") as output:
             sweep.run_sweep(
                 self.config,
@@ -509,10 +518,8 @@ class SweepTests(unittest.TestCase):
                 self.state,
                 self.log,
                 "fake-mail",
-                since="2042-04-30",
-                today="2042-04-30",
                 runner=runner,
-                **kwargs
+                **options
             )
         return [c.args[0] for c in output.call_args_list]
 
@@ -929,6 +936,99 @@ class SweepTests(unittest.TestCase):
         self.execute(runner)
         self.assertTrue(all(call[0] == "list" for call in calls))
 
+    def test_recheck_reads_only_remembered_dropped_messages(self):
+        with open(self.state, "w") as out:
+            json.dump(
+                {
+                    "last_date": "2042-04-30",
+                    "mails": {
+                        "dropped": {
+                            "status": "done",
+                            "received": "2042-04-30T12:00:00Z",
+                        },
+                        "completed": {
+                            "status": "done",
+                            "received": "2042-04-30T12:00:00Z",
+                            "completed": {"attachment-old.pdf": True},
+                        },
+                        "empty-completed": {
+                            "status": "done",
+                            "received": "2042-04-30T12:00:00Z",
+                            "completed": {},
+                        },
+                    },
+                    "hashes": [],
+                    "gaps": [],
+                },
+                out,
+            )
+        rows = [
+            (mid, "2042-04-30", "v@example.test", "Hello")
+            for mid in ("dropped", "completed", "empty-completed")
+        ]
+        runner, calls = self.runner(
+            rows,
+            {
+                "dropped": self.mail(
+                    subject="Hello", attachments=[{"name": "mystery.PDF"}]
+                )
+            },
+        )
+        lines = self.execute(runner, since="2042-04-30", recheck=True)
+        self.assertEqual(
+            [call[1] for call in calls if call[0] == "read" and "--json" in call],
+            ["dropped"],
+        )
+        self.assertTrue(any(line.startswith("saved\t") for line in lines))
+        self.assertEqual(self.stored()["mails"]["dropped"]["status"], "done")
+        self.assertEqual(
+            self.stored()["mails"]["dropped"]["completed"], {"attachment-1": True}
+        )
+        calls.clear()
+        self.execute(runner, recheck=True)
+        self.assertNotIn("read", [call[0] for call in calls])
+
+    def test_recheck_requires_since_and_dry_run_writes_nothing(self):
+        with self.assertRaisesRegex(ValueError, "--recheck requires --since"):
+            sweep.run_sweep(
+                self.config, self.incoming, self.state, self.log, recheck=True
+            )
+        with mock.patch("sys.stderr", new_callable=io.StringIO):
+            self.assertEqual(sweep.main(["--recheck"]), 2)
+        with open(self.state, "w") as out:
+            json.dump(
+                {
+                    "last_date": "2042-04-30",
+                    "mails": {
+                        "dropped": {
+                            "status": "done",
+                            "received": "2042-04-30T12:00:00Z",
+                        }
+                    },
+                    "hashes": [],
+                    "gaps": [],
+                },
+                out,
+            )
+        with open(self.state, "rb") as source:
+            before = source.read()
+        runner, calls = self.runner(
+            [("dropped", "2042-04-30", "v@example.test", "Hello")],
+            {
+                "dropped": self.mail(
+                    subject="Hello", attachments=[{"name": "mystery.pdf"}]
+                )
+            },
+        )
+        self.execute(runner, since="2042-04-30", recheck=True, dry_run=True)
+        self.assertIn("read", [call[0] for call in calls])
+        with open(self.state, "rb") as source:
+            self.assertEqual(before, source.read())
+        self.assertFalse(os.path.exists(self.log))
+        calls.clear()
+        self.execute(runner, since="2042-04-30")
+        self.assertNotIn("read", [call[0] for call in calls])
+
     def test_fetch_closes_response_and_rejects_length_before_read(self):
         response = Response(headers={"Content-Length": str(sweep.MAX_BYTES + 1)})
         target = os.path.join(self.root, "x.pdf")
@@ -1104,6 +1204,10 @@ class SweepTests(unittest.TestCase):
             ),
             (self.mail(subject="Hello", links=[{"text": "Facture"}]), True),
             (
+                self.mail(subject="Hello", attachments=[{"name": "data.PDF"}]),
+                True,
+            ),
+            (
                 self.mail(
                     subject="Hello", text="Rechnung", attachments=[{"name": "data.PDF"}]
                 ),
@@ -1126,6 +1230,13 @@ class SweepTests(unittest.TestCase):
                 )
                 lines = self.execute(runner, dry_run=True)
                 self.assertEqual(len(lines) > 1, expected)
+        runner, _ = self.runner(
+            [("a", "2042-04-30", "v@example.test", "Hello")],
+            {"a": self.mail(subject="Hello", attachments=[{"name": "data.PDF"}])},
+        )
+        lines = self.execute(runner)
+        self.assertTrue(any(line.startswith("saved\t") for line in lines))
+        os.unlink(self.state)
         for configured in ("senders", "forwarders", "ignore"):
             with open(self.config, "w") as out:
                 json.dump(
@@ -1137,6 +1248,19 @@ class SweepTests(unittest.TestCase):
             )
             lines = self.execute(runner, dry_run=True)
             self.assertEqual(len(lines) > 1, configured != "ignore")
+
+    def test_ignore_overrides_wordless_pdf_candidate(self):
+        with open(self.config, "w") as out:
+            json.dump({"folders": ["inbox"], "ignore": ["VENDOR@example.test"]}, out)
+        runner, calls = self.runner(
+            [("ignored", "2042-04-30", "vendor@example.test", "Hello")],
+            {"ignored": self.mail(subject="Hello", attachments=[{"name": "data.PDF"}])},
+        )
+        lines = self.execute(runner)
+        self.assertEqual(lines, ["totals\tday-full=0"])
+        self.assertFalse(any("--attachment" in call for call in calls))
+        self.assertEqual(os.listdir(self.incoming), [])
+        self.assertNotIn("completed", self.stored()["mails"]["ignored"])
 
     def test_existing_state_is_unchanged_when_later_listing_fails(self):
         original = {"last_date": "2042-04-29", "mails": {}, "hashes": [], "gaps": []}

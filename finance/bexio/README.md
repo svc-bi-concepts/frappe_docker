@@ -814,6 +814,8 @@ lines to the private sweep log. For the first scan, run
 state and retry open messages for 14 days.
 A `gap` means a targeted word, attachment, or sender pass reached 25 messages; inspect its folder and pass with the mail reader. A `day-full` total counts full-day listings that reached 25; those listings are covered by the targeted passes and do not create gap lines. Passes are limited to 25 results, so additional matches remain uncovered. On a full day, a message from an unknown sender with no attachment whose invoice word appears only inside a compound subject word can still be missed.
 
+Every non-inline PDF is saved unless its sender is in `ignore`, so a saved PDF may not be an invoice; add recurring non-invoice senders to `ignore`. To scan previously remembered messages the old filter dropped, run with `--recheck --since YYYY-MM-DD`; this re-reads only done records without a `completed` key.
+
 The yardmaster's first-run sequence is:
 
 1. Run `finance/bexio/upload_bill.py <pdf>` to preview, then repeat with `--yes`. Read the uploaded
