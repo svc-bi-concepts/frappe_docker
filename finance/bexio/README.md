@@ -115,9 +115,9 @@ does not come from a proxy at all: it comes from the credential. The Automic Vau
 refresh token ride along, so the blessed read script holds nothing write-capable — and
 `client.py` takes the read token for every GET where it is set. `export.py` injects only
 that name too: it reads everything with the read token (live finding of 2026-10-14, see
-above). The write-capable `BEXIO_TOKEN` stays with
-`upload_bill.py` and `create_contact_and_bill.py`, which POST; repair also PUTs one reviewed
-individual bill endpoint.
+above). The write-capable `BEXIO_TOKEN` is used by `upload_bill.py`,
+`create_contact_and_bill.py` and `create_sales_invoice.py`; repair in
+`create_contact_and_bill.py` also PUTs one reviewed individual bill endpoint.
 
 ## One run for everything (`--complete`)
 
@@ -163,7 +163,7 @@ Reads prefer `BEXIO_READ_TOKEN`, the read-scoped personal access token the launc
 inject from the Automic Vault; it can only read, and using it never touches the vault.
 Where no read token is set, the read-only OAuth login runs as before — only then is a
 refresh, and with it the rotation of the stored token, possible. `client.py` never reads
-`BEXIO_TOKEN`, the write-capable token of the upload scripts.
+`BEXIO_TOKEN`, the write-capable token used by the bexio writer scripts.
 
 ## Log in again
 
