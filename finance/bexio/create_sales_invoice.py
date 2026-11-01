@@ -12,7 +12,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
-from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation
 
 BEXIO_DIR = (
     os.environ.get("BEXIO_DIR")
@@ -424,10 +424,9 @@ def _verify(expected, actual):
                 raise ValueError(f"read-back position {key} changed")
         if "unit_id" in wanted and wanted["unit_id"] != got.get("unit_id"):
             raise ValueError("read-back position unit_id changed")
-        total = (Decimal(wanted["amount"]) * Decimal(wanted["unit_price"])).quantize(
-            Decimal("0.01"), rounding=ROUND_HALF_UP
-        )
-        if Decimal(str(got.get("position_total"))) != total:
+        # bexio stores six decimals; its rounding beyond that is unproven.
+        total = Decimal(wanted["amount"]) * Decimal(wanted["unit_price"])
+        if abs(Decimal(str(got.get("position_total"))) - total) >= Decimal("0.000001"):
             raise ValueError("read-back position total changed")
 
 
