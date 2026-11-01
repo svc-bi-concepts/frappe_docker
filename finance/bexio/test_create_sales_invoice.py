@@ -370,7 +370,7 @@ class CreationTest(unittest.TestCase):
 
     def test_readback_accepts_three_decimal_unit_price(self):
         data = invoice()
-        data["positions"][0].update(amount="2", unit_price="0.007")
+        data["positions"][0].update(amount="2", unit_price="9467.381")
         self.run_invoice(data)
         self.assertIn("created draft id 701", self.output.getvalue())
         self.assertNotIn("read-back failed", self.result())
@@ -384,7 +384,7 @@ class CreationTest(unittest.TestCase):
 
     def test_readback_accepts_truncated_six_decimal_position_total(self):
         data = invoice()
-        data["positions"][0].update(amount="0.010101", unit_price="0.010203")
+        data["positions"][0].update(amount="0.010151", unit_price="0.010203")
         self.run_invoice(data)
         expected = self.fake.stored[-1]
         actual = copy.deepcopy(expected)
@@ -392,8 +392,34 @@ class CreationTest(unittest.TestCase):
             expected["positions"][0]["unit_price"]
         )
         truncated = product.quantize(Decimal("0.000001"), rounding=ROUND_DOWN)
+        self.assertNotEqual(
+            truncated, Decimal(actual["positions"][0]["position_total"])
+        )
         actual["positions"][0]["position_total"] = format(truncated, ".6f")
         si._verify(expected, actual)
+
+    def test_readback_accepts_rounding_across_half_cent(self):
+        data = invoice()
+        data["positions"][0].update(amount="0.100003", unit_price="0.049998")
+        self.run_invoice(data)
+        self.assertIn("created draft id 701", self.output.getvalue())
+        self.assertNotIn("read-back failed", self.result())
+
+    def test_readback_rejects_exact_six_decimal_tolerance_in_both_directions(self):
+        self.run_invoice()
+        expected = json.loads(
+            next(req.data for method, _, req in self.calls if method == "POST")
+        )
+        actual = self.fake.stored[-1]
+        total = Decimal(actual["positions"][0]["position_total"])
+        for direction in (-1, 1):
+            with self.subTest(direction=direction):
+                changed = copy.deepcopy(actual)
+                changed["positions"][0]["position_total"] = str(
+                    total + direction * Decimal("0.000001")
+                )
+                with self.assertRaisesRegex(ValueError, "position total changed"):
+                    si._verify(expected, changed)
 
     def test_happy_paths_all_vat_modes_and_optional_fields(self):
         for mode, expected in (
