@@ -352,3 +352,13 @@ class TemplateTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HistoryPayslipTest(unittest.TestCase):
+    def test_history_omits_bases_rates_and_year_to_date(self):
+        d = prepared(swiss_bexio_id="paystub-EMP-TEST-001-2026-10")
+        self.assertEqual(d["deductions"][0]["base"], "")
+        self.assertEqual(d["deductions"][0]["rate"], "")
+        self.assertEqual(d["year_to_date_gross"], "")
+        self.assertEqual(d["year_to_date_net"], "")
+        self.assertEqual(d["paid_amount"], "6'415.00")

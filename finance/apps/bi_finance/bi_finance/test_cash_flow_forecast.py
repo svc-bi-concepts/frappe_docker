@@ -1371,7 +1371,14 @@ class HrmsSlips(unittest.TestCase):
         sql, args = frappe.db.sql.call_args.args
         self.assertIn("docstatus = 1", sql)
         self.assertIn("posting_date <= %s", sql)
+        self.assertIn("ifnull(payroll_entry, '') != ''", sql)
         self.assertEqual(args, ("Test Company", AS_OF))
+
+    def test_history_slips_without_a_payroll_entry_are_not_a_payroll_basis(self):
+        with mock.patch.object(cff, "frappe") as frappe:
+            frappe.db.exists.return_value = True
+            frappe.db.sql.return_value = []
+            self.assertEqual(cff.hrms_slips("Test Company", AS_OF), [])
 
     def test_a_site_without_hrms_reads_no_slips(self):
         with mock.patch.object(cff, "frappe") as frappe:

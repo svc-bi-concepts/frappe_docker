@@ -18,6 +18,7 @@ from bi_payroll.hand_over import (
     hand_over,
     lohnausweis,
     qst_rows,
+    salary_slip_filters,
 )
 
 
@@ -52,6 +53,12 @@ LINES = {
     },
 }
 MONTH_1 = slip("SAL-1", 1, 8000, 7113)
+
+
+class HistoryFilterTest(unittest.TestCase):
+    def test_history_slips_are_excluded_from_hand_over(self):
+        filters = salary_slip_filters("Test Company", "2026-01-01", "2026-12-31")
+        self.assertEqual(filters["swiss_bexio_id"], ["is", "not set"])
 
 
 class OneRowPerEmployee(unittest.TestCase):

@@ -51,7 +51,21 @@ fixtures = [
         "or_filters": [
             ["name", "like", "%Employee"],
             ["name", "like", "%Employer"],
-            ["name", "in", ["Basic Salary", "Commission", "BVG Age"]],
+            [
+                "name",
+                "in",
+                [
+                    "Basic Salary",
+                    "Commission",
+                    "BVG Age",
+                    "Hourly Wage",
+                    "Vacation Compensation",
+                    "Expenses Effective",
+                    "Expenses Lump Sum",
+                    "Rent Deduction",
+                    "Advance Payment",
+                ],
+            ],
         ],
     },
     {"dt": "Custom Field", "filters": [["name", "like", "Salary Slip-swiss_%"]]},

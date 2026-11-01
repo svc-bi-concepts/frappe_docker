@@ -31,7 +31,15 @@ EMPLOYER = (
     ("KTG Employer", "KTG", "swiss_ktg_ag", "gross"),
     ("FAK Employer", "FAK", "swiss_fak_ag", "gross"),
 )
-EARNING_LABELS = {"Basic Salary": "Grundlohn", "Commission": "Provision"}
+EARNING_LABELS = {
+    "Basic Salary": "Grundlohn",
+    "Commission": "Provision",
+    "Hourly Wage": "Stundenlohn",
+    "Vacation Compensation": "Ferienentschädigung",
+    "Expenses Effective": "Spesen effektiv",
+    "Expenses Lump Sum": "Spesen pauschal",
+}
+HISTORY_LABELS = {"Rent Deduction": "Mietabzug", "Advance Payment": "Vorschuss"}
 # Components that count into the year-to-date net: the employee's own costs. The employer rows and
 # the BVG Age helper row (its amount is an age, not money) stay out.
 NET_YTD_COMPONENTS = {d[0] for d in DEDUCTIONS}
@@ -150,17 +158,29 @@ def _rows(
         known = next((d for d in definitions if d[0] == component), None)
         if known is None and known_only:
             continue
-        label = known[1] if known else component
+        label = (
+            known[1]
+            if known
+            else EARNING_LABELS.get(component, HISTORY_LABELS.get(component, component))
+        )
         if component == "Quellensteuer Employee":
             label = _qst_label(employee)
         amount = _num(_value(line, "amount"))
         rows.append(
             {
                 "label": label,
-                "base": money(
-                    _base(slip, assignment, known[3], group) if known else None
+                "base": (
+                    ""
+                    if _value(slip, "swiss_bexio_id")
+                    else money(
+                        _base(slip, assignment, known[3], group) if known else None
+                    )
                 ),
-                "rate": pct(_rate(slip, known[2], group) if known else None),
+                "rate": (
+                    ""
+                    if _value(slip, "swiss_bexio_id")
+                    else pct(_rate(slip, known[2], group) if known else None)
+                ),
                 "amount": money(amount),
                 "_amount": amount,
             }
@@ -179,6 +199,7 @@ def prepare(slip, employee=None, assignment=None, company_name=""):
     employee = employee or {}
     assignment = assignment or {}
     end_date = _value(slip, "end_date")
+    history = bool(_value(slip, "swiss_bexio_id"))
     group = bvg_age_group(slip, employee, end_date)
     earnings = _value(slip, "earnings", []) or []
     deduction_lines = _value(slip, "deductions", []) or []
@@ -197,16 +218,22 @@ def prepare(slip, employee=None, assignment=None, company_name=""):
         employer_lines, EMPLOYER, slip, employee, assignment, group, known_only=True
     )
 
-    gross_ytd = sum(_num(_value(row, "year_to_date")) for row in earnings)
+    gross_ytd = (
+        None if history else sum(_num(_value(row, "year_to_date")) for row in earnings)
+    )
     net_ytd = (
-        gross_ytd
-        - sum(
-            _num(_value(row, "year_to_date"))
-            for row in deduction_lines
-            if _value(row, "salary_component") in NET_YTD_COMPONENTS
+        None
+        if history
+        else (
+            gross_ytd
+            - sum(
+                _num(_value(row, "year_to_date"))
+                for row in deduction_lines
+                if _value(row, "salary_component") in NET_YTD_COMPONENTS
+            )
+            if gross_ytd
+            else 0.0
         )
-        if gross_ytd
-        else 0.0
     )
     net = _num(_value(slip, "net_pay"))
     rounded = _num(_value(slip, "rounded_total"))
@@ -247,7 +274,9 @@ def prepare(slip, employee=None, assignment=None, company_name=""):
         "gross": money(_value(slip, "gross_pay")),
         "total_deduction": money(_value(slip, "total_deduction")),
         "net": money(net),
-        "paid_amount": money(rounded or net),
+        "paid_amount": money(
+            rounded if _value(slip, "rounded_total") is not None else net
+        ),
         "bank_last_digits": digits[-4:],
         "year_to_date_gross": money(gross_ytd),
         "year_to_date_net": money(net_ytd),

@@ -526,5 +526,23 @@
     "modified_by": "Administrator",
     "owner": "Administrator",
     "docstatus": 0
+  },
+  {
+    "doctype": "Custom Field",
+    "name": "Salary Slip-swiss_bexio_id",
+    "dt": "Salary Slip",
+    "fieldname": "swiss_bexio_id",
+    "label": "Bexio paystub key",
+    "fieldtype": "Data",
+    "insert_after": "swiss_rates_section",
+    "description": "Stable key of the source paystub. Set for imported history slips.",
+    "read_only": 1,
+    "unique": 1,
+    "no_copy": 1,
+    "is_system_generated": 0,
+    "modified": "2026-11-01 00:00:00.000000",
+    "modified_by": "Administrator",
+    "owner": "Administrator",
+    "docstatus": 0
   }
 ]
