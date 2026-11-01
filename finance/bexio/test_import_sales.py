@@ -980,6 +980,29 @@ class FieldCheck(unittest.TestCase):
 
 
 class Plan(unittest.TestCase):
+    def test_draft_invoice_is_left_out_before_mapping_and_reported(self):
+        draft = record(INVOICE, kb_item_status_id=7, contact_id=999)
+        results = isl.plan({"invoices": [draft]}, LOOKUPS)
+        self.assertEqual(results, [])
+        self.assertEqual(isl.detail_lines(results), [])
+        count, out = Drafts().write(results)
+        self.assertEqual(count, 0)
+        self.assertEqual(out["documents"], [])
+        self.assertIn(
+            "invoices left out: 1 bexio drafts", isl.summary(results, LOOKUPS, 1)
+        )
+
+    def test_invoice_issued_later_is_mapped(self):
+        issued = record(INVOICE, kb_item_status_id=8)
+        (result,) = isl.plan({"invoices": [issued]}, LOOKUPS)
+        self.assertIsNotNone(result["doc"])
+
+    def test_status_seven_on_other_document_kinds_is_unchanged(self):
+        order = record(INVOICE, kb_item_status_id=7)
+        results = isl.plan({"orders": [order]}, LOOKUPS)
+        self.assertEqual([r["key"] for r in results], ["orders"])
+        self.assertIsNotNone(results[0]["doc"])
+
     def test_one_unmapped_record_is_counted_and_listed_by_id_only(self):
         bad = record(INVOICE, id=501, contact_id=999)
         data = {

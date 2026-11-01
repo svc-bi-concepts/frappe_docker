@@ -80,6 +80,8 @@ def credit_note(journal, payments, invoices, lookups):
     """
     invoice_id, row = applied_row(payments)
     invoice = _by_id(invoices, invoice_id, "invoice")
+    if str(invoice.get("kb_item_status_id")) == str(isl.DRAFT_INVOICE_STATUS):
+        raise isl.Unmapped("the invoice is still a bexio draft")
     voucher_id = row["kb_credit_voucher_id"]
     lines = voucher_lines(journal, voucher_id)
     if len({line["credit_account_id"] for line in lines}) != 1:

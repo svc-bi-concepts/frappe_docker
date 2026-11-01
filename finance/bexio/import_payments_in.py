@@ -368,7 +368,11 @@ def left_lines(journal, accounts, row_ids):
 
 def plan(data, lookups):
     """Map every payment of the export, in date order; one result per payment row."""
-    invoices = {str(i["id"]): i for i in data["invoices"]}
+    invoices = {
+        str(i["id"]): i
+        for i in data["invoices"]
+        if str(i.get("kb_item_status_id")) != str(isl.DRAFT_INVOICE_STATUS)
+    }
     rows = sorted(
         (row for p in data["payments"] for row in p["rows"]),
         key=lambda r: (r["date"], r["id"]),

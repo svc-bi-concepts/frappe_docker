@@ -49,6 +49,7 @@ import import_manual_entries as ime
 import import_master as im
 import import_payments_out as ipo
 import import_purchase as ip
+import import_sales as isl
 import mwst_report as mr
 
 CENT = Decimal("0.01")
@@ -598,7 +599,11 @@ def load_export(export_dir):
 def build(data):
     """The quarters of the whole export: sales, purchases and manual entries."""
     taxes = {t["id"]: t for t in data["taxes"]}
-    invoices = {i["id"]: i for i in data["invoices"]}
+    invoices = {
+        i["id"]: i
+        for i in data["invoices"]
+        if str(i.get("kb_item_status_id")) != str(isl.DRAFT_INVOICE_STATUS)
+    }
     chf_booked = booked_chf_of_invoices(data["journal"], numbers_of(data["accounts"]))
     quarters = Quarters()
     add_sales(quarters, invoices, data["invoice_payments"], taxes, chf_booked)
