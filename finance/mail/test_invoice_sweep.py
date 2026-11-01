@@ -951,6 +951,11 @@ class SweepTests(unittest.TestCase):
                             "received": "2042-04-30T12:00:00Z",
                             "completed": {"attachment-old.pdf": True},
                         },
+                        "empty-completed": {
+                            "status": "done",
+                            "received": "2042-04-30T12:00:00Z",
+                            "completed": {},
+                        },
                     },
                     "hashes": [],
                     "gaps": [],
@@ -959,7 +964,7 @@ class SweepTests(unittest.TestCase):
             )
         rows = [
             (mid, "2042-04-30", "v@example.test", "Hello")
-            for mid in ("dropped", "completed")
+            for mid in ("dropped", "completed", "empty-completed")
         ]
         runner, calls = self.runner(
             rows,
@@ -975,6 +980,13 @@ class SweepTests(unittest.TestCase):
             ["dropped"],
         )
         self.assertTrue(any(line.startswith("saved\t") for line in lines))
+        self.assertEqual(self.stored()["mails"]["dropped"]["status"], "done")
+        self.assertEqual(
+            self.stored()["mails"]["dropped"]["completed"], {"attachment-1": True}
+        )
+        calls.clear()
+        self.execute(runner, recheck=True)
+        self.assertNotIn("read", [call[0] for call in calls])
 
     def test_recheck_requires_since_and_dry_run_writes_nothing(self):
         with self.assertRaisesRegex(ValueError, "--recheck requires --since"):
@@ -1195,6 +1207,12 @@ class SweepTests(unittest.TestCase):
                 self.mail(subject="Hello", attachments=[{"name": "data.PDF"}]),
                 True,
             ),
+            (
+                self.mail(
+                    subject="Hello", text="Rechnung", attachments=[{"name": "data.PDF"}]
+                ),
+                True,
+            ),
             (self.mail(subject="Hello", text="Invoice"), False),
             (
                 self.mail(
@@ -1230,6 +1248,19 @@ class SweepTests(unittest.TestCase):
             )
             lines = self.execute(runner, dry_run=True)
             self.assertEqual(len(lines) > 1, configured != "ignore")
+
+    def test_ignore_overrides_wordless_pdf_candidate(self):
+        with open(self.config, "w") as out:
+            json.dump({"folders": ["inbox"], "ignore": ["VENDOR@example.test"]}, out)
+        runner, calls = self.runner(
+            [("ignored", "2042-04-30", "vendor@example.test", "Hello")],
+            {"ignored": self.mail(subject="Hello", attachments=[{"name": "data.PDF"}])},
+        )
+        lines = self.execute(runner)
+        self.assertEqual(lines, ["totals\tday-full=0"])
+        self.assertFalse(any("--attachment" in call for call in calls))
+        self.assertEqual(os.listdir(self.incoming), [])
+        self.assertNotIn("completed", self.stored()["mails"]["ignored"])
 
     def test_existing_state_is_unchanged_when_later_listing_fails(self):
         original = {"last_date": "2042-04-29", "mails": {}, "hashes": [], "gaps": []}
