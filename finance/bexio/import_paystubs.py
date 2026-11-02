@@ -205,21 +205,28 @@ def main(argv):
     if args.apply and args.dry_run:
         parser.error("--apply and --dry-run are one or the other")
     paystubs_dir = os.path.join(os.path.dirname(args.paystubs_json), "paystubs")
-    records = load_records(args.paystubs_json)
-    if records is None:
-        print(
-            f"aborted: no {args.paystubs_json} (run export.py --payroll first)",
-            file=sys.stderr,
-        )
-        return 2
     try:
+        records = load_records(args.paystubs_json)
+        if records is None:
+            print(
+                "aborted: no paystubs.json (run export.py --payroll first)",
+                file=sys.stderr,
+            )
+            return 2
         erp = im.Erp.from_file(args.token_file)
         rows, _ = run(records, erp, paystubs_dir)
         if args.apply:
             print(f"uploaded {apply(rows, paystubs_dir, erp)} paystub PDF(s)")
             rows, _ = run(records, erp, paystubs_dir)
     except im.ErpError as err:
-        print(f"aborted: {err}", file=sys.stderr)
+        # The server's message can carry employee data; the status says what to look at.
+        print(
+            f"aborted: ERPNext refused the request (HTTP {err.status})", file=sys.stderr
+        )
+        return 2
+    except (ValueError, OSError, KeyError, TypeError):
+        # A file name, a path or a key in the message carries the same data.
+        print("aborted: unable to read or process the paystubs", file=sys.stderr)
         return 2
     print(report(rows, applied=args.apply))
     listed = [r for r in rows if r["outcome"] in (NO_EMPLOYEE,) + PROBLEMS]

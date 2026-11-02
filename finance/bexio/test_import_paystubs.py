@@ -3,6 +3,8 @@
 Run with: python3 -m unittest discover -s finance/bexio -p 'test_*.py'
 """
 
+import contextlib
+import io
 import json
 import os
 import tempfile
@@ -321,6 +323,62 @@ class MainTest(unittest.TestCase):
                     1,
                 )
         self.assertEqual(write.call_args[0][1], ["paystub record 1: no content"])
+
+    def run_failing(self, setup, records=None):
+        """main's (code, stdout, stderr) when from_file or the Employee read raises what setup builds."""
+        out, err = io.StringIO(), io.StringIO()
+        with tempfile.TemporaryDirectory() as root:
+            write_export(root, records=records)
+            with setup(), contextlib.redirect_stdout(out), contextlib.redirect_stderr(
+                err
+            ):
+                code = ips.main(
+                    ["--paystubs-json", os.path.join(root, "paystubs.json")]
+                )
+        return code, out.getvalue(), err.getvalue()
+
+    def test_a_server_error_prints_the_status_and_none_of_its_text(self):
+        failure = im.ErpError(417, "GET /api/resource/Employee: Invented Person")
+        code, out, err = self.run_failing(
+            lambda: mock.patch.object(im.Erp, "from_file", side_effect=failure),
+            records=[record(EMP_A, 2024, 3)],
+        )
+        self.assertEqual(code, 2)
+        self.assertIn("HTTP 417", err)
+        for text in (out, err):
+            self.assertNotIn("Invented Person", text)
+
+    def test_a_file_error_prints_no_path(self):
+        failure = OSError(2, "No such file", "/invented/path/Invented Person.pdf")
+        code, out, err = self.run_failing(
+            lambda: mock.patch.object(ips, "load_records", side_effect=failure)
+        )
+        self.assertEqual(code, 2)
+        for text in (out, err):
+            self.assertNotIn("Invented Person", text)
+            self.assertNotIn("/invented", text)
+
+    def test_a_broken_paystubs_json_prints_no_traceback_and_no_path(self):
+        out, err = io.StringIO(), io.StringIO()
+        with tempfile.TemporaryDirectory() as root:
+            path = os.path.join(root, "paystubs.json")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("{not json")
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = ips.main(["--paystubs-json", path])
+        self.assertEqual(code, 2)
+        self.assertNotIn(root, out.getvalue() + err.getvalue())
+        self.assertNotIn("Traceback", err.getvalue())
+
+    def test_a_missing_paystubs_json_prints_no_path(self):
+        out, err = io.StringIO(), io.StringIO()
+        with tempfile.TemporaryDirectory() as root:
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = ips.main(
+                    ["--paystubs-json", os.path.join(root, "paystubs.json")]
+                )
+        self.assertEqual(code, 2)
+        self.assertNotIn(root, out.getvalue() + err.getvalue())
 
 
 if __name__ == "__main__":
