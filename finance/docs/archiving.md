@@ -47,9 +47,11 @@ is in `erpnext-setup.md`; the rules ERPNext enforces on posted records are the
 5. **Protection of the copies.** A set contains the site's encryption key
    (`site_config_backup.json`). Any copy outside this machine must be
    encrypted and access-controlled.
-6. **A tested restore.** No restore of a backup has been done. Until one has
-   been restored into a scratch site and checked (record counts, a few
-   invoices with their attachments), the backups are unverified.
+6. **A tested restore.** The copy stack has restored full backup sets,
+   including public and private files, since 11 October 2026. `bench restore`
+   does not carry the encryption key from `site_config_backup.json`, so stored
+   secrets on a restored site may not decrypt. No backup set from a place off
+   this machine has been restored.
 
 ## Options (not set up; Benchi decides)
 
@@ -72,6 +74,10 @@ sets are kept for ten years. D later, once the chart and the attachments are
 settled.
 
 ## Checks
+
+Compare two sites after a restore with `finance/scripts/site-check.sh report`
+and `finance/scripts/site-check.sh compare`. Reports stay under
+`private/site-check/` with mode 600.
 
 ```sh
 # the sets on the volume, newest last
