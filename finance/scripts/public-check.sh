@@ -97,6 +97,10 @@ while read -r addr names || [ -n "$addr" ]; do
   '' | '#'*) continue ;;
   esac
   addr_no=$((addr_no + 1))
+  if ! python3 -c 'import ipaddress, sys; ipaddress.ip_address(sys.argv[1])' "$addr" 2>/dev/null; then
+    echo "public-check: address $addr_no is not an IP address" >&2
+    exit 2
+  fi
   for scheme in http https; do
     n=0
     for name in $names; do

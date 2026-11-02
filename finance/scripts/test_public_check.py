@@ -187,7 +187,7 @@ class PublicCheck(unittest.TestCase):
     def test_no_curl_on_the_path_is_an_error_not_a_pass(self):
         bin_dir = os.path.join(self.tmp, "bin")
         os.mkdir(bin_dir)
-        for tool in ("grep", "stat"):
+        for tool in ("grep", "stat", "python3"):
             os.symlink(shutil.which(tool), os.path.join(bin_dir, tool))
         run = self.run_check(PATH=bin_dir)
         self.assertEqual(run.returncode, 2, run.stdout + run.stderr)
@@ -245,6 +245,13 @@ class PublicCheck(unittest.TestCase):
         run = self.run_check(STUB_RC="6")
         self.assertEqual(run.returncode, 2, run.stdout)
         self.assertIn("curl failed", run.stderr)
+
+    def test_a_hostname_is_rejected_before_any_request(self):
+        self.write_hosts("localhost ledger.example.test\n")
+        run = self.run_check()
+        self.assertEqual(run.returncode, 2, run.stdout + run.stderr)
+        self.assertIn("address 1 is not an IP address", run.stderr)
+        self.assertFalse(os.path.exists(self.log))
 
     def test_two_addresses_are_numbered(self):
         self.write_hosts("192.0.2.10 ledger.example.test\n192.0.2.11\n")
