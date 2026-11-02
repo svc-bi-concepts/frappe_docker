@@ -104,6 +104,13 @@ refuse() {
   exit 1
 }
 
+wake_copy() {
+  COLIMA_WAKE=${COLIMA_WAKE:-/Users/bsaladin/ws_yardr/integrations/bin/colima-wake}
+  if [ -x "$COLIMA_WAKE" ] && ! "$COLIMA_WAKE" --hold 60 --reason copy-stack; then
+    refuse "colima-wake failed; the VM is not up, the copy cannot work without it"
+  fi
+}
+
 require_image() {
   if ! docker image inspect "frappe-finance-custom:$1" >/dev/null 2>&1; then
     refuse "frappe-finance-custom:$1 is not built; run finance/scripts/build-image.sh copy <tag> first"
@@ -190,6 +197,7 @@ set_admin_password() {
 }
 
 up() {
+  wake_copy
   require_image "$TAG"
   check_memory "$TAG"
   live_backup
@@ -215,6 +223,7 @@ up() {
 }
 
 refresh() {
+  wake_copy
   copy_running
   live_backup
   restore_copy

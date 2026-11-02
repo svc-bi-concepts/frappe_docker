@@ -185,9 +185,15 @@ ledgerdemain`: a minor move, not this procedure; it is a decision bead. erpnexts
 
 5. **Build** (yardmaster, on the capped builder; never the default builder on the mini):
 
-       finance/scripts/build-image.sh live v16.<minor>.<patch>-swiss-bi<N>
+       BUILDER=capped-5g /Users/bsaladin/ws_yardr/integrations/bin/colima-build-window --minutes 120 -- finance/scripts/build-image.sh live v16.<minor>.<patch>-swiss-bi<N>
 
-6. **Backup** (yardmaster, before the switch, no other session writing). Note the BACKUP_ID, the timestamp prefix of
+   Wait for the build window command to return before step 6.
+
+6. **Backup** (yardmaster, before the switch, no other session writing). First take a lease covering steps 6 to 11; take it again if they run longer:
+
+       /Users/bsaladin/ws_yardr/integrations/bin/colima-wake --hold 90 --reason d4-update
+
+   Note the BACKUP_ID, the timestamp prefix of
    the new set in `sites/frontend/private/backups`:
 
        docker exec frappe-finance-backend-1 bench --site frontend backup --with-files
@@ -207,6 +213,12 @@ ledgerdemain`: a minor move, not this procedure; it is a decision bead. erpnexts
 9. **Migrate** (yardmaster; the bi_finance `after_migrate` hook runs with it):
 
        docker compose -p frappe-finance exec -T backend bench --site frontend migrate
+
+The lease keeps the VM awake; a compose stack and a running `docker exec` do not. A build window with a command
+closes when that command ends, regardless of what else is running. A window opened without a command is closed by
+idle-stop once its time and every other lease have expired. Closing a window restarts the VM, and therefore kills a
+running exec, only when opening it had to raise memory: the VM has 4 GiB today, so opening and closing do not
+restart it; below 3 GiB both do. Never start a backup, migrate or loader inside a build window.
 
 10. **Restart and ping** (yardmaster). The ping must print 200:
 

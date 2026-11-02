@@ -23,6 +23,19 @@ case "$mode" in draft | submit | relink | check) ;; *)
   exit 2
   ;;
 esac
+
+# A draft load is part of the hourly sync, so its short lease must not keep the VM up all day.
+COLIMA_WAKE=${COLIMA_WAKE:-/Users/bsaladin/ws_yardr/integrations/bin/colima-wake}
+if [ -x "$COLIMA_WAKE" ]; then
+  case "$mode" in
+  submit | relink) HOLD=60 ;;
+  draft | check) HOLD=15 ;;
+  esac
+  if ! "$COLIMA_WAKE" --hold "$HOLD" --reason bexio-drafts; then
+    echo "bexio-drafts.sh: colima-wake failed; the VM is not up, the run cannot work without it" >&2
+    exit 1
+  fi
+fi
 LOADER=$(cat finance/scripts/bexio-drafts.py)
 export LOADER
 

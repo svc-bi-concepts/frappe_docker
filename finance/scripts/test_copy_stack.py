@@ -15,6 +15,7 @@ SCRIPT = os.path.join(ROOT, "finance", "scripts", "copy-stack.sh")
 
 STUB_DOCKER = """\
 echo "$*" >> "$STUB_LOG"
+echo docker >> "$EVENT_LOG"
 case "$1" in
   image) exit "${STUB_IMAGE_RC:-0}" ;;
   wait) echo 0; exit 0 ;;
@@ -33,6 +34,12 @@ esac
 exit 0
 """
 
+STUB_WAKE = """#!/bin/sh
+echo "$*" >> "$WAKE_LOG"
+echo wake >> "$EVENT_LOG"
+exit ${WAKE_RC:-0}
+"""
+
 
 def up_services(calls):
     """The service names each 'up -d' call names, in call order."""
@@ -47,11 +54,16 @@ class CopyStack(unittest.TestCase):
         self.bin = os.path.join(self.tmp, "bin")
         os.makedirs(self.bin)
         self.log = os.path.join(self.tmp, "docker.log")
+        self.wake_log = os.path.join(self.tmp, "wake.log")
+        self.events = os.path.join(self.tmp, "events.log")
         self.private = os.path.join(self.tmp, "private")
         os.makedirs(self.private)
         with open(os.path.join(self.bin, "docker"), "w") as f:
             f.write("#!/bin/sh\n" + STUB_DOCKER)
         os.chmod(os.path.join(self.bin, "docker"), 0o755)
+        with open(os.path.join(self.bin, "wake"), "w") as f:
+            f.write(STUB_WAKE)
+        os.chmod(os.path.join(self.bin, "wake"), 0o755)
 
     def tearDown(self):
         shutil.rmtree(self.tmp)
@@ -60,6 +72,9 @@ class CopyStack(unittest.TestCase):
         base = {
             "PATH": self.bin + os.pathsep + os.environ["PATH"],
             "STUB_LOG": self.log,
+            "COLIMA_WAKE": os.path.join(self.bin, "wake"),
+            "WAKE_LOG": self.wake_log,
+            "EVENT_LOG": self.events,
             "FINANCE_PRIVATE": self.private,
         }
         base.update(env)
@@ -72,6 +87,37 @@ class CopyStack(unittest.TestCase):
             return []
         with open(self.log) as f:
             return f.read().splitlines()
+
+    def wake_calls(self):
+        if not os.path.exists(self.wake_log):
+            return []
+        with open(self.wake_log) as f:
+            return f.read().splitlines()
+
+    def test_up_and_refresh_take_one_lease_before_docker(self):
+        for args, extra in ((["up", "t1"], {}), (["refresh"], {"STUB_COPY_UP": "1"})):
+            with self.subTest(args=args):
+                for path in (self.log, self.wake_log, self.events):
+                    if os.path.exists(path):
+                        os.remove(path)
+                r = self.run_script(args, **extra)
+                self.assertEqual(r.returncode, 0, r.stderr)
+                self.assertEqual(self.wake_calls(), ["--hold 60 --reason copy-stack"])
+                with open(self.events) as f:
+                    self.assertEqual(f.read().splitlines()[0], "wake")
+
+    def test_wake_failure_stops_before_docker(self):
+        r = self.run_script(["up", "t1"], WAKE_RC="1")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("colima-wake failed", r.stderr)
+        self.assertEqual(self.calls(), [])
+
+    def test_missing_wake_is_skipped(self):
+        r = self.run_script(
+            ["up", "t1"], COLIMA_WAKE=os.path.join(self.tmp, "missing-wake")
+        )
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.wake_calls(), [])
 
     def test_no_command_prints_usage(self):
         r = self.run_script([])
@@ -125,6 +171,12 @@ class CopyStack(unittest.TestCase):
         self.assertFalse(
             [c for c in self.calls() if c.startswith("exec") or " exec " in c]
         )
+        self.assertEqual(self.wake_calls(), ["--hold 60 --reason copy-stack"])
+
+    def test_down_and_remove_do_not_take_a_lease(self):
+        self.run_script(["down"])
+        self.run_script(["remove"])
+        self.assertEqual(self.wake_calls(), [])
 
     def test_usage_is_a_usage_error_without_a_tag_or_with_an_unknown_flag(self):
         for args in (

@@ -41,7 +41,14 @@ exit ${DELTA_RC:-0}
 
 DOCKER_STUB = """#!/bin/sh
 echo "docker $*" >>"$DELTA_DOCKER_LOG"
+echo docker >>"$EVENT_LOG"
 exit 0
+"""
+
+WAKE_STUB = """#!/bin/sh
+echo "$*" >>"$WAKE_LOG"
+echo wake >>"$EVENT_LOG"
+exit ${WAKE_RC:-0}
 """
 
 MASTER_TABLE = """doctype           created  updated unchanged  failed  skipped
@@ -109,7 +116,11 @@ class DeltaScript(unittest.TestCase):
         os.makedirs(bin_dir)
         os.makedirs(priv)
         os.makedirs(exp)
-        for name, body in (("python3", PYTHON_STUB), ("docker", DOCKER_STUB)):
+        for name, body in (
+            ("python3", PYTHON_STUB),
+            ("docker", DOCKER_STUB),
+            ("wake", WAKE_STUB),
+        ):
             path = os.path.join(bin_dir, name)
             with open(path, "w") as f:
                 f.write(body)
@@ -122,6 +133,8 @@ class DeltaScript(unittest.TestCase):
                 f.write("{}")
         log = os.path.join(tmp.name, "python.log")
         dlog = os.path.join(tmp.name, "docker.log")
+        wlog = os.path.join(tmp.name, "wake.log")
+        events = os.path.join(tmp.name, "events.log")
         env = dict(os.environ)
         env.update(
             {
@@ -129,6 +142,9 @@ class DeltaScript(unittest.TestCase):
                 "PRIVATE": priv,
                 "DELTA_LOG": log,
                 "DELTA_DOCKER_LOG": dlog,
+                "COLIMA_WAKE": os.path.join(bin_dir, "wake"),
+                "WAKE_LOG": wlog,
+                "EVENT_LOG": events,
             }
         )
         env.pop("DELTA_APPLY", None)
@@ -144,6 +160,8 @@ class DeltaScript(unittest.TestCase):
         run.exp = exp
         run.log = log
         run.dlog = dlog
+        run.wlog = wlog
+        run.events = events
         return run
 
     # ---- argument handling -------------------------------------------------------
@@ -229,6 +247,22 @@ class DeltaScript(unittest.TestCase):
             os.path.exists(run.dlog) and open(run.dlog).read(),
             "the dry run submits nothing",
         )
+        with open(run.wlog) as f:
+            self.assertEqual(f.read().splitlines(), ["--hold 120 --reason bexio-delta"])
+        with open(run.events) as f:
+            self.assertEqual(f.read().splitlines()[0], "wake")
+
+    def test_wake_failure_stops_before_any_step(self):
+        run = self.run_delta(env_extra={"WAKE_RC": "1"})
+        self.assertEqual(run.returncode, 3)
+        self.assertEqual(run.stderr.count("colima-wake failed"), 1)
+        self.assertFalse(os.path.exists(run.log))
+        self.assertFalse(os.path.exists(run.dlog))
+
+    def test_missing_wake_is_skipped(self):
+        run = self.run_delta(env_extra={"COLIMA_WAKE": "/no/such/colima-wake"})
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertFalse(os.path.exists(run.wlog))
 
     def test_dry_run_refuses_moved_counts(self):
         seq = tempfile.mkdtemp()
