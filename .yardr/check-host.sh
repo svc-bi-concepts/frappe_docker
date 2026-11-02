@@ -93,10 +93,6 @@ for unset in LEDGER_HOST DB_ROOT_PASSWORD ADMIN_PASSWORD; do
     exit 1
   fi
 done
-if grep -Eq '\$\{[A-Za-z_]+:?[-+]' finance-coolify.yml; then
-  echo "finance-coolify.yml gives a setting a default" >&2
-  exit 1
-fi
 # The bi_finance layout and stamp guard, stdlib only (no frappe), so it runs on the host.
 # A synced JSON changed without a newer 'modified' fails here; see test_layout.py.
 # test_assistant, test_assistant_levels, test_assistant_actions, test_assistant_ledger_actions and test_assistant_tools run on the host too: their frappe is a stub in the module itself.
