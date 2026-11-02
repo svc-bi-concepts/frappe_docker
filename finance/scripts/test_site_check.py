@@ -25,7 +25,7 @@ class FakeDB:
         if "from `__Auth`" in query:
             return [(1,)]
         if "sum(debit)" in query:
-            return [("Invented Account", Decimal("1000.00"), Decimal("1081.00"))]
+            return [("Invented Account", Decimal("2000000.00"), Decimal("2162000.00"))]
         if "select file_url" in query:
             return []
         if "group by docstatus" in query:
@@ -43,7 +43,7 @@ class SiteCheckTests(unittest.TestCase):
         self.bin.mkdir()
         self.site_report = self.root / "site-report.txt"
         self.site_report.write_text(
-            "count.GL Entry.total=1\nbalance.Invented Account=debit:1000.00,credit:1081.00\n"
+            "count.GL Entry.total=1\nbalance.Invented Account=debit:2000000.00,credit:2162000.00\n"
             "files.public.present=2\nfiles.public.missing=0\nfiles.private.present=1\nfiles.private.missing=0\n"
             "secret.api_user.api_secret=ok\nsecret.wise.api_token=ok\nsecret.paypal.client_secret=ok\n"
         )
@@ -101,8 +101,8 @@ class SiteCheckTests(unittest.TestCase):
     def test_changed_account_missing_file_and_failed_secret_are_differences(self):
         cases = (
             (
-                "balance.Invented Account=debit:1000.00,credit:1081.00",
-                "balance.Invented Account=debit:1000.00,credit:1082.00",
+                "balance.Invented Account=debit:2000000.00,credit:2162000.00",
+                "balance.Invented Account=debit:2000000.00,credit:2162001.00",
             ),
             ("files.private.missing=0", "files.private.missing=1"),
             ("secret.wise.api_token=ok", "secret.wise.api_token=fails"),
@@ -149,7 +149,7 @@ class SiteCheckTests(unittest.TestCase):
             self.assertNotIn("invented-secret-do-not-report", report)
             self.assertIn("secret.api_user.api_secret=ok", report)
             self.assertIn(
-                "balance.Invented Account=debit:1000.00,credit:1081.00", report
+                "balance.Invented Account=debit:2000000.00,credit:2162000.00", report
             )
         finally:
             sys.modules.pop("frappe.utils.password", None)
