@@ -220,6 +220,16 @@ class CreateApiUser(unittest.TestCase):
         self.assertIn("wrote", proc.stdout)
         self.assertFalse(os.path.exists(self.keys_file(".erpnext-api")))
 
+    def test_a_bare_rotate_is_still_the_agent(self):
+        self.seed(AGENT, sorted(AGENT_ROLES))
+        with open(self.keys_file(".erpnext-api"), "w") as f:
+            f.write("old keys\n")
+        proc = self.run_script("--rotate")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        with open(self.keys_file(".erpnext-api")) as f:
+            self.assertIn("api_key=generated-key-api-agent", f.read())
+        self.assertNoSecrets(proc)
+
     def test_a_missing_keys_file_is_made_again(self):
         self.run_script("--user", "sync")
         os.remove(self.keys_file(".erpnext-api-sync"))

@@ -82,9 +82,10 @@ diff it against the GitHub tag, and we did not run its own test suite.
 - `finance/mcp/run-frappe-mcp.sh` reads `url=`, `api_key=` and `api_secret=`
   from `~/ws_yardr_finance/.erpnext-api-mcp` at each start. While that file is
   missing (before keys split 2) it reads `.erpnext-api` instead and prints one
-  warning on stderr; the fallback is removed once the split has passed. It strips the `/api/`
-  suffix from the URL, exports the three variables, and execs the server. The
-  secret never goes into the repo, into argv, or into the output.
+  warning on stderr; the fallback is removed once the split has passed. It
+  strips the `/api/` suffix from the URL, exports the three variables, and
+  execs the server. The secret never goes into the repo, into argv, or into
+  the output.
 - `finance/mcp/mcp.example.json` is the Claude Code config. Copy its `erpnext`
   entry into your own config and set the absolute path to the wrapper.
 
@@ -184,8 +185,8 @@ Results:
 - Item: 1 read (`SKU008`, Backpack). It was created by `Administrator` on
   2026-10-08, before this bead; we did not create it.
 - Identity: the server called the site as `api-agent@finance.local`, not
-  `Administrator` (the evaluation ran before the split; sessions now run as
-  `api-mcp@finance.local`).
+  `Administrator` (the evaluation ran before the split; sessions run as
+  `api-mcp@finance.local` once its key file exists).
 
 The server's `frappe_run_method` and `frappe_get_doc` reach the same data the
 API user may see; the write tools were not exercised.
