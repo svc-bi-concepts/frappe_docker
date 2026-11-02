@@ -38,6 +38,7 @@ Standard library only.
 import argparse
 import calendar
 import csv
+import http.client
 import json
 import os
 import sys
@@ -394,7 +395,7 @@ def report(importer, plan, dry_run):
     unknown = sum(
         1
         for _emp, doc, reason in plan
-        if doc is None and reason.startswith("unknown gender")
+        if doc is None and reason == "unknown gender"
     )
     print(f"unknown gender: {unknown}  needs joining date: {len(importer.needs_dates)}")
     print("status: Active {}, Left {}".format(status["Active"], status["Left"]))
@@ -437,7 +438,7 @@ def main(argv):
             genders = [row["name"] for row in erp.list("Gender")]
         except ErpError as err:
             print(
-                f"aborted: the Gender list is not readable (HTTP {err.status})",
+                f"aborted: the Gender list is not readable (status {err.status})",
                 file=sys.stderr,
             )
             return 2
@@ -449,12 +450,21 @@ def main(argv):
             # the lookup every record depends on failed (the bexio_id field is
             # missing: run finance/scripts/swiss-setup.sh fields first)
             print(
-                f"aborted: the Employee lookup failed (HTTP {err.status})",
+                f"aborted: the Employee lookup failed (status {err.status})",
                 file=sys.stderr,
             )
             return 2
         write_needs_dates(NEEDS_DATES, importer.needs_dates)
-    except (ErpError, ValueError, OSError, KeyError, TypeError):
+    except (
+        ErpError,
+        ValueError,
+        OSError,
+        KeyError,
+        TypeError,
+        AttributeError,
+        csv.Error,
+        http.client.HTTPException,
+    ):
         # The server's message, a path or a key in a message can carry employee data: a fixed line only.
         print("aborted: unable to read or process the payroll export", file=sys.stderr)
         return 2

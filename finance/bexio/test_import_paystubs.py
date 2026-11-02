@@ -4,6 +4,7 @@ Run with: python3 -m unittest discover -s finance/bexio -p 'test_*.py'
 """
 
 import contextlib
+import http.client
 import io
 import json
 import os
@@ -344,9 +345,56 @@ class MainTest(unittest.TestCase):
             records=[record(EMP_A, 2024, 3)],
         )
         self.assertEqual(code, 2)
-        self.assertIn("HTTP 417", err)
+        self.assertIn("status 417", err)
         for text in (out, err):
             self.assertNotIn("Invented Person", text)
+
+    def test_a_network_failure_prints_the_status(self):
+        failure = im.ErpError("network", "GET /api/resource/Employee")
+        code, _, err = self.run_failing(
+            lambda: mock.patch.object(im.Erp, "from_file", side_effect=failure),
+            records=[record(EMP_A, 2024, 3)],
+        )
+        self.assertEqual(code, 2)
+        self.assertIn("status network", err)
+
+    def test_a_malformed_status_line_prints_none_of_it(self):
+        failure = http.client.BadStatusLine("Invented Person")
+        code, out, err = self.run_failing(
+            lambda: mock.patch.object(im.Erp, "from_file", side_effect=failure),
+            records=[record(EMP_A, 2024, 3)],
+        )
+        self.assertEqual(code, 2)
+        for text in (out, err):
+            self.assertNotIn("Invented Person", text)
+
+    def test_an_unexpected_server_shape_prints_no_traceback(self):
+        erp = mock.Mock()
+        erp.list.return_value = [{"bexio_id": 7, "name": "Invented Person"}]
+        code, out, err = self.run_failing(
+            lambda: mock.patch.object(im.Erp, "from_file", return_value=erp),
+            records=[record(EMP_A, 2024, 3)],
+        )
+        self.assertEqual(code, 2)
+        for text in (out, err):
+            self.assertNotIn("Invented Person", text)
+
+    def test_an_unwritable_problems_list_prints_no_path(self):
+        failure = PermissionError(13, "denied", "/invented/Invented Person.txt")
+        erp = mock.Mock()
+        erp.list.return_value = []
+
+        @contextlib.contextmanager
+        def setup():
+            with mock.patch.object(im.Erp, "from_file", return_value=erp):
+                with mock.patch.object(ips.ip, "write_private", side_effect=failure):
+                    yield
+
+        code, out, err = self.run_failing(setup, records=[record(EMP_A, 2024, 3)])
+        self.assertEqual(code, 2)
+        for text in (out, err):
+            self.assertNotIn("Invented Person", text)
+            self.assertNotIn("/invented", text)
 
     def test_a_file_error_prints_no_path(self):
         failure = OSError(2, "No such file", "/invented/path/Invented Person.pdf")

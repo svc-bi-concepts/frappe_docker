@@ -25,6 +25,7 @@ Standard library only, apart from import_files.py, import_master.py and import_p
 """
 
 import argparse
+import http.client
 import json
 import os
 import sys
@@ -218,26 +219,32 @@ def main(argv):
         if args.apply:
             print(f"uploaded {apply(rows, paystubs_dir, erp)} paystub PDF(s)")
             rows, _ = run(records, erp, paystubs_dir)
+        print(report(rows, applied=args.apply))
+        listed = [r for r in rows if r["outcome"] in (NO_EMPLOYEE,) + PROBLEMS]
+        if listed:
+            ip.write_private(
+                os.path.join(im.PRIVATE, PROBLEMS_FILE),
+                [problem_line(r) for r in listed],
+            )
+            print(
+                f"{len(listed)} line(s) listed in {os.path.join(im.PRIVATE, PROBLEMS_FILE)}",
+                file=sys.stderr,
+            )
     except im.ErpError as err:
         # The server's message can carry employee data; the status says what to look at.
-        print(
-            f"aborted: ERPNext refused the request (HTTP {err.status})", file=sys.stderr
-        )
+        print(f"aborted: ERPNext request failed (status {err.status})", file=sys.stderr)
         return 2
-    except (ValueError, OSError, KeyError, TypeError):
-        # A file name, a path or a key in the message carries the same data.
+    except (
+        ValueError,
+        OSError,
+        KeyError,
+        TypeError,
+        AttributeError,
+        http.client.HTTPException,
+    ):
+        # A file name, a path, a key or the server's status line in the message carries the same data.
         print("aborted: unable to read or process the paystubs", file=sys.stderr)
         return 2
-    print(report(rows, applied=args.apply))
-    listed = [r for r in rows if r["outcome"] in (NO_EMPLOYEE,) + PROBLEMS]
-    if listed:
-        ip.write_private(
-            os.path.join(im.PRIVATE, PROBLEMS_FILE), [problem_line(r) for r in listed]
-        )
-        print(
-            f"{len(listed)} line(s) listed in {os.path.join(im.PRIVATE, PROBLEMS_FILE)}",
-            file=sys.stderr,
-        )
     return 1 if any(r["outcome"] in PROBLEMS for r in rows) else 0
 
 

@@ -7,6 +7,7 @@ Run with: python3 -m unittest discover -s finance/bexio -p 'test_*.py'
 
 import contextlib
 import copy
+import http.client
 import io
 import os
 import stat
@@ -450,7 +451,7 @@ class MainFailureTest(unittest.TestCase):
         with mock.patch.object(FakeErp, "list", side_effect=failure):
             code, text = self.run_main()
         self.assertEqual(code, 2)
-        self.assertIn("HTTP 500", text)
+        self.assertIn("status 500", text)
         self.assert_clean(text)
 
     def test_a_server_error_on_the_employee_lookup_prints_the_status_only(self):
@@ -458,7 +459,7 @@ class MainFailureTest(unittest.TestCase):
         lookup = mock.patch.object(ie.EmployeeImporter, "run", side_effect=failure)
         code, text = self.run_main(lookup=lookup)
         self.assertEqual(code, 2)
-        self.assertIn("HTTP 417", text)
+        self.assertIn("status 417", text)
         self.assert_clean(text)
 
     def test_a_token_file_error_prints_no_path(self):
@@ -490,6 +491,43 @@ class MainFailureTest(unittest.TestCase):
         code, text = self.run_main(
             write=mock.patch.object(ie, "write_needs_dates", side_effect=failure)
         )
+        self.assertEqual(code, 2)
+        self.assert_clean(text)
+
+    def test_a_malformed_status_line_prints_none_of_it(self):
+        failure = http.client.BadStatusLine("Invented Person")
+        with mock.patch.object(FakeErp, "list", side_effect=failure):
+            code, text = self.run_main()
+        self.assertEqual(code, 2)
+        self.assert_clean(text)
+
+    def test_records_that_are_not_objects_print_no_traceback(self):
+        load = mock.patch.object(
+            ie, "load_payroll", return_value=(["Invented Person"], [])
+        )
+        code, text = self.run_main(load=load)
+        self.assertEqual(code, 2)
+        self.assert_clean(text)
+
+    def run_with_dates_csv(self, content):
+        real = ie.read_dates_csv
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "employee-dates.csv")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(content)
+            return self.run_main(
+                csv=mock.patch.object(ie, "read_dates_csv", lambda: real(path))
+            )
+
+    def test_a_dates_row_with_too_many_columns_prints_no_value(self):
+        code, text = self.run_with_dates_csv(
+            "bexio_id,joined,left\n1,2020-01-02,,Invented Person\n"
+        )
+        self.assertEqual(code, 2)
+        self.assert_clean(text)
+
+    def test_an_oversized_dates_field_prints_no_traceback(self):
+        code, text = self.run_with_dates_csv("bexio_id,joined\n1," + "x" * 200000)
         self.assertEqual(code, 2)
         self.assert_clean(text)
 
