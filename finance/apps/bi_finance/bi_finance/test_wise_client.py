@@ -130,7 +130,7 @@ class Activities(unittest.TestCase):
                     "A2", "CARD_PAYMENT", "-6 EUR", created="2026-03-05T08:00:00.000Z"
                 ),
             ],
-            "cursor": {"nextCursor": "C1"},
+            "cursor": "C1",
         }
         second = {
             "activities": [
@@ -138,7 +138,7 @@ class Activities(unittest.TestCase):
                     "A1", "CARD_PAYMENT", "-7 EUR", created="2026-02-28T08:00:00.000Z"
                 )
             ],
-            "cursor": {},
+            "cursor": None,
         }
         opener = FakeOpener(first, second)
         items = wise_client.activities(TOKEN, 42, self.start, opener=opener)
@@ -159,12 +159,40 @@ class Activities(unittest.TestCase):
                     "A1", "CARD_PAYMENT", "-7 EUR", created="2026-02-20T08:00:00.000Z"
                 ),
             ],
-            "nextCursor": "C1",
+            "cursor": "C1",
         }
         opener = FakeOpener(page)
         items = wise_client.activities(TOKEN, 42, self.start, opener=opener)
         self.assertEqual([i["id"] for i in items], ["A2"])
         self.assertEqual(len(opener.requests), 1)
+
+    def test_a_null_cursor_stops_after_one_request(self):
+        page = {
+            "activities": [
+                _activity(
+                    "A1", "CARD_PAYMENT", "-7 EUR", created="2026-03-05T08:00:00.000Z"
+                )
+            ],
+            "cursor": None,
+        }
+        opener = FakeOpener(page)
+        items = wise_client.activities(TOKEN, 42, self.start, opener=opener)
+        self.assertEqual([i["id"] for i in items], ["A1"])
+        self.assertEqual(len(opener.requests), 1)
+
+    def test_a_cursor_that_is_an_object_is_an_error(self):
+        page = {
+            "activities": [
+                _activity(
+                    "A1", "CARD_PAYMENT", "-7 EUR", created="2026-03-05T08:00:00.000Z"
+                )
+            ],
+            "cursor": {"nextCursor": "C1"},
+        }
+        with self.assertRaises(wise_client.WiseError) as ctx:
+            wise_client.activities(TOKEN, 42, self.start, opener=FakeOpener(page))
+        self.assertIn("/v1/profiles/42/activities", str(ctx.exception))
+        self.assertNotIn("C1", str(ctx.exception))
 
 
 class Transfers(unittest.TestCase):

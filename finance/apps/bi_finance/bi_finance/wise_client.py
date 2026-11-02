@@ -91,7 +91,10 @@ def activities(token, profile_id, start, opener=urllib.request.urlopen):
         body = _get(token, path, params, opener=opener)
         items = body.get("activities") or []
         out += items
-        cursor = body.get("nextCursor") or (body.get("cursor") or {}).get("nextCursor")
+        # Wise documents cursor as a string, null on the last page; it goes back as the nextCursor parameter
+        cursor = body.get("cursor")
+        if cursor is not None and not isinstance(cursor, str):
+            raise WiseError(f"unexpected answer from Wise on {path}")
         # newest first: once a page reaches before start, the older pages are not wanted
         if not cursor or not items or _created(items[-1]) < start:
             break
