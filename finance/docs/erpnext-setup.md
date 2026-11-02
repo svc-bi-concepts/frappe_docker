@@ -365,8 +365,12 @@ prints what changed. A second run changes nothing.
 - Track Changes (Version) on the same doctypes (a Property Setter, so a
   migrate keeps it). They were already on. `GEBUEV_VERSIONED` in
   `swiss-setup.py` lists doctypes that get Track Changes only, with no delete
-  change: Salary Slip. Slips loaded by `import_salary_history.py` are stored
-  without validate, so they leave no Version row; later edits do.
+  change: Salary Slip. Its setting sits in the Property Setter, so read it from
+  `frappe.get_meta("Salary Slip").track_changes`; the DocType row keeps 0.
+  `import_salary_history.py --apply` inserts each slip and submits it with a
+  direct database write, so a loaded slip has no Version row; later saves add
+  one. `--remove-month` cancels first, which writes one, and the background job
+  that follows the delete removes it with the slip.
 
 Not in the step: v16 has no separate audit-trail setting; Track Changes is the
 version history. Freezing is a separate command, below.

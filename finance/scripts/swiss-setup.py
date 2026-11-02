@@ -1347,10 +1347,11 @@ def gebuev():
     say("gebuev: delete rights checked on " + str(len(GEBUEV_TRACKED)) + " doctypes")
 
     # 3. Track Changes (Version) on the same doctypes and on GEBUEV_VERSIONED. A
-    # Property Setter, so a migrate does not reset it to the doctype's JSON.
+    # Property Setter, so a migrate does not reset it to the doctype's JSON. Read
+    # from the meta: a Property Setter never reaches the DocType row, which keeps 0.
     versioned = GEBUEV_TRACKED + GEBUEV_VERSIONED
     for dt in versioned:
-        if frappe.db.get_value("DocType", dt, "track_changes"):
+        if frappe.get_meta(dt).track_changes:
             continue
         set_doctype_property(dt, "track_changes", 1, "Check")
         say(f"gebuev: {dt}: track changes on")
