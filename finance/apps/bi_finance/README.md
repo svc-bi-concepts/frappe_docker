@@ -100,7 +100,7 @@ Invoice prints, with the QR code drawn on our own server (no external host, see
   one line each; a line on the as-of date is in the opening balance already, as a salary run on that day is. The per-source
   back-test does not cover them: they have no history, and a report run for a past as-of date reads the settings as they
   stand, so a back-test is only comparable with the settings empty. Once HRMS runs, the payroll line is the net pay
-  of the last submitted Salary Slips (the sum of the slips of the latest payroll entry by end date); the salary
+  of the last submitted Salary Slips linked to a Payroll Entry (the sum of the slips of the latest payroll entry by end date); historical bexio snapshots without a Payroll Entry are excluded; the salary
   clearing account 1091's credit balance on the as-of date is one more payroll line in week 1, the net accrued but
   not yet paid; while that accrued line exists, the run of the latest slips' month is not forecast again (the accrued
   line is that month's net), so a month whose accrual is posted before its run day counts once. The expected level of
