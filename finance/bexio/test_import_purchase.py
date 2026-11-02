@@ -364,9 +364,13 @@ class MapExpenseTest(unittest.TestCase):
         with self.assertRaisesRegex(ip.Skipped, "draft expense"):
             ip.map_expense(self.expense(), lookups())
 
-    def test_draft_with_nonzero_gross_and_lowercase_status_is_skipped(self):
-        with self.assertRaisesRegex(ip.Skipped, "draft expense"):
-            ip.map_expense(self.expense(gross=45.5, status="draft"), lookups())
+    def test_draft_with_nonzero_gross_is_skipped_in_any_case(self):
+        for status in ("DRAFT", "draft", "DrAfT"):
+            with self.subTest(status=status):
+                with self.assertRaisesRegex(ip.Skipped, "draft expense"):
+                    ip.map_expense(
+                        self.expense(gross=6843.29, status=status), lookups()
+                    )
 
     def test_expense_with_gross_is_mapped(self):
         doc = ip.map_expense(self.expense(gross=45.5, status="paid"), lookups())
@@ -391,6 +395,14 @@ class DryRunTest(unittest.TestCase):
         self.assertEqual(totals.drafts_left_out, 1)
         self.assertIn("bills left out: 1 bexio drafts", ip.report(totals, "invented"))
 
+    def test_incomplete_draft_bill_is_left_out_before_reading_mapping_fields(self):
+        draft = {"status": "DRAFT"}
+        totals = ip.dry_run([draft], [], lookups(), {})
+        self.assertEqual(totals.rows, {})
+        self.assertEqual(totals.problems, [])
+        self.assertEqual(totals.drafts_left_out, 1)
+        self.assertEqual(ip.drafts([draft], lookups(), {}), [])
+
     def test_only_draft_bills_are_left_out(self):
         records = [
             bill(bid=status, status=status) for status in ("CREATED", "BOOKED", "PAID")
@@ -402,11 +414,13 @@ class DryRunTest(unittest.TestCase):
     def test_bill_entering_created_between_runs_is_mapped(self):
         record = bill(status="DRAFT")
         first = ip.dry_run([record], [], lookups(), {})
+        self.assertEqual(ip.drafts([record], lookups(), {}), [])
         record["status"] = "CREATED"
         second = ip.dry_run([record], [], lookups(), {})
         self.assertEqual(first.drafts_left_out, 1)
         self.assertEqual(second.rows[(2025, "CHF")]["mapped"], 1)
         self.assertEqual(second.drafts_left_out, 0)
+        self.assertEqual(len(ip.drafts([record], lookups(), {})), 1)
 
     def test_totals_per_year_and_currency_and_differences(self):
         good = bill("b-1", net=380, gross=402.85)

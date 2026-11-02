@@ -476,13 +476,20 @@ class BillTest(unittest.TestCase):
         self.assertEqual(quarters.counts["bills without a payment"], 0)
 
     def test_draft_bill_without_journal_booking_adds_nothing(self):
-        quarters = mb.Quarters()
         draft = self.bill()
         draft["status"] = "DRAFT"
-        mb.add_purchase(quarters, [draft], [], self.ACCOUNTS, TAXES)
-        self.assertFalse(quarters.rows)
-        self.assertEqual(quarters.counts["bill payments counted"], 0)
-        self.assertEqual(quarters.counts["bills without a payment"], 0)
+        payments_only = [row for row in self.journal() if row["ref_class"] != "KbBill"]
+        for journal in ([], payments_only):
+            with self.subTest(has_payment=bool(journal)):
+                quarters = mb.Quarters()
+                mb.add_purchase(quarters, [draft], journal, self.ACCOUNTS, TAXES)
+                self.assertFalse(quarters.rows)
+                self.assertEqual(quarters.counts["bill payments counted"], 0)
+                self.assertEqual(quarters.counts["bills without a payment"], 0)
+                self.assertEqual(
+                    quarters.counts["bill payments without their bill"],
+                    int(bool(journal)),
+                )
 
     def test_a_reverse_charge_bill_counts_its_tax_in_the_vorsteuer_and_on_the_day_bezug(
         self,
