@@ -173,6 +173,7 @@ class SalaryHistoryTests(unittest.TestCase):
             "row_count": len(base["earnings"]) + len(base["deductions"]),
             "earnings": base["earnings"],
             "deductions": base["deductions"],
+            "is_proposed": 1,
         }
         self.assertEqual(
             ish.DIFFERS,
@@ -210,7 +211,7 @@ class SalaryHistoryTests(unittest.TestCase):
             rs, ish.Lookups({"invented-1": "EMP-TEST"}, {base["bexio_id"]: slip})
         )
         self.assertEqual(
-            1, ish.check_rows(rows, ish.Lookups({}, {base["bexio_id"]: slip}))
+            1, ish.check_rows(ish.Lookups({}, {base["bexio_id"]: slip}))
         )
         self.assertEqual(ish.DIFFERS, rows[0]["outcome"])
 
@@ -286,6 +287,13 @@ class SalaryHistoryTests(unittest.TestCase):
                 erp.slips[0][field] = 0
                 self.assertEqual(1, self.run_command(erp, args=["--check"])[0])
                 erp.slips[0][field] = value
+        erp.slips[0]["is_proposed"] = 0
+        erp.calls.clear()
+        result, output, _, _ = self.run_command(erp, args=["--apply"])
+        self.assertEqual(1, result)
+        self.assertIn("apply refused", output)
+        self.assertEqual([], erp.calls)
+        erp.slips[0]["is_proposed"] = 1
         erp.slips[0]["earnings"].pop()
         self.assertEqual(1, self.run_command(erp, args=["--check"])[0])
 

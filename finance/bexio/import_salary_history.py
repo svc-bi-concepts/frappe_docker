@@ -245,6 +245,7 @@ def plan(records, lookups):
                 )
                 equal = equal and rows_match(slip.get("earnings", []), expected["earnings"])
                 equal = equal and rows_match(slip.get("deductions", []), expected["deductions"])
+                equal = equal and int(slip.get("is_proposed") or 0) == 1
                 item["outcome"] = LOADED if equal else DIFFERS
             else:
                 item["outcome"] = LOAD
@@ -272,18 +273,11 @@ def report(rows, action="dry run"):
     )
 
 
-def check_rows(rows, lookups):
+def check_rows(lookups):
     """Check proposal protection on every keyed slip, including keys outside this CSV."""
-    proposal_errors = sum(
+    return sum(
         1 for slip in lookups.slips.values() if int(slip.get("is_proposed") or 0) != 1
     )
-    for row in rows:
-        if (
-            row["outcome"] == LOADED
-            and int(lookups.slips[row["key"]].get("is_proposed") or 0) != 1
-        ):
-            row["outcome"] = DIFFERS
-    return proposal_errors
 
 
 def write_problems(path, rows):
@@ -355,7 +349,7 @@ def main(argv=None):
             write_problems(PROBLEMS_FILE, rows)
             return 1
         if args.check:
-            proposal_errors = check_rows(rows, lookups)
+            proposal_errors = check_rows(lookups)
             ok = all(r["outcome"] == LOADED for r in rows) and proposal_errors == 0
             print(report(rows, "check passed" if ok else "check failed"))
             if proposal_errors:
