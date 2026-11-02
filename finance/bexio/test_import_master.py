@@ -5,6 +5,8 @@ Run with: python3 -m unittest discover -s finance/bexio -p 'test_*.py'
 
 import copy
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -864,6 +866,50 @@ class TakenBexioIdsTest(unittest.TestCase):
             self.doc("PE-3-1", 1, None, amended_from="PE-3"),
         )
         self.assertEqual(taken, {"b-3": "PE-3-1"})
+
+
+class TokenFileTest(unittest.TestCase):
+    """TOKEN_FILE follows ERPNEXT_TOKEN_FILE (the hourly sync's key), else today's path; every --token-file default does too."""
+
+    def token_file_in(self, env):
+        code = "import import_master as im; print(im.TOKEN_FILE)"
+        proc = subprocess.run(
+            [sys.executable, "-c", code],
+            cwd=os.path.dirname(os.path.abspath(__file__)),
+            env=dict({"PATH": os.environ["PATH"]}, **env),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        return proc.stdout.strip()
+
+    def test_the_default_is_the_agent_key(self):
+        self.assertEqual(
+            self.token_file_in({}), "/Users/bsaladin/ws_yardr_finance/.erpnext-api"
+        )
+
+    def test_an_empty_variable_is_the_default_too(self):
+        self.assertEqual(
+            self.token_file_in({"ERPNEXT_TOKEN_FILE": ""}),
+            "/Users/bsaladin/ws_yardr_finance/.erpnext-api",
+        )
+
+    def test_the_variable_wins(self):
+        self.assertEqual(
+            self.token_file_in({"ERPNEXT_TOKEN_FILE": "/x/.erpnext-api-sync"}),
+            "/x/.erpnext-api-sync",
+        )
+
+    def test_the_scripts_the_sync_runs_take_it_from_import_master(self):
+        for name in ("import_sales.py", "import_purchase.py", "delta_counts.py"):
+            with open(
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), name),
+                encoding="utf-8",
+            ) as f:
+                text = f.read()
+            self.assertIn("im.TOKEN_FILE", text, name)
+            self.assertNotIn(".erpnext-api", text, name)
 
 
 if __name__ == "__main__":

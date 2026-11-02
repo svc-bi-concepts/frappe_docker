@@ -26,7 +26,9 @@
 # SAFETY: no submits, no GL writes, no delta.sh apply pass; the loaders are idempotent by
 # bexio_id, so a rerun inserts nothing. A lock under private/ refuses a second hourly run
 # while one runs, and yields to a live monthly delta (which stays manual, outside the
-# window). ERPNext access is api-agent@finance.local (.erpnext-api), unchanged.
+# window). ERPNext access is api-sync@finance.local (.erpnext-api-sync) once that key file
+# exists, and until then api-agent@finance.local (.erpnext-api): the run exports
+# ERPNEXT_TOKEN_FILE to whichever it found, for every step.
 #
 # After the lock: the colima VM may be asleep (IT's colima idle-stop), and every docker call
 # in the run fails until it wakes. colima-wake (IT's shim) starts it and holds it up for the run;
@@ -119,8 +121,19 @@ if [ ! -f "$EXPORTER" ]; then
   echo "sync_hourly: the export launcher $EXPORTER is missing" >&2
   exit 2
 fi
-if [ ! -f "$PRIVATE/.erpnext-api" ] && [ ! -f "$YARD/.erpnext-api" ]; then
-  echo "sync_hourly: no .erpnext-api token at $YARD (ERPNext access)" >&2
+# The sync user's own key (create-api-user.sh --user sync) wins when it exists. Without it the
+# run keeps the agent key, so merging this before the key is provisioned stops nothing.
+# A caller's own ERPNEXT_TOKEN_FILE is dropped first: the run is the sync's, never another user's.
+unset ERPNEXT_TOKEN_FILE
+for dir in "$PRIVATE" "$YARD"; do
+  if [ -f "$dir/.erpnext-api-sync" ]; then
+    ERPNEXT_TOKEN_FILE="$dir/.erpnext-api-sync"
+    export ERPNEXT_TOKEN_FILE
+    break
+  fi
+done
+if [ ! -f "$PRIVATE/.erpnext-api" ] && [ ! -f "$YARD/.erpnext-api" ] && [ ! -f "${ERPNEXT_TOKEN_FILE:-}" ]; then
+  echo "sync_hourly: no .erpnext-api-sync or .erpnext-api token at $YARD (ERPNext access)" >&2
   exit 2
 fi
 

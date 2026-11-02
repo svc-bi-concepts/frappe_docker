@@ -187,7 +187,7 @@ bexio once the scripts run on this login.
 
        BANKS="$(python3 finance/bexio/import_master.py --print-banks)" finance/scripts/swiss-setup.sh banks
 
-3. Import into ERPNext as `api-agent@finance.local` (token file `~/ws_yardr_finance/.erpnext-api`):
+3. Import into ERPNext as `api-agent@finance.local` (token file `~/ws_yardr_finance/.erpnext-api`; the importers keep this user, and `ERPNEXT_TOKEN_FILE` names another key file for a run, as the hourly sync does):
 
        python3 finance/bexio/import_master.py --dry-run   # totals only
        python3 finance/bexio/import_master.py
@@ -738,7 +738,8 @@ foreign-currency document against bexio's journal every hour, like every other d
   `create_contact_and_bill.py` are not part of the sync. For the unattended run, `/usr/local/bin/av` must be
   the Verified Launcher of the blessed read scripts in the vault app (a blessing alone always asks; IT,
   2026-10-14) - the yardmaster arranges that after the merge.
-- ERPNext access is `api-agent@finance.local` (`.erpnext-api`), unchanged.
+- ERPNext access is `api-sync@finance.local` (`.erpnext-api-sync`) once that file exists (the run exports
+  `ERPNEXT_TOKEN_FILE` to it for every step), and `api-agent@finance.local` (`.erpnext-api`) until then.
 - A lock under `private/` refuses a second sync while one runs, and the sync yields to a live monthly delta
   (which runs by night, outside the window).
 - On failure or surprise the run mails yardmaster AND Benchi through `yardr mail` (from the yard root, where

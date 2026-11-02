@@ -34,7 +34,12 @@ import urllib.request
 from decimal import Decimal
 
 PRIVATE = os.environ.get("BEXIO_PRIVATE") or "/Users/bsaladin/ws_yardr_finance/private"
-TOKEN_FILE = "/Users/bsaladin/ws_yardr_finance/.erpnext-api"
+# ERPNEXT_TOKEN_FILE lets a caller pick another API user's key file (the hourly sync runs as api-sync);
+# every script that takes im.TOKEN_FILE as its --token-file default follows.
+TOKEN_FILE = (
+    os.environ.get("ERPNEXT_TOKEN_FILE")
+    or "/Users/bsaladin/ws_yardr_finance/.erpnext-api"
+)
 COMPANY = "BI Concepts"
 ABBR = "bic"
 
@@ -141,12 +146,12 @@ class Erp:
                 "network", "{} {}".format(method, path.split("?")[0])
             ) from None
 
-    def list(self, doctype, filters=None, fields=("name",)):
+    def list(self, doctype, filters=None, fields=("name",), limit=100000):
         query = urllib.parse.urlencode(
             {
                 "filters": json.dumps(filters or []),
                 "fields": json.dumps(list(fields)),
-                "limit_page_length": 100000,
+                "limit_page_length": limit,
             }
         )
         return self._request("GET", f"/resource/{urllib.parse.quote(doctype)}?{query}")[
