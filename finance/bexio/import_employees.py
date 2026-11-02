@@ -393,9 +393,7 @@ def report(importer, plan, dry_run):
         + ", ".join(f"{label}/{count}" for label, count in fill_counts(employees))
     )
     unknown = sum(
-        1
-        for _emp, doc, reason in plan
-        if doc is None and reason == "unknown gender"
+        1 for _emp, doc, reason in plan if doc is None and reason == "unknown gender"
     )
     print(f"unknown gender: {unknown}  needs joining date: {len(importer.needs_dates)}")
     print("status: Active {}, Left {}".format(status["Active"], status["Left"]))
