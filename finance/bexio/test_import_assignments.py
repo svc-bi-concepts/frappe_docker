@@ -540,10 +540,13 @@ class TestRates(Base):
             plan, figs, settings(swiss_nbu_ee=None), {"test-emp-1", "test-emp-2"}
         )
         self.assertNotIn("swiss_nbu_ee", fills)
-        self.assertProblem(
-            plan,
-            "rate swiss_nbu_ee: the active employees' latest paystubs print 2 rates, not filled: "
-            "0.5 for test-emp-1; 0.8 for test-emp-2",
+        self.assertIn(
+            (
+                None,
+                "0.5 for test-emp-1; 0.8 for test-emp-2",
+                "rate swiss_nbu_ee: the active employees' latest paystubs print 2 rates, not filled",
+            ),
+            plan.problems,
         )
 
     def test_a_left_employee_does_not_decide_the_nbu_rate(self):
@@ -756,6 +759,54 @@ class TestFailure(unittest.TestCase):
         )
         self.assertEqual(code, 2)
         self.assert_none_of((out, err), "invented")
+
+    def after_the_reads(self, **patches):
+        """main with the reads of the try passing, so that what fails is what comes after them."""
+        return self.run_main(
+            from_file=mock.patch.object(ia.Erp, "from_file", return_value=mock.Mock()),
+            employees=mock.patch.object(
+                ia, "erp_employees_by_bexio_id", return_value={}
+            ),
+            structure=mock.patch.object(ia, "structure_name", return_value="s"),
+            existing=mock.patch.object(ia, "existing_assignments", return_value={}),
+            rate_report=mock.patch.object(ia, "rate_report", return_value={}),
+            **patches,
+        )
+
+    def test_a_failure_after_the_reads_prints_none_of_it(self):
+        # build_plan reads the QST tariffs, the writer writes, and the private files come last
+        server = http.client.BadStatusLine("Invented Person")
+        denied = PermissionError(13, "Denied", "/invented/path/problems.txt")
+        for name, failure, line in (
+            ("build_plan", ErpError(502, "Invented Person"), "status 502"),
+            ("build_plan", server, "unable to read or process"),
+            ("Writer", server, "unable to read or process"),
+            ("write_problems", denied, "unable to read or process"),
+        ):
+            with self.subTest(name=name, failure=type(failure).__name__):
+                patches = {
+                    "build_plan": mock.patch.object(
+                        ia, "build_plan", return_value=ia.Plan()
+                    ),
+                    name: mock.patch.object(ia, name, side_effect=failure),
+                }
+                code, out, err = self.after_the_reads(**patches)
+                self.assertEqual(code, 2)
+                self.assertIn(line, err)
+                self.assert_none_of((out, err), "Invented Person")
+                self.assert_none_of((out, err), "invented")
+
+    def test_a_rate_per_employee_stays_off_the_screen(self):
+        plan = ia.Plan()
+        plan.add(None, "0.5 for 8001", "rate swiss_nbu_ee: 2 rates, not filled")
+        code, out, err = self.after_the_reads(
+            build_plan=mock.patch.object(ia, "build_plan", return_value=plan),
+            problems=mock.patch.object(ia, "write_problems"),
+            calibration=mock.patch.object(ia, "write_calibration"),
+        )
+        self.assertEqual(code, 0)
+        self.assertIn("rate swiss_nbu_ee", err)
+        self.assertNotIn("8001", out + err)
 
 
 if __name__ == "__main__":
