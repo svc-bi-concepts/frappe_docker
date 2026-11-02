@@ -427,7 +427,7 @@ class LevelOneApproval(Base):
             with self.subTest(api_user=api_user):
                 proposed = self.propose(
                     "stub_book",
-                    {"amount": "250.00", "date": "2027-03-01"},
+                    {"amount": "137.35", "date": "2027-03-01"},
                     user=api_user,
                 )
                 self.switch(api_user)
