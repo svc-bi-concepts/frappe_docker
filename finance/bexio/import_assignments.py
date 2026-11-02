@@ -41,6 +41,7 @@ import argparse
 import collections
 import csv
 import datetime
+import http.client
 import os
 import sys
 
@@ -655,16 +656,28 @@ def main(argv):
         parser.error("--dry-run and --apply are mutually exclusive")
     dry_run = not args.apply
 
-    employees, _paystubs = load_payroll(PAYROLL_DIR)
-    figures = read_figures()
-    erp = Erp.from_file(args.token_file)
     try:
+        employees, _paystubs = load_payroll(PAYROLL_DIR)
+        figures = read_figures()
+        erp = Erp.from_file(args.token_file)
         erp_employees = erp_employees_by_bexio_id(erp)
         structure = structure_name(erp)
         settings = erp.call("frappe.client.get", doctype=SETTINGS, name=SETTINGS)
         existing = existing_assignments(erp)
     except ErpError as err:
-        print(f"aborted: {err}", file=sys.stderr)
+        # The server's message can carry employee data; the status says what to look at.
+        print(f"aborted: ERPNext request failed (status {err.status})", file=sys.stderr)
+        return 2
+    except (
+        ValueError,
+        OSError,
+        KeyError,
+        TypeError,
+        AttributeError,
+        http.client.HTTPException,
+    ):
+        # A file name, a path, a key or the server's status line in the message carries the same data.
+        print("aborted: unable to read or process the assignments", file=sys.stderr)
         return 2
     plan = build_plan(
         employees,

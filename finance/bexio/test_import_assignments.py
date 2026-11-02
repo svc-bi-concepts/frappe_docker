@@ -5,12 +5,16 @@ record of the real export (the privacy rule on the bead). Run with:
 python3 -m unittest discover -s finance/bexio -p 'test_*.py'
 """
 
+import contextlib
 import csv
 import datetime
+import http.client
+import io
 import os
 import stat
 import tempfile
 import unittest
+from unittest import mock
 
 import import_assignments as ia
 from import_master import ErpError
@@ -678,6 +682,78 @@ class TestPrivacy(unittest.TestCase):
     def test_stderr_names_the_position_only(self):
         self.assertEqual(ia.Plan.where(3), "record 3")
         self.assertEqual(ia.Plan.where(None), "settings")
+
+
+class TestFailure(unittest.TestCase):
+    """A failing run prints a status or a fixed line: no server text, path or record field."""
+
+    def run_main(self, **patches):
+        out, err = io.StringIO(), io.StringIO()
+        defaults = {
+            "load_payroll": mock.patch.object(ia, "load_payroll", return_value=({}, [])),
+            "read_figures": mock.patch.object(ia, "read_figures", return_value={}),
+            "from_file": mock.patch.object(ia.Erp, "from_file", return_value=object()),
+        }
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            with contextlib.ExitStack() as stack:
+                for name, patch in defaults.items():
+                    if name not in patches:
+                        stack.enter_context(patch)
+                for patch in patches.values():
+                    stack.enter_context(patch)
+                code = ia.main([])
+        return code, out.getvalue(), err.getvalue()
+
+    def assert_none_of(self, texts, secret):
+        for text in texts:
+            self.assertNotIn(secret, text)
+            self.assertNotIn("Traceback", text)
+
+    def test_a_server_message_prints_the_status_only(self):
+        failure = ErpError(417, "GET /api/resource/Employee: Invented Person")
+        code, out, err = self.run_main(
+            from_file=mock.patch.object(ia.Erp, "from_file", side_effect=failure)
+        )
+        self.assertEqual(code, 2)
+        self.assertIn("status 417", err)
+        self.assert_none_of((out, err), "Invented Person")
+
+    def test_a_server_message_from_a_list_call_prints_the_status_only(self):
+        failure = ErpError(500, "Invented Person")
+        code, out, err = self.run_main(
+            employees=mock.patch.object(
+                ia, "erp_employees_by_bexio_id", side_effect=failure
+            )
+        )
+        self.assertEqual(code, 2)
+        self.assertIn("status 500", err)
+        self.assert_none_of((out, err), "Invented Person")
+
+    def test_a_malformed_status_line_prints_none_of_it(self):
+        failure = http.client.BadStatusLine("Invented Person")
+        code, out, err = self.run_main(
+            from_file=mock.patch.object(ia.Erp, "from_file", side_effect=failure)
+        )
+        self.assertEqual(code, 2)
+        self.assert_none_of((out, err), "Invented Person")
+
+    def test_a_malformed_status_line_from_a_list_call_prints_none_of_it(self):
+        failure = http.client.BadStatusLine("Invented Person")
+        code, out, err = self.run_main(
+            employees=mock.patch.object(
+                ia, "erp_employees_by_bexio_id", side_effect=failure
+            )
+        )
+        self.assertEqual(code, 2)
+        self.assert_none_of((out, err), "Invented Person")
+
+    def test_a_file_error_prints_no_path(self):
+        failure = FileNotFoundError(2, "No such file", "/invented/path/figures.csv")
+        code, out, err = self.run_main(
+            read_figures=mock.patch.object(ia, "read_figures", side_effect=failure)
+        )
+        self.assertEqual(code, 2)
+        self.assert_none_of((out, err), "invented")
 
 
 if __name__ == "__main__":

@@ -4,10 +4,12 @@ Run with: python3 -m unittest discover -s finance/bexio -p 'test_*.py'
 """
 
 import contextlib
+import http.client
 import io
 import os
 import tempfile
 import unittest
+from unittest import mock
 from decimal import Decimal
 
 import import_payroll as ipr
@@ -317,6 +319,82 @@ class MainTest(unittest.TestCase):
                 ipr.main([])
             with self.assertRaises(SystemExit):
                 ipr.main(["--dry-run", "--write", "x.json"])
+
+
+class FailureTest(unittest.TestCase):
+    """A failing run prints a status or a fixed line: no server text, path or record field."""
+
+    def run_main(self, failure, where):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            with mock.patch.object(ipr.im, "newest_export", return_value="export"):
+                with mock.patch.object(ipr.pp, "load", return_value={}):
+                    with mock.patch.object(ipr.pp, "classify", return_value={}):
+                        with mock.patch.object(
+                            ipr, "select", return_value=([], [])
+                        ), mock.patch.object(
+                            ipr, "vat_booked_ids", return_value=set()
+                        ):
+                            with mock.patch.object(where[0], where[1], side_effect=failure):
+                                code = ipr.main(["--dry-run"])
+        return code, out.getvalue(), err.getvalue()
+
+    def test_a_server_message_prints_the_status_only(self):
+        failure = ipr.im.ErpError(417, "GET /api/resource/Employee: Invented Person")
+        code, out, err = self.run_main(failure, (ipr.im.Erp, "from_file"))
+        self.assertEqual(code, 2)
+        self.assertIn("status 417", err)
+        for text in (out, err):
+            self.assertNotIn("Invented Person", text)
+
+    def test_a_malformed_status_line_prints_none_of_it(self):
+        failure = http.client.BadStatusLine("Invented Person")
+        code, out, err = self.run_main(failure, (ipr.im.Erp, "from_file"))
+        self.assertEqual(code, 2)
+        for text in (out, err):
+            self.assertNotIn("Invented Person", text)
+
+    def test_a_malformed_status_line_from_a_list_call_prints_none_of_it(self):
+        failure = http.client.BadStatusLine("Invented Person")
+        code, out, err = self.run_main(failure, (ipr.im.Erp, "list"))
+        self.assertEqual(code, 2)
+        for text in (out, err):
+            self.assertNotIn("Invented Person", text)
+
+    def test_a_file_error_prints_no_path(self):
+        failure = FileNotFoundError(2, "No such file", "/invented/path/export.json")
+        code, out, err = self.run_main(failure, (ipr.pp, "load"))
+        self.assertEqual(code, 2)
+        for text in (out, err):
+            self.assertNotIn("invented", text)
+            self.assertNotIn("Traceback", text)
+
+
+class AmountsOffTheScreenTest(unittest.TestCase):
+    def test_the_dry_run_report_has_counts_and_the_file_has_the_chf(self):
+        data = test_data()
+        lines, _ = ipr.select(data, pp.classify(data), vat_ids={4})
+        per_year = ipr.totals(lines)
+        screen = ipr.report(per_year, [], [], "export")
+        self.assertNotIn("1,190.00", screen)
+        self.assertNotIn("300.00", screen)
+        self.assertIn("2024", screen)
+        self.assertIn("1,190.00", "\n".join(ipr.total_lines(per_year)))
+
+    def test_check_keeps_the_sums_in_the_private_file(self):
+        case = CheckTest("test_posted_and_matching_lines_are_no_difference")
+        case.setUp()
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            ipr.check(
+                case.lines, case.accounts, case.erp(case.gl()), private=case.private
+            )
+        self.assertNotIn("1,000.00", out.getvalue())
+        self.assertNotIn("Lohn Test", out.getvalue())
+        with open(
+            os.path.join(case.private, ipr.LIVE_TOTALS_FILE), encoding="utf-8"
+        ) as f:
+            self.assertIn("1,000.00", f.read())
 
 
 if __name__ == "__main__":

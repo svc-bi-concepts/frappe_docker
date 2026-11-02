@@ -24,6 +24,7 @@ no ERPNext Account is not written: the dry run lists it, and --write stops. The 
 
 import argparse
 import collections
+import http.client
 import json
 import os
 import sys
@@ -37,6 +38,8 @@ PAYROLL_BUCKET = "unsourced"
 LEFT_OUT_FILE = "bexio-payroll-left-out.txt"
 IDS_FILE = "bexio-payroll-ids.txt"
 DIFFERENCES_FILE = "bexio-payroll-live-differences.txt"
+TOTALS_FILE = "bexio-payroll-totals.txt"
+LIVE_TOTALS_FILE = "bexio-payroll-live-totals.txt"
 # the journal ids a VAT Journal Entry of import_vat_fix already books (the same files erp-fd93 reads)
 VAT_ID_FILES = ("bexio-vat-on-payment-ids.txt", "bexio-vat-on-payment-out-ids.txt")
 JOURNAL = "Journal Entry"
@@ -173,11 +176,9 @@ def totals(lines):
     return dict(per_year)
 
 
-def report(per_year, left_out, unmapped, export_dir):
-    out = [
-        f"payroll lines dry run from {export_dir}",
-        "{:<6}{:>8}{:>18}".format("year", "lines", "CHF"),
-    ]
+def total_lines(per_year):
+    """The CHF per year, for the private file: amounts stay off the screen."""
+    out = ["{:<6}{:>8}{:>18}".format("year", "lines", "CHF")]
     for year in sorted(per_year):
         count, total = per_year[year]
         out.append(f"{year:<6}{count:>8}{total:>18,.2f}")
@@ -188,6 +189,18 @@ def report(per_year, left_out, unmapped, export_dir):
             sum((t for _, t in per_year.values()), Decimal("0")),
         )
     )
+    return out
+
+
+def report(per_year, left_out, unmapped, export_dir):
+    """Counts only; the amounts are in <private>/TOTALS_FILE."""
+    out = [
+        f"payroll lines dry run from {export_dir}",
+        "{:<6}{:>8}".format("year", "lines"),
+    ]
+    for year in sorted(per_year):
+        out.append(f"{year:<6}{per_year[year][0]:>8}")
+    out.append("{:<6}{:>8}".format("all", sum(c for c, _ in per_year.values())))
     out.append(f"left out: {len(left_out)}")
     out.append(f"unmapped: {len(unmapped)}")
     return "\n".join(out)
@@ -211,7 +224,7 @@ def check(lines, accounts, erp, private=None):
     Counts the submitted Journal Entries keyed journal-%, and per voucher compares the GL with the line: the debit account
     and the credit account at the line's CHF amount. Per year and account, the GL sum of these vouchers is shown against
     bexio's lines. The posted journal ids go to <private>/bexio-payroll-ids.txt (erp-fd93 and erp-7avs read it), and the
-    lines that are missing or differ to <private>/bexio-payroll-live-differences.txt. Totals only on the screen.
+    lines that are missing or differ to <private>/bexio-payroll-live-differences.txt. The sums per year and account go to <private>/bexio-payroll-live-totals.txt; the screen keeps counts.
 
     Returns the number of lines that are missing or differ.
     """
@@ -279,16 +292,18 @@ def check(lines, accounts, erp, private=None):
         f"submitted Journal Entries keyed journal-%: {len(posted)}; payroll lines: {len(lines)}; posted for them: {len(ids)}"
     )
     print(f"missing or differing: {len(differs)}")
-    print(
+    table = [
         "{:<6}{:<32}{:>18}{:>18}{:>14}".format(
             "year", "account", "bexio", "ERPNext", "difference"
         )
-    )
+    ]
     for year, account in sorted(set(want_total) | set(have_total)):
         want, have = want_total[(year, account)], have_total[(year, account)]
-        print(
+        table.append(
             f"{year:<6}{account[:31]:<32}{want:>18,.2f}{have:>18,.2f}{have - want:>14,.2f}"
         )
+    ip.write_private(os.path.join(private, LIVE_TOTALS_FILE), table)
+    print(f"sums per year and account: {os.path.join(private, LIVE_TOTALS_FILE)}")
     return len(differs)
 
 
@@ -322,42 +337,58 @@ def main(argv):
     if sum(bool(x) for x in (args.dry_run, args.write is not None, args.check)) != 1:
         parser.error("exactly one of --dry-run, --write FILE and --check")
 
-    export_dir = args.export or im.newest_export()
-    data = pp.load(export_dir)
-    buckets = pp.classify(data)
-    lines, left_out = select(data, buckets, vat_booked_ids())
     try:
+        export_dir = args.export or im.newest_export()
+        data = pp.load(export_dir)
+        buckets = pp.classify(data)
+        lines, left_out = select(data, buckets, vat_booked_ids())
         accounts = load_accounts(args.token_file)
         if args.check:
             erp = im.Erp.from_file(args.token_file)
             # the bexio account ids on the lines, as the accounts of the check
             return 1 if check(lines, accounts, erp) else 0
-    except im.ErpError as err:
-        print(f"aborted: {err}", file=sys.stderr)
-        return 2
-    documents, unmapped = plan(lines, accounts)
-    print(report(totals(lines), left_out, unmapped, export_dir))
-    listed = [f"journal {i}: left out, {reason}" for i, reason in left_out]
-    listed += [f"journal {i}: not written, {reason}" for i, reason in unmapped]
-    ip.write_private(os.path.join(im.PRIVATE, LEFT_OUT_FILE), listed or ["none"])
-    print(
-        f"left out and not written are listed by journal id in {os.path.join(im.PRIVATE, LEFT_OUT_FILE)}"
-    )
-    if args.write:
-        if unmapped:
-            print(
-                f"not written: {len(unmapped)} line(s) have an unmapped account",
-                file=sys.stderr,
-            )
-            return 1
+        documents, unmapped = plan(lines, accounts)
+        print(report(totals(lines), left_out, unmapped, export_dir))
         ip.write_private(
-            args.write,
-            [json.dumps({"documents": documents, "exchange_rates": []}, indent=1)],
+            os.path.join(im.PRIVATE, TOTALS_FILE), total_lines(totals(lines))
         )
-        print(f"{len(documents)} Journal Entries handed to the loader in {args.write}")
-    else:
-        print("dry run: nothing was written to ERPNext")
-    return 1 if unmapped else 0
+        print(f"CHF per year: {os.path.join(im.PRIVATE, TOTALS_FILE)}")
+        listed = [f"journal {i}: left out, {reason}" for i, reason in left_out]
+        listed += [f"journal {i}: not written, {reason}" for i, reason in unmapped]
+        ip.write_private(os.path.join(im.PRIVATE, LEFT_OUT_FILE), listed or ["none"])
+        print(
+            f"left out and not written are listed by journal id in {os.path.join(im.PRIVATE, LEFT_OUT_FILE)}"
+        )
+        if args.write:
+            if unmapped:
+                print(
+                    f"not written: {len(unmapped)} line(s) have an unmapped account",
+                    file=sys.stderr,
+                )
+                return 1
+            ip.write_private(
+                args.write,
+                [json.dumps({"documents": documents, "exchange_rates": []}, indent=1)],
+            )
+            print(f"{len(documents)} Journal Entries handed to the loader in {args.write}")
+        else:
+            print("dry run: nothing was written to ERPNext")
+        return 1 if unmapped else 0
+    except im.ErpError as err:
+        # The server's message can carry employee data; the status says what to look at.
+        print(f"aborted: ERPNext request failed (status {err.status})", file=sys.stderr)
+        return 2
+    except (
+        ValueError,
+        OSError,
+        KeyError,
+        TypeError,
+        AttributeError,
+        http.client.HTTPException,
+    ):
+        # A file name, a path, a key or the server's status line in the message carries the same data.
+        print("aborted: unable to read or process the payroll lines", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":
