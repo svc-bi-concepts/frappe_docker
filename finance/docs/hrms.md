@@ -588,6 +588,8 @@ The live stack is not touched by any of this.
   stages its four files in `private/copy-restore/` (mode 700), copies them into the copy and
   restores them. The restore brings the live site config and database back, so the safety
   settings below are set after every restore. Do not turn them off.
+- `up` and `refresh` take a 60-minute `colima-wake --hold` lease before Docker calls. A rehearsal
+  with quiet gaps over 10 minutes needs its own `colima-wake --hold` lease.
 - Safety settings, after every restore: `pause_scheduler` 1 and `mute_emails` 1 (site config: no
   scheduled jobs, no mail). `migrate` runs after the restore, because the train image may carry
   patches the live site has not run; it runs with `--skip-search-index`, because migrate enqueues the website

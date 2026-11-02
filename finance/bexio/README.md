@@ -726,6 +726,10 @@ foreign-currency document against bexio's journal every hour, like every other d
   run calls IT's shim `/Users/bsaladin/ws_yardr/integrations/bin/colima-wake --hold 15 --reason bexio-sync`
   (`COLIMA_WAKE` overrides the path; the tests stub it). A missing shim is skipped silently; a failing wake
   prints one line on stderr and exits 3 before any step, without a mail.
+- The monthly `delta.sh` takes `/Users/bsaladin/ws_yardr/integrations/bin/colima-wake --hold 120 --reason bexio-delta`
+  after its lock and before its first step, so the VM stays awake throughout the import chain.
+- REST importers use port 8080, not the stack's published port 8082: IT's front door wakes the VM and refreshes
+  its idle clock for each connection and while a connection stays open. Port 8082 remains right for checking the stack itself.
 - Every run keeps `private/bexio-sync/<stamp>/` (mode 700): the step logs, the two snapshots, `gate.txt` and
   `summary.txt`. The last 48 run folders stay (`BEXIO_SYNC_KEEP`); launchd's own output lands in
   `private/bexio-sync/launchd.log`.
