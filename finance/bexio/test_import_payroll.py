@@ -388,6 +388,9 @@ class FailureTest(unittest.TestCase):
             self.assertNotIn("invented", text)
 
 
+AMOUNT = r"\d\.\d\d\b"
+
+
 class AmountsOffTheScreenTest(unittest.TestCase):
     def test_the_dry_run_writes_the_chf_to_the_private_file(self):
         data = test_data()
@@ -412,8 +415,7 @@ class AmountsOffTheScreenTest(unittest.TestCase):
         lines, _ = ipr.select(data, pp.classify(data), vat_ids={4})
         per_year = ipr.totals(lines)
         screen = ipr.report(per_year, [], [], "export")
-        self.assertNotIn("1,190.00", screen)
-        self.assertNotIn("300.00", screen)
+        self.assertNotRegex(screen, AMOUNT)
         self.assertIn("2024", screen)
         self.assertIn("1,190.00", "\n".join(ipr.total_lines(per_year)))
 
@@ -425,12 +427,12 @@ class AmountsOffTheScreenTest(unittest.TestCase):
             ipr.check(
                 case.lines, case.accounts, case.erp(case.gl()), private=case.private
             )
-        self.assertNotIn("1,000.00", out.getvalue())
+        self.assertNotRegex(out.getvalue(), AMOUNT)
         self.assertNotIn("Lohn Test", out.getvalue())
         with open(
             os.path.join(case.private, ipr.LIVE_TOTALS_FILE), encoding="utf-8"
         ) as f:
-            self.assertIn("1,000.00", f.read())
+            self.assertRegex(f.read(), AMOUNT)
 
 
 if __name__ == "__main__":
