@@ -427,9 +427,8 @@ def main(argv):
         if malformed and not dry_run:
             # An apply with a row that did not parse would write the default for that employee.
             print(
-                "aborted: {} malformed row(s) in {} (lines {}), nothing written".format(
+                "aborted: {} malformed row(s) in the overrides file (lines {}), nothing written".format(
                     len(malformed),
-                    OVERRIDES_FILE,
                     ", ".join(str(number) for number in malformed),
                 ),
                 file=sys.stderr,

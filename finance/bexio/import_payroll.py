@@ -16,7 +16,8 @@ Run it as:
     python3 finance/bexio/import_payroll.py --dry-run [--export DIR]
     python3 finance/bexio/import_payroll.py --write FILE [--export DIR]
 
---dry-run reads ERPNext's accounts (by bexio_id) and prints totals per year only; --write FILE writes the loader plan
+--dry-run reads ERPNext's accounts (by bexio_id) and prints the line counts per year, the CHF per year going to
+<private>/bexio-payroll-totals.txt; --write FILE writes the loader plan
 (finance/scripts/bexio-drafts.sh FILE submit does the live run). Nothing goes into ERPNext here. A line whose account has
 no ERPNext Account is not written: the dry run lists it, and --write stops. The journal ids that are not written go to
 <private>, never to the screen. Standard library only, apart from import_master and posting_plan.
@@ -376,6 +377,10 @@ def main(argv):
         else:
             print("dry run: nothing was written to ERPNext")
         return 1 if unmapped else 0
+    except SystemExit:
+        # newest_export ends the run this way when there is no export, and its message holds the path.
+        print("aborted: no bexio export (run export.py first)", file=sys.stderr)
+        return 2
     except im.ErpError as err:
         # The server's message can carry employee data; the status says what to look at.
         print(f"aborted: ERPNext request failed (status {err.status})", file=sys.stderr)

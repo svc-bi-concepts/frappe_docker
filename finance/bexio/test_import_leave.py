@@ -599,6 +599,23 @@ class FailureTest(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assert_none_of((out, err), "invented")
 
+    def test_malformed_overrides_print_the_line_numbers_and_no_path(self):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            with mock.patch.object(il, "load_payroll", return_value=([], [])):
+                with mock.patch.object(il.Erp, "from_file", return_value=FakeErp()):
+                    with mock.patch.object(
+                        il, "read_overrides", return_value=({}, [3, 7])
+                    ):
+                        with mock.patch.object(
+                            il, "OVERRIDES_FILE", "/invented/path/overrides.txt"
+                        ):
+                            code = il.main(["--apply"])
+        self.assertEqual(code, 2)
+        self.assertIn("2 malformed row(s)", err.getvalue())
+        self.assertIn("lines 3, 7", err.getvalue())
+        self.assert_none_of((out.getvalue(), err.getvalue()), "invented")
+
 
 if __name__ == "__main__":
     unittest.main()

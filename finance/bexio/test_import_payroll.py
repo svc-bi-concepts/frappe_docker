@@ -325,6 +325,8 @@ class FailureTest(unittest.TestCase):
     """A failing run prints a status or a fixed line: no server text, path or record field."""
 
     def run_main(self, failure, where):
+        # from_file answers a fake unless it is the one failing: the real one reads the real token file
+        fake = mock.Mock(list=mock.Mock(side_effect=failure))
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             with mock.patch.object(ipr.im, "newest_export", return_value="export"):
@@ -334,9 +336,16 @@ class FailureTest(unittest.TestCase):
                             ipr, "select", return_value=([], [])
                         ), mock.patch.object(ipr, "vat_booked_ids", return_value=set()):
                             with mock.patch.object(
-                                where[0], where[1], side_effect=failure
+                                ipr.im.Erp, "from_file", return_value=fake
                             ):
-                                code = ipr.main(["--dry-run"])
+                                with (
+                                    mock.patch.object(
+                                        where[0], where[1], side_effect=failure
+                                    )
+                                    if where
+                                    else contextlib.nullcontext()
+                                ):
+                                    code = ipr.main(["--dry-run"])
         return code, out.getvalue(), err.getvalue()
 
     def test_a_server_message_prints_the_status_only(self):
@@ -356,8 +365,9 @@ class FailureTest(unittest.TestCase):
 
     def test_a_malformed_status_line_from_a_list_call_prints_none_of_it(self):
         failure = http.client.BadStatusLine("Invented Person")
-        code, out, err = self.run_main(failure, (ipr.im.Erp, "list"))
+        code, out, err = self.run_main(failure, None)
         self.assertEqual(code, 2)
+        self.assertIn("aborted: unable to read or process", err)
         for text in (out, err):
             self.assertNotIn("Invented Person", text)
 
@@ -369,8 +379,34 @@ class FailureTest(unittest.TestCase):
             self.assertNotIn("invented", text)
             self.assertNotIn("Traceback", text)
 
+    def test_no_export_prints_no_path(self):
+        failure = SystemExit("no export under /invented/path; run export.py first")
+        code, out, err = self.run_main(failure, (ipr.im, "newest_export"))
+        self.assertEqual(code, 2)
+        self.assertIn("aborted: no bexio export", err)
+        for text in (out, err):
+            self.assertNotIn("invented", text)
+
 
 class AmountsOffTheScreenTest(unittest.TestCase):
+    def test_the_dry_run_writes_the_chf_to_the_private_file(self):
+        data = test_data()
+        private = tempfile.mkdtemp()
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            with mock.patch.object(ipr.im, "PRIVATE", private):
+                with mock.patch.object(ipr.pp, "load", return_value=data):
+                    with mock.patch.object(ipr, "vat_booked_ids", return_value={4}):
+                        with mock.patch.object(
+                            ipr,
+                            "load_accounts",
+                            return_value={"A5000": "Lohn", "A1020": "Bank"},
+                        ):
+                            ipr.main(["--dry-run", "--export", "export"])
+        self.assertNotIn("1,190.00", out.getvalue())
+        with open(os.path.join(private, ipr.TOTALS_FILE), encoding="utf-8") as f:
+            self.assertIn("1,190.00", f.read())
+
     def test_the_dry_run_report_has_counts_and_the_file_has_the_chf(self):
         data = test_data()
         lines, _ = ipr.select(data, pp.classify(data), vat_ids={4})
