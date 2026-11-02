@@ -14,8 +14,9 @@ Run it as:
 --export defaults to the newest directory under <private>/bexio-export/. The
 export holds bills.json (the list, with totals) and bills-detail.json (one
 single-bill record per bill, with its positions); expenses.json is read when
-it exists. The dry run prints totals per year and currency only. The bexio ids
-of the records it cannot map, and the ones whose totals differ, go to
+it exists. The dry run prints totals per year and currency, plus the count of
+DRAFT bills left out. The bexio ids of records it cannot map, and the ones
+whose totals differ, go to
 <private>/bexio-purchase-dry-run.txt, never to the screen or the repository.
 
 Each bill: the supplier is the Supplier of its supplier_id; each line is one
