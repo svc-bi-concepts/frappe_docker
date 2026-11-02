@@ -121,6 +121,7 @@ Abschlussbuchungen, when bexio's business year is closed:**
 2. Take a backup with the files, the way `finance/docs/archiving.md` says:
    `docker compose -p frappe-finance exec -T backend bench --site frontend backup --with-files`. The
    timestamp prefix of the new set in `sites/frontend/private/backups` is the `BACKUP_ID`.
+   After any restore, compare the source and restored site with `finance/scripts/site-check.sh`.
 3. The yardmaster or a builder runs the dry run: `sh finance/bexio/delta.sh <export-dir>`. The counts table
    goes into the bead note.
 4. ledgerdemain reads the dry run (nothing unexpected in the counts) and gives the go.
