@@ -30,8 +30,9 @@ if [ ! -f "$FILE" ]; then
   echo "public-check: no hosts file (private/public-check-hosts)" >&2
   exit 2
 fi
-# stat -f is BSD/macOS, stat -c is GNU.
-MODE=$(stat -f %Lp "$FILE" 2>/dev/null || stat -c %a "$FILE")
+# stat -c is GNU, stat -f is BSD/macOS. GNU must go first: to GNU stat, -f means filesystem status, so it would
+# print a whole block to stdout before the fallback ran; macOS stat rejects -c as an illegal option and prints nothing.
+MODE=$(stat -c %a "$FILE" 2>/dev/null || stat -f %Lp "$FILE")
 if [ "$MODE" != 600 ]; then
   echo "public-check: the hosts file must be mode 600, it is $MODE" >&2
   exit 2
