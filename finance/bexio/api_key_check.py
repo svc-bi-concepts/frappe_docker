@@ -2,31 +2,52 @@
 
     python3 finance/bexio/api_key_check.py <key file>
 
-Read-only, standard library, through import_master.Erp. The agent key (.erpnext-api, beside the
-key file under test; --lister-key names another) lists the doctypes of the Payroll, HR and BI
-Payroll modules (the exact names in hrms's and bi_payroll's modules.txt; no single or child
-doctype), and the check adds Employee, Version rows of Salary Slip and File rows attached to a
-Salary Slip. The key under test then asks each for ONE row, field name only.
+Read-only, standard library, through import_master.Erp. The agent key (im.TOKEN_FILE, so
+.erpnext-api) lists the doctypes of every module in hrms's modules.txt and of BI Payroll (no
+single or child doctype), and the check adds Employee, Deleted Document and Version with no filter
+(a key that reads them reads whole documents, and today's rows prove nothing about tomorrow's) and
+File on Salary Slip and on Employee, where the paystub PDFs are. The key under test then asks each
+for ONE row, field name only.
 
 One line per doctype: refused (HTTP 403, Frappe's answer to a list without read), visible (a
-row came back) or empty (allowed to list, no row there). Then a total. No row and no name is ever
-printed, and neither is a key. Exit 0 when nothing is visible, 1 when anything is, 2 when a
-call failed for another reason (the check then says nothing about that doctype).
+row came back) or empty (allowed to list, no row there); the File lines say which filter ran. Then
+a total. No row and no name is ever printed, and neither is a key.
+
+Exit 0 only when every line is refused, the File lines alone may also be empty: File is filtered
+row by row, so anyone may list it. Exit 1 otherwise: empty on another line means the key may list
+that doctype, and the rows come later. Exit 2 when the check could not finish (a call failed for
+another reason, a key file is unreadable, or a module that holds doctypes listed none, which would
+otherwise pass by probing nothing).
 """
 
 import argparse
-import os
 import sys
 
 import import_master as im
 
-# hrms: Payroll and HR hold the salary and employee doctypes; bi_payroll: BI Payroll.
-MODULES = ["Payroll", "HR", "BI Payroll"]
+# hrms's modules.txt, then bi_payroll's. No payroll, HR or Employee reads through a key (mem-g98v), so all of them.
+MODULES = [
+    "HR Setup",
+    "Tenure",
+    "Recruitment",
+    "Shift and Attendance",
+    "Leaves",
+    "Expenses",
+    "Performance",
+    "Payroll",
+    "Tax and Benefits",
+    "HR",
+    "BI Payroll",
+]
+# The modules that hold doctypes today; the other hrms entries list none yet, and that is no failure.
+MUST_LIST = ["Payroll", "HR", "BI Payroll"]
 # Doctypes outside those modules that carry payroll data, with the filter that narrows them.
 EXTRA = [
     ("Employee", []),
-    ("Version", [["ref_doctype", "=", "Salary Slip"]]),
+    ("Deleted Document", []),
+    ("Version", []),
     ("File", [["attached_to_doctype", "=", "Salary Slip"]]),
+    ("File", [["attached_to_doctype", "=", "Employee"]]),
 ]
 
 
@@ -35,7 +56,11 @@ def targets(lister):
     names = lister.list(
         "DocType",
         [["module", "in", MODULES], ["issingle", "=", 0], ["istable", "=", 0]],
+        fields=("name", "module"),
     )
+    missing = set(MUST_LIST) - {row["module"] for row in names}
+    if missing:
+        raise ValueError("no doctype listed for {}".format(", ".join(sorted(missing))))
     return [(row["name"], []) for row in sorted(names, key=lambda r: r["name"])] + EXTRA
 
 
@@ -50,14 +75,20 @@ def probe(erp, doctype, filters):
     return "visible" if rows else "empty"
 
 
+def label(doctype, filters):
+    """The doctype, and the filter when one ran, so the two File lines can be told apart."""
+    return " ".join([doctype] + [f"({f} {op} {v})" for f, op, v in filters])
+
+
 def check(lister, erp, out):
     results = [
-        (doctype, probe(erp, doctype, filters)) for doctype, filters in targets(lister)
+        (doctype, filters, probe(erp, doctype, filters))
+        for doctype, filters in targets(lister)
     ]
-    for doctype, verdict in results:
-        print(f"{verdict:8} {doctype}", file=out)
+    for doctype, filters, verdict in results:
+        print(f"{verdict:8} {label(doctype, filters)}", file=out)
     counts = {
-        v: sum(1 for _d, r in results if r == v)
+        v: sum(1 for _d, _f, r in results if r == v)
         for v in ("visible", "refused", "empty")
     }
     print(
@@ -66,7 +97,11 @@ def check(lister, erp, out):
         ),
         file=out,
     )
-    return 1 if counts["visible"] else 0
+    passed = all(
+        r == "refused" or (r == "empty" and doctype == "File")
+        for doctype, _f, r in results
+    )
+    return 0 if passed else 1
 
 
 def main(argv=None):
@@ -75,20 +110,15 @@ def main(argv=None):
         "key_file",
         help="the key file under test, e.g. ~/ws_yardr_finance/.erpnext-api-mcp",
     )
-    parser.add_argument(
-        "--lister-key",
-        help="the key that lists the doctypes (default: .erpnext-api beside the key file)",
-    )
     args = parser.parse_args(argv)
-    lister_key = args.lister_key or os.path.join(
-        os.path.dirname(os.path.abspath(args.key_file)), ".erpnext-api"
-    )
     try:
         return check(
-            im.Erp.from_file(lister_key), im.Erp.from_file(args.key_file), sys.stdout
+            im.Erp.from_file(im.TOKEN_FILE),
+            im.Erp.from_file(args.key_file),
+            sys.stdout,
         )
-    except im.ErpError as err:
-        print(f"api_key_check: {err}; the result is incomplete", file=sys.stderr)
+    except (im.ErpError, OSError, KeyError, ValueError) as err:
+        print(f"api_key_check: {err!r}; the result is incomplete", file=sys.stderr)
         return 2
 
 

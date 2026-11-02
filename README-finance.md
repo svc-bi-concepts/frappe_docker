@@ -84,8 +84,11 @@ either list holds System Manager, HR User, HR Manager or AI Approver.
 `assistant_actions.API_USERS` names all three, so none of them approves an AI
 Action. An agent with a shell can still read `.erpnext-api` or use `docker exec`;
 the split closes the MCP path only. `python3 finance/bexio/api_key_check.py
-<key file>` asks the Payroll, HR and BI Payroll doctypes (and Employee, Salary
-Slip Versions and Files) for one row each and says which the key sees.
+<key file>` asks the doctypes of every hrms module and BI Payroll, Employee,
+Deleted Document, Version, and File on Salary Slip and on Employee for one row
+each, and says for each whether the key is refused, sees a row, or may list an
+empty doctype. It exits 0 only when every line is refused (File lines may be
+empty).
 
 Until a key file exists, its consumer falls back: `sync_hourly.sh` to
 `.erpnext-api`, `run-frappe-mcp.sh` to `.erpnext-api` with one warning on stderr.
