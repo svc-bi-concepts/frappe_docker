@@ -207,11 +207,15 @@ ledgerdemain`: a minor move, not this procedure; it is a decision bead. erpnexts
 
    Wait for the build window command to return before step 6.
 
-   The lease keeps the VM awake; a compose stack and a running `docker exec` do not. A build window with a command
-   closes when that command ends, regardless of what else is running. A window opened without a command is closed by
-   idle-stop once its time and every other lease have expired. Closing a window restarts the VM, and therefore kills a
-   running exec, only when opening it had to raise memory: the VM has 4 GiB today, so opening and closing do not
-   restart it; below 3 GiB both do. Never start a backup, migrate or loader inside a build window.
+   A lease keeps the VM awake; a compose stack does not. A foreground `docker exec`, `docker cp`, `docker run`,
+   `docker compose exec` or `docker compose run` on the host counts as use while it runs; `docker exec -d` is not
+   seen and needs a lease. The build window refuses with exit 70 and changes nothing while such a job, an image build
+   or a CI job runs on any yard, or while another window is open. Wait for it and run the command again. So open the
+   window before starting exec jobs. A build window with a command closes when that command ends, regardless of what
+   else is running. A window opened without a command is closed by idle-stop once its time and every other lease have
+   expired. Closing a window restarts the VM, and therefore kills a running exec, only when opening it had to raise
+   memory: the VM has 4 GiB today, so opening and closing do not restart it; below 3 GiB both do. Never start a
+   backup, migrate or loader inside a build window.
 
 6. **Backup** (yardmaster, before the switch, no other session writing). First take a lease covering steps 6 to 11; take it again if they run longer:
 
