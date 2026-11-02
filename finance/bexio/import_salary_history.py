@@ -355,6 +355,9 @@ def main(argv=None):
         if args.remove_month:
             return remove_month(erp, year, month, args.apply)
         records = read_figures(args.figures)
+        if not records:
+            print("salary history: no stubs in figures CSV; refusing to continue")
+            return 1
         lookups = Lookups.from_erp(erp)
         rows = plan(records, lookups)
         if args.apply and any(r["outcome"] in BAD + (DIFFERS,) for r in rows):

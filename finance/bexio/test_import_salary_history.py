@@ -322,6 +322,15 @@ class SalaryHistoryTests(unittest.TestCase):
         erp.slips[0]["earnings"].pop()
         self.assertEqual(1, self.run_command(erp, args=["--check"])[0])
 
+    def test_empty_figures_refused_for_apply_and_check(self):
+        for args in (["--apply"], ["--check"]):
+            with self.subTest(args=args):
+                erp = FakeErp()
+                result, output, _, _ = self.run_command(erp, rows=[], args=args)
+                self.assertEqual(1, result)
+                self.assertIn("no stubs in figures CSV", output)
+                self.assertEqual([], erp.calls)
+
     def test_proposal_check_includes_slips_outside_csv(self):
         erp = FakeErp()
         self.run_command(erp, args=["--apply"])
