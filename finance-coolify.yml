@@ -1,7 +1,7 @@
 # Finance ledger for Coolify: pwd.yml and finance-local.yml folded into one self-contained file, with no host ports and
 # three networks. Use it alone (docker compose -f finance-coolify.yml), never together with pwd.yml.
 # The image arrives by docker save and load (pull_policy: never), the same tag as finance-local.yml; a switch of
-# that tag moves this file too (switch_image.py reads both, .yardr/check-host.sh tests they are equal).
+# that tag moves this file too (switch-image.sh sets both, .yardr/check-host.sh tests they are equal).
 #
 # pwd.yml sets FRAPPE_SITE_NAME_HEADER: frontend, so nginx serves the ledger for ANY Host header. The frontend's
 # router rule (one host, from LEDGER_HOST) is the only barrier if public traffic reaches the proxy, so nothing
@@ -13,10 +13,12 @@
 #   ADMIN_PASSWORD       the site's Administrator
 # The daily backup service (and its bucket writer) joins this file when backup-ship.sh exists.
 # Router labels are Traefik's as the Coolify proxy reads them (entrypoint and resolver names are Coolify's
-# defaults, a guess until erp-5qyr reads the rendered compose).
+# defaults, a guess until erp-5qyr reads the rendered compose; so is the lack of a traefik.docker.network label,
+# which a frontend on two networks may need, under the network's rendered name).
 #
 # Networks (which service needs which, from pwd.yml):
-#   ledger-data  internal, no route out: db and both redis, and only the services that connect to them.
+#   ledger-data  internal, no route out: db and both redis, and only the services that connect to them (the
+#                one-shot configurator connects to nothing, but on no network it would land on a default one).
 #   ledger-out   backend, workers, scheduler and websocket: outbound calls (Wise, PayPal, the public URL the
 #                websocket calls back to). The frontend joins it for its link to backend and websocket; no db, no redis.
 #   ledger-edge  frontend only: the network the proxy reaches.

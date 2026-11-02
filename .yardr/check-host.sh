@@ -46,7 +46,7 @@ assert all(s[n].get('restart') != 'unless-stopped' for n in ['configurator', 'cr
 # from exposing the ledger (nginx serves any Host, so the one router rule is the only barrier). Needs no private/ data.
 LEDGER_HOST=ledger.example.test DB_ROOT_PASSWORD=invented-root ADMIN_PASSWORD=invented-admin docker compose -f finance-coolify.yml config -q
 LEDGER_HOST=ledger.example.test DB_ROOT_PASSWORD=invented-root ADMIN_PASSWORD=invented-admin docker compose -f finance-coolify.yml config --format json | python3 -c "
-import json, sys
+import json, re, sys
 s = json.load(sys.stdin)
 svc, nets = s['services'], s['networks']
 assert not [n for n, v in svc.items() if v.get('ports')], 'a service publishes a port'
@@ -55,7 +55,9 @@ assert not [n for n, v in nets.items() if v.get('external')], 'an external netwo
 assert set(nets) == {'ledger-data', 'ledger-out', 'ledger-edge'}, sorted(nets)
 on = {n: set(v.get('networks') or []) for n, v in svc.items()}
 assert all('coolify' not in x for x in on.values()), 'a service is on a network named coolify'
-for n in ['db', 'redis-cache', 'redis-queue']:
+assert not [n for n, v in nets.items() if 'coolify' in (v.get('name') or '')], 'a network is named coolify'
+assert not [n for n, v in svc.items() if v.get('network_mode')], 'a service leaves the three networks'
+for n in ['db', 'redis-cache', 'redis-queue', 'configurator', 'create-site']:
     assert on[n] == {'ledger-data'}, (n, on[n])
 assert on['frontend'] == {'ledger-edge', 'ledger-out'}, on['frontend']
 assert [n for n, x in on.items() if 'ledger-edge' in x] == ['frontend']
@@ -66,17 +68,35 @@ for n in ['backend', 'queue-long', 'queue-short', 'scheduler', 'websocket']:
 assert all(v.get('pull_policy') == 'never' for v in svc.values() if v['image'].startswith('frappe-finance-custom:'))
 rules = [l for v in svc.values() for l in (v.get('labels') or {}).items() if '.rule' in l[0]]
 assert rules == [('traefik.http.routers.ledger.rule', 'Host(\`ledger.example.test\`)')], rules
+# Only the frontend carries router labels, and only the one router: Traefik gives a router with no rule a default one.
+traefik = {n: [k for k in (v.get('labels') or {}) if k.startswith('traefik.')] for n, v in svc.items()}
+assert [n for n, x in traefik.items() if x] == ['frontend'], traefik
+assert {k.split('.')[3] for k in traefik['frontend'] if k.startswith('traefik.http.routers.')} == {'ledger'}, traefik
+assert not [k for k in traefik['frontend'] if k.startswith(('traefik.tcp.', 'traefik.udp.'))], traefik
+# No literal password, whatever its value: every password setting renders to the invented env, every flag names a variable.
+env = [(n, k, x) for n, v in svc.items() for k, x in (v.get('environment') or {}).items() if 'PASSWORD' in k.upper()]
+assert env and all(x in ('invented-root', 'invented-admin') for _, _, x in env), [e[:2] for e in env]
+flags = re.findall(r'--[a-z-]*password=(\\S+)', json.dumps(svc).replace('\\\\\"', ''))
+assert len(flags) == 2 and all(f.startswith('\$\$') for f in flags), 'a password flag holds no variable'
 "
 # One tag: the image finance-coolify.yml runs is the one finance-local.yml pins (a switch moves both).
 [ "$(python3 finance/scripts/switch_image.py current finance-coolify.yml)" = "$(python3 finance/scripts/switch_image.py current finance-local.yml)" ]
-# No literal password in the file: the secrets are required variables, and no value is admin.
-# A bare '! grep' never trips errexit (SC2251), so the match is tested in an if.
-if grep -Eiq '(password|passwd)[A-Za-z_]*(:[[:space:]]*|=)["'"'"']?admin|--(admin|db-root)-password=admin' finance-coolify.yml; then
-  echo "finance-coolify.yml carries a literal admin password" >&2
+# Each setting is required: without it the file refuses to render, and no line falls back on a default (one such line
+# renders the same while the others still require the variable).
+for unset in LEDGER_HOST DB_ROOT_PASSWORD ADMIN_PASSWORD; do
+  if (
+    export LEDGER_HOST=ledger.example.test DB_ROOT_PASSWORD=invented-root ADMIN_PASSWORD=invented-admin
+    unset "$unset"
+    docker compose -f finance-coolify.yml config -q 2>/dev/null
+  ); then
+    echo "finance-coolify.yml renders without $unset" >&2
+    exit 1
+  fi
+done
+if grep -Eq '\$\{[A-Za-z_]+:?[-+]' finance-coolify.yml; then
+  echo "finance-coolify.yml gives a setting a default" >&2
   exit 1
 fi
-grep -q 'DB_ROOT_PASSWORD:?' finance-coolify.yml
-grep -q 'ADMIN_PASSWORD:?' finance-coolify.yml
 # The bi_finance layout and stamp guard, stdlib only (no frappe), so it runs on the host.
 # A synced JSON changed without a newer 'modified' fails here; see test_layout.py.
 # test_assistant, test_assistant_levels, test_assistant_actions, test_assistant_ledger_actions and test_assistant_tools run on the host too: their frappe is a stub in the module itself.
