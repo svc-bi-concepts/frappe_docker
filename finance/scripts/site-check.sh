@@ -1,5 +1,10 @@
 #!/bin/sh
-# Read-only comparison reports for a finance site and a restored copy.
+# Read-only comparison reports for a finance site and a restored copy (finance/docs/archiving.md, 'Checks').
+#
+# usage: finance/scripts/site-check.sh report <name>       write private/site-check/<name>.txt, print one sha256 per section
+#        finance/scripts/site-check.sh compare <a> <b>     two reports: equal, or the differing lines; exit 0 when equal, 1 when not
+#        finance/scripts/site-check.sh digests <a> <b>     two files of saved report output; exit 0 when equal, 1 when not
+#        FINANCE_PROJECT=frappe-finance-copy finance/scripts/site-check.sh report <name>   the copy; the default is live
 set -eu
 
 PROJECT="${FINANCE_PROJECT:-frappe-finance}"
@@ -8,9 +13,9 @@ ROOT=$(CDPATH='' cd -- "$(dirname "$0")/../.." && pwd)
 ACTION="${1:-}"
 
 case "$PROJECT" in
-frappe-finance | frappe-finance-copy) ;;
+frappe-finance | frappe-finance-copy*) ;;
 *)
-  echo "FINANCE_PROJECT must be frappe-finance or frappe-finance-copy" >&2
+  echo "FINANCE_PROJECT must be frappe-finance or frappe-finance-copy*" >&2
   exit 2
   ;;
 esac

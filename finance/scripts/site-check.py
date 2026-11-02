@@ -21,6 +21,7 @@ DOCTYPES = (
 )
 API_USER = "api-agent@finance.local"
 FILE_BATCH = 500
+REMOTE_PREFIXES = ("http://", "https://", "/api/method/")  # Frappe's URL_PREFIXES
 SECTIONS = {
     "counts": "count.",
     "trial_balance": "balance.",
@@ -45,6 +46,9 @@ def _secret_status(frappe, doctype, name, fieldname):
     )[0][0]
     if not exists:
         return "not set"
+    # Frappe's decrypt makes a key and writes it to site_config.json when the site has none.
+    if not frappe.local.conf.get("encryption_key"):
+        return "fails"
     try:
         value = get_decrypted_password(doctype, name, fieldname, raise_exception=False)
     except Exception:
@@ -52,34 +56,39 @@ def _secret_status(frappe, doctype, name, fieldname):
     return "ok" if value else "fails"
 
 
+def _on_disk(roots, url):
+    for prefix, root in roots.items():
+        if url.startswith(prefix):
+            candidate = os.path.realpath(os.path.join(root, url[len(prefix) :]))
+            return candidate.startswith(root + os.sep) and os.path.isfile(candidate)
+    return False
+
+
 def _file_counts(frappe):
+    # The URL says where a file lies, as in File.get_full_path; is_private only picks the line it counts on.
     roots = {
-        0: frappe.get_site_path("public", "files"),
-        1: frappe.get_site_path("private", "files"),
+        "/files/": os.path.realpath(frappe.get_site_path("public", "files")),
+        "/private/files/": os.path.realpath(frappe.get_site_path("private", "files")),
     }
     totals = {0: [0, 0], 1: [0, 0]}  # present, missing
     offset = 0
     while True:
+        # Folders are File rows without a file; a remote URL has none on this disk either.
         rows = frappe.db.sql(
-            "select file_url, is_private from `tabFile` order by name limit %s offset %s",
+            "select file_url, file_name, is_private from `tabFile` where is_folder = 0 "
+            "order by name limit %s offset %s",
             (FILE_BATCH, offset),
         )
         if not rows:
             break
-        for file_url, is_private in rows:
+        for file_url, file_name, is_private in rows:
             private = 1 if is_private else 0
-            root = os.path.realpath(roots[private])
-            url = str(file_url or "")
-            prefix = "/private/files/" if private else "/files/"
-            if url.startswith(prefix):
-                relative = url[len(prefix) :]
-                candidate = os.path.realpath(os.path.join(root, relative))
-                on_disk = candidate.startswith(root + os.sep) and os.path.isfile(
-                    candidate
-                )
-            else:
-                on_disk = False
-            totals[private][0 if on_disk else 1] += 1
+            url = str(file_url or file_name or "")
+            if url.startswith(REMOTE_PREFIXES):
+                continue
+            if "/" not in url:
+                url = ("/private/files/" if private else "/files/") + url
+            totals[private][0 if _on_disk(roots, url) else 1] += 1
         offset += len(rows)
         if len(rows) < FILE_BATCH:
             break
@@ -192,15 +201,24 @@ def compare_reports(path_a, path_b):
     return 1
 
 
+def host_command(argv):
+    if argv[1] == "compare":
+        return compare_reports(argv[2], argv[3])
+    if argv[1] == "digests":
+        return compare_digests(argv[2], argv[3])
+    with open(argv[2], encoding="utf-8") as source:
+        print("\n".join(section_digests(source.read())))
+    return 0
+
+
 def main():
-    if len(sys.argv) == 4 and sys.argv[1] == "compare":
-        raise SystemExit(compare_reports(sys.argv[2], sys.argv[3]))
-    if len(sys.argv) == 3 and sys.argv[1] == "digest-report":
-        with open(sys.argv[2], encoding="utf-8") as source:
-            print("\n".join(section_digests(source.read())))
-        return
-    if len(sys.argv) == 4 and sys.argv[1] == "digests":
-        raise SystemExit(compare_digests(sys.argv[2], sys.argv[3]))
+    if len(sys.argv) > 1:
+        try:
+            raise SystemExit(host_command(sys.argv))
+        except OSError as error:
+            # 1 means the sites differ; a report that cannot be read says nothing about them.
+            print(f"cannot read {error.filename}", file=sys.stderr)
+            raise SystemExit(2)
     import frappe
 
     frappe.init(site="frontend", sites_path=".")
