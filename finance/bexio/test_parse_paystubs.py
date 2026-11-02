@@ -437,9 +437,14 @@ class MainTest(unittest.TestCase):
 
     def test_an_unwritable_output_prints_no_path(self):
         failure = PermissionError(13, "denied", "/invented/Invented Person.csv")
-        code, text = self.run_failing(
-            [], write=mock.patch.object(pp, "parse_records", side_effect=failure)
-        )
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "paystubs.json")
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump([], f)
+            write = mock.patch.object(pp, "write_csv", side_effect=failure)
+            with write as written:
+                code, text = self.run_failing(["--paystubs-json", path])
+        written.assert_called_once()
         self.assertEqual(code, 2)
         self.assertNotIn("/invented", text)
 
