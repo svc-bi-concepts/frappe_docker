@@ -90,6 +90,12 @@ class Parsing(unittest.TestCase):
         )
         self.assertEqual(update_check.parse_ls_remote_tags(text), {"v16.9.1"})
 
+    def test_git_url_preserves_suffix_and_strips_trailing_slashes(self):
+        url = "https://github.com/example/invented"
+        for suffix in ("", "/", ".git", ".git/"):
+            with self.subTest(suffix=suffix):
+                self.assertEqual(update_check.git_url(url + suffix), url + ".git")
+
     def test_ls_remote_tags_passes_git_url_to_subprocess(self):
         with patch.object(
             update_check.subprocess,
