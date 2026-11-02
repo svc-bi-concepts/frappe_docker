@@ -529,11 +529,15 @@ The records it cannot place (no Employee, a PDF missing, of another size or list
 
 `import_salary_history.py` reads the private CSV from `parse_paystubs.py` and plans one submitted Salary Slip per
 employee and month. It is a dry run by default; `--apply` loads slips oldest first through the history method,
-and a rerun reports them as `loaded`. `--check` verifies each key, totals, row count and `is_proposed`. Existing
-keys with changed values are `differs` and are never overwritten. Unknown wage types, sums that do not match,
-missing Employees and months after December 2026 stop an apply before any write. For a corrected source stub,
-review the private position-based report, remove only that month with `--remove-month YYYY-MM --apply`, then
-apply again after approval.
+and a rerun reports them as `loaded`. `--check` verifies each key, identity, totals, rows and
+proposal/submission state. Existing keys with changed values are `differs` and are never overwritten. Unknown
+wage types, sums that do not match, missing Employees and months after December 2026 stop an apply before any
+write. For a corrected source stub, review the private position-based report, remove only that month with
+`--remove-month YYYY-MM --apply`, then apply again after approval.
+
+The preflight is all-or-nothing for those checks; each slip is then written separately. A server failure mid-run
+can leave a partial month. Recover by rerunning `--apply`, then `--check`: `load_slip` is rerun safe, these
+history slips create no GL, and `--remove-month YYYY-MM --apply` removes the month's history if needed.
 
     python3 finance/bexio/import_salary_history.py [--figures private/payroll/paystub-figures.csv]
     python3 finance/bexio/import_salary_history.py --check [--figures PATH]

@@ -2,6 +2,10 @@
 
 Dry run by default. The figures and per-position problems stay under private/payroll;
 stdout contains counts only. Requires the Salary Slip history methods in bi_payroll.
+Apply preflights unknown wage types, totals, employees and cutover dates before
+writing, then writes slips one at a time. A server failure can leave a partial
+month; rerun --apply, then --check. Loads are rerun safe, create no GL, and
+--remove-month reverses the history load.
 """
 
 import argparse
