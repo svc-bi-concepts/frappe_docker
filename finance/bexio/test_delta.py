@@ -19,6 +19,7 @@ SCRIPT = os.path.join(ROOT, "finance", "bexio", "delta.sh")
 
 PYTHON_STUB = """#!/bin/sh
 printf '%s\\n' "$*" >>"$DELTA_LOG"
+echo python >>"$EVENT_LOG"
 prev=""
 for a in "$@"; do
   if [ "$prev" = "--write" ]; then printf '{}' >"$a"; fi
@@ -250,7 +251,25 @@ class DeltaScript(unittest.TestCase):
         with open(run.wlog) as f:
             self.assertEqual(f.read().splitlines(), ["--hold 120 --reason bexio-delta"])
         with open(run.events) as f:
-            self.assertEqual(f.read().splitlines()[0], "wake")
+            events = f.read().splitlines()
+        self.assertEqual(events[0:2], ["wake", "python"])
+        self.assertEqual(events.count("wake"), 1)
+
+    def test_apply_leases_once_before_steps_and_docker(self):
+        run = self.run_delta(env_extra={"DELTA_APPLY": "1", "BACKUP_ID": "b1"})
+        self.assertEqual(run.returncode, 0, run.stderr)
+        with open(run.wlog) as f:
+            self.assertEqual(
+                f.read().splitlines(),
+                ["--hold 120 --reason bexio-delta"]
+                + ["--hold 60 --reason bexio-drafts"] * 10,
+            )
+        with open(run.events) as f:
+            events = f.read().splitlines()
+        self.assertEqual(events[0:2], ["wake", "python"])
+        self.assertIn("docker", events)
+        # Each submit wrapper also leases before its own Docker call.
+        self.assertEqual(events.count("wake"), events.count("docker") + 1)
 
     def test_wake_failure_stops_before_any_step(self):
         run = self.run_delta(env_extra={"WAKE_RC": "1"})

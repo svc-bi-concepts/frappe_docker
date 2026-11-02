@@ -107,17 +107,24 @@ class CopyStack(unittest.TestCase):
                     self.assertEqual(f.read().splitlines()[0], "wake")
 
     def test_wake_failure_stops_before_docker(self):
-        r = self.run_script(["up", "t1"], WAKE_RC="1")
-        self.assertNotEqual(r.returncode, 0)
-        self.assertIn("colima-wake failed", r.stderr)
-        self.assertEqual(self.calls(), [])
+        for args in (["up", "t1"], ["refresh"]):
+            with self.subTest(args=args):
+                r = self.run_script(args, WAKE_RC="1", STUB_COPY_UP="1")
+                self.assertNotEqual(r.returncode, 0)
+                self.assertIn("colima-wake failed", r.stderr)
+                self.assertEqual(self.calls(), [])
 
     def test_missing_wake_is_skipped(self):
-        r = self.run_script(
-            ["up", "t1"], COLIMA_WAKE=os.path.join(self.tmp, "missing-wake")
-        )
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(self.wake_calls(), [])
+        for args in (["up", "t1"], ["refresh"]):
+            with self.subTest(args=args):
+                r = self.run_script(
+                    args,
+                    COLIMA_WAKE=os.path.join(self.tmp, "missing-wake"),
+                    STUB_COPY_UP="1",
+                )
+                self.assertEqual(r.returncode, 0, r.stderr)
+                self.assertEqual(self.wake_calls(), [])
+                self.assertTrue(self.calls())
 
     def test_no_command_prints_usage(self):
         r = self.run_script([])
