@@ -353,7 +353,7 @@ class MapExpenseTest(unittest.TestCase):
                 "currency_code": "CHF",
                 "paid_on": "2025-05-02",
                 "gross": 0,
-                "status": "draft",
+                "status": "DRAFT",
                 "booking_account_id": 5001,
                 "tax_id": 47,
             },
@@ -361,8 +361,12 @@ class MapExpenseTest(unittest.TestCase):
         )
 
     def test_draft_with_gross_zero_is_skipped(self):
-        with self.assertRaisesRegex(ip.Skipped, "draft with gross 0"):
+        with self.assertRaisesRegex(ip.Skipped, "draft expense"):
             ip.map_expense(self.expense(), lookups())
+
+    def test_draft_with_nonzero_gross_and_lowercase_status_is_skipped(self):
+        with self.assertRaisesRegex(ip.Skipped, "draft expense"):
+            ip.map_expense(self.expense(gross=45.5, status="draft"), lookups())
 
     def test_expense_with_gross_is_mapped(self):
         doc = ip.map_expense(self.expense(gross=45.5, status="paid"), lookups())
@@ -379,6 +383,31 @@ class MapExpenseTest(unittest.TestCase):
 
 
 class DryRunTest(unittest.TestCase):
+    def test_draft_bill_is_left_out_before_mapping_and_totals(self):
+        draft = bill(bid="b-draft", status="DRAFT")
+        totals = ip.dry_run([draft], [], lookups(), {})
+        self.assertEqual(totals.rows, {})
+        self.assertEqual(totals.problems, [])
+        self.assertEqual(totals.drafts_left_out, 1)
+        self.assertIn("bills left out: 1 bexio drafts", ip.report(totals, "invented"))
+
+    def test_only_draft_bills_are_left_out(self):
+        records = [
+            bill(bid=status, status=status) for status in ("CREATED", "BOOKED", "PAID")
+        ]
+        totals = ip.dry_run(records, [], lookups(), {})
+        self.assertEqual(totals.drafts_left_out, 0)
+        self.assertEqual(totals.rows[(2025, "CHF")]["mapped"], 3)
+
+    def test_bill_entering_created_between_runs_is_mapped(self):
+        record = bill(status="DRAFT")
+        first = ip.dry_run([record], [], lookups(), {})
+        record["status"] = "CREATED"
+        second = ip.dry_run([record], [], lookups(), {})
+        self.assertEqual(first.drafts_left_out, 1)
+        self.assertEqual(second.rows[(2025, "CHF")]["mapped"], 1)
+        self.assertEqual(second.drafts_left_out, 0)
+
     def test_totals_per_year_and_currency_and_differences(self):
         good = bill("b-1", net=380, gross=402.85)
         off = bill(
@@ -425,6 +454,19 @@ class DryRunTest(unittest.TestCase):
 
 
 class DraftsTest(unittest.TestCase):
+    def test_draft_bill_is_left_out_before_mapping(self):
+        self.assertEqual(ip.drafts([bill(status="DRAFT")], lookups(), {}), [])
+
+    def test_created_booked_and_paid_bills_stay_in_drafts(self):
+        records = [
+            bill(bid=status, status=status, document_no=status)
+            for status in ("CREATED", "BOOKED", "PAID")
+        ]
+        self.assertEqual(
+            [doc["name"] for doc in ip.drafts(records, lookups(), {})],
+            ["CREATED", "BOOKED", "PAID"],
+        )
+
     def test_each_bill_that_maps_is_a_draft_named_by_bexios_document_number(self):
         (draft,) = ip.drafts([bill(bid="b-1", document_no="R-77")], lookups(), {})
         self.assertEqual(

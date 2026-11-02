@@ -176,6 +176,17 @@ class PairTest(unittest.TestCase):
         )
         self.assertEqual((unpaired, open_bills), ([], []))
 
+    def test_draft_bill_without_journal_booking_cannot_pair_with_a_payment(self):
+        # DRAFT bills have no KbBill booking, so they never enter pair's booked input.
+        booked = po.bill_bookings([], NUMBERS)
+        pairs, unpaired, open_bills = po.pair(
+            [self.settled("g-1", "50.00", "2025-02-01")],
+            booked,
+            {"b-draft": "2025-01-10"},
+        )
+        self.assertEqual((pairs, open_bills), ([], []))
+        self.assertEqual([item["uuid"] for item in unpaired], ["g-1"])
+
     def test_a_payment_without_a_bill_of_its_amount_is_unpaired_and_a_bill_without_one_is_open(
         self,
     ):

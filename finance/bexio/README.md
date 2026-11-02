@@ -371,8 +371,9 @@ download (`failed` in `document_pdfs` of the manifest) has no row and is not att
 ## Purchase bills
 
 `import_purchase.py --dry-run` maps the bills (`bills.json`, with the lines of
-`line_items`) to Purchase Invoices. `--apply` writes them as drafts, named by
-bexio's `document_no`, through the same loader. A reverse-charge bill (Bezugsteuer
+`line_items`) to Purchase Invoices; bills with status `DRAFT` are left out until
+booked. `--apply` writes the remaining bills as drafts, named by bexio's `document_no`,
+through the same loader. A reverse-charge bill (Bezugsteuer
 codes 19, 20, 32, 33) is mapped with its net as the amount; its VAT is booked to
 the transitory Vorsteuer account 1172 and taken back on 2202, so the total is the net, as bexio
 books it. Expenses are not written. A foreign-currency bill is booked in CHF at its
