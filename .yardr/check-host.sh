@@ -42,6 +42,37 @@ long = ['backend', 'db', 'frontend', 'queue-long', 'queue-short', 'redis-cache',
 assert all(s[n].get('restart') == 'unless-stopped' for n in long), [n for n in long if s[n].get('restart') != 'unless-stopped']
 assert all(s[n].get('restart') != 'unless-stopped' for n in ['configurator', 'create-site'])
 "
+# finance-coolify.yml, the ledger on a Coolify VM: self-contained (no pwd.yml), invented env, and the guards that keep it
+# from exposing the ledger (nginx serves any Host, so the one router rule is the only barrier). Needs no private/ data.
+LEDGER_HOST=ledger.example.test DB_ROOT_PASSWORD=invented-root ADMIN_PASSWORD=invented-admin docker compose -f finance-coolify.yml config -q
+LEDGER_HOST=ledger.example.test DB_ROOT_PASSWORD=invented-root ADMIN_PASSWORD=invented-admin docker compose -f finance-coolify.yml config --format json | python3 -c "
+import json, sys
+s = json.load(sys.stdin)
+svc, nets = s['services'], s['networks']
+assert not [n for n, v in svc.items() if v.get('ports')], 'a service publishes a port'
+assert nets['ledger-data'].get('internal') is True, 'ledger-data is not internal'
+assert not [n for n, v in nets.items() if v.get('external')], 'an external network'
+assert set(nets) == {'ledger-data', 'ledger-out', 'ledger-edge'}, sorted(nets)
+on = {n: set(v.get('networks') or []) for n, v in svc.items()}
+assert all('coolify' not in x for x in on.values()), 'a service is on a network named coolify'
+for n in ['db', 'redis-cache', 'redis-queue']:
+    assert on[n] == {'ledger-data'}, (n, on[n])
+assert on['frontend'] == {'ledger-edge', 'ledger-out'}, on['frontend']
+assert [n for n, x in on.items() if 'ledger-edge' in x] == ['frontend']
+# ledger-out holds no db and no redis; outbound services never lose their data link.
+assert not [n for n in ['db', 'redis-cache', 'redis-queue'] if 'ledger-out' in on[n]]
+for n in ['backend', 'queue-long', 'queue-short', 'scheduler', 'websocket']:
+    assert on[n] == {'ledger-data', 'ledger-out'}, (n, on[n])
+assert all(v.get('pull_policy') == 'never' for v in svc.values() if v['image'].startswith('frappe-finance-custom:'))
+rules = [l for v in svc.values() for l in (v.get('labels') or {}).items() if '.rule' in l[0]]
+assert rules == [('traefik.http.routers.ledger.rule', 'Host(\`ledger.example.test\`)')], rules
+"
+# One tag: the image finance-coolify.yml runs is the one finance-local.yml pins (a switch moves both).
+[ "$(python3 finance/scripts/switch_image.py current finance-coolify.yml)" = "$(python3 finance/scripts/switch_image.py current finance-local.yml)" ]
+# No literal password in the file: the secrets are required variables, and no value is admin.
+! grep -Eiq '(password|passwd)[A-Za-z_]*(:[[:space:]]*|=)["'"'"']?admin|--(admin|db-root)-password=admin' finance-coolify.yml
+grep -q 'DB_ROOT_PASSWORD:?' finance-coolify.yml
+grep -q 'ADMIN_PASSWORD:?' finance-coolify.yml
 # The bi_finance layout and stamp guard, stdlib only (no frappe), so it runs on the host.
 # A synced JSON changed without a newer 'modified' fails here; see test_layout.py.
 # test_assistant, test_assistant_levels, test_assistant_actions, test_assistant_ledger_actions and test_assistant_tools run on the host too: their frappe is a stub in the module itself.
@@ -65,4 +96,4 @@ assert all(s[n].get('restart') != 'unless-stopped' for n in ['configurator', 'cr
 # The D4 patch check (update-check.sh): invented tag lists, the upstream replaced, no network.
 # swiss-setup.py's pure helpers (frappe mocked): the payslip and the hr steps among them.
 # The structure remake's plan (frappe mocked): create, move, restore, the wrapper's project.
-(cd finance/scripts && python3 -m unittest test_build_image test_switch_image test_gate_image test_copy_stack test_update_check test_load_swiss_rates test_swiss_setup test_swiss_structure_remake test_bexio_drafts test_swiss_vat test_site_check)
+(cd finance/scripts && python3 -m unittest test_build_image test_switch_image test_gate_image test_copy_stack test_update_check test_load_swiss_rates test_swiss_setup test_swiss_structure_remake test_bexio_drafts test_swiss_vat test_site_check test_public_check)

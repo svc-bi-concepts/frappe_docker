@@ -1,0 +1,276 @@
+# Finance ledger for Coolify: pwd.yml and finance-local.yml folded into one self-contained file, with no host ports and
+# three networks. Use it alone (docker compose -f finance-coolify.yml), never together with pwd.yml.
+# The image arrives by docker save and load (pull_policy: never), the same tag as finance-local.yml; a switch of
+# that tag moves this file too (switch_image.py reads both, .yardr/check-host.sh tests they are equal).
+#
+# pwd.yml sets FRAPPE_SITE_NAME_HEADER: frontend, so nginx serves the ledger for ANY Host header. The frontend's
+# router rule (one host, from LEDGER_HOST) is the only barrier if public traffic reaches the proxy, so nothing
+# here publishes a port, and finance/scripts/public-check.sh proves from outside that nothing answers.
+#
+# Settings, all from the environment and all required (the host is a setting, never a constant):
+#   LEDGER_HOST          the one host name the router answers
+#   DB_ROOT_PASSWORD     MariaDB root
+#   ADMIN_PASSWORD       the site's Administrator
+# The daily backup service (and its bucket writer) joins this file when backup-ship.sh exists.
+# Router labels are Traefik's as the Coolify proxy reads them (entrypoint and resolver names are Coolify's
+# defaults, a guess until erp-5qyr reads the rendered compose).
+#
+# Networks (which service needs which, from pwd.yml):
+#   ledger-data  internal, no route out: db and both redis, and only the services that connect to them.
+#   ledger-out   backend, workers, scheduler and websocket: outbound calls (Wise, PayPal, the public URL the
+#                websocket calls back to). The frontend joins it for its link to backend and websocket; no db, no redis.
+#   ledger-edge  frontend only: the network the proxy reaches.
+services:
+  backend:
+    image: frappe-finance-custom:v16.51.0-swiss-bi29
+    pull_policy: never
+    networks:
+      - ledger-data
+      - ledger-out
+    restart: unless-stopped
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+    environment:
+      DB_HOST: db
+      DB_PORT: "3306"
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?}
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?}
+    depends_on:
+      configurator:
+        condition: service_completed_successfully
+
+  configurator:
+    image: frappe-finance-custom:v16.51.0-swiss-bi29
+    pull_policy: never
+    networks:
+      - ledger-data
+    deploy:
+      restart_policy:
+        condition: none
+    entrypoint:
+      - bash
+      - -c
+    command:
+      - >
+        ls -1 apps > sites/apps.txt;
+        bench set-config -g db_host $$DB_HOST;
+        bench set-config -gp db_port $$DB_PORT;
+        bench set-config -g redis_cache "redis://$$REDIS_CACHE";
+        bench set-config -g redis_queue "redis://$$REDIS_QUEUE";
+        bench set-config -g redis_socketio "redis://$$REDIS_QUEUE";
+        bench set-config -gp socketio_port $$SOCKETIO_PORT;
+    environment:
+      DB_HOST: db
+      DB_PORT: "3306"
+      REDIS_CACHE: redis-cache:6379
+      REDIS_QUEUE: redis-queue:6379
+      SOCKETIO_PORT: "9000"
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+
+  create-site:
+    image: frappe-finance-custom:v16.51.0-swiss-bi29
+    pull_policy: never
+    networks:
+      - ledger-data
+    deploy:
+      restart_policy:
+        condition: none
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+    environment:
+      DB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?}
+    entrypoint:
+      - bash
+      - -c
+    command:
+      - >
+        wait-for-it -t 120 db:3306;
+        wait-for-it -t 120 redis-cache:6379;
+        wait-for-it -t 120 redis-queue:6379;
+        export start=`date +%s`;
+        until [[ -n `grep -hs ^ sites/common_site_config.json | jq -r ".db_host // empty"` ]] && \
+          [[ -n `grep -hs ^ sites/common_site_config.json | jq -r ".redis_cache // empty"` ]] && \
+          [[ -n `grep -hs ^ sites/common_site_config.json | jq -r ".redis_queue // empty"` ]];
+        do
+          echo "Waiting for sites/common_site_config.json to be created";
+          sleep 5;
+          if (( `date +%s`-start > 120 )); then
+            echo "could not find sites/common_site_config.json with required keys";
+            exit 1
+          fi
+        done;
+        echo "sites/common_site_config.json found";
+        if [ -d "sites/frontend" ]; then
+          echo "Site frontend already exists, skipping creation";
+        else
+          bench new-site --mariadb-user-host-login-scope='%' --admin-password="$$ADMIN_PASSWORD" --db-root-username=root --db-root-password="$$DB_ROOT_PASSWORD" --install-app erpnext --set-default frontend;
+        fi;
+
+  db:
+    image: mariadb:11.8
+    networks:
+      - ledger-data
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      start_period: 5s
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --skip-character-set-client-handshake
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?}
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?}
+    volumes:
+      - db-data:/var/lib/mysql
+
+  frontend:
+    image: frappe-finance-custom:v16.51.0-swiss-bi29
+    pull_policy: never
+    networks:
+      - ledger-edge
+      - ledger-out
+    depends_on:
+      - websocket
+      - backend
+    restart: unless-stopped
+    command:
+      - nginx-entrypoint.sh
+    environment:
+      BACKEND: backend:8000
+      FRAPPE_SITE_NAME_HEADER: frontend
+      SOCKETIO: websocket:9000
+      UPSTREAM_REAL_IP_ADDRESS: 127.0.0.1
+      UPSTREAM_REAL_IP_HEADER: X-Forwarded-For
+      UPSTREAM_REAL_IP_RECURSIVE: "off"
+      PROXY_READ_TIMEOUT: 120
+      CLIENT_MAX_BODY_SIZE: 50m
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+    # One router, one Host rule: no default router, no wildcard, no path-only rule.
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.ledger.rule=Host(`${LEDGER_HOST:?}`)
+      - traefik.http.routers.ledger.entrypoints=https
+      - traefik.http.routers.ledger.tls=true
+      - traefik.http.routers.ledger.tls.certresolver=letsencrypt
+      - traefik.http.services.ledger.loadbalancer.server.port=8080
+
+  queue-long:
+    image: frappe-finance-custom:v16.51.0-swiss-bi29
+    pull_policy: never
+    networks:
+      - ledger-data
+      - ledger-out
+    restart: unless-stopped
+    command:
+      - bench
+      - worker
+      - --queue
+      - long,default,short
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+    environment:
+      FRAPPE_REDIS_CACHE: redis://redis-cache:6379
+      FRAPPE_REDIS_QUEUE: redis://redis-queue:6379
+    depends_on:
+      configurator:
+        condition: service_completed_successfully
+
+  queue-short:
+    image: frappe-finance-custom:v16.51.0-swiss-bi29
+    pull_policy: never
+    networks:
+      - ledger-data
+      - ledger-out
+    restart: unless-stopped
+    command:
+      - bench
+      - worker
+      - --queue
+      - short,default
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+    environment:
+      FRAPPE_REDIS_CACHE: redis://redis-cache:6379
+      FRAPPE_REDIS_QUEUE: redis://redis-queue:6379
+    depends_on:
+      configurator:
+        condition: service_completed_successfully
+
+  redis-queue:
+    image: redis:6.2-alpine
+    networks:
+      - ledger-data
+    restart: unless-stopped
+    volumes:
+      - redis-queue-data:/data
+
+  redis-cache:
+    image: redis:6.2-alpine
+    networks:
+      - ledger-data
+    restart: unless-stopped
+
+  scheduler:
+    image: frappe-finance-custom:v16.51.0-swiss-bi29
+    pull_policy: never
+    networks:
+      - ledger-data
+      - ledger-out
+    restart: unless-stopped
+    command:
+      - bench
+      - schedule
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+    depends_on:
+      configurator:
+        condition: service_completed_successfully
+
+  websocket:
+    image: frappe-finance-custom:v16.51.0-swiss-bi29
+    pull_policy: never
+    networks:
+      - ledger-data
+      - ledger-out
+    restart: unless-stopped
+    command:
+      - node
+      - /home/frappe/frappe-bench/apps/frappe/socketio.js
+    environment:
+      FRAPPE_REDIS_CACHE: redis://redis-cache:6379
+      FRAPPE_REDIS_QUEUE: redis://redis-queue:6379
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+    depends_on:
+      configurator:
+        condition: service_completed_successfully
+
+volumes:
+  db-data:
+  redis-queue-data:
+  sites:
+  logs:
+
+networks:
+  ledger-data:
+    driver: bridge
+    internal: true
+  ledger-out:
+    driver: bridge
+  ledger-edge:
+    driver: bridge
