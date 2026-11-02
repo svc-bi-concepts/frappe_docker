@@ -69,7 +69,7 @@ Check it by hand against the pin (frappe is pinned by the image's tag, not by `a
 
 ```sh
 git clone https://github.com/frappe/frappe && cd frappe
-git checkout v16.51.0
+git checkout v16.51.1
 git apply --check ../finance/patches/frappe/0002-apps-screen-skips-docked-apps.patch
 ```
 
