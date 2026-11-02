@@ -13,6 +13,8 @@ the mapping is checked against the 2026 form before use (finance/docs/hrms.md, s
 The view 'Quellensteuer Abrechnung' lists the withholding per canton and per month or quarter (hand_over.qst_rows), for
 the cantonal return. The view 'Jahresdeklarationen' gives the year's wage sums per insurance (hand_over.annual_rows),
 for the AHV, UVG, BVG, FAK and KTG declarations; it is always the whole year, whatever the month.
+Historical bexio slips are excluded: their paystubs do not carry employer shares or insured-salary ceilings, so
+including them would make the employer columns and annual declarations incorrect.
 """
 
 import calendar
@@ -29,6 +31,7 @@ from bi_payroll.hand_over import (
     hand_over,
     lohnausweis,
     qst_rows,
+    salary_slip_filters,
 )
 from frappe import _
 from frappe.utils import flt
@@ -70,11 +73,7 @@ def execute(filters=None):
         ANNUAL_VIEW: annual_columns,
     }[view]
 
-    slip_filters = {
-        "company": filters.company,
-        "docstatus": 1,
-        "start_date": ["between", [start, end]],
-    }
+    slip_filters = salary_slip_filters(filters.company, start, end)
     if view == QST_VIEW:
         # the slips the cantonal return lists: those with a tariff code, whatever the tax
         slip_filters["swiss_qst_code"] = ["is", "set"]

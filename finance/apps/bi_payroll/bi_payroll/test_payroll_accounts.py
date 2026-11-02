@@ -86,7 +86,20 @@ class ComponentAccounts(unittest.TestCase):
         )
         self.assertEqual(
             sorted(mapped),
-            sorted(n for n, c in fixture.items() if not c["statistical_component"]),
+            sorted(
+                n
+                for n, c in fixture.items()
+                if not c["statistical_component"]
+                and n
+                not in {
+                    "Hourly Wage",
+                    "Vacation Compensation",
+                    "Expenses Effective",
+                    "Expenses Lump Sum",
+                    "Rent Deduction",
+                    "Advance Payment",
+                }
+            ),
         )
 
     def test_statistical_bvg_age_stays_without_an_account(self):

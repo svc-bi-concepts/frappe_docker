@@ -345,9 +345,79 @@ class TemplateTest(unittest.TestCase):
         abzuege = html.split("Abzüge")[1].split("Auszahlung")[0]
         self.assertNotIn("Employer", abzuege)
 
+    def test_history_renders_empty_bases_rates_and_ytd_cells(self):
+        from html.parser import HTMLParser
+
+        class Cells(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.cells = []
+                self.in_cell = False
+
+            def handle_starttag(self, tag, attrs):
+                if tag == "td":
+                    self.in_cell = True
+                    self.cells.append("")
+
+            def handle_endtag(self, tag):
+                if tag == "td":
+                    self.in_cell = False
+
+            def handle_data(self, data):
+                if self.in_cell:
+                    self.cells[-1] += data
+
+        parser = Cells()
+        parser.feed(self.render(swiss_bexio_id="paystub-test"))
+        cells = [cell.strip() for cell in parser.cells]
+        idx = cells.index("AHV/IV/EO")
+        self.assertEqual(cells[idx + 1 : idx + 3], ["", ""])
+        self.assertEqual(cells[-4:], ["Bruttolohn", "", "Nettolohn", ""])
+
     def test_renders_a_bare_slip_without_an_employee(self):
         html = self.template.render(payslip_data=lambda doc: prepare(slip()), doc={})
         self.assertIn("Lohnabrechnung", html)
+
+
+class HistoryPayslipTest(unittest.TestCase):
+    def test_history_omits_bases_rates_and_year_to_date(self):
+        d = prepared(swiss_bexio_id="paystub-EMP-TEST-001-2026-10")
+        self.assertEqual(d["deductions"][0]["base"], "")
+        self.assertEqual(d["deductions"][0]["rate"], "")
+        self.assertEqual(d["year_to_date_gross"], "")
+        self.assertEqual(d["year_to_date_net"], "")
+        self.assertEqual(d["paid_amount"], "6'415.00")
+
+    def test_zero_paid_out_does_not_fall_back_to_net(self):
+        self.assertEqual(
+            prepared(swiss_bexio_id="paystub-test", rounded_total=0)["paid_amount"],
+            "0.00",
+        )
+
+    def test_all_history_component_labels(self):
+        d = prepared(
+            swiss_bexio_id="paystub-test",
+            earnings=[
+                line("Hourly Wage", 0),
+                line("Vacation Compensation", 0),
+                line("Expenses Effective", 0),
+                line("Expenses Lump Sum", 0),
+            ],
+            deductions=[line("Rent Deduction", 0), line("Advance Payment", 0)],
+        )
+        self.assertEqual(
+            [r["label"] for r in d["earnings"]],
+            [
+                "Stundenlohn",
+                "Ferienentschädigung",
+                "Spesen effektiv",
+                "Spesen pauschal",
+            ],
+        )
+        self.assertEqual(
+            [r["label"] for r in d["deductions"]], ["Mietabzug", "Vorschuss"]
+        )
+        self.assertTrue(all(r["base"] == r["rate"] == "" for r in d["deductions"]))
 
 
 if __name__ == "__main__":

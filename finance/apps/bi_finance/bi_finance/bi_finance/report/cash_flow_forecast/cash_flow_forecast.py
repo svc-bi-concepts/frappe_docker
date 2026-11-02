@@ -330,7 +330,8 @@ def personnel_postings(company, as_of):
 def hrms_slips(company, as_of):
     """(payroll entry, end date, net pay) of the submitted Salary Slips posted up to the as-of date, the basis of
     cf.hrms_net. [] on a site without HRMS: the Salary Slip DocType does not exist there, and the GL's trailing
-    mean stays the basis. Keyed on the slips, not on the Payroll Entry: an entry can sit in draft while its
+    mean stays the basis. A slip is the basis when its accrual reaches the GL; a slip outside a Payroll Entry has no
+    accrual and is excluded. Keyed on the slips, not on the Payroll Entry: an entry can sit in draft while its
     slips are submitted. Read by posting date, like every other source: a slip is the basis exactly when its
     accrual reaches the GL (the accrual Journal Entry carries the slip's posting date), so a run's month is not
     counted twice — by the end date the slip would stay unseen while the GL already carries its accrual.
@@ -340,7 +341,7 @@ def hrms_slips(company, as_of):
     rows = frappe.db.sql(
         """select payroll_entry, end_date, net_pay
         from `tabSalary Slip`
-        where company = %s and docstatus = 1 and posting_date <= %s""",
+        where company = %s and docstatus = 1 and posting_date <= %s and ifnull(payroll_entry, '') != ''""",
         (company, as_of),
     )
     return [(entry, end_date, flt(net_pay)) for entry, end_date, net_pay in rows]

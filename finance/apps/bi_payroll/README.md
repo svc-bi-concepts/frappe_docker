@@ -24,8 +24,9 @@ migrate on any site. Its Desk is the Swiss Payroll shell: a Sidebar (`bi_payroll
   `finance/scripts/load-swiss-rates.sh` reads the private CSV and sets the rows marked
   set=yes — dry run on the copy by default, the live stack only with `--live --backup`.
 - `bi_payroll/hand_over.py` and `bi_payroll/bi_payroll/report/payroll_hand_over`: the report `Payroll hand-over`, per
-  employee and year or per employee and month, for the trustee's filing (Excel or CSV). The rows are summed from the
-  submitted slips and their Salary Detail lines; the logic is pure Python, so `bi_payroll/test_hand_over.py` tests it
+  employee and year or per employee and month, for the trustee's filing (Excel or CSV). The rows are summed from
+  submitted payroll slips, excluding historical bexio snapshots; see `finance/docs/hrms.md` for the history contract.
+  The logic is pure Python, so `bi_payroll/test_hand_over.py` tests it
   with invented employees. Its view `Lohnausweis` puts the rows on the Form 11 lines per the ESTV Wegleitung 2026
   (map: `finance/docs/hrms.md`): line 1 is every earning row of the slips (Basic Salary, Commission, any Zulage),
   line 11 is line 8 less lines 9 and 10.1 — not the slips' net pay, which also deducts Quellensteuer and KTG — and

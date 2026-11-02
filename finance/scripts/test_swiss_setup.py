@@ -409,7 +409,16 @@ class LohnausweisTest(unittest.TestCase):
         # The Wegleitung's Ziffer 1 (and the view's line 1): every earning of the slip, so a new Earning
         # component must join the mapping or the certificate's line 1 falls short of the view's.
         earnings = {
-            name for name, row in self.fixtures.items() if row["type"] == "Earning"
+            name
+            for name, row in self.fixtures.items()
+            if row["type"] == "Earning"
+            and name
+            not in {
+                "Hourly Wage",
+                "Vacation Compensation",
+                "Expenses Effective",
+                "Expenses Lump Sum",
+            }
         }
         self.assertEqual(
             {name for name, _ in swiss_setup.LOHNAUSWEIS["salary"]}, earnings

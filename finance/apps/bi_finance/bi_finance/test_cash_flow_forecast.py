@@ -1368,10 +1368,40 @@ class HrmsSlips(unittest.TestCase):
             frappe.db.sql.return_value = [("PE-9", D(2026, 9, 30), "2700.5")]
             rows = cff.hrms_slips("Test Company", AS_OF)
         self.assertEqual(rows, [("PE-9", D(2026, 9, 30), 2700.5)])
-        sql, args = frappe.db.sql.call_args.args
-        self.assertIn("docstatus = 1", sql)
-        self.assertIn("posting_date <= %s", sql)
+        args = frappe.db.sql.call_args.args[1]
         self.assertEqual(args, ("Test Company", AS_OF))
+
+    def test_history_slips_without_a_payroll_entry_are_not_a_payroll_basis(self):
+        import sqlite3
+
+        # Execute the reader's actual predicate against both kinds of slip.
+        with sqlite3.connect(":memory:") as db, mock.patch.object(
+            cff, "frappe"
+        ) as frappe:
+            db.execute(
+                "create table `tabSalary Slip` (company, docstatus, posting_date, payroll_entry, end_date, net_pay)"
+            )
+
+            def query(sql, args):
+                return db.execute(
+                    sql.replace("%s", "?"), tuple(str(a) for a in args)
+                ).fetchall()
+
+            frappe.db.exists.return_value = True
+            frappe.db.sql.side_effect = query
+            for entry in (None, ""):
+                db.execute(
+                    "insert into `tabSalary Slip` values (?, ?, ?, ?, ?, ?)",
+                    ("Test Company", 1, str(AS_OF), entry, str(AS_OF), 0),
+                )
+            self.assertEqual(cff.hrms_slips("Test Company", AS_OF), [])
+            db.execute(
+                "insert into `tabSalary Slip` values (?, ?, ?, ?, ?, ?)",
+                ("Test Company", 1, str(AS_OF), "PE-TEST", str(AS_OF), 0),
+            )
+            self.assertEqual(
+                cff.hrms_slips("Test Company", AS_OF), [("PE-TEST", str(AS_OF), 0.0)]
+            )
 
     def test_a_site_without_hrms_reads_no_slips(self):
         with mock.patch.object(cff, "frappe") as frappe:

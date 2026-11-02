@@ -16,6 +16,17 @@ Pure Python, so the offline tests run without frappe (test_hand_over.py). The re
 from decimal import ROUND_HALF_UP, Decimal
 from itertools import groupby
 
+
+def salary_slip_filters(company, start, end):
+    """Submitted payroll slips only; imported history lacks hand-over insurance bases."""
+    return {
+        "company": company,
+        "docstatus": 1,
+        "swiss_bexio_id": ["is", "not set"],
+        "start_date": ["between", [start, end]],
+    }
+
+
 # Column key -> the Salary Component's name in fixtures/salary_component.json. Quellensteuer is the component
 # "Quellensteuer Employee" (erp-6rrh); a slip without that row leaves the column 0.
 COMPONENTS = {
