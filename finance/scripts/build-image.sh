@@ -103,8 +103,11 @@ for app in json.load(open(sys.argv[1])):
     pinned = app.get("commit")
     if not pinned:
         continue
+    url = app["url"].rstrip("/")
+    if not url.endswith(".git"):
+        url += ".git"
     out = subprocess.run(
-        ["git", "ls-remote", app["url"], "refs/heads/" + app["branch"]],
+        ["git", "ls-remote", url, "refs/heads/" + app["branch"]],
         capture_output=True, text=True, check=True,
     ).stdout.split()
     head = out[0] if out else ""
