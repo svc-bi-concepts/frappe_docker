@@ -1,10 +1,8 @@
-#!/usr/bin/env python3
 """Build a private, read-only summary of a Frappe finance site."""
 
 import os
 import sys
 from decimal import Decimal
-
 
 DOCTYPES = (
     "GL Entry",
@@ -67,9 +65,11 @@ def _file_counts(frappe):
             url = str(file_url or "")
             prefix = "/private/files/" if private else "/files/"
             if url.startswith(prefix):
-                relative = url[len(prefix):]
+                relative = url[len(prefix) :]
                 candidate = os.path.realpath(os.path.join(root, relative))
-                on_disk = candidate.startswith(root + os.sep) and os.path.isfile(candidate)
+                on_disk = candidate.startswith(root + os.sep) and os.path.isfile(
+                    candidate
+                )
             else:
                 on_disk = False
             totals[private][0 if on_disk else 1] += 1
@@ -111,7 +111,9 @@ def build_report(frappe):
         ("Wise Settings", "Wise Settings", "api_token", "wise.api_token"),
         ("PayPal Settings", "PayPal Settings", "client_secret", "paypal.client_secret"),
     ):
-        lines.append(f"secret.{label}={_secret_status(frappe, doctype, name, fieldname)}")
+        lines.append(
+            f"secret.{label}={_secret_status(frappe, doctype, name, fieldname)}"
+        )
     return "\n".join(lines) + "\n"
 
 

@@ -1,6 +1,5 @@
 import importlib.util
 import os
-from pathlib import Path
 import stat
 import subprocess
 import sys
@@ -8,7 +7,7 @@ import tempfile
 import types
 import unittest
 from decimal import Decimal
-
+from pathlib import Path
 
 SCRIPT = Path(__file__).with_name("site-check.sh")
 PYTHON = Path(__file__).with_name("site-check.py")
@@ -49,11 +48,7 @@ class SiteCheckTests(unittest.TestCase):
             "secret.api_user.api_secret=ok\nsecret.wise.api_token=ok\nsecret.paypal.client_secret=ok\n"
         )
         docker = self.bin / "docker"
-        docker.write_text(
-            "#!/bin/sh\n"
-            "cat >/dev/null\n"
-            "cat \"$FAKE_SITE_REPORT\"\n"
-        )
+        docker.write_text("#!/bin/sh\n" "cat >/dev/null\n" 'cat "$FAKE_SITE_REPORT"\n')
         docker.chmod(0o755)
         self.env = os.environ.copy()
         self.env.update(
@@ -94,7 +89,9 @@ class SiteCheckTests(unittest.TestCase):
     def test_secret_failure_is_a_difference_even_when_both_fail(self):
         directory = self.private / "site-check"
         directory.mkdir()
-        report = self.site_report.read_text().replace("secret.wise.api_token=ok", "secret.wise.api_token=fails")
+        report = self.site_report.read_text().replace(
+            "secret.wise.api_token=ok", "secret.wise.api_token=fails"
+        )
         (directory / "a.txt").write_text(report)
         (directory / "b.txt").write_text(report)
         result = self.run_script("compare", "a", "b")
@@ -115,14 +112,18 @@ class SiteCheckTests(unittest.TestCase):
         (directory / "a.txt").write_text(self.site_report.read_text())
         for old, new in cases:
             with self.subTest(new=new):
-                (directory / "b.txt").write_text(self.site_report.read_text().replace(old, new))
+                (directory / "b.txt").write_text(
+                    self.site_report.read_text().replace(old, new)
+                )
                 result = self.run_script("compare", "a", "b")
                 self.assertEqual(result.returncode, 1)
                 self.assertIn("not equal", result.stdout)
 
     def test_backend_report_never_contains_decrypted_values(self):
         password = types.ModuleType("frappe.utils.password")
-        password.get_decrypted_password = lambda *args, **kwargs: "invented-secret-do-not-report"
+        password.get_decrypted_password = (
+            lambda *args, **kwargs: "invented-secret-do-not-report"
+        )
         utils = types.ModuleType("frappe.utils")
         utils.password = password
         sys.modules["frappe.utils"] = utils
@@ -147,7 +148,9 @@ class SiteCheckTests(unittest.TestCase):
             report = module.build_report(frappe)
             self.assertNotIn("invented-secret-do-not-report", report)
             self.assertIn("secret.api_user.api_secret=ok", report)
-            self.assertIn("balance.Invented Account=debit:1000.00,credit:1081.00", report)
+            self.assertIn(
+                "balance.Invented Account=debit:1000.00,credit:1081.00", report
+            )
         finally:
             sys.modules.pop("frappe.utils.password", None)
             sys.modules.pop("frappe.utils", None)
