@@ -62,7 +62,7 @@ roles Accounts User, Sales User, Purchase User and Stock User.
 
 - Base URLs:
   - https://bsaladins-mac-mini-1.tail61fee9.ts.net:8448/api/ (tailnet)
-  - http://127.0.0.1:8082/api/ (on the mini)
+  - http://127.0.0.1:8080/api/ (on the mini; IT's front door wakes the VM and refreshes its idle clock)
 - Header: `Authorization: token <key>:<secret>`
 - Credentials: `~/ws_yardr_finance/.erpnext-api` (mode 600, lines `url=`,
   `api_key=`, `api_secret=`). Read them from there; never copy them into the
