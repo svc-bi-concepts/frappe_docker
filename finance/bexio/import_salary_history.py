@@ -13,7 +13,6 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 
 import import_master as im
-import import_purchase as ip
 
 FIGURES = os.path.join(im.PRIVATE, "payroll", "paystub-figures.csv")
 PROBLEMS_FILE = os.path.join(im.PRIVATE, "payroll", "salary-history-problems.txt")
@@ -89,10 +88,11 @@ class Lookups:
                 ],
             )
         }
-        # Child count is compared separately; a single bounded list avoids fetching names or row data.
+        # Read through the parent: child-table REST lists require parent permission context.
         for slip in slips.values():
-            slip["row_count"] = len(
-                erp.list("Salary Detail", [["parent", "=", slip["name"]]], ["name"])
+            doc = erp.get("Salary Slip", slip["name"])
+            slip["row_count"] = len(doc.get("earnings", [])) + len(
+                doc.get("deductions", [])
             )
         return cls(employees, slips)
 
@@ -115,7 +115,6 @@ def group_figures(records):
         stub = grouped.setdefault(
             key, {"position": position, "rows": [], "totals": {}, "unknown": False}
         )
-        stub.setdefault("source_rows", []).append(source)
         if wage_type in TOTAL_TYPES:
             if wage_type in stub["totals"]:
                 stub["malformed"] = True
@@ -283,19 +282,13 @@ def write_problems(path, rows):
         if row["outcome"] not in BAD + (DIFFERS,):
             continue
         line = f"stub position {row['position']}: {row['outcome']}"
-        if row["outcome"] == "unknown wage type":
-            unknown = sorted(
-                {
-                    str(source["wage_type"])
-                    for source in row["stub"].get("source_rows", [])
-                    if str(source["wage_type"]) not in WAGE_TYPES
-                    and str(source["wage_type"]) not in TOTAL_TYPES
-                }
-            )
-            if unknown:
-                line += " (" + ", ".join(unknown) + ")"
         lines.append(line)
-    ip.write_private(path, lines)
+    os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+    # Existing reports may have been created with broader permissions.
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as stream:
+        os.fchmod(stream.fileno(), 0o600)
+        stream.write("\n".join(lines) + "\n")
 
 
 def remove_month(erp, year, month, apply_changes):
@@ -330,17 +323,21 @@ def main(argv=None):
     parser.add_argument("--figures", default=FIGURES)
     parser.add_argument("--token-file", default=im.TOKEN_FILE)
     args = parser.parse_args(argv)
+    if args.remove_month and args.check:
+        parser.error("--check cannot be combined with --remove-month")
     if args.remove_month:
         try:
             year, month = map(int, args.remove_month.split("-"))
             date(year, month, 1)
+            if args.remove_month != f"{year:04d}-{month:02d}":
+                raise ValueError("invalid month")
         except (ValueError, TypeError):
             parser.error("--remove-month must be YYYY-MM")
-        erp = im.Erp.from_file(args.token_file)
-        return remove_month(erp, year, month, args.apply)
-    records = read_figures(args.figures)
-    erp = im.Erp.from_file(args.token_file)
     try:
+        erp = im.Erp.from_file(args.token_file)
+        if args.remove_month:
+            return remove_month(erp, year, month, args.apply)
+        records = read_figures(args.figures)
         lookups = Lookups.from_erp(erp)
         rows = plan(records, lookups)
         if args.apply and any(r["outcome"] in BAD + (DIFFERS,) for r in rows):
@@ -360,9 +357,16 @@ def main(argv=None):
             rows = plan(records, Lookups.from_erp(erp))
         print(report(rows, "applied" if args.apply else "dry run: nothing was written"))
         write_problems(PROBLEMS_FILE, rows)
-        return 1 if any(r["outcome"] in BAD + (DIFFERS,) for r in rows) else 0
-    except (im.ErpError, ValueError) as err:
-        print(f"aborted: {err}", file=sys.stderr)
+        failed = any(r["outcome"] in BAD + (DIFFERS,) for r in rows)
+        if args.apply:
+            failed = failed or any(r["outcome"] != LOADED for r in rows)
+        return 1 if failed else 0
+    except (im.ErpError, ValueError, OSError, KeyError, TypeError):
+        # Server errors and local paths can contain employee identifiers or payroll figures.
+        print(
+            "aborted: unable to read, validate or process salary history",
+            file=sys.stderr,
+        )
         return 2
 
 

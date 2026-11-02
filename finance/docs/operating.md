@@ -129,8 +129,8 @@ Abschlussbuchungen, when bexio's business year is closed:**
 6. The month's trial balance per account equals bexio's; what differs are the known rows (the rappen
    roundings, the sub-centime closings on 1100, the two rows of 6641/1021 — see
    `finance/docs/erpnext-setup.md`, "Bexio history").
-7. **Paystub history, October, November and December 2026 only.** Parse the paystubs from this complete export,
-   then attach the PDFs and review the Salary Slip dry run. `parse_paystubs.py` accepts these exact options:
+7. **Paystub history, October, November and December 2026 only.** The yardmaster parses the paystubs from this complete export,
+   then attaches the PDFs and reviews the Salary Slip dry run. `parse_paystubs.py` accepts these exact options:
 
        python3 finance/bexio/parse_paystubs.py --paystubs-json <export-dir>/payroll/paystubs.json --paystubs-dir <export-dir>/payroll/paystubs --out private/payroll/paystub-figures-<month>.csv --report private/payroll/paystub-figures-<month>-report.txt --check
        python3 finance/bexio/import_paystubs.py --apply --paystubs-json <export-dir>/payroll/paystubs.json
