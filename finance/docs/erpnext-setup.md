@@ -363,7 +363,10 @@ prints what changed. A second run changes nothing.
   Gap: Accounts Manager can still delete a cancelled document; closing that
   needs a server hook or removing the right from Accounts Manager.
 - Track Changes (Version) on the same doctypes (a Property Setter, so a
-  migrate keeps it). They were already on.
+  migrate keeps it). They were already on. `GEBUEV_VERSIONED` in
+  `swiss-setup.py` lists doctypes that get Track Changes only, with no delete
+  change: Salary Slip. Slips loaded by `import_salary_history.py` are stored
+  without validate, so they leave no Version row; later edits do.
 
 Not in the step: v16 has no separate audit-trail setting; Track Changes is the
 version history. Freezing is a separate command, below.

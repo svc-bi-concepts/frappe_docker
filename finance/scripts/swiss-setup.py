@@ -399,6 +399,9 @@ GEBUEV_TRACKED = [
     "Payment Entry",
     "Bank Transaction",
 ]
+# Doctypes that get versions only. The delete right stays as it is: Salary Slip
+# is not in GEBUEV_TRACKED, whose loop also revokes delete.
+GEBUEV_VERSIONED = ["Salary Slip"]
 # The one role that may delete on these doctypes; Administrator is not listed
 # because it bypasses the role check.
 GEBUEV_DELETE_ROLE = "Accounts Manager"
@@ -1343,15 +1346,16 @@ def gebuev():
         frappe.clear_cache(doctype=dt)
     say("gebuev: delete rights checked on " + str(len(GEBUEV_TRACKED)) + " doctypes")
 
-    # 3. Track Changes (Version) on the same doctypes. A Property Setter, so a
-    # migrate does not reset it to the doctype's JSON.
-    for dt in GEBUEV_TRACKED:
+    # 3. Track Changes (Version) on the same doctypes and on GEBUEV_VERSIONED. A
+    # Property Setter, so a migrate does not reset it to the doctype's JSON.
+    versioned = GEBUEV_TRACKED + GEBUEV_VERSIONED
+    for dt in versioned:
         if frappe.db.get_value("DocType", dt, "track_changes"):
             continue
         set_doctype_property(dt, "track_changes", 1, "Check")
         say(f"gebuev: {dt}: track changes on")
     frappe.clear_cache()
-    say("gebuev: track changes checked on " + str(len(GEBUEV_TRACKED)) + " doctypes")
+    say("gebuev: track changes checked on " + str(len(versioned)) + " doctypes")
     frappe.db.commit()
 
 
