@@ -106,9 +106,13 @@ class Parsing(unittest.TestCase):
         with patch.object(
             update_check.subprocess,
             "run",
-            return_value=subprocess.CompletedProcess([], 0, "bbbbbbb refs/heads/v16\n", ""),
+            return_value=subprocess.CompletedProcess(
+                [], 0, "bbbbbbb refs/heads/v16\n", ""
+            ),
         ) as run_git:
-            update_check.ls_remote_branch("https://github.com/libracore/erpnextswiss", "v16")
+            update_check.ls_remote_branch(
+                "https://github.com/libracore/erpnextswiss", "v16"
+            )
         self.assertEqual(
             run_git.call_args.args[0],
             [
