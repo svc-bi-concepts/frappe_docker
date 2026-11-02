@@ -235,7 +235,7 @@ ledgerdemain`: a minor move, not this procedure; it is a decision bead. erpnexts
 
        finance/scripts/switch-image.sh v16.<minor>.<patch>-swiss-bi<N>
 
-   It sets the tag in `finance-local.yml`, brings the stack up, restarts `frontend` and `websocket`, and waits for
+   It sets the tag in `finance-local.yml` and `finance-coolify.yml`, brings the stack up, restarts `frontend` and `websocket`, and waits for
    ping 200. On 200 it removes the previous image and the new image's `-base` layer. On no ping it rolls back by
    itself and keeps the previous image. It does not migrate: step 9 does.
 

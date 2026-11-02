@@ -503,9 +503,9 @@ finance/scripts/switch-image.sh <new-tag>
 ```
 
 It reads the previous tag from `finance-local.yml`, sets the new one on all eight
-services, brings the stack up, restarts `frontend` and `websocket`, and waits for
+services there and in `finance-coolify.yml`, brings the stack up, restarts `frontend` and `websocket`, and waits for
 ping 200. On 200 it removes the image the stack ran before, and the new image's
-`-base` layer. If ping does not answer, it sets `finance-local.yml` back to the
+`-base` layer. If ping does not answer, it sets both files back to the
 previous tag, brings the stack up on it and keeps the old image; the new image
 stays, and a person removes it.
 
