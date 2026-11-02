@@ -79,7 +79,14 @@ After a restore, run `finance/scripts/site-check.sh report <name>` for each
 site. It stores the detailed report under `private/site-check/` with mode 600
 and prints four section digests only. Use `compare <a> <b>` for report
 differences, or save the digest output and use `digests <a> <b>` when only the
-digests are available. The directory is mode 700.
+digests are available. The directory is mode 700. `FINANCE_PROJECT` picks the
+stack; the default is live, `frappe-finance-copy` is the copy.
+
+`compare` fails on a secret that fails in either report, so a site whose key
+did not come along cannot pass. `digests` only sees that the two sides differ:
+a secret that fails on both sides gives equal digests. The copy keeps its own
+key on purpose, so it does not decrypt live's secrets, and `compare` of live
+and the copy reports them as not equal.
 
 ```sh
 # the sets on the volume, newest last
