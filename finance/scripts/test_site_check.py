@@ -77,6 +77,13 @@ class SiteCheckTests(unittest.TestCase):
         self.assertEqual(stat.S_IMODE(directory.stat().st_mode), 0o700)
         self.assertEqual(stat.S_IMODE(report.stat().st_mode), 0o600)
         self.assertEqual(report.read_text(), self.site_report.read_text())
+        digests = result.stdout.splitlines()
+        self.assertEqual(
+            [line.split("=", 1)[0] for line in digests],
+            ["counts", "trial_balance", "files", "secrets"],
+        )
+        self.assertTrue(all(len(line.split("=", 1)[1]) == 64 for line in digests))
+        self.assertNotIn("Invented Account", result.stdout)
 
     def test_equal_reports_pass(self):
         directory = self.private / "site-check"
@@ -97,6 +104,28 @@ class SiteCheckTests(unittest.TestCase):
         result = self.run_script("compare", "a", "b")
         self.assertEqual(result.returncode, 1)
         self.assertIn("secret.wise.api_token=fails", result.stdout)
+
+    def test_digests_compare_report_outputs(self):
+        directory = self.private / "site-check"
+        directory.mkdir()
+        (directory / "a.txt").write_text(self.site_report.read_text())
+        (directory / "b.txt").write_text(self.site_report.read_text())
+        for name in ("a", "b"):
+            result = self.run_script("report", name)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            (directory / f"{name}.digests").write_text(result.stdout)
+        equal = self.run_script(
+            "digests", str(directory / "a.digests"), str(directory / "b.digests")
+        )
+        self.assertEqual((equal.returncode, equal.stdout.strip()), (0, "equal"))
+        changed = (directory / "b.digests").read_text().splitlines()
+        changed[0] = "counts=" + ("0" if changed[0][7] != "0" else "1") + changed[0][8:]
+        (directory / "b.digests").write_text("\n".join(changed) + "\n")
+        unequal = self.run_script(
+            "digests", str(directory / "a.digests"), str(directory / "b.digests")
+        )
+        self.assertEqual(unequal.returncode, 1)
+        self.assertIn("different sections: counts", unequal.stdout)
 
     def test_changed_account_missing_file_and_failed_secret_are_differences(self):
         cases = (

@@ -46,7 +46,7 @@ report)
   chmod 600 "$TMP"
   mv -f "$TMP" "$TARGET"
   trap - EXIT HUP INT TERM
-  echo "wrote $TARGET (mode 600)"
+  python3 "$ROOT/finance/scripts/site-check.py" digest-report "$TARGET"
   ;;
 compare)
   [ "$#" -eq 3 ] || {
@@ -59,8 +59,15 @@ compare)
   fi
   python3 "$ROOT/finance/scripts/site-check.py" compare "$PRIVATE/site-check/$2.txt" "$PRIVATE/site-check/$3.txt"
   ;;
+digests)
+  [ "$#" -eq 3 ] || {
+    echo "usage: site-check.sh digests <a> <b>" >&2
+    exit 2
+  }
+  python3 "$ROOT/finance/scripts/site-check.py" digests "$2" "$3"
+  ;;
 *)
-  echo "usage: site-check.sh report <name> | compare <a> <b>" >&2
+  echo "usage: site-check.sh report <name> | compare <a> <b> | digests <a> <b>" >&2
   exit 2
   ;;
 esac

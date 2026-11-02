@@ -75,9 +75,11 @@ settled.
 
 ## Checks
 
-Compare two sites after a restore with `finance/scripts/site-check.sh report`
-and `finance/scripts/site-check.sh compare`. Reports stay under
-`private/site-check/` with mode 600.
+After a restore, run `finance/scripts/site-check.sh report <name>` for each
+site. It stores the detailed report under `private/site-check/` with mode 600
+and prints four section digests only. Use `compare <a> <b>` for report
+differences, or save the digest output and use `digests <a> <b>` when only the
+digests are available. The directory is mode 700.
 
 ```sh
 # the sets on the volume, newest last

@@ -1,5 +1,6 @@
 """Build a private, read-only summary of a Frappe finance site."""
 
+import hashlib
 import os
 import sys
 from decimal import Decimal
@@ -20,6 +21,12 @@ DOCTYPES = (
 )
 API_USER = "api-agent@finance.local"
 FILE_BATCH = 500
+SECTIONS = {
+    "counts": "count.",
+    "trial_balance": "balance.",
+    "files": "files.",
+    "secrets": "secret.",
+}
 
 
 def _count(db, doctype, suffix=""):
@@ -114,7 +121,53 @@ def build_report(frappe):
         lines.append(
             f"secret.{label}={_secret_status(frappe, doctype, name, fieldname)}"
         )
-    return "\n".join(lines) + "\n"
+    return "\n".join(sorted(lines)) + "\n"
+
+
+def section_digests(report):
+    lines = report.splitlines()
+    output = []
+    for section, prefix in SECTIONS.items():
+        canonical = sorted(line for line in lines if line.startswith(prefix))
+        digest = hashlib.sha256(
+            ("\n".join(canonical) + "\n").encode("utf-8")
+        ).hexdigest()
+        output.append(f"{section}={digest}")
+    return output
+
+
+def read_digests(path):
+    with open(path, encoding="utf-8") as source:
+        rows = source.read().splitlines()
+    expected = set(SECTIONS)
+    parsed = {}
+    for row in rows:
+        section, separator, digest = row.partition("=")
+        if not separator or section not in expected or len(digest) != 64:
+            return None
+        try:
+            int(digest, 16)
+        except ValueError:
+            return None
+        if section in parsed:
+            return None
+        parsed[section] = digest
+    return parsed if set(parsed) == expected else None
+
+
+def compare_digests(path_a, path_b):
+    a = read_digests(path_a)
+    b = read_digests(path_b)
+    if a is None or b is None:
+        print("not equal\ninvalid digest output")
+        return 1
+    different = [section for section in SECTIONS if a[section] != b[section]]
+    if not different:
+        print("equal")
+        return 0
+    print("not equal")
+    print("different sections: " + ", ".join(different))
+    return 1
 
 
 def compare_reports(path_a, path_b):
@@ -142,6 +195,12 @@ def compare_reports(path_a, path_b):
 def main():
     if len(sys.argv) == 4 and sys.argv[1] == "compare":
         raise SystemExit(compare_reports(sys.argv[2], sys.argv[3]))
+    if len(sys.argv) == 3 and sys.argv[1] == "digest-report":
+        with open(sys.argv[2], encoding="utf-8") as source:
+            print("\n".join(section_digests(source.read())))
+        return
+    if len(sys.argv) == 4 and sys.argv[1] == "digests":
+        raise SystemExit(compare_digests(sys.argv[2], sys.argv[3]))
     import frappe
 
     frappe.init(site="frontend", sites_path=".")
