@@ -84,6 +84,7 @@ def activities(token, profile_id, start, opener=urllib.request.urlopen):
     path = f"/v1/profiles/{profile_id}/activities"
     out = []
     cursor = None
+    seen = set()
     while True:
         params = {"size": PAGE_SIZE}
         if cursor:
@@ -95,6 +96,10 @@ def activities(token, profile_id, start, opener=urllib.request.urlopen):
         cursor = body.get("cursor")
         if cursor is not None and not isinstance(cursor, str):
             raise WiseError(f"unexpected answer from Wise on {path}")
+        # a cursor Wise sends twice would page for ever; the stop must not depend on the server
+        if cursor in seen:
+            raise WiseError(f"repeated cursor from Wise on {path}")
+        seen.add(cursor)
         # newest first: once a page reaches before start, the older pages are not wanted
         if not cursor or not items or _created(items[-1]) < start:
             break

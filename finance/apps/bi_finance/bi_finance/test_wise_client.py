@@ -194,6 +194,21 @@ class Activities(unittest.TestCase):
         self.assertIn("/v1/profiles/42/activities", str(ctx.exception))
         self.assertNotIn("C1", str(ctx.exception))
 
+    def test_a_cursor_that_repeats_is_an_error(self):
+        page = {
+            "activities": [
+                _activity(
+                    "A1", "CARD_PAYMENT", "-7 EUR", created="2026-03-05T08:00:00.000Z"
+                )
+            ],
+            "cursor": "C1",
+        }
+        opener = FakeOpener(page)
+        with self.assertRaises(wise_client.WiseError) as ctx:
+            wise_client.activities(TOKEN, 42, self.start, opener=opener)
+        self.assertIn("/v1/profiles/42/activities", str(ctx.exception))
+        self.assertEqual(len(opener.requests), 2)
+
 
 class Transfers(unittest.TestCase):
     def test_pages_by_offset_until_a_short_page(self):
