@@ -11,11 +11,14 @@ import unittest
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 SCRIPT = os.path.join(ROOT, "finance", "scripts", "public-check.sh")
+# By its full path: the no-curl test runs with a PATH that holds no shell.
+SH = shutil.which("sh")
 
 # The stub reads STUB_HIT: "<scheme> <needle>" makes the request whose arguments hold the needle answer as
-# Frappe (needle: a listed name, unknown-name, "Host:" for the empty Host, or the bare address URL); a request
+# Frappe (needle: a listed name, unknown-name, "Host;" for the empty Host, or the bare address URL); a request
 # on STUB_REFUSE (a scheme, or "all") exits 7 like a refused connection; STUB_RC is any other exit code.
-# STUB_MODE=header: every answer carries only a Frappe header; STUB_MODE=login: only /login answers as Frappe.
+# STUB_MODE=header: every answer carries only a Frappe header; STUB_MODE=login: only /login answers as Frappe;
+# STUB_MODE=cut: every answer shows a Frappe header, then the transfer times out (exit 28).
 # One stub file serves every test: a fresh executable costs seconds to its first run on the mini.
 STUB_CURL = """\
 args="$*"
@@ -25,6 +28,7 @@ case "$args" in *"https://"*) scheme=https ;; *) scheme=http ;; esac
 case "${STUB_MODE:-}" in
 header) printf 'HTTP/1.1 302 Found\\r\\nX-Frappe-Site-Name: frontend\\r\\n\\r\\n'; exit 0 ;;
 login) case "$args" in *login*) printf 'HTTP/1.1 200 OK\\r\\n\\r\\n<script>frappe.ready()</script>' ;; esac; exit 0 ;;
+cut) printf 'HTTP/1.1 200 OK\\r\\nX-Frappe-Site-Name: frontend\\r\\n'; exit 28 ;;
 esac
 if [ "${STUB_REFUSE:-}" = all ] || [ "${STUB_REFUSE:-}" = "$scheme" ]; then exit 7; fi
 if [ -n "${STUB_HIT:-}" ]; then
@@ -72,7 +76,7 @@ class PublicCheck(unittest.TestCase):
             f.write(text)
         os.chmod(self.hosts, mode)
 
-    def run_check(self, **env):
+    def run_check(self, script=SCRIPT, **env):
         base = {
             "PATH": self.bin + os.pathsep + os.environ["PATH"],
             "STUB_LOG": self.log,
@@ -80,7 +84,7 @@ class PublicCheck(unittest.TestCase):
         }
         base.update(env)
         return subprocess.run(
-            ["sh", SCRIPT], env=base, capture_output=True, text=True, timeout=60
+            [SH, script], env=base, capture_output=True, text=True, timeout=60
         )
 
     def calls(self):
@@ -109,7 +113,7 @@ class PublicCheck(unittest.TestCase):
                     (scheme, name),
                 )
             self.assertTrue(
-                any(f"-H Host: {scheme}://192.0.2.10/login" in c for c in calls), scheme
+                any(f"-H Host; {scheme}://192.0.2.10/login" in c for c in calls), scheme
             )
             self.assertTrue(
                 any(
@@ -132,7 +136,7 @@ class PublicCheck(unittest.TestCase):
             "ledger.example.test": "address 1, public name 1",
             "other.example.test": "address 1, public name 2",
             "unknown-name": "address 1, unknown name",
-            "Host:": "address 1, empty Host",
+            "Host;": "address 1, empty Host",
             "-m 10 SCHEME://": "address 1, bare address",
         }
         for scheme in ("http", "https"):
@@ -162,6 +166,69 @@ class PublicCheck(unittest.TestCase):
         self.assertEqual(run.returncode, 1)
         self.assertIn("https", run.stdout)
 
+    def test_an_answer_cut_short_still_counts_as_a_hit(self):
+        run = self.run_check(STUB_MODE="cut")
+        self.assertEqual(run.returncode, 1, run.stdout + run.stderr)
+
+    def test_a_host_that_turns_the_connection_down_passes(self):
+        for rc in ("7", "28", "35", "52", "56"):
+            with self.subTest(rc=rc):
+                run = self.run_check(STUB_RC=rc)
+                self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+
+    def test_a_question_not_asked_is_an_error_not_a_pass(self):
+        # 3 a bad URL, 49 a bad --resolve, 127 no curl: nothing reached the host, so nothing is proved
+        for rc in ("3", "49", "127"):
+            with self.subTest(rc=rc):
+                run = self.run_check(STUB_RC=rc)
+                self.assertEqual(run.returncode, 2, run.stdout + run.stderr)
+                self.assertNotIn("192.0.2.10", run.stdout + run.stderr)
+
+    def test_no_curl_on_the_path_is_an_error_not_a_pass(self):
+        bin_dir = os.path.join(self.tmp, "bin")
+        os.mkdir(bin_dir)
+        for tool in ("grep", "stat"):
+            os.symlink(shutil.which(tool), os.path.join(bin_dir, tool))
+        run = self.run_check(PATH=bin_dir)
+        self.assertEqual(run.returncode, 2, run.stdout + run.stderr)
+
+    def test_an_ipv6_address_goes_in_brackets(self):
+        self.write_hosts("2001:db8::10 ledger.example.test\n")
+        run = self.run_check()
+        self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+        calls = self.calls()
+        self.assertTrue(any("-H Host; http://[2001:db8::10]/login" in c for c in calls))
+        self.assertTrue(
+            any("--resolve ledger.example.test:443:[2001:db8::10] " in c for c in calls)
+        )
+
+    def test_a_last_line_with_no_newline_is_asked(self):
+        self.write_hosts("192.0.2.10 ledger.example.test\n192.0.2.11")
+        run = self.run_check(STUB_HIT="http 192.0.2.11")
+        self.assertEqual(run.returncode, 1, run.stdout + run.stderr)
+        self.assertIn("address 2", run.stdout)
+
+    def test_the_default_hosts_file_is_in_finance_private(self):
+        private = os.path.join(self.tmp, "private")
+        os.mkdir(private)
+        shutil.move(self.hosts, os.path.join(private, "public-check-hosts"))
+        run = self.run_check(PUBLIC_CHECK_HOSTS="", FINANCE_PRIVATE=private)
+        self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+        self.assertIn("1 address(es)", run.stdout)
+
+    def test_with_no_setting_the_hosts_file_is_found_beside_the_checkout(self):
+        checkout = os.path.join(self.tmp, "frappe_docker")
+        script = os.path.join(checkout, "finance", "scripts", "public-check.sh")
+        os.makedirs(os.path.dirname(script))
+        shutil.copy(SCRIPT, script)
+        subprocess.run(["git", "init", "-q", checkout], check=True)
+        private = os.path.join(self.tmp, "private")
+        os.mkdir(private)
+        shutil.move(self.hosts, os.path.join(private, "public-check-hosts"))
+        run = self.run_check(script=script, PUBLIC_CHECK_HOSTS="")
+        self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+        self.assertIn("1 address(es)", run.stdout)
+
     def test_hosts_file_missing_wrong_mode_or_empty_is_refused(self):
         os.remove(self.hosts)
         self.assertEqual(self.run_check().returncode, 2)
@@ -177,6 +244,7 @@ class PublicCheck(unittest.TestCase):
     def test_an_address_that_does_not_resolve_is_an_error_not_a_pass(self):
         run = self.run_check(STUB_RC="6")
         self.assertEqual(run.returncode, 2, run.stdout)
+        self.assertIn("curl failed", run.stderr)
 
     def test_two_addresses_are_numbered(self):
         self.write_hosts("192.0.2.10 ledger.example.test\n192.0.2.11\n")
