@@ -6,9 +6,9 @@ Employee with that bexio_id (import_employees.py), named <year>-<month>-paystub.
 it), keyed paystub-<employee_id>-<year>-<month> in File.bexio_id. The key carries the employee's bexio id, so
 a second run finds the File and skips it: the pass can be rerun.
 
-No Salary Slip is made for these months: the export holds no figures per slip, and a slip without real amounts
-would feed the payroll hand-over report and the Lohnausweis with wrong numbers (finance/docs/hrms.md, step 5).
-A File posts no GL entry.
+The PDF remains the source document. The parsed figures can also be loaded as submitted historical Salary Slips
+by import_salary_history.py; those slips are keyed to the same paystub id, do not post to the GL and are excluded
+from payroll hand-over and cash-flow forecast (finance/docs/hrms.md). A File posts no GL entry.
 
 --dry-run (the default) reads ERPNext and writes nothing. --apply uploads each PDF whose Employee exists and
 whose File is not there yet:
