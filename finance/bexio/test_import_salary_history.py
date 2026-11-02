@@ -93,6 +93,10 @@ class FakeErp:
                 "net_pay": p["net_pay"],
                 "rounded_total": p["paid_out"],
                 "is_proposed": 1,
+                "employee": p["employee"],
+                "start_date": p["start_date"],
+                "end_date": p["end_date"],
+                "docstatus": 1,
                 "row_count": self.row_count,
             }
         )
@@ -174,6 +178,10 @@ class SalaryHistoryTests(unittest.TestCase):
             "earnings": base["earnings"],
             "deductions": base["deductions"],
             "is_proposed": 1,
+            "employee": base["employee"],
+            "start_date": base["start_date"],
+            "end_date": base["end_date"],
+            "docstatus": 1,
         }
         self.assertEqual(
             ish.DIFFERS,
@@ -188,6 +196,23 @@ class SalaryHistoryTests(unittest.TestCase):
                 rs, ish.Lookups({"invented-1": "EMP-TEST"}, {base["bexio_id"]: slip})
             )[0]["outcome"],
         )
+        for field, value in (
+            ("employee", "EMP-OTHER"),
+            ("start_date", "2026-09-01"),
+            ("end_date", "2026-09-30"),
+            ("docstatus", 0),
+        ):
+            changed_identity = dict(slip, **{field: value})
+            self.assertEqual(
+                ish.DIFFERS,
+                ish.plan(
+                    rs,
+                    ish.Lookups(
+                        {"invented-1": "EMP-TEST"},
+                        {base["bexio_id"]: changed_identity},
+                    ),
+                )[0]["outcome"],
+            )
         changed = dict(slip)
         changed["earnings"] = [dict(row) for row in slip["earnings"]]
         changed["earnings"][0]["amount"] = "899.00"

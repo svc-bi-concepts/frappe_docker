@@ -85,6 +85,10 @@ class Lookups:
                     "net_pay",
                     "rounded_total",
                     "is_proposed",
+                    "employee",
+                    "start_date",
+                    "end_date",
+                    "docstatus",
                 ],
             )
         }
@@ -243,9 +247,14 @@ def plan(records, lookups):
                     decimal(slip.get(actual, 0)) == decimal(expected[source])
                     for source, actual in fields
                 )
+                equal = equal and all(
+                    slip.get(field) == expected[field]
+                    for field in ("employee", "start_date", "end_date")
+                )
                 equal = equal and rows_match(slip.get("earnings", []), expected["earnings"])
                 equal = equal and rows_match(slip.get("deductions", []), expected["deductions"])
                 equal = equal and int(slip.get("is_proposed") or 0) == 1
+                equal = equal and int(slip.get("docstatus") or 0) == 1
                 item["outcome"] = LOADED if equal else DIFFERS
             else:
                 item["outcome"] = LOAD
