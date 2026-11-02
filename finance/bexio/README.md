@@ -514,14 +514,40 @@ bead. Back up first, use one writer, and check the second run creates nothing.
 `paystubs.json`, one per employee and month) to their Employees, as private Files named
 `<year>-<month>-paystub.pdf`. Each File is keyed `paystub-<employee>-<year>-<month>` in `File.bexio_id`,
 so a second run finds it and attaches nothing. It needs the Employees of `import_employees.py` first. A
-paystub whose Employee is missing is counted and not uploaded. No Salary Slip is made for these months:
-the export has no figures per slip (see `finance/docs/hrms.md`, step 5). The Files post no GL.
+paystub whose Employee is missing is counted and not uploaded. The parsed figures can also be stored in a
+submitted historical Salary Slip by `import_salary_history.py`; the PDF stays attached as the source document.
+History slips post no GL and the hand-over, forecast and Payment Proposal leave them out (see
+`finance/docs/hrms.md`, step 5). The Files post no GL.
 
     python3 finance/bexio/import_paystubs.py --dry-run    # counts only, nothing written
     python3 finance/bexio/import_paystubs.py --apply      # uploads the PDFs marked attach
 
 The records it cannot place (no Employee, a PDF missing, of another size or listed twice) go by position to
 `<private>/bexio-paystubs-dry-run.txt`; the screen shows counts only.
+
+### Historical Salary Slips
+
+`import_salary_history.py` reads the private CSV from `parse_paystubs.py` and plans one submitted Salary Slip per
+employee and month. It is a dry run by default; `--apply` loads slips oldest first through the history method,
+and a rerun reports them as `loaded`. `--check` verifies each key, identity, totals, rows and
+proposal/submission state. Existing keys with changed values are `differs` and are never overwritten. Unknown
+wage types, sums that do not match, missing Employees and months after December 2026 stop an apply before any
+write. For a corrected source stub, review the private position-based report, remove only that month with
+`--remove-month YYYY-MM --apply`, then apply again after approval.
+
+The preflight is all-or-nothing for those checks; each slip is then written separately. A server failure mid-run
+can leave a partial month. Recover by rerunning `--apply`, then `--check`: `load_slip` is rerun safe, these
+history slips create no GL, and `--remove-month YYYY-MM --apply` removes the month's history if needed.
+
+    python3 finance/bexio/import_salary_history.py [--figures private/payroll/paystub-figures.csv]
+    python3 finance/bexio/import_salary_history.py --check [--figures PATH]
+    python3 finance/bexio/import_salary_history.py --apply [--figures PATH]
+    python3 finance/bexio/import_salary_history.py --remove-month 2026-10 [--apply]
+
+The screen prints counts only. Per-stub outcomes go by CSV position to
+`private/payroll/salary-history-problems.txt` (mode 600); no employee id, name or figure goes to the repo,
+screen or bead note. The operation is a history snapshot only: the GL remains the books, there is no Payroll
+Entry or accrual, and the Payment Proposal cannot select the slips.
 
 ## Manual entries (Journal Entries)
 

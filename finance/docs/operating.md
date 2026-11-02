@@ -129,6 +129,24 @@ Abschlussbuchungen, when bexio's business year is closed:**
 6. The month's trial balance per account equals bexio's; what differs are the known rows (the rappen
    roundings, the sub-centime closings on 1100, the two rows of 6641/1021 — see
    `finance/docs/erpnext-setup.md`, "Bexio history").
+7. **Paystub history, October, November and December 2026 only.** The yardmaster parses the paystubs from this complete export,
+   then attaches the PDFs and reviews the Salary Slip dry run. `parse_paystubs.py` accepts these exact options:
+
+       python3 finance/bexio/parse_paystubs.py --paystubs-json <export-dir>/payroll/paystubs.json --paystubs-dir <export-dir>/payroll/paystubs --out private/payroll/paystub-figures-<month>.csv --report private/payroll/paystub-figures-<month>-report.txt --check
+       python3 finance/bexio/import_paystubs.py --apply --paystubs-json <export-dir>/payroll/paystubs.json
+       python3 finance/bexio/import_salary_history.py --figures private/payroll/paystub-figures-<month>.csv
+
+   The last command is a dry run. Read its counts and private position-based problems; unknown wage types,
+   missing Employees, sums that differ, post-cutover months or existing slips that differ must be resolved
+   before loading. ledgerdemain gives the go, then take a backup with files. Apply and check:
+
+       python3 finance/bexio/import_salary_history.py --figures private/payroll/paystub-figures-<month>.csv --apply
+       python3 finance/bexio/import_salary_history.py --figures private/payroll/paystub-figures-<month>.csv --check
+
+   Use this step only for October, November and December 2026. Since `--year 2026` exports every 2026 month,
+   earlier months in the CSV are reported `loaded` when unchanged, or `differs` if bexio corrected a stub; a
+   differing slip is never overwritten. History slips are submitted snapshots: they do not make Payroll Entries
+   or accruals, and the GL remains the books. Screen output and bead notes contain counts only.
 
 **December only, before the January 2027 revaluation run (erp-f5ss):** one Currency Exchange row per foreign
 currency the books hold (EUR, USD, PLN, as the bank accounts show), dated 2026-12-31, with the ESTV
