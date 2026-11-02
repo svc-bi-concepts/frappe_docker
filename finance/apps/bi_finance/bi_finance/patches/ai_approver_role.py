@@ -1,7 +1,7 @@
 """Creates the Role "AI Approver", who approves the desk assistant's level 2 actions on the AI Action form.
 
-The role is never given to the API user (api-agent@finance.local): assistant_actions.approve refuses that user
-whatever its roles. Idempotent: a second run finds the role and prints nothing.
+The role is never given to an API user (assistant_actions.API_USERS: api-agent, api-sync, api-mcp):
+assistant_actions.approve refuses them whatever their roles. Idempotent: a second run finds the role and prints nothing.
 """
 
 import frappe

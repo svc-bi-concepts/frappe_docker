@@ -7,8 +7,9 @@ matched by name. A second run on the same export therefore changes nothing.
 One exception needs a first-run bridge: the accounts of the KMU chart carry
 no bexio_id yet and are adopted by account number.
 
-Runs as api-agent@finance.local through the REST API; the key and secret are
-read from the token file and never printed. Run it as:
+Runs as api-agent@finance.local through the REST API (or as the user whose key
+file ERPNEXT_TOKEN_FILE names); the key and secret are read from the token file
+and never printed. Run it as:
 
     python3 finance/bexio/import_master.py [--export DIR] [--dry-run]
 
