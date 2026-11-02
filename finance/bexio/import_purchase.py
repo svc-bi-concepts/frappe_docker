@@ -14,8 +14,9 @@ Run it as:
 --export defaults to the newest directory under <private>/bexio-export/. The
 export holds bills.json (the list, with totals) and bills-detail.json (one
 single-bill record per bill, with its positions); expenses.json is read when
-it exists. The dry run prints totals per year and currency only. The bexio ids
-of the records it cannot map, and the ones whose totals differ, go to
+it exists. The dry run prints totals per year and currency, plus the count of
+DRAFT bills left out. The bexio ids of records it cannot map, and the ones
+whose totals differ, go to
 <private>/bexio-purchase-dry-run.txt, never to the screen or the repository.
 
 Each bill: the supplier is the Supplier of its supplier_id; each line is one
@@ -74,6 +75,7 @@ TAX_TOLERANCE = Decimal("0.05")
 # the most a foreign bill's CHF total may differ from bexio's own CHF booking on the payables account
 JOURNAL_TOLERANCE = Decimal("0.05")
 PAYABLES = "2000"
+DRAFT_BILL_STATUS = "DRAFT"
 
 # bexio purchase VAT codes. bexio books the input VAT of a bill to its transitory account 1172 at the bill date and moves
 # it to 1170 or 1171 when the bill is paid (import_payments_out.VAT_MOVES), so every code books to 1172 here
@@ -368,8 +370,8 @@ def journal_problem(bill, total, booked):
 def map_expense(expense, lookups):
     """The Purchase Invoice dict for one bexio expense. An expense with VAT needs its net split, which the export does not carry."""
     gross = _money(expense["gross"])
-    if expense.get("status") == "draft" and gross == ZERO:
-        raise Skipped("draft with gross 0")
+    if str(expense.get("status", "")).upper() == DRAFT_BILL_STATUS:
+        raise Skipped("draft expense")
     if expense.get("tax_id") not in ZERO_RATE_IDS:
         raise Skipped(
             "expense with VAT: the net split is not in the export; left to erp-a2ma"
@@ -420,6 +422,8 @@ def drafts(bills, lookups, booked):
     """
     out, names = [], set()
     for bill in bills:
+        if str(bill.get("status", "")).upper() == DRAFT_BILL_STATUS:
+            continue
         try:
             doc = map_bill(bill, lookups)
         except MappingError:
@@ -450,6 +454,7 @@ class Totals:
     def __init__(self):
         self.rows = {}
         self.problems = []
+        self.drafts_left_out = 0
 
     def row(self, year, currency):
         return self.rows.setdefault(
@@ -481,6 +486,12 @@ def dry_run(bills, expenses, lookups, booked):
         ("expense", expenses, map_expense),
     ):
         for rec in records:
+            if (
+                kind == "bill"
+                and str(rec.get("status", "")).upper() == DRAFT_BILL_STATUS
+            ):
+                totals.drafts_left_out += 1
+                continue
             day = (
                 _day(rec)
                 if kind == "bill"
@@ -566,6 +577,7 @@ def report(totals, export_dir):
     lines.append(
         "a row in a foreign currency: bexio's columns are in that currency; erp gross is CHF, checked against bexio's CHF booking"
     )
+    lines.append(f"bills left out: {totals.drafts_left_out} bexio drafts")
     lines.append("dry run: nothing was written")
     return "\n".join(lines)
 
