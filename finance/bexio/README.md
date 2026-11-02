@@ -786,6 +786,8 @@ The invoice file stays under `private/` and contains IDs and line details, for e
 
 Run without `--yes` to resolve and print the plan. After reviewing it, `--yes` creates the draft once
 and checks it by reading it back. A failed POST is never retried; check bexio before another attempt.
+Position totals are checked against amount × unit price with a tolerance below 0.000001, matching
+bexio's six-decimal read-back while rejecting larger changes.
 
 ```sh
 finance/bexio/prepare_bill_payment.py --bill <document-no> --payment <private-payment.json> --bank-account-id <id>  # dry run

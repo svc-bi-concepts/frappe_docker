@@ -10,7 +10,7 @@ import tempfile
 import unittest
 import urllib.error
 import urllib.parse
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
 from unittest import mock
 
 import launcher
@@ -150,10 +150,12 @@ def fake_bexio():
                 total_taxes="invented server taxes",
             )
             for row in actual["positions"]:
-                row["position_total"] = str(
+                # Live read-back keeps six decimals; rounding beyond that is unproven.
+                row["position_total"] = format(
                     (Decimal(row["amount"]) * Decimal(row["unit_price"])).quantize(
-                        Decimal("0.01"), rounding=ROUND_HALF_UP
-                    )
+                        Decimal("0.000001"), rounding=ROUND_HALF_UP
+                    ),
+                    ".6f",
                 )
                 row["amount"] = format(Decimal(row["amount"]), ".6f")
                 row["unit_price"] = format(Decimal(row["unit_price"]), ".6f")
@@ -365,6 +367,59 @@ class CreationTest(unittest.TestCase):
     def assert_no_post(self):
         self.assertFalse(any(method != "GET" for method, _, _ in self.calls))
         self.assertEqual(self.result(), "")
+
+    def test_readback_accepts_three_decimal_unit_price(self):
+        data = invoice()
+        data["positions"][0].update(amount="2", unit_price="9467.381")
+        self.run_invoice(data)
+        self.assertIn("created draft id 701", self.output.getvalue())
+        self.assertNotIn("read-back failed", self.result())
+
+    def test_readback_accepts_product_past_six_decimals(self):
+        data = invoice()
+        data["positions"][0].update(amount="0.010101", unit_price="0.010203")
+        self.run_invoice(data)
+        self.assertIn("created draft id 701", self.output.getvalue())
+        self.assertNotIn("read-back failed", self.result())
+
+    def test_readback_accepts_truncated_six_decimal_position_total(self):
+        data = invoice()
+        data["positions"][0].update(amount="0.010151", unit_price="0.010203")
+        self.run_invoice(data)
+        expected = self.fake.stored[-1]
+        actual = copy.deepcopy(expected)
+        product = Decimal(expected["positions"][0]["amount"]) * Decimal(
+            expected["positions"][0]["unit_price"]
+        )
+        truncated = product.quantize(Decimal("0.000001"), rounding=ROUND_DOWN)
+        self.assertNotEqual(
+            truncated, Decimal(actual["positions"][0]["position_total"])
+        )
+        actual["positions"][0]["position_total"] = format(truncated, ".6f")
+        si._verify(expected, actual)
+
+    def test_readback_accepts_rounding_across_half_cent(self):
+        data = invoice()
+        data["positions"][0].update(amount="0.100003", unit_price="0.049998")
+        self.run_invoice(data)
+        self.assertIn("created draft id 701", self.output.getvalue())
+        self.assertNotIn("read-back failed", self.result())
+
+    def test_readback_rejects_exact_six_decimal_tolerance_in_both_directions(self):
+        self.run_invoice()
+        expected = json.loads(
+            next(req.data for method, _, req in self.calls if method == "POST")
+        )
+        actual = self.fake.stored[-1]
+        total = Decimal(actual["positions"][0]["position_total"])
+        for direction in (-1, 1):
+            with self.subTest(direction=direction):
+                changed = copy.deepcopy(actual)
+                changed["positions"][0]["position_total"] = str(
+                    total + direction * Decimal("0.000001")
+                )
+                with self.assertRaisesRegex(ValueError, "position total changed"):
+                    si._verify(expected, changed)
 
     def test_happy_paths_all_vat_modes_and_optional_fields(self):
         for mode, expected in (
@@ -637,6 +692,7 @@ class CreationTest(unittest.TestCase):
             "type",
             "decimal",
             "total",
+            "off-by-cent",
             "http",
             "timeout",
             "bad-row",
@@ -664,6 +720,11 @@ class CreationTest(unittest.TestCase):
                         actual["positions"][0]["amount"] = "invalid"
                     elif failure == "total":
                         actual["positions"][0]["position_total"] = "0"
+                    elif failure == "off-by-cent":
+                        total = Decimal(actual["positions"][0]["position_total"])
+                        actual["positions"][0]["position_total"] = format(
+                            total + Decimal("0.01"), ".6f"
+                        )
                     elif failure == "bad-row":
                         actual["positions"][0] = None
                     elif failure == "unit":
