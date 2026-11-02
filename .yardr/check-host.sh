@@ -70,7 +70,11 @@ assert rules == [('traefik.http.routers.ledger.rule', 'Host(\`ledger.example.tes
 # One tag: the image finance-coolify.yml runs is the one finance-local.yml pins (a switch moves both).
 [ "$(python3 finance/scripts/switch_image.py current finance-coolify.yml)" = "$(python3 finance/scripts/switch_image.py current finance-local.yml)" ]
 # No literal password in the file: the secrets are required variables, and no value is admin.
-! grep -Eiq '(password|passwd)[A-Za-z_]*(:[[:space:]]*|=)["'"'"']?admin|--(admin|db-root)-password=admin' finance-coolify.yml
+# A bare '! grep' never trips errexit (SC2251), so the match is tested in an if.
+if grep -Eiq '(password|passwd)[A-Za-z_]*(:[[:space:]]*|=)["'"'"']?admin|--(admin|db-root)-password=admin' finance-coolify.yml; then
+  echo "finance-coolify.yml carries a literal admin password" >&2
+  exit 1
+fi
 grep -q 'DB_ROOT_PASSWORD:?' finance-coolify.yml
 grep -q 'ADMIN_PASSWORD:?' finance-coolify.yml
 # The bi_finance layout and stamp guard, stdlib only (no frappe), so it runs on the host.

@@ -60,7 +60,9 @@ class PublicCheck(unittest.TestCase):
         self.tmp = tempfile.mkdtemp(prefix="public-check-test-")
         self.log = os.path.join(self.tmp, "curl.log")
         self.hosts = os.path.join(self.tmp, "public-check-hosts")
-        self.write_hosts("# invented\n192.0.2.10 ledger.example.test other.example.test\n")
+        self.write_hosts(
+            "# invented\n192.0.2.10 ledger.example.test other.example.test\n"
+        )
 
     def tearDown(self):
         shutil.rmtree(self.tmp)
@@ -77,7 +79,9 @@ class PublicCheck(unittest.TestCase):
             "PUBLIC_CHECK_HOSTS": self.hosts,
         }
         base.update(env)
-        return subprocess.run(["sh", SCRIPT], env=base, capture_output=True, text=True, timeout=60)
+        return subprocess.run(
+            ["sh", SCRIPT], env=base, capture_output=True, text=True, timeout=60
+        )
 
     def calls(self):
         with open(self.log) as f:
@@ -91,13 +95,31 @@ class PublicCheck(unittest.TestCase):
         self.assertEqual(len(calls), 5 * 2 * 2)
         for scheme in ("http", "https"):
             port = "80" if scheme == "http" else "443"
-            for name in ("ledger.example.test", "other.example.test", "unknown-name.invalid"):
+            for name in (
+                "ledger.example.test",
+                "other.example.test",
+                "unknown-name.invalid",
+            ):
                 self.assertTrue(
-                    any(f"--resolve {name}:{port}:192.0.2.10 {scheme}://{name}/api/method/ping" in c for c in calls),
+                    any(
+                        f"--resolve {name}:{port}:192.0.2.10 {scheme}://{name}/api/method/ping"
+                        in c
+                        for c in calls
+                    ),
                     (scheme, name),
                 )
-            self.assertTrue(any(f"-H Host: {scheme}://192.0.2.10/login" in c for c in calls), scheme)
-            self.assertTrue(any(c.endswith(f" {scheme}://192.0.2.10/api/method/ping") and "-H" not in c and "--resolve" not in c for c in calls), scheme)
+            self.assertTrue(
+                any(f"-H Host: {scheme}://192.0.2.10/login" in c for c in calls), scheme
+            )
+            self.assertTrue(
+                any(
+                    c.endswith(f" {scheme}://192.0.2.10/api/method/ping")
+                    and "-H" not in c
+                    and "--resolve" not in c
+                    for c in calls
+                ),
+                scheme,
+            )
         self.assertIn("0 Frappe", run.stdout)
 
     def test_refused_host_passes(self):
@@ -116,7 +138,9 @@ class PublicCheck(unittest.TestCase):
         for scheme in ("http", "https"):
             for needle, label in cases.items():
                 with self.subTest(scheme=scheme, case=label):
-                    run = self.run_check(STUB_HIT=f"{scheme} {needle.replace('SCHEME', scheme)}")
+                    run = self.run_check(
+                        STUB_HIT=f"{scheme} {needle.replace('SCHEME', scheme)}"
+                    )
                     self.assertEqual(run.returncode, 1, run.stdout + run.stderr)
                     self.assertIn(f"HIT: {label}, {scheme}", run.stdout)
                     # the output never carries a host or address
