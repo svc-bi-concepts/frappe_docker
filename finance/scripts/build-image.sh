@@ -52,7 +52,7 @@ if [ $# -ne 2 ]; then
 fi
 MODE="$1"
 TAG="$2"
-FRAPPE_TAG=v16.51.0
+FRAPPE_TAG=v16.51.1
 
 # The asset build's V8 heap cap in MB (see the header). A number only: it goes into a flag.
 NODE_HEAP_MB="${NODE_HEAP_MB:-900}"

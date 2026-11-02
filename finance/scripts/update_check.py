@@ -69,9 +69,15 @@ def parse_ls_remote_tags(text):
     return names
 
 
+def git_url(url):
+    """Give the av git helper the .git URL form it accepts for GitHub repositories."""
+    url = url.rstrip("/")
+    return url if url.endswith(".git") else url + ".git"
+
+
 def ls_remote_tags(url):
     out = subprocess.run(
-        ["git", "ls-remote", "--tags", url],
+        ["git", "ls-remote", "--tags", git_url(url)],
         capture_output=True,
         text=True,
         timeout=120,
@@ -82,7 +88,7 @@ def ls_remote_tags(url):
 
 def ls_remote_branch(url, branch):
     out = subprocess.run(
-        ["git", "ls-remote", url, "refs/heads/" + branch],
+        ["git", "ls-remote", git_url(url), "refs/heads/" + branch],
         capture_output=True,
         text=True,
         timeout=120,

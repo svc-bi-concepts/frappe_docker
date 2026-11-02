@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import update_check
 
@@ -88,6 +89,35 @@ class Parsing(unittest.TestCase):
             "3333333\trefs/heads/v16\n"
         )
         self.assertEqual(update_check.parse_ls_remote_tags(text), {"v16.9.1"})
+
+    def test_ls_remote_tags_passes_git_url_to_subprocess(self):
+        with patch.object(
+            update_check.subprocess,
+            "run",
+            return_value=subprocess.CompletedProcess([], 0, "", ""),
+        ) as run_git:
+            update_check.ls_remote_tags("https://github.com/frappe/frappe")
+        self.assertEqual(
+            run_git.call_args.args[0],
+            ["git", "ls-remote", "--tags", "https://github.com/frappe/frappe.git"],
+        )
+
+    def test_ls_remote_branch_passes_git_url_to_subprocess(self):
+        with patch.object(
+            update_check.subprocess,
+            "run",
+            return_value=subprocess.CompletedProcess([], 0, "bbbbbbb refs/heads/v16\n", ""),
+        ) as run_git:
+            update_check.ls_remote_branch("https://github.com/libracore/erpnextswiss", "v16")
+        self.assertEqual(
+            run_git.call_args.args[0],
+            [
+                "git",
+                "ls-remote",
+                "https://github.com/libracore/erpnextswiss.git",
+                "refs/heads/v16",
+            ],
+        )
 
 
 class Lines(unittest.TestCase):
