@@ -204,8 +204,11 @@ def payload(key, employee, year, month, stub):
 def rows_match(actual, expected):
     fields = ("salary_component", "amount", "do_not_include_in_total")
     normalize = lambda rows: sorted(
-        (str(row.get(fields[0], "")), decimal(row.get(fields[1], 0)),
-         int(row.get(fields[2]) or 0))
+        (
+            str(row.get(fields[0], "")),
+            decimal(row.get(fields[1], 0)),
+            int(row.get(fields[2]) or 0),
+        )
         for row in rows
     )
     return normalize(actual) == normalize(expected)
@@ -255,8 +258,12 @@ def plan(records, lookups):
                     slip.get(field) == expected[field]
                     for field in ("employee", "start_date", "end_date")
                 )
-                equal = equal and rows_match(slip.get("earnings", []), expected["earnings"])
-                equal = equal and rows_match(slip.get("deductions", []), expected["deductions"])
+                equal = equal and rows_match(
+                    slip.get("earnings", []), expected["earnings"]
+                )
+                equal = equal and rows_match(
+                    slip.get("deductions", []), expected["deductions"]
+                )
                 equal = equal and int(slip.get("is_proposed") or 0) == 1
                 equal = equal and int(slip.get("docstatus") or 0) == 1
                 item["outcome"] = LOADED if equal else DIFFERS

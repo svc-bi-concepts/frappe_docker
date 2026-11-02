@@ -222,22 +222,24 @@ class SalaryHistoryTests(unittest.TestCase):
         changed["earnings"][0]["do_not_include_in_total"] = 1
         self.assertEqual(
             ish.DIFFERS,
-            ish.plan(rs, ish.Lookups({"invented-1": "EMP-TEST"}, {base["bexio_id"]: changed}))[0]["outcome"],
+            ish.plan(
+                rs, ish.Lookups({"invented-1": "EMP-TEST"}, {base["bexio_id"]: changed})
+            )[0]["outcome"],
         )
         changed["earnings"] = [dict(row) for row in slip["earnings"]]
         changed["deductions"] = [dict(row) for row in slip["deductions"]]
         changed["deductions"][0]["salary_component"] = "Different Component"
         self.assertEqual(
             ish.DIFFERS,
-            ish.plan(rs, ish.Lookups({"invented-1": "EMP-TEST"}, {base["bexio_id"]: changed}))[0]["outcome"],
+            ish.plan(
+                rs, ish.Lookups({"invented-1": "EMP-TEST"}, {base["bexio_id"]: changed})
+            )[0]["outcome"],
         )
         slip["is_proposed"] = 0
         rows = ish.plan(
             rs, ish.Lookups({"invented-1": "EMP-TEST"}, {base["bexio_id"]: slip})
         )
-        self.assertEqual(
-            1, ish.check_rows(ish.Lookups({}, {base["bexio_id"]: slip}))
-        )
+        self.assertEqual(1, ish.check_rows(ish.Lookups({}, {base["bexio_id"]: slip})))
         self.assertEqual(ish.DIFFERS, rows[0]["outcome"])
 
     def run_command(self, erp, rows=None, args=()):
