@@ -126,6 +126,9 @@ class SwitchShell(unittest.TestCase):
         self.compose = os.path.join(self.tmp, "finance-local.yml")
         with open(self.compose, "w") as f:
             f.write(COMPOSE)
+        self.coolify = os.path.join(self.tmp, "finance-coolify.yml")
+        with open(self.coolify, "w") as f:
+            f.write(COMPOSE)
         self.log = os.path.join(self.tmp, "calls.log")
         self.curl_log = os.path.join(self.tmp, "curl.log")
 
@@ -165,6 +168,10 @@ class SwitchShell(unittest.TestCase):
             compose = f.read()
         return run, calls, compose
 
+    def coolify_tag(self):
+        with open(self.coolify) as f:
+            return switch_image.current_tag(f.read())
+
     def test_success_switches_and_removes_old_and_new_base(self):
         run, calls, compose = self.run_switch(
             ["t-new"],
@@ -179,6 +186,7 @@ class SwitchShell(unittest.TestCase):
         )
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertEqual(switch_image.current_tag(compose), "t-new")
+        self.assertEqual(self.coolify_tag(), "t-new")
         self.assertIn("up -d", calls)
         self.assertIn("rmi frappe-finance-custom:t-old\n", calls)
         self.assertIn("rmi frappe-finance-custom:t-old-base\n", calls)
@@ -207,6 +215,7 @@ class SwitchShell(unittest.TestCase):
         )
         self.assertEqual(run.returncode, 1)
         self.assertEqual(switch_image.current_tag(compose), "t-old")
+        self.assertEqual(self.coolify_tag(), "t-old")
         self.assertIn("rolling finance-local.yml back", run.stderr)
         self.assertEqual(calls.count("up -d"), 2)
         self.assertNotIn("rmi", calls)

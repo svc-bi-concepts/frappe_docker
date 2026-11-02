@@ -9,6 +9,7 @@
 #   The previous tag is read from finance-local.yml. If ping does not answer 200, the
 #   compose file goes back to the previous tag, the stack is brought up on it, the old
 #   image is kept and the new one is left in place: a person decides what to remove.
+#   finance-coolify.yml pins the same tag (the gate tests it), so it moves with finance-local.yml.
 set -eu
 
 usage() {
@@ -48,6 +49,7 @@ fi
 # Bring the stack up on the new tag, then restart the two services that keep the old
 # backend IP (finance/docs/erpnext-setup.md, "Switching the stack to a new image").
 python3 finance/scripts/switch_image.py set finance-local.yml "$NEW"
+python3 finance/scripts/switch_image.py set finance-coolify.yml "$NEW"
 docker compose -p frappe-finance -f pwd.yml -f finance-local.yml up -d
 docker compose -p frappe-finance restart frontend websocket
 
@@ -77,6 +79,7 @@ fi
 
 echo "ping did not answer 200: rolling finance-local.yml back to $OLD" >&2
 python3 finance/scripts/switch_image.py set finance-local.yml "$OLD"
+python3 finance/scripts/switch_image.py set finance-coolify.yml "$OLD"
 docker compose -p frappe-finance -f pwd.yml -f finance-local.yml up -d
 docker compose -p frappe-finance restart frontend websocket
 echo "rolled back: the stack is up on frappe-finance-custom:$OLD (kept); the script did not ping it again." >&2

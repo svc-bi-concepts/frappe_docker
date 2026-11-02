@@ -5,9 +5,12 @@ still describes the generic setup; this file covers only what this yard runs.
 
 ## What runs
 
-- Compose project `frappe-finance`, built from two files:
-  `pwd.yml` (the ERPNext stack) and `finance-local.yml` (the loopback-only
-  port override).
+- The local Compose project `frappe-finance` uses `pwd.yml` (the ERPNext stack)
+  and `finance-local.yml` (the loopback-only port override). The separate
+  `finance-coolify.yml` file is a self-contained stack for a Coolify VM; use it
+  alone, with required `LEDGER_HOST`, `DB_ROOT_PASSWORD`, and `ADMIN_PASSWORD`
+  environment variables. Its image must be loaded locally and its tag is kept
+  aligned with `finance-local.yml` by the image switch script.
 - ERPNext `v16.50.0` / frappe `v16.51.1` with erpnextswiss, site `frontend` (the default
   site). The image tag is set in `finance-local.yml`; build an image with
   `finance/scripts/build-image.sh live <tag>`. Swiss
@@ -31,6 +34,13 @@ docker compose -p frappe-finance -f pwd.yml -f finance-local.yml logs -f <servic
 
 `down` keeps the data volumes (`db-data`, `sites`, and so on). Adding `-v`
 deletes them, so the site and its data are lost.
+
+For the Coolify stack, use `docker compose -f finance-coolify.yml` on its VM
+after loading the image. To check public reachability, run
+`finance/scripts/public-check.sh` from outside the VM's private network. It
+reads `private/public-check-hosts` (mode 600); see the script's usage comment
+for the hosts file format and check outcomes. The Coolify compose file documents
+its network and router constraints.
 
 ## Reaching it
 
