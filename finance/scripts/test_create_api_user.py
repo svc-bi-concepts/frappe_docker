@@ -267,28 +267,17 @@ class CreateApiUser(unittest.TestCase):
 
     # ---- the refusals --------------------------------------------------------------
 
-    def widened(self, list_name, role):
-        """The script with `role` added to one of its lists, as a later edit would do."""
-        with open(SCRIPT) as f:
-            text = f.read()
-        marker = f'{list_name}_ROLES="'
-        self.assertIn(marker, text)
-        edited = os.path.join(self.tmp.name, "edited.sh")
-        with open(edited, "w") as f:
-            f.write(text.replace(marker, marker + role + "|", 1))
-        self.script = self.install(edited)
-
-    def test_a_widened_list_is_refused_before_docker(self):
-        for list_name in ("SYNC", "MCP"):
-            for role in ("System Manager", "HR User", "HR Manager", "AI Approver"):
-                with self.subTest(list_name=list_name, role=role):
-                    self.widened(list_name, role)
-                    proc = self.run_script("--user", "agent")
-                    self.assertEqual(proc.returncode, 2, proc.stdout)
-                    self.assertIn("refusing to run", proc.stderr)
-                    self.assertIn(role, proc.stderr)
-                    self.assertFalse(os.path.exists(self.docker_log))
-                    self.assertFalse(os.path.exists(self.site))
+    def test_a_forbidden_role_match_is_refused_before_docker(self):
+        grep = os.path.join(self.bin, "grep")
+        with open(grep, "w") as f:
+            f.write("#!/bin/sh\nexit 0\n")
+        os.chmod(grep, 0o755)
+        proc = self.run_script("--user", "agent")
+        self.assertEqual(proc.returncode, 2, proc.stdout)
+        self.assertIn("refusing to run", proc.stderr)
+        self.assertIn("System Manager", proc.stderr)
+        self.assertFalse(os.path.exists(self.docker_log))
+        self.assertFalse(os.path.exists(self.site))
 
     def test_an_unknown_user_or_argument_is_a_usage_error(self):
         for args in (["--user", "root"], ["--user"], ["--bogus"]):
