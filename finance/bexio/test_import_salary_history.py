@@ -171,6 +171,8 @@ class SalaryHistoryTests(unittest.TestCase):
             "net_pay": base["net_pay"],
             "rounded_total": base["paid_out"],
             "row_count": len(base["earnings"]) + len(base["deductions"]),
+            "earnings": base["earnings"],
+            "deductions": base["deductions"],
         }
         self.assertEqual(
             ish.DIFFERS,
@@ -184,6 +186,24 @@ class SalaryHistoryTests(unittest.TestCase):
             ish.plan(
                 rs, ish.Lookups({"invented-1": "EMP-TEST"}, {base["bexio_id"]: slip})
             )[0]["outcome"],
+        )
+        changed = dict(slip)
+        changed["earnings"] = [dict(row) for row in slip["earnings"]]
+        changed["earnings"][0]["amount"] = "899.00"
+        lookups = ish.Lookups({"invented-1": "EMP-TEST"}, {base["bexio_id"]: changed})
+        self.assertEqual(ish.DIFFERS, ish.plan(rs, lookups)[0]["outcome"])
+        changed["earnings"] = [dict(row) for row in slip["earnings"]]
+        changed["earnings"][0]["do_not_include_in_total"] = 1
+        self.assertEqual(
+            ish.DIFFERS,
+            ish.plan(rs, ish.Lookups({"invented-1": "EMP-TEST"}, {base["bexio_id"]: changed}))[0]["outcome"],
+        )
+        changed["earnings"] = [dict(row) for row in slip["earnings"]]
+        changed["deductions"] = [dict(row) for row in slip["deductions"]]
+        changed["deductions"][0]["salary_component"] = "Different Component"
+        self.assertEqual(
+            ish.DIFFERS,
+            ish.plan(rs, ish.Lookups({"invented-1": "EMP-TEST"}, {base["bexio_id"]: changed}))[0]["outcome"],
         )
         slip["is_proposed"] = 0
         rows = ish.plan(

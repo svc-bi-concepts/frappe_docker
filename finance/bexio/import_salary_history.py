@@ -91,9 +91,8 @@ class Lookups:
         # Read through the parent: child-table REST lists require parent permission context.
         for slip in slips.values():
             doc = erp.get("Salary Slip", slip["name"])
-            slip["row_count"] = len(doc.get("earnings", [])) + len(
-                doc.get("deductions", [])
-            )
+            slip["earnings"] = doc.get("earnings", [])
+            slip["deductions"] = doc.get("deductions", [])
         return cls(employees, slips)
 
 
@@ -194,6 +193,16 @@ def payload(key, employee, year, month, stub):
     }
 
 
+def rows_match(actual, expected):
+    fields = ("salary_component", "amount", "do_not_include_in_total")
+    normalize = lambda rows: sorted(
+        (str(row.get(fields[0], "")), decimal(row.get(fields[1], 0)),
+         int(row.get(fields[2]) or 0))
+        for row in rows
+    )
+    return normalize(actual) == normalize(expected)
+
+
 def plan(records, lookups):
     grouped = group_figures(records)
     rows = []
@@ -234,7 +243,8 @@ def plan(records, lookups):
                     decimal(slip.get(actual, 0)) == decimal(expected[source])
                     for source, actual in fields
                 )
-                equal = equal and int(slip.get("row_count", -1)) == len(stub["rows"])
+                equal = equal and rows_match(slip.get("earnings", []), expected["earnings"])
+                equal = equal and rows_match(slip.get("deductions", []), expected["deductions"])
                 item["outcome"] = LOADED if equal else DIFFERS
             else:
                 item["outcome"] = LOAD
