@@ -55,7 +55,13 @@ class BuildImageModes(unittest.TestCase):
         self.assertIn("copy", out)
 
     def run_in_layout(
-        self, files, tag="t1", mode="live", existing_images=(), env_extra=None
+        self,
+        files,
+        tag="t1",
+        mode="live",
+        existing_images=(),
+        env_extra=None,
+        git_head=None,
     ):
         """Run the script from a scratch layout with a stub docker; return (code, stderr, docker calls)."""
         with tempfile.TemporaryDirectory() as tmp:
@@ -82,6 +88,17 @@ class BuildImageModes(unittest.TestCase):
             os.chmod(stub, 0o755)
             env = {"PATH": os.path.join(tmp, "bin") + os.pathsep + os.environ["PATH"]}
             env.update(env_extra or {})
+            git_log = os.path.join(tmp, "git.log")
+            if git_head is not None:
+                git_stub = os.path.join(tmp, "bin", "git")
+                with open(git_stub, "w") as f:
+                    f.write(
+                        '#!/bin/sh\nprintf "%s\\n" "$*" >> "%s"\n'
+                        'printf "%s\\t%s\\n" "$GIT_STUB_HEAD" "$4"\n'
+                        % ("%s", git_log, "%s", "refs/heads/pinned")
+                    )
+                os.chmod(git_stub, 0o755)
+                env["GIT_STUB_HEAD"] = git_head
             run = subprocess.run(
                 [
                     "sh",
@@ -97,7 +114,66 @@ class BuildImageModes(unittest.TestCase):
             if os.path.exists(log):
                 with open(log) as f:
                     calls = f.read()
+            if os.path.exists(git_log):
+                with open(git_log) as f:
+                    calls += f.read()
+            calls += run.stdout
             return run.returncode, run.stderr, calls
+
+    def test_pinned_commit_lookup_adds_git_suffix_and_builds(self):
+        head = "a" * 40
+        apps = [
+            {"url": "https://github.com/frappe/hrms", "branch": "v16.50.0"},
+            {
+                "url": "https://github.com/svc-bi-concepts/erpnextswiss",
+                "branch": "pinned",
+                "commit": head,
+            },
+        ]
+        code, err, calls = self.run_in_layout({"apps.json": apps}, git_head=head)
+        self.assertEqual(code, 0, err)
+        self.assertIn(
+            "ls-remote https://github.com/svc-bi-concepts/erpnextswiss.git refs/heads/pinned",
+            calls,
+        )
+        self.assertIn(
+            f"pinned: https://github.com/svc-bi-concepts/erpnextswiss pinned @ {head}",
+            calls,
+        )
+        self.assertIn("buildx build", calls)
+
+    def test_pinned_commit_lookup_does_not_double_git_suffix(self):
+        head = "b" * 40
+        apps = [
+            {"url": "https://github.com/frappe/hrms", "branch": "v16.50.0"},
+            {
+                "url": "https://github.com/svc-bi-concepts/erpnextswiss.git",
+                "branch": "pinned",
+                "commit": head,
+            },
+        ]
+        code, err, calls = self.run_in_layout({"apps.json": apps}, git_head=head)
+        self.assertEqual(code, 0, err)
+        self.assertIn(
+            "ls-remote https://github.com/svc-bi-concepts/erpnextswiss.git refs/heads/pinned",
+            calls,
+        )
+        self.assertNotIn("erpnextswiss.git.git", calls)
+
+    def test_pinned_commit_mismatch_refuses_before_build(self):
+        pinned = "c" * 40
+        apps = [
+            {"url": "https://github.com/frappe/hrms", "branch": "v16.50.0"},
+            {
+                "url": "https://github.com/svc-bi-concepts/erpnextswiss",
+                "branch": "pinned",
+                "commit": pinned,
+            },
+        ]
+        code, err, calls = self.run_in_layout({"apps.json": apps}, git_head="d" * 40)
+        self.assertNotEqual(code, 0)
+        self.assertIn("the list pins " + pinned, err)
+        self.assertNotIn("buildx build", calls)
 
     def test_live_builds_base_then_bi_finance_then_bi_payroll(self):
         # Each layer sits on the one before it; the live tag is the last layer.
