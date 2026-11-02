@@ -8,7 +8,7 @@ still describes the generic setup; this file covers only what this yard runs.
 - Compose project `frappe-finance`, built from two files:
   `pwd.yml` (the ERPNext stack) and `finance-local.yml` (the loopback-only
   port override).
-- ERPNext / frappe `v16.50.0` with erpnextswiss, site `frontend` (the default
+- ERPNext `v16.50.0` / frappe `v16.51.1` with erpnextswiss, site `frontend` (the default
   site). The image tag is set in `finance-local.yml`; build an image with
   `finance/scripts/build-image.sh live <tag>`. Swiss
   setup of the company: `finance/docs/erpnext-setup.md`. The recurring work (month, quarter,

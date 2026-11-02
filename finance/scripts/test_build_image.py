@@ -115,7 +115,7 @@ class BuildImageModes(unittest.TestCase):
             self.assertIn(" --load ", build)
         self.assertIn("--tag frappe-finance-custom:t1-base ", builds[0])
         # Frappe is one tag for the whole image; ERPNext and HRMS declare frappe >=16.50.0,<17.0.0.
-        self.assertIn("--build-arg FRAPPE_BRANCH=v16.51.0 ", builds[0])
+        self.assertIn("--build-arg FRAPPE_BRANCH=v16.51.1 ", builds[0])
         # The asset build's node heap cap, and the app list as a BuildKit secret.
         self.assertIn("--build-arg NODE_OPTIONS=--max-old-space-size=900 ", builds[0])
         self.assertIn("--secret id=apps_json,src=", builds[0])
@@ -241,7 +241,7 @@ FRAPPE_PATCH_DIR = os.path.join(ROOT, "finance", "patches", "frappe")
 HRMS_PATCH_DIR = os.path.join(ROOT, "finance", "patches", "hrms")
 CONTAINERFILE = os.path.join(ROOT, "images", "custom", "Containerfile")
 
-# The lines of frappe bundler.py at v16.51.0 around get_node_env (its line 296): the context of
+# The lines of frappe bundler.py at v16.51.1 around get_node_env (its line 296): the context of
 # the real patch, so the patch applies to this file as to the app. The body is the upstream one.
 BUNDLER = """\
 def check_node_executable():
@@ -640,7 +640,7 @@ HRMS_DOCK_JSON = r"""{
  "user": ""
 }"""
 
-# frappe's apps.py at the pin v16.51.0 (apps/frappe/frappe/apps.py): the head through get_apps's loop, cut
+# frappe's apps.py at the pin v16.51.1 (apps/frappe/frappe/apps.py): the head through get_apps's loop, cut
 # after its for line. The patch's context is the lines around the frappe skip; the tabs are upstream's.
 APPS_PY_PATH = "frappe/apps.py"
 APPS_PY = '''# Copyright (c) 2015, Frappe Technologies Pvt. Ltd. and Contributors
