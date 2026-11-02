@@ -887,23 +887,37 @@ class TokenFileTest(unittest.TestCase):
 
         expected = "/tmp/.erpnext-api-sync"
         sales_data = {}
-        with tempfile.TemporaryDirectory(dir=os.path.dirname(os.path.abspath(__file__))) as tmp:
+        with tempfile.TemporaryDirectory(
+            dir=os.path.dirname(os.path.abspath(__file__))
+        ) as tmp:
             report_path = os.path.join(tmp, "report.txt")
             with patch.object(im, "TOKEN_FILE", expected), patch.object(
                 im.Erp, "from_file", return_value=object()
-            ) as from_file, patch.object(import_sales, "load_documents", return_value=sales_data), patch.object(
+            ) as from_file, patch.object(
+                import_sales, "load_documents", return_value=sales_data
+            ), patch.object(
                 import_sales, "lookups_from_erp", return_value={}
-            ), patch.object(import_sales, "doctype_fields", return_value={}):
+            ), patch.object(
+                import_sales, "doctype_fields", return_value={}
+            ):
                 import_sales.main(["--export", "/tmp/export", "--report", report_path])
         from_file.assert_called_once_with(expected)
 
         with patch.object(im, "TOKEN_FILE", expected), patch.object(
             im.Erp, "from_file", return_value=object()
-        ) as from_file, patch.object(import_purchase, "load_records", return_value=([], [])), patch.object(
+        ) as from_file, patch.object(
+            import_purchase, "load_records", return_value=([], [])
+        ), patch.object(
             import_purchase.Lookups, "from_erp", return_value=object()
-        ), patch.object(import_purchase, "load_booked", return_value={}), patch.object(
-            import_purchase, "dry_run", return_value=type("Totals", (), {"rows": {}, "problems": []})()
-        ), patch.object(import_purchase, "report", return_value=""):
+        ), patch.object(
+            import_purchase, "load_booked", return_value={}
+        ), patch.object(
+            import_purchase,
+            "dry_run",
+            return_value=type("Totals", (), {"rows": {}, "problems": []})(),
+        ), patch.object(
+            import_purchase, "report", return_value=""
+        ):
             import_purchase.main(["--export", "/tmp/export"])
         from_file.assert_called_once_with(expected)
 
