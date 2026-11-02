@@ -690,7 +690,9 @@ class TestFailure(unittest.TestCase):
     def run_main(self, **patches):
         out, err = io.StringIO(), io.StringIO()
         defaults = {
-            "load_payroll": mock.patch.object(ia, "load_payroll", return_value=({}, [])),
+            "load_payroll": mock.patch.object(
+                ia, "load_payroll", return_value=({}, [])
+            ),
             "read_figures": mock.patch.object(ia, "read_figures", return_value={}),
             "from_file": mock.patch.object(ia.Erp, "from_file", return_value=object()),
         }

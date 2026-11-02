@@ -370,7 +370,9 @@ def main(argv):
                 args.write,
                 [json.dumps({"documents": documents, "exchange_rates": []}, indent=1)],
             )
-            print(f"{len(documents)} Journal Entries handed to the loader in {args.write}")
+            print(
+                f"{len(documents)} Journal Entries handed to the loader in {args.write}"
+            )
         else:
             print("dry run: nothing was written to ERPNext")
         return 1 if unmapped else 0

@@ -9,8 +9,8 @@ import io
 import os
 import tempfile
 import unittest
-from unittest import mock
 from decimal import Decimal
+from unittest import mock
 
 import import_payroll as ipr
 import posting_plan as pp
@@ -332,10 +332,10 @@ class FailureTest(unittest.TestCase):
                     with mock.patch.object(ipr.pp, "classify", return_value={}):
                         with mock.patch.object(
                             ipr, "select", return_value=([], [])
-                        ), mock.patch.object(
-                            ipr, "vat_booked_ids", return_value=set()
-                        ):
-                            with mock.patch.object(where[0], where[1], side_effect=failure):
+                        ), mock.patch.object(ipr, "vat_booked_ids", return_value=set()):
+                            with mock.patch.object(
+                                where[0], where[1], side_effect=failure
+                            ):
                                 code = ipr.main(["--dry-run"])
         return code, out.getvalue(), err.getvalue()
 

@@ -531,7 +531,9 @@ class FailureTest(unittest.TestCase):
     def run_main(self, **patches):
         out, err = io.StringIO(), io.StringIO()
         defaults = {
-            "load_payroll": mock.patch.object(il, "load_payroll", return_value=([], [])),
+            "load_payroll": mock.patch.object(
+                il, "load_payroll", return_value=([], [])
+            ),
             "read_overrides": mock.patch.object(
                 il, "read_overrides", return_value=({}, [])
             ),
