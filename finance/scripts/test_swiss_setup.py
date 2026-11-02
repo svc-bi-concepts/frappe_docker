@@ -208,6 +208,50 @@ class StepsTest(unittest.TestCase):
         self.assertIn("accounts", swiss_setup.STEPS)
 
 
+class GebuevVersionedTest(unittest.TestCase):
+    # gebuev() on a fake site: Salary Slip gets Track Changes, and no delete change.
+    def run_step(self, tracked):
+        # tracked: doctypes whose meta reads track_changes 1. The step adds to it, as
+        # a Property Setter does; the DocType row keeps 0, as it does on a real site.
+        with mock.patch.object(swiss_setup, "frappe") as frappe, mock.patch.object(
+            swiss_setup, "set_doctype_property"
+        ) as set_property, mock.patch.object(swiss_setup, "say") as say:
+            frappe.get_single.return_value.get.side_effect = lambda f: {
+                "enable_immutable_ledger": 1,
+                "delete_linked_ledger_entries": 0,
+            }[f]
+            # Every doctype has a role that may delete, so the step shows which it revokes.
+            frappe.get_meta.side_effect = lambda dt: types.SimpleNamespace(
+                track_changes=int(dt in tracked),
+                permissions=[
+                    types.SimpleNamespace(role="Some Role", permlevel=0, delete=1)
+                ],
+            )
+            frappe.db.get_value.return_value = 0
+            set_property.side_effect = lambda dt, *args: tracked.add(dt)
+            swiss_setup.gebuev()
+        return frappe, set_property, say
+
+    def test_salary_slip_is_versioned_only(self):
+        self.assertEqual(swiss_setup.GEBUEV_VERSIONED, ["Salary Slip"])
+        self.assertNotIn("Salary Slip", swiss_setup.GEBUEV_TRACKED)
+
+    def test_salary_slip_gets_track_changes_and_keeps_delete(self):
+        frappe, set_property, _ = self.run_step(set(swiss_setup.GEBUEV_TRACKED))
+        set_property.assert_called_once_with("Salary Slip", "track_changes", 1, "Check")
+        revoked = frappe.permissions.update_permission_property.call_args_list
+        self.assertEqual({c.args[0] for c in revoked}, set(swiss_setup.GEBUEV_TRACKED))
+
+    def test_a_second_run_reports_nothing_to_do(self):
+        tracked = set(swiss_setup.GEBUEV_TRACKED)
+        self.run_step(tracked)
+        _, set_property, say = self.run_step(tracked)
+        set_property.assert_not_called()
+        self.assertFalse(
+            any("track changes on" in c.args[0] for c in say.call_args_list)
+        )
+
+
 class PayslipChangesTest(unittest.TestCase):
     # The Lohnabrechnung format is in place when it carries the file's HTML and is not disabled.
     IN_PLACE = {"html": "<p>slip</p>", "disabled": 0}
