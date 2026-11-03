@@ -286,8 +286,11 @@ ledgerdemain`: a minor move, not this procedure; it is a decision bead. erpnexts
 
         git fetch origin
         git diff --quiet origin/main -- finance-local.yml finance-coolify.yml &&
+          git merge-base --is-ancestor HEAD origin/main &&
           git restore finance-local.yml finance-coolify.yml &&
           git merge --ff-only origin/main
 
-    The `git diff --quiet` must exit 0; if it does not, the chain stops there and so do you: the pin differs from what
-    runs. Until the sync, any other landing also leaves local main behind.
+    Both guards must exit 0 before the restore runs; if one does not, the chain stops there and so do you. A failed
+    `git diff --quiet` means the pin differs from what runs; a failed `merge-base --is-ancestor` means local main
+    holds a commit origin/main does not, so the merge would refuse and the restore would leave the checkout pinning
+    the removed tag. Until the sync, any other landing also leaves local main behind.
