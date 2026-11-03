@@ -264,15 +264,19 @@ ledgerdemain`: a minor move, not this procedure; it is a decision bead. erpnexts
     - erpnextswiss and hrms patches: the build applied them (`apply-patches.sh` stops the build on a patch that does not
       apply); by hand as `finance/docs/erpnextswiss-patches.md` says (the hrms bump re-checks `hrms/0001-dock-mounts-on-erpnext.patch` like the erpnextswiss ones);
     - one PDF renders: a ping, the counts and the QR check do not render one, and a `host_name` that points at a
-      removed port fails only in the PDF. Fetch one Sales Invoice through `frappe.utils.print_format.download_pdf`
-      with the API key and print the status and the size only, never the body:
+      removed port fails only in the PDF. Fetch one Sales Invoice with `is_return` 0 through
+      `frappe.utils.print_format.download_pdf` with the API key, in the format BI Sales Invoice QR so that the run
+      does not depend on a default and takes the nested render, and print the status, type and size only, never the body:
 
-          curl -s -o /dev/null -w '%{http_code} %{content_type} %{size_download}\n' \
-            -H "Authorization: token $FRAPPE_API_KEY:$FRAPPE_API_SECRET" \
-            "http://127.0.0.1:8082/api/method/frappe.utils.print_format.download_pdf?doctype=Sales%20Invoice&name=<invoice>"
+          keys=~/ws_yardr_finance/.erpnext-api
+          printf 'Authorization: token %s:%s\n' "$(sed -n 's/^api_key=//p' "$keys")" "$(sed -n 's/^api_secret=//p' "$keys")" |
+            curl -s -o /dev/null -H @- -w '%{http_code} %{content_type} %{size_download}\n' \
+              "http://127.0.0.1:8082/api/method/frappe.utils.print_format.download_pdf?doctype=Sales%20Invoice&name=<invoice>&format=BI%20Sales%20Invoice%20QR"
 
-      It must print `200 application/pdf` and a size above zero. A 500 or an HTML type
-      means `host_name` is wrong: rerun the `host` step (`finance/docs/erpnext-setup.md`, "host");
+      It must print `200 application/pdf` and a size above zero. Until `erp-rj7b` reaches live a return invoice fails
+      on this format, and that failure is no PDF fault, hence `is_return` 0. A 500 points at `host_name`: if it names
+      a port the tailnet no longer serves, rerun the `host` step (`finance/docs/erpnext-setup.md`, "host"), wait
+      90 seconds and fetch again. Anything else that fails: step 12;
 
     - the Treasury workspace and ERPNext › Swiss Payroll open in the Desk: a person opens both. With no person at
       hand, a non-empty answer of `frappe.desk.desktop.get_desktop_page` for Treasury (a missing workspace answers

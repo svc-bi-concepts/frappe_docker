@@ -248,7 +248,9 @@ queue containers (`curl .../api/method/ping` gives 200) before relying on it.
 `host_name` follows the port the tailnet serves ERPNext on. Whoever changes that port,
 or moves the name, reruns the `host` step the same day and proves one PDF (step 11 of
 the D4 list in `finance/docs/operating.md`). A removed port shows nowhere but in the
-next PDF, and the failure reaches the user, not the Error Log.
+next PDF, and the failure reaches the user, not the Error Log. Running web workers keep
+the old value for up to 60 seconds (`site_cache(ttl=60)` in `frappe/config.py`), so wait
+90 seconds after the `host` step before the web proof.
 
 **coa.** Stops with exit 3 if the company has GL entries. Otherwise it deletes
 the 3+3 templates, clears the company's account links and the Mode of Payment
