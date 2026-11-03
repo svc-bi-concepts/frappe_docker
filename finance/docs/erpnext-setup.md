@@ -577,10 +577,12 @@ The modules that import frappe (`test_payment_run`, `test_treasury`, `test_bank_
 in the image as one gate step in `.yardr/check`. That step runs the tag `finance/scripts/gate-image.sh` picks: main's deploy pin, then the branch's pin, then the one image at rest. After a switch the previous image may be gone, so merge main into the branch.
 The package has host modules, which stub frappe and run on the host in
 `.yardr/check-host.sh`, and image modules, which use real frappe and run on the
-gate-image line in `.yardr/check`. Each module is named in exactly one of those
-two lines; together they cover the whole package, and `sh .yardr/check` runs
-both. A single discover over the package fails because the host modules' frappe
-stub stays in `sys.modules`.
+gate-image line in `.yardr/check`. Each top-level `test_*.py` module in
+`bi_finance/bi_finance` is named in exactly one of those two lines; together
+they cover every top-level module, and `sh .yardr/check` runs both. A test
+module inside a subpackage (`doctype/`, `report/`) is seen by neither guard
+today. A single discover over the package fails because the host modules'
+frappe stub stays in `sys.modules`.
 
 The setup script's pure parts are tested without a container:
 `python3 -m unittest discover -s finance/scripts -p 'test_*.py'`.
