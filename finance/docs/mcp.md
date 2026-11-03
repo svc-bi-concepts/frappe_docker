@@ -71,8 +71,10 @@ diff it against the GitHub tag, and we did not run its own test suite.
   optionally `FRAPPE_VERIFY_SSL` and `FRAPPE_TIMEOUT`. Logs go to stderr, so
   stdio stays clean. It exposes seven tools (listed in the test below).
 - `frappe_run_method` calls `/api/method/<dotted path>`. What it can reach is
-  limited by the MCP user's roles (listed above; the table under "API access"
-  in `README-finance.md` owns the three users' role lists), not System Manager.
+  limited by the method gate (the name must be on `ALLOWED_METHODS`, see "What
+  the keys reach" below) and by the MCP user's roles (listed above; the table
+  under "API access" in `README-finance.md` owns the three users' role lists),
+  not System Manager.
 
 ## How it runs
 
