@@ -233,17 +233,19 @@ ledgerdemain`: a minor move, not this procedure; it is a decision bead. erpnexts
    - trial balance: ERPNext's standard Trial Balance report in the Desk, for the same period, per account, saved as
      `private/d4-trial-balance-before.csv`. With no browser on the host, run the same report through
      `erpnext.accounts.report.trial_balance.trial_balance.execute` in the backend container, per company and fiscal
-     year. Its rows are written to the private file only, never printed.
+     year, with the filters in a `frappe._dict`. Its rows are written to the private file only, never printed.
 8. **Switch** (yardmaster):
 
        finance/scripts/switch-image.sh v16.<minor>.<patch>-swiss-bi<N>
 
    Tag update and rollback behavior is documented in
    [the image switch procedure](erpnext-setup.md#switching-the-stack-to-a-new-image).
-   It does not migrate: step 9 does. Then `docker images frappe-finance-custom` must show exactly one line; remove a
-   leftover tag by that tag. `gate-image.sh` falls back to the image at rest only when one is at rest, so a second
-   image fails the gate on every branch that pins the old tag. `switch_image.py remove` does not take the previous
-   image's `-finance` tag, which a build by hand can leave.
+   It does not migrate: step 9 does.
+
+   After a switch that answered 200, `docker images --format '{{.Tag}}' frappe-finance-custom` must print exactly one
+   line; remove a leftover tag by that tag. `gate-image.sh` falls back to the image at rest only when one is at rest,
+   so a second image fails the gate on every branch that pins the old tag. `switch_image.py remove` does not take the
+   previous image's `-finance` tag, which a build by hand can leave. After a failed ping both images stay: step 12.
 
 9. **Migrate** (yardmaster; the bi_finance `after_migrate` hook runs with it):
 
@@ -262,8 +264,9 @@ ledgerdemain`: a minor move, not this procedure; it is a decision bead. erpnexts
     - erpnextswiss and hrms patches: the build applied them (`apply-patches.sh` stops the build on a patch that does not
       apply); by hand as `finance/docs/erpnextswiss-patches.md` says (the hrms bump re-checks `hrms/0001-dock-mounts-on-erpnext.patch` like the erpnextswiss ones);
     - the Treasury workspace and ERPNext › Swiss Payroll open in the Desk: a person opens both. With no person at
-      hand, `get_desktop_page` for Treasury and the Swiss Payroll dock file with `mount_on` erpnext stand in; the note
-      says no person opened them, and the opening stays owed by the next person in the Desk.
+      hand, a non-empty answer of `frappe.desk.desktop.get_desktop_page` for Treasury (a missing workspace answers
+      `{}`) and the Swiss Payroll dock file with `mount_on` erpnext stand in; the note says no person opened them, and
+      the opening stays owed by the next person in the Desk.
 
     Then delete the `private/d4-*` files that served these checks; the totals go in the note.
 
@@ -282,9 +285,9 @@ ledgerdemain`: a minor move, not this procedure; it is a decision bead. erpnexts
     reaches merged. The yardmaster then syncs:
 
         git fetch origin
-        git diff --quiet origin/main -- finance-local.yml finance-coolify.yml
-        git restore finance-local.yml finance-coolify.yml
-        git merge --ff-only origin/main
+        git diff --quiet origin/main -- finance-local.yml finance-coolify.yml &&
+          git restore finance-local.yml finance-coolify.yml &&
+          git merge --ff-only origin/main
 
-    The `git diff --quiet` must exit 0; if it does not, stop, the pin differs from what runs. Until the sync, any
-    other landing also leaves local main behind.
+    The `git diff --quiet` must exit 0; if it does not, the chain stops there and so do you: the pin differs from what
+    runs. Until the sync, any other landing also leaves local main behind.
