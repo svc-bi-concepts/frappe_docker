@@ -25,6 +25,12 @@ missing = [str(p) for root, pkg in roots.items() for p in sorted(pathlib.Path(ro
 if missing:
     sys.exit("test modules in no gate list:\n  " + "\n  ".join(missing))
 EOF
+# The repo is public: no real tailnet host name in a tracked file (the placeholder <tailnet>.ts.net has a ">" there and passes). File names only, CI's log is public too.
+if hits=$(git grep -lIE '[A-Za-z0-9-]\.ts\.net'); then
+  echo "real tailnet name in:" >&2
+  echo "$hits" >&2
+  exit 1
+fi
 # The finance stack's compose files (live and the HRMS copy) must parse together.
 docker compose -f pwd.yml -f finance-local.yml config -q
 docker compose -f pwd.yml -f finance-copy.yml config -q
