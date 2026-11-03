@@ -29,9 +29,9 @@ GET_SCRIPT = "frappe.desk.query_report.get_script"
 BI_FINANCE = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "apps", "bi_finance"
 )
-with mock.patch.dict(sys.modules, {"frappe": types.ModuleType("frappe")}), mock.patch.object(
-    sys, "path", [BI_FINANCE] + sys.path
-):
+with mock.patch.dict(
+    sys.modules, {"frappe": types.ModuleType("frappe")}
+), mock.patch.object(sys, "path", [BI_FINANCE] + sys.path):
     from bi_finance import api_gate
 ON_SALARY_SLIP = "File (attached_to_doctype = Salary Slip)"
 ON_EMPLOYEE = "File (attached_to_doctype = Employee)"
