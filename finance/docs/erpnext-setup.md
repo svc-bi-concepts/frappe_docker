@@ -377,8 +377,9 @@ prints what changed. A second run changes nothing.
 Not in the step: v16 has no separate audit-trail setting; Track Changes is the
 version history. Freezing is a separate command, below.
 
-**keyaccess.** Closes Employee, Leave Ledger Entry and three payroll reports for
-the roles of the MCP and sync keys; see "What the keys reach" in `mcp.md`.
+**keyaccess.** Closes Employee, Leave Ledger Entry, the Payment Proposal salary
+and expense tables and five payroll and HR reports for the roles of the MCP and
+sync keys; see "What the keys reach" in `mcp.md`.
 
 **freeze.** `swiss-setup.sh freeze <YYYY-MM-DD> [--apply]` sets the company's
 "Accounts Frozen Till Date": no posting dated on or before the date. It is a dry

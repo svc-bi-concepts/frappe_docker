@@ -23,7 +23,14 @@ HR_DOCTYPES = ["Appraisal Cycle", "Leave Type"]
 BI_PAYROLL_DOCTYPES = ["Qst Code"]
 ON_SALARY_SLIP = "File (attached_to_doctype = Salary Slip)"
 ON_EMPLOYEE = "File (attached_to_doctype = Employee)"
-REPORTS = ["Cash Flow Forecast", "Cash Flow Forecast Lines", "Project Profitability"]
+REPORTS = [
+    "Cash Flow Forecast",
+    "Cash Flow Forecast Lines",
+    "Project Profitability",
+    "Monthly Worktime",
+    "Worktime Overview",
+]
+CHILDREN = ["Payment Proposal Salary Slip", "Payment Proposal Expense"]
 ALL_PROBED = sorted(PAYROLL_DOCTYPES + HR_DOCTYPES + BI_PAYROLL_DOCTYPES) + [
     "Employee",
     "Deleted Document",
@@ -52,19 +59,35 @@ class FakeSite:
     call() likewise: get_script answers 403 for a report the user's roles do not open, else a script; any other method is a failure.
     """
 
-    def __init__(self, readable=(), rows=None, modules=None, open_reports=()):
+    def __init__(
+        self, readable=(), rows=None, modules=None, open_reports=(), child_rows=None
+    ):
         self.readable = set(readable)
         self.open_reports = set(open_reports)
         self.methods = []
         self.rows = rows or {}
+        self.permissions = [
+            {"role": "Accounts User", "permlevel": 0},
+            {"role": "Accounts Manager", "permlevel": 1},
+        ]
         self.calls = []
+        self.child_calls = []
+        # a child doctype listed with its parent: the fields a row comes back with (Frappe drops the others)
+        self.child_rows = child_rows or {}
         self.modules = modules or {
             "Payroll": PAYROLL_DOCTYPES,
             "HR": HR_DOCTYPES,
             "BI Payroll": BI_PAYROLL_DOCTYPES,
         }
 
-    def list(self, doctype, filters=None, fields=("name",), limit=100000):
+    def list(self, doctype, filters=None, fields=("name",), limit=100000, parent=None):
+        if parent:
+            self.child_calls.append((doctype, parent, tuple(fields), limit))
+            if doctype not in self.readable:
+                raise im.ErpError(
+                    403, f"GET /resource/{doctype}: frappe.exceptions.PermissionError"
+                )
+            return [dict(r) for r in self.child_rows.get(doctype, [])][:limit]
         self.calls.append((doctype, filters, tuple(fields), limit))
         if doctype == "DocType":
             wanted = {m for _f, _op, ms in filters if _f == "module" for m in ms}
@@ -84,6 +107,10 @@ class FakeSite:
             else []
         )
 
+    def meta(self, doctype):
+        assert doctype == "Payment Proposal"
+        return {"name": doctype, "permissions": self.permissions}
+
     def call(self, method, **args):
         self.methods.append(method)
         if method != "frappe.desk.query_report.get_script":
@@ -96,16 +123,16 @@ class FakeSite:
 
 
 class ApiKeyCheck(unittest.TestCase):
-    def run_check(self, probed):
+    def run_check(self, probed, lister=None):
         out = io.StringIO()
-        code = akc.check(FakeSite(), probed, out)
+        code = akc.check(lister or FakeSite(), probed, out)
         return code, out.getvalue()
 
     def test_every_line_refused_exits_0(self):
         code, text = self.run_check(FakeSite())
         self.assertEqual(code, 0)
         self.assertIn("refused  Salary Slip", text)
-        self.assertIn("total 14: 0 visible, 14 refused, 0 empty", text)
+        self.assertIn("total 19: 0 visible, 19 refused, 0 empty", text)
 
     def test_empty_file_lines_exit_0(self):
         probed = FakeSite(readable={"File"}, rows={"File": False})
@@ -113,7 +140,7 @@ class ApiKeyCheck(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn(f"empty    {ON_SALARY_SLIP}", text)
         self.assertIn(f"empty    {ON_EMPLOYEE}", text)
-        self.assertIn("total 14: 0 visible, 12 refused, 2 empty", text)
+        self.assertIn("total 19: 0 visible, 17 refused, 2 empty", text)
 
     def test_a_visible_file_line_exits_1(self):
         code, text = self.run_check(FakeSite(readable={"File"}))
@@ -125,7 +152,7 @@ class ApiKeyCheck(unittest.TestCase):
         code, text = self.run_check(probed)
         self.assertEqual(code, 1)
         self.assertIn("empty    Leave Type", text)
-        self.assertIn("total 14: 0 visible, 13 refused, 1 empty", text)
+        self.assertIn("total 19: 0 visible, 18 refused, 1 empty", text)
 
     def test_empty_on_the_unfiltered_extras_exits_1(self):
         for doctype in ("Employee", "Deleted Document", "Version"):
@@ -144,7 +171,7 @@ class ApiKeyCheck(unittest.TestCase):
         code, text = self.run_check(FakeSite(readable={"Salary Slip"}))
         self.assertEqual(code, 1)
         self.assertIn("visible  Salary Slip", text)
-        self.assertIn("1 visible, 13 refused", text)
+        self.assertIn("1 visible, 18 refused", text)
 
     def test_every_doctype_gets_a_line_in_order(self):
         _code, text = self.run_check(FakeSite())
@@ -195,7 +222,59 @@ class ApiKeyCheck(unittest.TestCase):
                 code, text = self.run_check(FakeSite(open_reports={name}))
                 self.assertEqual(code, 1)
                 self.assertIn(f"report   visible  {name}", text.splitlines())
-                self.assertIn("1 visible, 13 refused", text)
+                self.assertIn("1 visible, 18 refused", text)
+
+    def test_the_child_doctypes_are_listed_with_their_parent_and_both_fields(self):
+        probed = FakeSite()
+        self.run_check(probed)
+        self.assertEqual(
+            probed.child_calls,
+            [
+                (name, "Payment Proposal", ("employee", "amount"), 1)
+                for name in CHILDREN
+            ],
+        )
+
+    def test_refused_child_doctypes_get_a_line_each_and_count(self):
+        code, text = self.run_check(FakeSite())
+        self.assertEqual(code, 0)
+        for name in CHILDREN:
+            self.assertIn(f"child    refused  {name}", text.splitlines())
+
+    def test_a_child_row_with_employee_or_amount_is_visible_and_exits_1(self):
+        for field in ("employee", "amount"):
+            with self.subTest(field=field):
+                site = FakeSite(
+                    readable=CHILDREN,
+                    child_rows={CHILDREN[0]: [{"name": "x", field: "SECRET-VALUE"}]},
+                )
+                code, text = self.run_check(site)
+                self.assertEqual(code, 1)
+                self.assertIn(f"child    visible  {CHILDREN[0]}", text.splitlines())
+                self.assertNotIn("SECRET-VALUE", text)
+
+    def test_a_child_row_with_only_its_name_is_empty_and_passes(self):
+        # Frappe drops the fields the key may not read: the name alone is what comes back.
+        site = FakeSite(
+            readable=CHILDREN,
+            child_rows={n: [{"name": "SECRET-ROW-NAME"}] for n in CHILDREN},
+        )
+        code, text = self.run_check(site)
+        self.assertEqual(code, 0)
+        self.assertIn(f"child    empty    {CHILDREN[1]}", text.splitlines())
+        self.assertNotIn("SECRET-ROW-NAME", text)
+
+    def test_a_key_role_with_level_1_on_the_proposal_is_visible_and_exits_1(self):
+        lister = FakeSite()
+        lister.permissions.append({"role": "Stock User", "permlevel": 1})
+        code, text = self.run_check(FakeSite(), lister)
+        self.assertEqual(code, 1)
+        self.assertIn("level1   visible  Payment Proposal, key roles", text)
+        self.assertNotIn("Stock User", text)
+
+    def test_level_1_for_other_roles_only_is_refused(self):
+        _code, text = self.run_check(FakeSite())
+        self.assertIn("level1   refused  Payment Proposal, key roles", text)
 
     def test_an_empty_leave_ledger_entry_exits_1_as_any_line_but_file(self):
         lister = FakeSite(
@@ -326,6 +405,16 @@ class ThroughTheRealErp(unittest.TestCase):
         ) as urlopen:
             call(self.erp())
         return urlopen.call_args[0][0].full_url
+
+    def test_the_parent_doctype_reaches_the_url_only_when_given(self):
+        child = self.urls_of_a_list(
+            lambda erp: akc.probe_child(
+                erp, "Payment Proposal Expense", "Payment Proposal", ("employee",)
+            )
+        )
+        self.assertIn("parent=Payment+Proposal&", child + "&")
+        plain = self.urls_of_a_list(lambda erp: erp.list("Customer"))
+        self.assertNotIn("parent=", plain)
 
     def test_the_limit_reaches_the_url_and_the_default_stays(self):
         one = self.urls_of_a_list(lambda erp: akc.probe(erp, "Employee", []))

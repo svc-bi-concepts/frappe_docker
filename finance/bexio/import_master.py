@@ -147,14 +147,16 @@ class Erp:
                 "network", "{} {}".format(method, path.split("?")[0])
             ) from None
 
-    def list(self, doctype, filters=None, fields=("name",), limit=100000):
-        query = urllib.parse.urlencode(
-            {
-                "filters": json.dumps(filters or []),
-                "fields": json.dumps(list(fields)),
-                "limit_page_length": limit,
-            }
-        )
+    def list(self, doctype, filters=None, fields=("name",), limit=100000, parent=None):
+        """parent: the parent doctype, for a child doctype listed directly (frappe.client.get_list's parent)."""
+        args = {
+            "filters": json.dumps(filters or []),
+            "fields": json.dumps(list(fields)),
+            "limit_page_length": limit,
+        }
+        if parent:
+            args["parent"] = parent
+        query = urllib.parse.urlencode(args)
         return self._request("GET", f"/resource/{urllib.parse.quote(doctype)}?{query}")[
             "data"
         ]

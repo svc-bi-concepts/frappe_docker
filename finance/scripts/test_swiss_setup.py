@@ -3,7 +3,6 @@
 Run with: python3 -m unittest discover -s finance/scripts -p 'test_*.py'
 """
 
-import ast
 import importlib.util
 import os
 import pathlib
@@ -31,6 +30,11 @@ sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(_path), "..", "apps", "bi_payroll"))
 )
 from bi_payroll.test_payroll_accounts import BEXIO_ADDED  # noqa: E402
+
+# api_key_check.py (the proof of the keys split) asks the reports keyaccess closes and watches the key roles for a
+# level 1 row: both lists must be the ones here. Its directory goes on the path so the comparison tests import them.
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(_path), "..", "bexio")))
+import api_key_check  # noqa: E402
 
 
 class SwissSetupProjectTest(unittest.TestCase):
@@ -261,6 +265,9 @@ class KeyRolesTest(unittest.TestCase):
             swiss_setup.KEY_ROLES, line.split("=", 1)[1].strip('"').split("|")
         )
 
+    def test_the_key_check_holds_the_same_key_roles(self):
+        self.assertEqual(swiss_setup.KEY_ROLES, api_key_check.KEY_ROLES)
+
     def test_the_mcp_roles_are_a_subset_of_the_key_roles(self):
         script = (pathlib.Path(_path).parent / "create-api-user.sh").read_text()
         line = next(l for l in script.splitlines() if l.startswith("MCP_ROLES="))
@@ -268,13 +275,7 @@ class KeyRolesTest(unittest.TestCase):
         self.assertTrue(set(mcp) <= set(swiss_setup.KEY_ROLES))
 
     def test_the_key_check_asks_the_reports_keyaccess_closes(self):
-        check = pathlib.Path(_path).parents[1] / "bexio" / "api_key_check.py"
-        line = next(
-            l for l in check.read_text().splitlines() if l.startswith("REPORTS = ")
-        )
-        self.assertEqual(
-            swiss_setup.KEY_REPORTS, ast.literal_eval(line.split("=")[1].strip())
-        )
+        self.assertEqual(swiss_setup.KEY_REPORTS, api_key_check.REPORTS)
 
     def test_keyaccess_is_a_step_and_named_in_the_usage_line(self):
         self.assertIn("keyaccess", swiss_setup.STEPS)
@@ -373,6 +374,87 @@ class LeaveLedgerTest(unittest.TestCase):
         self.assertEqual(swiss_setup.leave_ledger_mismatch(perms), [])
 
 
+class ProposalHelpersTest(unittest.TestCase):
+    def levels(self, over=None):
+        levels = {
+            (dt, f): 0 for dt, fs in swiss_setup.PROPOSAL_FIELDS.items() for f in fs
+        }
+        levels.update(over or {})
+        return levels
+
+    def test_fields_to_raise_are_those_not_at_level_1_in_order(self):
+        levels = self.levels()
+        levels["Payment Proposal", "salaries"] = 1
+        raised = swiss_setup.proposal_fields_to_raise(levels)
+        self.assertNotIn(("Payment Proposal", "salaries"), raised)
+        self.assertEqual(raised[0], ("Payment Proposal", "expenses"))
+        self.assertEqual(len(raised), 12)
+
+    def test_nothing_to_raise_when_all_are_at_level_1(self):
+        levels = {k: 1 for k in self.levels()}
+        self.assertEqual(swiss_setup.proposal_fields_to_raise(levels), [])
+
+    def test_an_unknown_field_stops(self):
+        with self.assertRaisesRegex(SystemExit, "Payment Proposal.expenses"):
+            swiss_setup.proposal_fields_to_raise(
+                self.levels({("Payment Proposal", "expenses"): None})
+            )
+
+    def test_rows_to_add_for_both_roles_when_there_is_no_level_1(self):
+        perms = [("Accounts User", 0, 1, 1, 0), ("Accounts Manager", 0, 1, 1, 0)]
+        self.assertEqual(
+            swiss_setup.proposal_rows_to_add(perms),
+            [
+                ("Accounts Manager", ["read", "write"]),
+                ("System Manager", ["read", "write"]),
+            ],
+        )
+
+    def test_rows_to_add_completes_a_level_1_row_that_lacks_write(self):
+        perms = [
+            ("Accounts Manager", 1, 1, 0, 0),
+            ("System Manager", 1, 1, 1, 0),
+        ]
+        self.assertEqual(
+            swiss_setup.proposal_rows_to_add(perms), [("Accounts Manager", ["write"])]
+        )
+
+    def test_rows_to_add_is_empty_when_both_roles_hold_level_1(self):
+        perms = [("Accounts Manager", 1, 1, 1, 0), ("System Manager", 1, 1, 1, 0)]
+        self.assertEqual(swiss_setup.proposal_rows_to_add(perms), [])
+
+    def level0(self, *extra):
+        return [(r, 0, 1, 1, 0) for r in swiss_setup.PROPOSAL_ROLES] + list(extra)
+
+    def test_a_key_role_at_level_1_stops_and_level_0_does_not(self):
+        swiss_setup.proposal_stops(
+            self.level0(("Accounts User", 0, 1, 1, 0)), swiss_setup.KEY_ROLES
+        )
+        with self.assertRaisesRegex(SystemExit, "Item Manager"):
+            swiss_setup.proposal_stops(
+                self.level0(("Item Manager", 1, 1, 0, 0)), swiss_setup.KEY_ROLES
+            )
+
+    def test_a_manager_role_without_a_level_0_row_stops(self):
+        with self.assertRaisesRegex(SystemExit, "no level 0 row for System Manager"):
+            swiss_setup.proposal_stops(
+                [("Accounts Manager", 0, 1, 1, 0), ("System Manager", 1, 1, 1, 0)],
+                swiss_setup.KEY_ROLES,
+            )
+
+    def test_users_stop_names_the_count_and_no_user(self):
+        with self.assertRaises(SystemExit) as stop:
+            swiss_setup.proposal_users_stop(
+                [["Accounts User"], ["Accounts User", "Sales User"], ["HR User"]]
+            )
+        self.assertIn("2 enabled user(s)", str(stop.exception))
+
+    def test_a_manager_or_system_manager_with_accounts_user_does_not_stop(self):
+        swiss_setup.proposal_users_stop(
+            [["Accounts User", "Accounts Manager"], ["Accounts User", "System Manager"]]
+        )
+
+
 class FakeKeySite:
     """The permission rows, report roles and Custom Roles the keyaccess step reads and writes."""
 
@@ -390,11 +472,26 @@ class FakeKeySite:
                 ("HR User", 0, 0, 0, 0),
                 ("All", 0, 0, 0, 1),
             ],
+            swiss_setup.PROPOSAL: [
+                ("Accounts Manager", 0, 1, 1, 0),
+                ("System Manager", 0, 1, 1, 0),
+                ("Accounts User", 0, 1, 1, 0),
+            ],
         }
+        self.levels = {
+            (dt, f): 0 for dt, fs in swiss_setup.PROPOSAL_FIELDS.items() for f in fs
+        }
+        self.users = {
+            "someone@example.com": ["Accounts User", "Accounts Manager"],
+            "api-mcp@finance.local": ["Accounts User"],
+        }
+        self.setters = []
         self.has_role = {
             "Cash Flow Forecast": ["Accounts Manager", "Accounts User"],
             "Cash Flow Forecast Lines": ["Accounts Manager", "Accounts User"],
             "Project Profitability": ["Projects Manager", "Accounts User"],
+            "Monthly Worktime": ["HR Manager", "Accounts User"],
+            "Worktime Overview": ["HR Manager", "Accounts User"],
         }
         self.custom = {}
         self.removed = []
@@ -412,12 +509,38 @@ class FakeKeySite:
         fields = {
             "Employee": ("role", "permlevel", "read", "select", "if_owner"),
             swiss_setup.LEAVE_LEDGER: ("role", "permlevel", "x", "y", "if_owner"),
-        }[doctype]
+            swiss_setup.PROPOSAL: ("role", "permlevel", "read", "write", "if_owner"),
+        }.get(doctype)
         rows = [
             types.SimpleNamespace(get=dict(zip(fields, p)).get)
+            for p in self.perms.get(doctype, [])
+        ]
+
+        def get_field(name):
+            if (doctype, name) not in self.levels:
+                return None
+            return types.SimpleNamespace(permlevel=self.levels[doctype, name])
+
+        return types.SimpleNamespace(permissions=rows, get_field=get_field)
+
+    def make_property_setter(self, args):
+        self.setters.append((args["doctype"], args["fieldname"], args["property"]))
+        self.levels[args["doctype"], args["fieldname"]] = args["value"]
+
+    def add_permission(self, doctype, role, permlevel=0, ptype=None):
+        if not any(p[0] == role and p[1] == permlevel for p in self.perms[doctype]):
+            self.perms[doctype].append((role, permlevel, 1, 0, 0))
+
+    def update_permission_property(self, doctype, role, permlevel, ptype, value):
+        index = {"read": 2, "write": 3}[ptype]
+        self.perms[doctype] = [
+            (
+                p[:index] + (value,) + p[index + 1 :]
+                if p[0] == role and p[1] == permlevel
+                else p
+            )
             for p in self.perms[doctype]
         ]
-        return types.SimpleNamespace(permissions=rows)
 
     def custom_role(self, name=None):
         site = self
@@ -446,10 +569,21 @@ class FakeKeySite:
             swiss_setup, "frappe"
         ) as frappe, mock.patch.object(swiss_setup, "say") as say:
             frappe.get_meta.side_effect = self.meta
-            frappe.db.exists.return_value = True
-            frappe.get_all.side_effect = lambda _dt, filters, **kw: list(
-                self.has_role[filters["parent"]]
+            frappe.make_property_setter.side_effect = self.make_property_setter
+            frappe.permissions.add_permission.side_effect = self.add_permission
+            frappe.permissions.update_permission_property.side_effect = (
+                self.update_permission_property
             )
+            frappe.db.exists.return_value = True
+
+            def get_all(dt, filters, **kw):
+                if dt == "User":
+                    return list(self.users)
+                if dt == "Has Role" and filters["parenttype"] == "User":
+                    return list(self.users[filters["parent"]])
+                return list(self.has_role[filters["parent"]])
+
+            frappe.get_all.side_effect = get_all
             frappe.db.get_value.side_effect = lambda _dt, filters, _f: (
                 filters["report"] if filters["report"] in self.custom else None
             )
@@ -477,7 +611,66 @@ class KeyaccessTest(unittest.TestCase):
         self.assertEqual(site.custom["Cash Flow Forecast"], ["Accounts Manager"])
         self.assertEqual(site.custom["Cash Flow Forecast Lines"], ["Accounts Manager"])
         self.assertEqual(site.custom["Project Profitability"], ["Projects Manager"])
+        self.assertEqual(site.custom["Monthly Worktime"], ["HR Manager"])
+        self.assertEqual(site.custom["Worktime Overview"], ["HR Manager"])
         self.assertEqual(site.commits, 1)
+
+    def test_it_raises_the_proposal_tables_and_their_child_fields_to_level_1(self):
+        site = FakeKeySite()
+        said = site.run()
+        wanted = {(dt, f) for dt, fs in swiss_setup.PROPOSAL_FIELDS.items() for f in fs}
+        self.assertEqual({(d, f) for d, f, _p in site.setters}, wanted)
+        self.assertEqual(set(site.levels.values()), {1})
+        self.assertTrue(
+            any("Payment Proposal.salaries: permlevel set to 1" in l for l in said)
+        )
+
+    def test_level_1_rows_hold_read_and_write_and_level_0_stays(self):
+        site = FakeKeySite()
+        site.run()
+        rows = site.perms[swiss_setup.PROPOSAL]
+        self.assertIn(("Accounts Manager", 1, 1, 1, 0), rows)
+        self.assertIn(("System Manager", 1, 1, 1, 0), rows)
+        self.assertEqual(
+            {r for r, level, *_ in rows if level == 1},
+            {"Accounts Manager", "System Manager"},
+        )
+        self.assertIn(("Accounts User", 0, 1, 1, 0), rows)
+
+    def test_a_key_role_with_level_1_on_the_proposal_stops_before_any_change(self):
+        site = FakeKeySite()
+        site.perms[swiss_setup.PROPOSAL].append(("Stock User", 1, 1, 0, 0))
+        with self.assertRaisesRegex(SystemExit, "Stock User"):
+            site.run()
+        self.assertEqual((site.removed, site.setters, site.custom), ([], [], {}))
+
+    def test_a_manager_role_without_a_level_0_row_stops_before_any_change(self):
+        site = FakeKeySite()
+        site.perms[swiss_setup.PROPOSAL].remove(("System Manager", 0, 1, 1, 0))
+        with self.assertRaisesRegex(SystemExit, "System Manager"):
+            site.run()
+        self.assertEqual((site.removed, site.setters, site.custom), ([], [], {}))
+
+    def test_a_human_with_accounts_user_only_stops_before_any_change(self):
+        site = FakeKeySite()
+        site.users["clerk@example.com"] = ["Accounts User"]
+        with self.assertRaisesRegex(SystemExit, "1 enabled user"):
+            site.run()
+        self.assertEqual((site.removed, site.setters, site.custom), ([], [], {}))
+
+    def test_the_api_users_are_not_humans(self):
+        # api-mcp holds Accounts User alone in the fake site, and the run does not stop.
+        FakeKeySite().run()
+
+    def test_a_field_the_site_does_not_have_stops_before_any_change(self):
+        site = FakeKeySite()
+        del site.levels["Payment Proposal Expense", "amount"]
+        with self.assertRaisesRegex(SystemExit, "Payment Proposal Expense.amount"):
+            site.run()
+        self.assertEqual((site.removed, site.setters, site.custom), ([], [], {}))
+        self.assertNotIn(
+            ("Accounts Manager", 1, 1, 1, 0), site.perms[swiss_setup.PROPOSAL]
+        )
 
     def test_it_leaves_the_other_employee_rows_alone(self):
         site = FakeKeySite()
@@ -490,9 +683,12 @@ class KeyaccessTest(unittest.TestCase):
         site = FakeKeySite()
         site.run()
         removed, custom = list(site.removed), dict(site.custom)
+        setters, perms = list(site.setters), list(site.perms[swiss_setup.PROPOSAL])
         said = site.run()
         self.assertEqual(site.removed, removed)
         self.assertEqual(site.custom, custom)
+        self.assertEqual(site.setters, setters)
+        self.assertEqual(site.perms[swiss_setup.PROPOSAL], perms)
         self.assertTrue(any("nothing to change" in line for line in said))
 
     def test_an_existing_custom_role_is_updated(self):
@@ -522,10 +718,27 @@ class KeyaccessTest(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, "read-back.*Employee"):
             site.run()
 
+    def test_a_level_1_insert_that_loses_a_level_0_row_fails_the_read_back(self):
+        site = FakeKeySite()
+        add = site.add_permission
+
+        def add_and_lose(doctype, role, permlevel=0, ptype=None):
+            add(doctype, role, permlevel, ptype)
+            site.perms[doctype] = [
+                p for p in site.perms[doctype] if p[0] != "Accounts User"
+            ]
+
+        site.add_permission = add_and_lose
+        with self.assertRaisesRegex(SystemExit, "read-back.*level 0 rows differ"):
+            site.run()
+        self.assertEqual(site.commits, 0)
+
     def test_only_roles_and_report_names_are_printed(self):
         said = " ".join(FakeKeySite().run())
         self.assertIn("Accounts User", said)
-        self.assertNotIn("employee_name", said)
+        # field names are printed, never a user
+        self.assertNotIn("example.com", said)
+        self.assertNotIn("finance.local", said)
 
 
 class PayslipChangesTest(unittest.TestCase):
