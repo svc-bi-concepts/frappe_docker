@@ -41,8 +41,14 @@ class GateModules(unittest.TestCase):
                     lists.append("host list")
                 if module not in image:
                     lists.append("image list")
-                issue = "not named in " + " or ".join(lists) if count == 0 else "named in both host list and image list"
-                self.fail("%s must appear in exactly one gate list; %s" % (module, issue))
+                issue = (
+                    "not named in " + " or ".join(lists)
+                    if count == 0
+                    else "named in both host list and image list"
+                )
+                self.fail(
+                    "{} must appear in exactly one gate list; {}".format(module, issue)
+                )
 
 
 if __name__ == "__main__":
