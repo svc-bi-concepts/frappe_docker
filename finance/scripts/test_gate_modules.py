@@ -46,9 +46,7 @@ class GateModules(unittest.TestCase):
                     if count == 0
                     else "named in both host list and image list"
                 )
-                self.fail(
-                    "{} must appear in exactly one gate list; {}".format(module, issue)
-                )
+                self.fail(f"{module} must appear in exactly one gate list; {issue}")
 
 
 if __name__ == "__main__":
