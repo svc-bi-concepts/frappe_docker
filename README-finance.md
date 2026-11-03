@@ -86,10 +86,13 @@ Action. An agent with a shell can still read `.erpnext-api` or use `docker exec`
 the split closes the MCP path only. `python3 finance/bexio/api_key_check.py
 <key file>` asks the payroll and HR doctypes, the Payment Proposal child
 doctypes and the reports that keyaccess closes for one row each, without running
-a report, and says for each whether the key is refused, sees a row, or may list
-an empty doctype. It exits 0 only when every line is refused (File and child
-lines may be empty), which needs the `keyaccess` step of `swiss-setup.sh`; the
-full list is under "What the keys reach" in `finance/docs/mcp.md`.
+a report, and whether the method gate refuses two methods that would list
+employee names. It says for each whether the key is refused, sees a row, or may
+list an empty doctype. It exits 0 only when every line is refused (File and child
+lines may be empty), which needs the `keyaccess` step of `swiss-setup.sh` and the
+image with `bi_finance.api_gate`; the full list is under "What the keys reach" in
+`finance/docs/mcp.md`. The sync and MCP keys may call only the whitelisted
+methods named in that file.
 
 Until a key file exists, its consumer falls back: `sync_hourly.sh` to
 `.erpnext-api`, `run-frappe-mcp.sh` to `.erpnext-api` with one warning on stderr.

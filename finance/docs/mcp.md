@@ -235,9 +235,13 @@ File on Salary Slip and on Employee, for the five reports above whether
 `frappe.desk.query_report.get_script` answers, and employee and amount from
 Payment Proposal Salary Slip and Payment Proposal Expense listed directly with
 parent=Payment Proposal. The report call passes the same gate as the report and
-returns no report data, so the check never runs a report. Exit 0 means every line
-was refused (the File and child lines may be empty: File is filtered row by row,
-and without a proposal there is no child row to show).
+returns no report data, so the check never runs a report. It also asks two
+whitelisted methods the method gate below must refuse, each for one row:
+`erpnext.controllers.queries.employee_query` and `frappe.desk.search.search_link`
+with `query` set to it; the lines start `method`, and an answer is dropped on the
+spot. A method that writes is never probed. Exit 0 means every line was refused
+(the File and child lines may be empty: File is filtered row by row, and without
+a proposal there is no child row to show).
 
 Sweep of whitelisted methods (erp-qg70, read from source at the image's pins): every
 `@frappe.whitelist` function of hrms (221) and bi_payroll (4), and in erpnext and
@@ -248,20 +252,51 @@ check permission first, are fine.
 
 The sweep found nine functions that answer a caller holding only the key roles,
 among them `create_payment_proposal_for_mcp` in erpnextswiss (salary and expense
-lines) and `erpnext.controllers.queries.employee_query` (employee names). They stay
-open until the method gate of erp-kb06 lands, which limits both keys to a named list
-of methods; the full list is in the notes of erp-qg70. The salary and expense tables
-of Payment Proposal, which Accounts User reads, are closed by keyaccess. So a key that
-passes the check today does not yet mean a key that reaches no payroll, HR or Employee
-data.
+lines) and `erpnext.controllers.queries.employee_query` (employee names); the full
+list is in the notes of erp-qg70. Fixing them one by one would leave whatever the sweep
+did not read, and `frappe.desk.search.search_link` calls any whitelisted query by name,
+so a ban on single names is not enough. The method gate (erp-kb06) turns it round:
+
+- Who: `api-sync@finance.local` and `api-mcp@finance.local` (`GATED_USERS` in
+  `bi_finance/api_gate.py`). `api-agent`, humans and Guest pass unchanged; the
+  importers stay on `api-agent` until erp-tamd.
+- What: a request that calls a whitelisted method, by `/api/method/<m>`,
+  `/api/v1/method/<m>`, `/api/v2/method/<m>`, `/api/v2/method/<doctype>/<m>`, or by
+  `cmd` in the query or the body on any path, must name a method in `ALLOWED_METHODS`
+  of the same file, an exact dotted name with no prefix match. Anything else answers
+  403 and the message names the method only. The list is short: `ping` and
+  `frappe.ping`, `frappe.auth.get_logged_user`, `frappe.client.submit`,
+  `frappe.desk.form.load.getdoctype` (the sync reads doctype meta), and
+  `frappe.desk.query_report.run` and `get_script`. Nothing in `frappe.desk.search`,
+  no `run_doc_method`, no hrms, erpnextswiss or bi_finance method is on it.
+- What it leaves alone: `/api/resource/...` and `/api/v2/document/...`, including
+  document methods. Frappe checks the document's permission there, and the key roles
+  and `keyaccess` are what limit them.
+- Where it hooks: `auth_hooks` in `bi_finance/hooks.py`, not `before_request`. Frappe
+  validates a token after the `before_request` hooks have run, so there the user is
+  still Guest; `auth_hooks` run at the end of the authentication, with the key's user
+  set.
+- Add a method: put its exact name into `ALLOWED_METHODS`, read the function to the
+  end first (it must read or write nothing past the caller's own permissions, and it
+  must not be able to reach payroll, HR or Employee data), and ship it with the next
+  image. Until then it answers 403 to both keys; the MCP session reports "Permission
+  denied (403)". There is no setting that changes the list without an image.
+
+The salary and expense tables of Payment Proposal, which Accounts User reads, are
+closed by keyaccess (erp-btgr), not by the gate: they are a document, not a method.
 
 What the proof does not cover:
 
-- The nine functions above, until erp-kb06 lands; and the Payment Proposal tables
-  until keyaccess has run on live (erp-95bt). Live holds no proposal yet, so the
-  child-doctype lines of the check come back empty and prove nothing until the
-  first one exists (erp-nwbd reads it with the MCP key).
-- bi_finance's own whitelisted functions were not swept; the method gate covers them.
+- The Payment Proposal tables above, until keyaccess has run on live (erp-95bt). Live
+  holds no proposal yet, so the child-doctype lines of the check come back empty and
+  prove nothing until the first one exists (erp-nwbd reads it with the MCP key). The
+  gate refuses the nine functions for the two keys; `api-agent` is not gated, so its
+  key still reaches them (erp-tamd, erp-c05w).
+- bi_finance's own whitelisted functions were not swept; the method gate refuses them
+  for the two keys and none is on its list.
+- Paths that are no method call and no document: file downloads under `/private/files`
+  (File on Salary Slip and on Employee are asked by the check), website pages, and
+  `/api/v2/doctype/<doctype>/meta` (schema only, no rows).
 - Salary traces in the ledger (GL Entry, Journal Entry, Payment Entry, Bank
   Transaction): Benchi decides through yard-xsab.
 - Eight other reports the key roles open name employees only through Timesheet or

@@ -21,13 +21,19 @@ what Frappe returns once the fields are dropped) or visible (a row carrying empl
 One "level1" line: visible when a key role holds a permlevel 1 row on Payment Proposal (read through the agent
 key), which would reopen the child fields; refused when none does.
 
+Then two whitelisted methods the method gate (bi_finance/api_gate.py, erp-kb06) must refuse: erpnext's
+employee_query (employee names, no role check) and frappe.desk.search.search_link with query set to it (it
+calls any whitelisted query by name), both with a page length of 1. Only reads are asked: a function that
+writes is never probed, without the gate it would insert a Payment Proposal. An answer is dropped on the spot.
+
 One line per doctype: refused (HTTP 403, Frappe's answer to a list without read), visible (a
 row came back) or empty (allowed to list, no row there); the File lines say which filter ran. One
-line per report, starting "report": refused (403) or visible (an answer came back). One line per child doctype,
-starting "child". Then a total.
+line per report, starting "report", and one per method, starting "method": refused (403) or visible (an
+answer came back). One line per child doctype, starting "child". Then a total.
 No row and no name is ever printed, and neither is a key.
 
-Exit 0 only when every line is refused (reports included), the File and child lines alone may also be empty:
+Exit 0 only when every line is refused (reports and methods included), the File and child lines alone may also be
+empty:
 File is filtered row by row, so anyone may list it. Exit 1 otherwise: empty on another line means
 the key may list that doctype, and the rows come later. Exit 2 when the check could not finish (a
 call failed for another reason, a key file is unreadable, or a module that holds doctypes listed
@@ -92,6 +98,28 @@ REPORTS = [
     "Monthly Worktime",
     "Worktime Overview",
 ]
+EMPLOYEE_QUERY = "erpnext.controllers.queries.employee_query"
+# Methods the gate refuses, read-only ones only: (method, arguments, what the line adds to the name). The second
+# one reaches the first through search_widget, which no override of a whitelisted method covers.
+METHODS = [
+    (
+        EMPLOYEE_QUERY,
+        {
+            "doctype": "Employee",
+            "txt": "",
+            "searchfield": "name",
+            "start": 0,
+            "page_len": 1,
+            "filters": None,
+        },
+        "",
+    ),
+    (
+        "frappe.desk.search.search_link",
+        {"doctype": "Employee", "txt": "", "query": EMPLOYEE_QUERY, "page_length": 1},
+        " (query employee_query)",
+    ),
+]
 
 
 def targets(lister):
@@ -118,15 +146,20 @@ def probe(erp, doctype, filters):
     return "visible" if rows else "empty"
 
 
-def probe_report(erp, report):
-    """refused or visible for one report; get_script never runs it and its answer is dropped on the spot."""
+def probe_method(erp, method, **args):
+    """refused or visible for one whitelisted method; its answer is dropped on the spot."""
     try:
-        erp.call("frappe.desk.query_report.get_script", report_name=report)
+        erp.call(method, **args)
     except im.ErpError as err:
         if err.status == 403:
             return "refused"
         raise
     return "visible"
+
+
+def probe_report(erp, report):
+    """refused or visible for one report; get_script never runs it."""
+    return probe_method(erp, "frappe.desk.query_report.get_script", report_name=report)
 
 
 def probe_child(erp, doctype, parent, fields):
@@ -172,6 +205,9 @@ def check(lister, erp, out):
     results.append(
         (f"level1   {verdict:8} Payment Proposal, key roles", verdict, False)
     )
+    for method, args, note in METHODS:
+        verdict = probe_method(erp, method, **args)
+        results.append((f"method   {verdict:8} {method}{note}", verdict, False))
     for line, _verdict, _ok_empty in results:
         print(line, file=out)
     counts = {

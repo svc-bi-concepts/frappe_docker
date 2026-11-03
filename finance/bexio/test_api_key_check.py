@@ -3,6 +3,7 @@
 Run with: python3 -m unittest discover -s finance/bexio -p 'test_*.py'
 """
 
+import ast
 import email.message
 import io
 import json
@@ -21,6 +22,17 @@ from private_guard import (  # every test below runs against a temp private fold
 PAYROLL_DOCTYPES = ["Payroll Entry", "Salary Slip", "Salary Structure"]
 HR_DOCTYPES = ["Appraisal Cycle", "Leave Type"]
 BI_PAYROLL_DOCTYPES = ["Qst Code"]
+EMPLOYEE_QUERY = "erpnext.controllers.queries.employee_query"
+SEARCH_LINK = "frappe.desk.search.search_link"
+GET_SCRIPT = "frappe.desk.query_report.get_script"
+GATE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "..",
+    "apps",
+    "bi_finance",
+    "bi_finance",
+    "api_gate.py",
+)
 ON_SALARY_SLIP = "File (attached_to_doctype = Salary Slip)"
 ON_EMPLOYEE = "File (attached_to_doctype = Employee)"
 REPORTS = [
@@ -56,15 +68,24 @@ ALL_MODULES = {
 
 class FakeSite:
     """list() as Frappe answers it: 403 for a doctype the user cannot read, else the rows (one per call at most).
-    call() likewise: get_script answers 403 for a report the user's roles do not open, else a script; any other method is a failure.
+    call() likewise: get_script answers 403 for a report the user's roles do not open, else a script; the two gated
+    methods answer 403 as the method gate does, else a row of invented names; any other method is a failure.
     """
 
     def __init__(
-        self, readable=(), rows=None, modules=None, open_reports=(), child_rows=None
+        self,
+        readable=(),
+        rows=None,
+        modules=None,
+        open_reports=(),
+        child_rows=None,
+        open_methods=(),
     ):
         self.readable = set(readable)
         self.open_reports = set(open_reports)
+        self.open_methods = set(open_methods)
         self.methods = []
+        self.method_args = {}
         self.rows = rows or {}
         self.permissions = [
             {"role": "Accounts User", "permlevel": 0},
@@ -113,7 +134,14 @@ class FakeSite:
 
     def call(self, method, **args):
         self.methods.append(method)
-        if method != "frappe.desk.query_report.get_script":
+        self.method_args[method] = args
+        if method in (EMPLOYEE_QUERY, SEARCH_LINK):
+            if method not in self.open_methods:
+                raise im.ErpError(
+                    403, f"POST /method/{method}: frappe.exceptions.PermissionError"
+                )
+            return [["SECRET-EMPLOYEE-NAME", "SECRET-EMPLOYEE-TITLE"]]
+        if method != GET_SCRIPT:
             raise AssertionError(f"unexpected method {method}")
         if args["report_name"] not in self.open_reports:
             raise im.ErpError(
@@ -132,7 +160,7 @@ class ApiKeyCheck(unittest.TestCase):
         code, text = self.run_check(FakeSite())
         self.assertEqual(code, 0)
         self.assertIn("refused  Salary Slip", text)
-        self.assertIn("total 19: 0 visible, 19 refused, 0 empty", text)
+        self.assertIn("total 21: 0 visible, 21 refused, 0 empty", text)
 
     def test_empty_file_lines_exit_0(self):
         probed = FakeSite(readable={"File"}, rows={"File": False})
@@ -140,7 +168,7 @@ class ApiKeyCheck(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn(f"empty    {ON_SALARY_SLIP}", text)
         self.assertIn(f"empty    {ON_EMPLOYEE}", text)
-        self.assertIn("total 19: 0 visible, 17 refused, 2 empty", text)
+        self.assertIn("total 21: 0 visible, 19 refused, 2 empty", text)
 
     def test_a_visible_file_line_exits_1(self):
         code, text = self.run_check(FakeSite(readable={"File"}))
@@ -152,7 +180,7 @@ class ApiKeyCheck(unittest.TestCase):
         code, text = self.run_check(probed)
         self.assertEqual(code, 1)
         self.assertIn("empty    Leave Type", text)
-        self.assertIn("total 19: 0 visible, 18 refused, 1 empty", text)
+        self.assertIn("total 21: 0 visible, 20 refused, 1 empty", text)
 
     def test_empty_on_the_unfiltered_extras_exits_1(self):
         for doctype in ("Employee", "Deleted Document", "Version"):
@@ -171,7 +199,7 @@ class ApiKeyCheck(unittest.TestCase):
         code, text = self.run_check(FakeSite(readable={"Salary Slip"}))
         self.assertEqual(code, 1)
         self.assertIn("visible  Salary Slip", text)
-        self.assertIn("1 visible, 18 refused", text)
+        self.assertIn("1 visible, 20 refused", text)
 
     def test_every_doctype_gets_a_line_in_order(self):
         _code, text = self.run_check(FakeSite())
@@ -209,6 +237,7 @@ class ApiKeyCheck(unittest.TestCase):
         self.assertNotIn("SECRET-ROW-NAME", text)
         self.assertNotIn("SECRET-SCRIPT", text)
         self.assertNotIn("SECRET-FILTERS", text)
+        self.assertNotIn("SECRET-EMPLOYEE", text)
 
     def test_refused_reports_get_a_report_line_each_and_count(self):
         code, text = self.run_check(FakeSite())
@@ -222,7 +251,7 @@ class ApiKeyCheck(unittest.TestCase):
                 code, text = self.run_check(FakeSite(open_reports={name}))
                 self.assertEqual(code, 1)
                 self.assertIn(f"report   visible  {name}", text.splitlines())
-                self.assertIn("1 visible, 18 refused", text)
+                self.assertIn("1 visible, 20 refused", text)
 
     def test_the_child_doctypes_are_listed_with_their_parent_and_both_fields(self):
         probed = FakeSite()
@@ -295,9 +324,70 @@ class ApiKeyCheck(unittest.TestCase):
         probed = FakeSite(open_reports=REPORTS)
         self.run_check(probed)
         self.assertEqual(
-            probed.methods, ["frappe.desk.query_report.get_script"] * len(REPORTS)
+            [m for m in probed.methods if m == GET_SCRIPT], [GET_SCRIPT] * len(REPORTS)
         )
         self.assertFalse(any(m.endswith(".run") for m in probed.methods))
+
+    def test_every_method_gets_a_line_and_is_refused_by_the_gate(self):
+        code, text = self.run_check(FakeSite())
+        self.assertEqual(code, 0)
+        self.assertIn(f"method   refused  {EMPLOYEE_QUERY}", text.splitlines())
+        self.assertIn(
+            f"method   refused  {SEARCH_LINK} (query employee_query)", text.splitlines()
+        )
+
+    def test_a_method_the_gate_lets_through_is_visible_and_exits_1(self):
+        for method in (EMPLOYEE_QUERY, SEARCH_LINK):
+            with self.subTest(method=method):
+                code, text = self.run_check(FakeSite(open_methods={method}))
+                self.assertEqual(code, 1)
+                self.assertIn(f"method   visible  {method}", text)
+                self.assertIn("1 visible, 20 refused", text)
+                self.assertNotIn("SECRET-EMPLOYEE", text)
+
+    def test_search_link_asks_for_one_row_through_the_employee_query(self):
+        probed = FakeSite()
+        self.run_check(probed)
+        link = probed.method_args[SEARCH_LINK]
+        self.assertEqual(link["query"], EMPLOYEE_QUERY)
+        self.assertEqual(link["page_length"], 1)
+        self.assertEqual(probed.method_args[EMPLOYEE_QUERY]["page_len"], 1)
+
+    def test_only_the_reads_are_asked_never_a_method_that_writes(self):
+        probed = FakeSite()
+        self.run_check(probed)
+        self.assertEqual(
+            sorted(set(probed.methods)),
+            sorted([EMPLOYEE_QUERY, SEARCH_LINK, GET_SCRIPT]),
+        )
+        self.assertFalse(any("create_payment_proposal" in m for m in probed.methods))
+
+    def test_no_probed_method_is_on_the_gates_list(self):
+        """A listed method answers by design; a probe of one would be visible on every site."""
+        with open(GATE, encoding="utf-8") as f:
+            tree = ast.parse(f.read())
+        allowed = next(
+            ast.literal_eval(node.value.args[0])
+            for node in tree.body
+            if isinstance(node, ast.Assign)
+            and any(
+                isinstance(t, ast.Name) and t.id == "ALLOWED_METHODS"
+                for t in node.targets
+            )
+        )
+        for method, _args, _note in akc.METHODS:
+            with self.subTest(method=method):
+                self.assertNotIn(method, allowed)
+
+    def test_another_http_error_on_a_method_is_not_read_as_refused(self):
+        class Down(FakeSite):
+            def call(self, method, **args):
+                if method == EMPLOYEE_QUERY:
+                    raise im.ErpError(500, "POST /method/" + method)
+                return super().call(method, **args)
+
+        with self.assertRaises(im.ErpError):
+            akc.check(FakeSite(), Down(), io.StringIO())
 
     def test_another_http_error_on_a_report_is_not_read_as_refused(self):
         class Down(FakeSite):
@@ -390,6 +480,18 @@ class ThroughTheRealErp(unittest.TestCase):
         self.addCleanup(refusal.close)
         with mock.patch("urllib.request.urlopen", side_effect=refusal):
             self.assertEqual(akc.probe(self.erp(), "Salary Slip", []), "refused")
+
+    def test_a_403_response_on_a_method_is_refused(self):
+        body = io.BytesIO(json.dumps({"exc_type": "PermissionError"}).encode())
+        refusal = urllib.error.HTTPError(
+            "http://x", 403, "FORBIDDEN", email.message.Message(), body
+        )
+        self.addCleanup(refusal.close)
+        with mock.patch("urllib.request.urlopen", side_effect=refusal):
+            self.assertEqual(
+                akc.probe_method(self.erp(), EMPLOYEE_QUERY, doctype="Employee"),
+                "refused",
+            )
 
     def urls_of_a_list(self, call):
         class Response(io.BytesIO):
