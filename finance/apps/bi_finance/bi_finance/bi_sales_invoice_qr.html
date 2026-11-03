@@ -213,7 +213,8 @@ thousands separated by a space, no currency symbol #} {% set amount =
 {% if doc.flags.bi_qr_measure %} {# the first of two renders: the marker's place
 in the PDF is where the body ends #}
 <div class="bi-marker">BI-QR-END</div>
-{% else %}
+{% elif (doc.rounded_total or doc.grand_total) > 0 %} {# a credit note or a zero
+document has nothing to pay, and a QR-bill cannot ask for that: no slip #}
 <div style="height: {{ sales_invoice_slip_spacer(doc) }}mm"></div>
 
 <div id="bi-qr">

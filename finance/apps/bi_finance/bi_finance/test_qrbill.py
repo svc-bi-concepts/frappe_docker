@@ -277,6 +277,55 @@ class SlipReference(unittest.TestCase):
             with self.subTest(german=german):
                 self.assertNotIn(german, slip)
 
+    def render_without_helpers(self, inv):
+        # the QR and the spacer must not even be asked for when nothing is payable
+        def refuse(inv):
+            raise AssertionError("called for a document with nothing to pay")
+
+        from types import SimpleNamespace
+
+        import jinja2
+
+        with open(TEMPLATE, encoding="utf-8") as f:
+            template = jinja2.Template(f.read())
+        fake = SimpleNamespace(
+            get_doc=lambda doctype, name: SimpleNamespace(company_name="Beispiel AG")
+        )
+        return template.render(
+            doc=inv,
+            frappe=fake,
+            sales_invoice_iban=lambda inv: qrbill.iban_text(IBAN),
+            sales_invoice_reference=lambda inv: "",
+            sales_invoice_qr_uri=refuse,
+            sales_invoice_slip_spacer=refuse,
+            slip_labels=qrbill.slip_labels,
+        )
+
+    def test_nothing_to_pay_prints_without_the_slip(self):
+        try:
+            import jinja2  # noqa: F401
+        except ImportError as e:
+            self.skipTest(str(e))
+        for total in (-1000.0, 0):
+            with self.subTest(total=total):
+                inv = self.invoice()
+                inv.grand_total = total
+                html = self.render_without_helpers(inv)
+                self.assertNotIn("Zahlteil", html)
+                self.assertNotIn('id="bi-qr"', html)
+                self.assertNotIn("BI-QR-END", html)
+
+    def test_a_payable_amount_keeps_the_slip(self):
+        try:
+            import jinja2  # noqa: F401
+        except ImportError as e:
+            self.skipTest(str(e))
+        inv = self.invoice()
+        inv.grand_total = 1000.0
+        html = self.render(inv)
+        self.assertIn("Zahlteil", html)
+        self.assertIn('id="bi-qr"', html)
+
 
 class SlipLabels(unittest.TestCase):
     # Invented invoices, only the language field matters here.
