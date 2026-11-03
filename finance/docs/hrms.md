@@ -338,9 +338,12 @@ Risks:
   save it, then run `create_salary_slips` on the saved draft entry from site python (`bench console`). It skips
   only employees who already have a slip tied to this entry (`get_existing_salary_slips` filters on the entry).
   The entry stays draft and cannot be submitted, which is enough for a comparison; the history slip is unchanged.
-  January 2027 is out of reach, because history refuses dates after 2026-12-31. It touches only a 2026 parallel
-  run on the copy: no live Payroll Entry exists for a 2026 month. No hrms patch; for the order of the comparison
-  see `finance/docs/operating.md`, "Cutover", step 7.
+  After the call, read the entry's `status` and `error_message` and count the draft slips: the status shows
+  Submitted because `create_salary_slips_for_employees` sets the status field, while `docstatus` stays 0; a
+  failed insert is rolled back and written to status Failed and `error_message` (`log_payroll_failure`), with no
+  exception to the caller. January 2027 is out of reach, because history refuses dates after 2026-12-31. It
+  touches only a 2026 parallel run on the copy: no live Payroll Entry exists for a 2026 month. No hrms patch; for
+  the order of the comparison see `finance/docs/operating.md`, "Cutover", step 7.
 
 ## Recommendation
 
@@ -650,8 +653,9 @@ redis-queue, which is not up yet, and then goes on.
 - `--websocket` for realtime updates in the Desk (progress bars). frontend starts websocket anyway, because
   its nginx resolves the websocket host at start, so on the frontend path the flag changes nothing.
 
-The lean start is not run on a copy yet: the stub-docker tests in `finance/scripts/test_copy_stack.py` prove
-the calls, and the first real start proves the restore and migrate without redis-queue.
+The erp-v9wr rehearsal of 2026-11-03 started the copy lean, without `--jobs`: restore and migrate passed without
+redis-queue. Saving a User for the copy token needed redis-queue started by hand, and the Version rows of deleted
+slips stayed with no worker. The stub-docker tests in `finance/scripts/test_copy_stack.py` prove the calls.
 
 Down when the test is done (Benchi via IT, 2026-10-12: everything on the mini runs lean).
 
