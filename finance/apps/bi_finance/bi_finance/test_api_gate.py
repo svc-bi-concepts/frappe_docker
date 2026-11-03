@@ -12,14 +12,11 @@ that only starts with a listed one is refused; the refusal is PermissionError (H
 the hook is auth_hooks; GATED_USERS stays inside assistant_actions.API_USERS.
 """
 
-import ast
-import os
 import sys
 import types
 import unittest
 from unittest import mock
 
-HERE = os.path.dirname(os.path.abspath(__file__))
 SYNC = "api-sync@finance.local"
 MCP = "api-mcp@finance.local"
 AGENT = "api-agent@finance.local"
@@ -68,6 +65,8 @@ class Frappe(types.ModuleType):
 
 with mock.patch.dict(sys.modules, {"frappe": Frappe()}):
     from bi_finance import api_gate as gate
+    from bi_finance import assistant_actions as actions
+    from bi_finance import hooks
 
 
 class Gate(unittest.TestCase):
@@ -283,34 +282,17 @@ class Gate(unittest.TestCase):
 
     def test_the_hook_is_auth_hooks_not_before_request(self):
         """Frappe validates a token after the before_request hooks run, so there a key user is still Guest."""
-        with open(os.path.join(HERE, "hooks.py"), encoding="utf-8") as f:
-            tree = ast.parse(f.read())
-        hooks = {
-            target.id: ast.literal_eval(node.value)
-            for node in tree.body
-            if isinstance(node, ast.Assign)
-            for target in node.targets
-            if isinstance(target, ast.Name)
-            and target.id in ("auth_hooks", "before_request")
-        }
-        self.assertEqual(hooks, {"auth_hooks": ["bi_finance.api_gate.refuse"]})
+        self.assertEqual(hooks.auth_hooks, ["bi_finance.api_gate.refuse"])
+        self.assertFalse(hasattr(hooks, "before_request"))
 
     def test_the_hook_names_a_function_of_the_module(self):
-        self.assertTrue(callable(gate.refuse))
+        module, function = hooks.auth_hooks[0].rsplit(".", 1)
+        self.assertEqual(module, gate.__name__)
+        self.assertTrue(callable(getattr(gate, function)))
 
     def test_the_gated_users_stay_inside_the_api_users_that_never_approve(self):
-        with open(os.path.join(HERE, "assistant_actions.py"), encoding="utf-8") as f:
-            tree = ast.parse(f.read())
-        api_users = next(
-            ast.literal_eval(node.value.args[0])
-            for node in tree.body
-            if isinstance(node, ast.Assign)
-            and any(
-                isinstance(t, ast.Name) and t.id == "API_USERS" for t in node.targets
-            )
-        )
         self.assertEqual(gate.GATED_USERS, {SYNC, MCP})
-        self.assertLessEqual(gate.GATED_USERS, api_users)
+        self.assertLessEqual(gate.GATED_USERS, actions.API_USERS)
         self.assertNotIn(AGENT, gate.GATED_USERS)
 
 

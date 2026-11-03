@@ -3,12 +3,13 @@
 Run with: python3 -m unittest discover -s finance/bexio -p 'test_*.py'
 """
 
-import ast
 import email.message
 import io
 import json
 import os
+import sys
 import tempfile
+import types
 import unittest
 import urllib.error
 from unittest import mock
@@ -25,14 +26,13 @@ BI_PAYROLL_DOCTYPES = ["Qst Code"]
 EMPLOYEE_QUERY = "erpnext.controllers.queries.employee_query"
 SEARCH_LINK = "frappe.desk.search.search_link"
 GET_SCRIPT = "frappe.desk.query_report.get_script"
-GATE = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    "..",
-    "apps",
-    "bi_finance",
-    "bi_finance",
-    "api_gate.py",
+BI_FINANCE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "apps", "bi_finance"
 )
+with mock.patch.dict(sys.modules, {"frappe": types.ModuleType("frappe")}), mock.patch.object(
+    sys, "path", [BI_FINANCE] + sys.path
+):
+    from bi_finance import api_gate
 ON_SALARY_SLIP = "File (attached_to_doctype = Salary Slip)"
 ON_EMPLOYEE = "File (attached_to_doctype = Employee)"
 REPORTS = [
@@ -364,20 +364,9 @@ class ApiKeyCheck(unittest.TestCase):
 
     def test_no_probed_method_is_on_the_gates_list(self):
         """A listed method answers by design; a probe of one would be visible on every site."""
-        with open(GATE, encoding="utf-8") as f:
-            tree = ast.parse(f.read())
-        allowed = next(
-            ast.literal_eval(node.value.args[0])
-            for node in tree.body
-            if isinstance(node, ast.Assign)
-            and any(
-                isinstance(t, ast.Name) and t.id == "ALLOWED_METHODS"
-                for t in node.targets
-            )
-        )
         for method, _args, _note in akc.METHODS:
             with self.subTest(method=method):
-                self.assertNotIn(method, allowed)
+                self.assertNotIn(method, api_gate.ALLOWED_METHODS)
 
     def test_another_http_error_on_a_method_is_not_read_as_refused(self):
         class Down(FakeSite):
