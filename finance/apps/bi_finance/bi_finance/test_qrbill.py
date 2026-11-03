@@ -207,7 +207,7 @@ class SlipReference(unittest.TestCase):
             language="",
         )
 
-    def render(self, inv):
+    def render(self, inv, **functions):
         from types import SimpleNamespace
 
         import jinja2
@@ -218,7 +218,7 @@ class SlipReference(unittest.TestCase):
         fake = SimpleNamespace(
             get_doc=lambda doctype, name: company if doctype == "Company" else None
         )
-        return template.render(
+        context = dict(
             doc=inv,
             frappe=fake,
             sales_invoice_iban=lambda inv: qrbill.iban_text(IBAN),
@@ -229,6 +229,8 @@ class SlipReference(unittest.TestCase):
             sales_invoice_slip_spacer=lambda inv: 0.8,
             slip_labels=qrbill.slip_labels,
         )
+        context.update(functions)
+        return template.render(**context)
 
     def test_the_slip_shows_the_grouped_reference_in_both_parts(self):
         try:
@@ -276,6 +278,42 @@ class SlipReference(unittest.TestCase):
         ):
             with self.subTest(german=german):
                 self.assertNotIn(german, slip)
+
+    def test_nothing_to_pay_prints_without_the_slip(self):
+        try:
+            import jinja2  # noqa: F401
+        except ImportError as e:
+            self.skipTest(str(e))
+
+        # the QR and the spacer must not even be asked for when nothing is payable
+        def refuse(inv):
+            raise AssertionError("called for a document with nothing to pay")
+
+        total = self.invoice().grand_total
+        # a return with its total only in grand_total, one with a rounded total, a zero document
+        for grand_total, rounded_total in ((-total, 0), (-total, -total), (0, 0)):
+            with self.subTest(grand_total=grand_total, rounded_total=rounded_total):
+                inv = self.invoice()
+                inv.grand_total = grand_total
+                inv.rounded_total = rounded_total
+                html = self.render(
+                    inv,
+                    sales_invoice_qr_uri=refuse,
+                    sales_invoice_slip_spacer=refuse,
+                )
+                self.assertNotIn("Zahlteil", html)
+                self.assertNotIn('id="bi-qr"', html)
+                self.assertNotIn("BI-QR-END", html)
+
+    def test_a_payable_amount_keeps_the_slip(self):
+        try:
+            import jinja2  # noqa: F401
+        except ImportError as e:
+            self.skipTest(str(e))
+        html = self.render(self.invoice())
+        self.assertIn("Zahlteil", html)
+        self.assertIn('id="bi-qr"', html)
+        self.assertIn("height: 0.8mm", html)
 
 
 class SlipLabels(unittest.TestCase):

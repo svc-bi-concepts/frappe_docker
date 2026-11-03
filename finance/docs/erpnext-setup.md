@@ -218,7 +218,9 @@ cannot measure its body (wkhtmltopdf runs with JavaScript off), so the format re
 twice. The first render has the body alone with a marker after it; pypdf reads the
 marker's height on the last page (`qrbill.py` `sales_invoice_slip_spacer`), and the
 second has a gap of that height before the slip. That is one more wkhtmltopdf run per
-print, also for the HTML preview. The gap assumes A4 with the format's 15 mm top and
+print with a slip, also for the HTML preview. A document with nothing to pay (a credit
+note, a zero total) prints without the slip and without that second render
+(`finance/docs/swiss.md`, Risks 2). The gap assumes A4 with the format's 15 mm top and
 1 mm bottom margins. The margins are set in the format's CSS: wkhtmltopdf reads
 `.print-format` margins, not the format's margin fields. The IBAN prints in groups of
 four; the QR text does not. The slip's labels follow the Sales Invoice's language (SIX: one language per slip): de, fr, it or en by its first two letters, German for any other or an empty one (`qrbill.py` `SLIP_LABELS`, `slip_labels`), and the invoice number line of the slip and of the QR text follows them too. The QR payload carries a SCOR creditor reference (ISO 11649)
