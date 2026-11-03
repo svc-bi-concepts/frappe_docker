@@ -2,6 +2,8 @@
 
 `prepare_wise_transfer.py` lists paid recipients matching `--find-recipient NAME` or prepares one unfunded transfer to an existing, active recipient in the single business profile. Search lists paid recipients only; Benchi adds new recipients in the Wise UI. Transfer preparation refuses unknown recipients, a recipient without completed transfer history, duplicate invoice references, unsupported details, and, with `--yes`, dates outside the allowed window. It never funds, cancels, creates or changes recipients, or writes to bexio or ERPNext.
 
+For a recipient with no transfer history, use `--first-payment` with `--expect-iban` and `--expect-name` copied from the invoice, plus `--source-currency`. The script compares the Wise account details with those invoice values and refuses any mismatch; this mode also refuses recipients that already have a completed transfer. Benchi adds the recipient in the Wise UI first. The usual preview and `--yes` safeguards still apply.
+
 Find an existing paid recipient with a partial name match (case and repeated whitespace are ignored):
 
 ```sh
