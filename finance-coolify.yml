@@ -24,7 +24,7 @@
 #   ledger-edge  frontend only: the network the proxy reaches.
 services:
   backend:
-    image: frappe-finance-custom:v16.51.0-swiss-bi29
+    image: frappe-finance-custom:v16.51.1-swiss-bi30
     pull_policy: never
     networks:
       - ledger-data
@@ -43,7 +43,7 @@ services:
         condition: service_completed_successfully
 
   configurator:
-    image: frappe-finance-custom:v16.51.0-swiss-bi29
+    image: frappe-finance-custom:v16.51.1-swiss-bi30
     pull_policy: never
     networks:
       - ledger-data
@@ -73,7 +73,7 @@ services:
       - logs:/home/frappe/frappe-bench/logs
 
   create-site:
-    image: frappe-finance-custom:v16.51.0-swiss-bi29
+    image: frappe-finance-custom:v16.51.1-swiss-bi30
     pull_policy: never
     networks:
       - ledger-data
@@ -135,7 +135,7 @@ services:
       - db-data:/var/lib/mysql
 
   frontend:
-    image: frappe-finance-custom:v16.51.0-swiss-bi29
+    image: frappe-finance-custom:v16.51.1-swiss-bi30
     pull_policy: never
     networks:
       - ledger-edge
@@ -168,7 +168,7 @@ services:
       - traefik.http.services.ledger.loadbalancer.server.port=8080
 
   queue-long:
-    image: frappe-finance-custom:v16.51.0-swiss-bi29
+    image: frappe-finance-custom:v16.51.1-swiss-bi30
     pull_policy: never
     networks:
       - ledger-data
@@ -190,7 +190,7 @@ services:
         condition: service_completed_successfully
 
   queue-short:
-    image: frappe-finance-custom:v16.51.0-swiss-bi29
+    image: frappe-finance-custom:v16.51.1-swiss-bi30
     pull_policy: never
     networks:
       - ledger-data
@@ -226,7 +226,7 @@ services:
     restart: unless-stopped
 
   scheduler:
-    image: frappe-finance-custom:v16.51.0-swiss-bi29
+    image: frappe-finance-custom:v16.51.1-swiss-bi30
     pull_policy: never
     networks:
       - ledger-data
@@ -243,7 +243,7 @@ services:
         condition: service_completed_successfully
 
   websocket:
-    image: frappe-finance-custom:v16.51.0-swiss-bi29
+    image: frappe-finance-custom:v16.51.1-swiss-bi30
     pull_policy: never
     networks:
       - ledger-data
