@@ -222,11 +222,12 @@ mismatch, printing role and report names only):
   Manager added beside the level 0 rows (Accounts User keeps those). A key then
   gets neither the tables from a document read or a list, nor the fields from
   the child doctypes listed directly. The step stops if a key role holds level 1
-  on the doctype, or if an enabled person holds Accounts User without Accounts
-  Manager or System Manager (that person would lose the tables). The child-field
-  closure holds only while no key role has a level 1 row on Payment Proposal (a
-  direct child list is judged by the parent's permissions); the check has a
-  "level1" line for that.
+  on the doctype, if Accounts Manager or System Manager has no level 0 row on it
+  (Frappe refuses a level 1 row for a role without one), or if an enabled person
+  holds Accounts User without Accounts Manager or System Manager (that person
+  would lose the tables). The child-field closure holds only while no key role
+  has a level 1 row on Payment Proposal (a direct child list is judged by the
+  parent's permissions); the check has a "level1" line for that.
 
 What `finance/bexio/api_key_check.py` asks of a key: one row from every doctype of
 the hrms and BI Payroll modules, from Employee, Deleted Document and Version, from
