@@ -272,7 +272,10 @@ class Gate(unittest.TestCase):
     def test_mcp_doc_lists_the_allowed_methods(self):
         doc = Path(__file__).resolve().parents[3] / "docs" / "mcp.md"
         text = doc.read_text()
-        match = re.search(r"The list is short:(.*?)(?:\.(?=\s+`)|$)", text, re.DOTALL)
+        # Dots inside backticked method names do not end the sentence.
+        match = re.search(
+            r"The list is short:((?:`[^`]+`|[^`.])*)\.(?=\s|$)", text, re.DOTALL
+        )
         self.assertIsNotNone(
             match, "Could not find the allowed-method sentence in mcp.md"
         )
@@ -284,6 +287,12 @@ class Gate(unittest.TestCase):
             set(gate.ALLOWED_METHODS),
             f"mcp.md missing allowed methods: {missing}; extra methods: {extra}",
         )
+
+    def test_mcp_doc_ignores_methods_in_following_prose(self):
+        names = ", ".join(f"`{name}`" for name in sorted(gate.ALLOWED_METHODS))
+        text = f"The list is short: {names}. Excluded: `run_doc_method`."
+        with mock.patch.object(Path, "read_text", return_value=text):
+            self.test_mcp_doc_lists_the_allowed_methods()
 
     # ---- the refusal
 
