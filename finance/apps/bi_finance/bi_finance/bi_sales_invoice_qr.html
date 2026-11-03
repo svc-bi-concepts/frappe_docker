@@ -1,7 +1,7 @@
 <!--
   Print format "BI Sales Invoice QR" (Jinja). Installed by swiss-setup.sh, step qrbill.
-  Invoice part, then the Swiss QR-bill payment part (SIX QR-bill v2.3) at the foot of
-  the A4 page. The QR image is the jinja method sales_invoice_qr_uri (bi_finance/qrbill.py),
+  Invoice part, then, when there is an amount to pay, the Swiss QR-bill payment part
+  (SIX QR-bill v2.3) at the foot of the A4 page. The QR image is the jinja method sales_invoice_qr_uri (bi_finance/qrbill.py),
   embedded as a data URI. The slip text comes from the same
   documents as the payload, so the two cannot drift. Nothing here may link to another host
   (finance/docs/swiss.md, Risks 1).
