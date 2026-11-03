@@ -215,6 +215,9 @@ def main(argv=None):
     parser.add_argument("--amount")
     parser.add_argument("--target-currency")
     parser.add_argument("--source-currency")
+    parser.add_argument("--first-payment", action="store_true")
+    parser.add_argument("--expect-iban")
+    parser.add_argument("--expect-name")
     parser.add_argument("--planned-date")
     parser.add_argument("--detail", action="append", default=[], metavar="KEY=VALUE")
     parser.add_argument("--attempt", type=int)
@@ -225,7 +228,8 @@ def main(argv=None):
             raise SystemExit("refused: --find-recipient name must not be empty")
         if (args.recipient_id is not None or args.invoice is not None or args.amount is not None
                 or args.target_currency is not None or args.planned_date is not None
-                or args.source_currency is not None or args.detail or args.attempt is not None or args.yes):
+                or args.source_currency is not None or args.first_payment or args.expect_iban is not None
+                or args.expect_name is not None or args.detail or args.attempt is not None or args.yes):
             raise SystemExit("refused: --find-recipient cannot be combined with transfer arguments")
     else:
         for option in ("--recipient-id", "--invoice", "--amount", "--target-currency", "--planned-date"):
@@ -233,6 +237,12 @@ def main(argv=None):
                 raise SystemExit("refused: {} is required in transfer mode".format(option))
         if args.attempt is None:
             args.attempt = 1
+        if args.first_payment:
+            for option in ("--expect-iban", "--expect-name", "--source-currency"):
+                if not getattr(args, option[2:].replace("-", "_")):
+                    raise SystemExit("refused: {} is required with --first-payment".format(option))
+        elif args.expect_iban is not None or args.expect_name is not None:
+            raise SystemExit("refused: --expect-iban and --expect-name require --first-payment")
     token = os.environ.get("FINANCE_WISE_TRANSFER_TOKEN")
     if not token:
         raise SystemExit("FINANCE_WISE_TRANSFER_TOKEN is not set; run through av inject")
@@ -278,12 +288,24 @@ def main(argv=None):
     if isinstance(name, dict):
         name = name.get("fullName", "")
     print("recipient: {} — {}".format(name, recipient.get("longAccountSummary", "")))
+    if args.first_payment:
+        actual_iban = (recipient.get("details") or {}).get("iban") if isinstance(recipient.get("details"), dict) else None
+        expected_iban = re.sub(r"\s+", "", args.expect_iban).upper()
+        normalized_iban = re.sub(r"\s+", "", str(actual_iban or "")).upper()
+        actual_name = recipient_name(recipient)
+        if (not normalized_iban or normalized_iban != expected_iban
+                or not normalized_name(actual_name)
+                or normalized_name(actual_name) != normalized_name(args.expect_name)):
+            raise SystemExit("refused: first-payment recipient identity mismatch; IBAN Wise={!r}, expected={!r}; name Wise={!r}, expected={!r}".format(
+                actual_iban, args.expect_iban, actual_name, args.expect_name))
     transfers = read_transfers(profile_id, token, args.recipient_id)
     completed = [r for r in transfers if r.get("status") == "outgoing_payment_sent"]
-    if not completed:
+    if args.first_payment and completed:
+        raise SystemExit("refused: recipient already has a completed transfer; use normal mode")
+    if not args.first_payment and not completed:
         raise SystemExit("refused: no completed transfer to this recipient")
     completed.sort(key=lambda r: str(r.get("created") or r.get("createdTime") or ""), reverse=True)
-    source_currency = args.source_currency or completed[0].get("sourceCurrency")
+    source_currency = args.source_currency if args.first_payment else args.source_currency or completed[0].get("sourceCurrency")
     if not source_currency:
         raise SystemExit("refused: source currency is unavailable")
     duplicate = next((r for r in transfers if any(ref.strip().casefold() == args.invoice.strip().casefold() for ref in reference_of(r))
@@ -300,7 +322,8 @@ def main(argv=None):
                   "preferredPayIn": "BALANCE"}
     body = transfer_body(args)
     body["quoteUuid"] = "<quote UUID>"
-    print("checks: BUSINESS profile; active recipient; completed recipient history; no duplicate invoice reference")
+    history_check = "no completed recipient history (first payment)" if args.first_payment else "completed recipient history"
+    print("checks: BUSINESS profile; active recipient; {}; identity matched; no duplicate invoice reference".format(history_check) if args.first_payment else "checks: BUSINESS profile; active recipient; {}; no duplicate invoice reference".format(history_check))
     print("planned date: {}; --yes requires today through today + 14 days; rate floats after 24–48 hours; unfunded transfers cancel after about 14 days".format(planned))
     print("quote request: {}".format(json.dumps(quote_body, sort_keys=True)))
     print("transfer request: {}".format(json.dumps(body, sort_keys=True)))

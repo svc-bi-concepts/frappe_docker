@@ -80,6 +80,7 @@ class WiseTest(unittest.TestCase):
                 "active": True,
                 "currency": "EUR",
                 "name": {"fullName": "Example Ltd"},
+                "details": {"iban": "ZZ00TEST0000000000001"},
                 "longAccountSummary": "••1234",
             }
         elif path.startswith("/2026Q4/transfers?"):
@@ -253,6 +254,9 @@ class WiseTest(unittest.TestCase):
             ["--detail", "sourceOfFunds=salary"],
             ["--source-currency", "CHF"],
             ["--attempt", "1"],
+            ["--first-payment"],
+            ["--expect-iban", "ZZ00TEST0000000000001"],
+            ["--expect-name", "Example Ltd"],
         ):
             with self.subTest(extra=extra), self.assertRaises(SystemExit):
                 wise.main(["--find-recipient", "Example"] + extra)
@@ -449,6 +453,145 @@ class WiseTest(unittest.TestCase):
                 self.responses[("GET", "/2026Q4/transfers")] = rows
                 self.refuse("no completed transfer")
                 self.assertFalse(self.writes())
+
+    def first_payment_args(self):
+        return self.args + [
+            "--first-payment",
+            "--expect-iban",
+            "zz00 test 0000 0000 0000 1",
+            "--expect-name",
+            "  example   LTD ",
+        ]
+
+    def test_first_payment_accepts_normalized_iban_and_name_without_history(self):
+        self.responses[("GET", "/2026Q4/transfers")] = []
+        output = self.run_main(self.first_payment_args())
+        self.assertIn("no completed recipient history (first payment)", output)
+        self.assertIn('"sourceCurrency": "CHF"', output)
+        self.assertFalse(self.writes())
+
+    def test_first_payment_identity_mismatches_and_missing_iban_refuse(self):
+        for values, message in (
+            ({"details": {"iban": "ZZ00TEST0000000000002"}}, "IBAN Wise"),
+            ({"name": {"fullName": "Different Ltd"}}, "name Wise"),
+            ({"details": {}}, "IBAN Wise=None"),
+        ):
+            with self.subTest(values=values):
+                self.change("GET", "accounts/42", **values)
+                self.refuse(message, self.first_payment_args())
+                self.assertFalse(self.writes())
+
+    def test_first_payment_requires_expectations_and_source_currency(self):
+        base = self.args + ["--first-payment"]
+        for extra, missing in (
+            (["--expect-name", "Example"], "--expect-iban"),
+            (["--expect-iban", "ZZ00TEST0000000000001"], "--expect-name"),
+        ):
+            with self.assertRaisesRegex(SystemExit, missing):
+                wise.main(base + extra)
+            self.assertFalse(self.calls)
+        no_source = list(self.args)
+        pos = no_source.index("--source-currency")
+        del no_source[pos : pos + 2]
+        with self.assertRaisesRegex(SystemExit, "--source-currency"):
+            wise.main(
+                no_source
+                + [
+                    "--first-payment",
+                    "--expect-iban",
+                    "ZZ00TEST0000000000001",
+                    "--expect-name",
+                    "Example Ltd",
+                ]
+            )
+        self.assertFalse(self.calls)
+
+    def test_first_payment_refuses_existing_completed_transfer(self):
+        self.refuse("already has a completed transfer", self.first_payment_args())
+        self.assertFalse(self.writes())
+
+    def test_identity_expectations_require_first_payment_without_requests(self):
+        for extra in (
+            ["--expect-iban", "ZZ00TEST0000000000001"],
+            ["--expect-name", "Example Ltd"],
+        ):
+            with self.subTest(extra=extra):
+                self.refuse("require --first-payment", self.args + extra)
+                self.assertFalse(self.calls)
+
+    def test_first_payment_preserves_date_window(self):
+        self.responses[("GET", "/2026Q4/transfers")] = []
+        for days, message in ((-1, "in the past"), (15, "more than 14 days")):
+            with self.subTest(days=days):
+                args = self.first_payment_args() + [
+                    "--planned-date",
+                    (datetime.date.today() + datetime.timedelta(days=days)).isoformat(),
+                ]
+                self.assertIn("dry run", self.run_main(args))
+                self.refuse(message, args + ["--yes"])
+                self.assertFalse(self.writes())
+
+    def test_first_payment_refuses_blank_iban_on_both_sides(self):
+        self.responses[("GET", "/2026Q4/transfers")] = []
+        self.change("GET", "accounts/42", details={"iban": "   "})
+        args = self.first_payment_args() + ["--expect-iban", " \t ", "--yes"]
+        self.refuse("IBAN Wise", args)
+        self.assertFalse(self.writes())
+
+    def test_first_payment_yes_creates_one_unfunded_transfer(self):
+        self.responses[("GET", "/2026Q4/transfers")] = []
+        output = self.run_main(self.first_payment_args() + ["--yes"])
+        self.assertIn("status: incoming_payment_waiting", output)
+        self.assertEqual(
+            self.writes(),
+            [
+                "/2026Q4/profiles/7/quotes",
+                "/2026Q4/transfer-requirements",
+                "/2026Q4/transfers",
+            ],
+        )
+        self.assertEqual(self.calls[-1][1], "/2026Q4/transfers/123456")
+
+    def test_first_payment_missing_name_or_account_details_refuse(self):
+        for values in (
+            {"name": None},
+            {"name": {}},
+            {"name": "  "},
+            {"details": None},
+            {"details": []},
+        ):
+            with self.subTest(values=values):
+                self.calls.clear()
+                self.change("GET", "accounts/42", **values)
+                self.refuse(
+                    "IBAN Wise=.*expected=.*name Wise=.*expected=",
+                    self.first_payment_args() + ["--yes"],
+                )
+                self.assertFalse(self.writes())
+
+    def test_first_payment_preserves_recipient_and_duplicate_safeguards(self):
+        for values in ({"profileId": 8}, {"active": False}, {"currency": "USD"}):
+            with self.subTest(values=values):
+                self.calls.clear()
+                self.change("GET", "accounts/42", **values)
+                self.refuse(
+                    "Benchi must add or change recipients",
+                    self.first_payment_args() + ["--yes"],
+                )
+                self.assertFalse(self.writes())
+        self.responses.clear()
+        self.responses[("GET", "/2026Q4/transfers")] = [
+            {
+                "targetAccount": 42,
+                "status": "incoming_payment_waiting",
+                "reference": "INV-TEST-1",
+            }
+        ]
+        self.refuse(
+            "invoice reference already has transfer",
+            self.first_payment_args() + ["--yes"],
+        )
+        self.assertFalse(self.writes())
 
     def test_duplicate_statuses_and_both_reference_locations(self):
         for status in (
