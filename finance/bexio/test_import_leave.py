@@ -1,9 +1,13 @@
 """Offline leave-import tests using invented Employee records only."""
 
+import contextlib
 import copy
+import http.client
+import io
 import json
 import os
 import unittest
+from unittest import mock
 
 import import_leave as il
 
@@ -519,6 +523,98 @@ class FixtureTest(unittest.TestCase):
         self.assertTrue(all(by_name[name]["read_only"] == 0 for name in names))
         with open(os.path.join(root, "hooks.py"), encoding="utf-8") as stream:
             self.assertIn('"like", "Employee-swiss_%"', stream.read())
+
+
+class FailureTest(unittest.TestCase):
+    """A failing run prints a status or a fixed line: no server text, path or record field."""
+
+    def run_main(self, **patches):
+        out, err = io.StringIO(), io.StringIO()
+        defaults = {
+            "load_payroll": mock.patch.object(
+                il, "load_payroll", return_value=([], [])
+            ),
+            "read_overrides": mock.patch.object(
+                il, "read_overrides", return_value=({}, [])
+            ),
+        }
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            with contextlib.ExitStack() as stack:
+                for name, patch in defaults.items():
+                    if name not in patches:
+                        stack.enter_context(patch)
+                for name, patch in patches.items():
+                    stack.enter_context(patch)
+                code = il.main([])
+        return code, out.getvalue(), err.getvalue()
+
+    def assert_none_of(self, texts, secret):
+        for text in texts:
+            self.assertNotIn(secret, text)
+            self.assertNotIn("Traceback", text)
+
+    def test_a_server_message_prints_the_status_only(self):
+        failure = il.ErpError(417, "GET /api/resource/Employee: Invented Person")
+        code, out, err = self.run_main(
+            from_file=mock.patch.object(il.Erp, "from_file", side_effect=failure)
+        )
+        self.assertEqual(code, 2)
+        self.assertIn("status 417", err)
+        self.assert_none_of((out, err), "Invented Person")
+
+    def test_a_server_message_from_a_list_call_prints_the_status_only(self):
+        erp = FakeErp()
+        failure = il.ErpError(500, "Invented Person")
+        with mock.patch.object(erp, "list", side_effect=failure):
+            code, out, err = self.run_main(
+                from_file=mock.patch.object(il.Erp, "from_file", return_value=erp)
+            )
+        self.assertEqual(code, 2)
+        self.assertIn("status 500", err)
+        self.assert_none_of((out, err), "Invented Person")
+
+    def test_a_malformed_status_line_prints_none_of_it(self):
+        failure = http.client.BadStatusLine("Invented Person")
+        code, out, err = self.run_main(
+            from_file=mock.patch.object(il.Erp, "from_file", side_effect=failure)
+        )
+        self.assertEqual(code, 2)
+        self.assert_none_of((out, err), "Invented Person")
+
+    def test_a_malformed_status_line_from_a_list_call_prints_none_of_it(self):
+        erp = FakeErp()
+        failure = http.client.BadStatusLine("Invented Person")
+        with mock.patch.object(erp, "list", side_effect=failure):
+            code, out, err = self.run_main(
+                from_file=mock.patch.object(il.Erp, "from_file", return_value=erp)
+            )
+        self.assertEqual(code, 2)
+        self.assert_none_of((out, err), "Invented Person")
+
+    def test_a_file_error_prints_no_path(self):
+        failure = FileNotFoundError(2, "No such file", "/invented/path/payroll")
+        code, out, err = self.run_main(
+            load_payroll=mock.patch.object(il, "load_payroll", side_effect=failure)
+        )
+        self.assertEqual(code, 2)
+        self.assert_none_of((out, err), "invented")
+
+    def test_malformed_overrides_print_the_line_numbers_and_no_path(self):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            with mock.patch.object(il, "load_payroll", return_value=([], [])):
+                with mock.patch.object(il.Erp, "from_file", return_value=FakeErp()):
+                    with mock.patch.object(
+                        il, "read_overrides", return_value=({}, [3, 7])
+                    ):
+                        with mock.patch.object(
+                            il, "OVERRIDES_FILE", "/invented/path/overrides.txt"
+                        ):
+                            code = il.main(["--apply"])
+        self.assertEqual(code, 2)
+        self.assertIn("2 malformed row(s)", err.getvalue())
+        self.assertIn("lines 3, 7", err.getvalue())
+        self.assert_none_of((out.getvalue(), err.getvalue()), "invented")
 
 
 if __name__ == "__main__":

@@ -425,10 +425,12 @@ decides which lines these are, so the module reuses `posting_plan.classify` and 
   finance/scripts/bexio-drafts.sh FILE submit
   python3 finance/bexio/import_payroll.py --check [--export DIR]
 
+`--dry-run` and `--write` print the line counts per year; the CHF per year goes to `<private>/bexio-payroll-totals.txt`.
+
 `--check` reads ERPNext after the loader run and writes nothing to it: the submitted entries keyed `journal-%`
-against the lines, the GL per account and year against bexio's lines, the posted ids to `<private>/bexio-payroll-ids.txt`
-(for the manual entries and bank bead, erp-fd93 and erp-7avs), and any missing or differing line to
-`<private>/bexio-payroll-live-differences.txt`.
+against the lines, the GL per account and year against bexio's lines to `<private>/bexio-payroll-live-totals.txt`, the
+posted ids to `<private>/bexio-payroll-ids.txt` (for the manual entries and bank bead, erp-fd93 and erp-7avs), and any
+missing or differing line to `<private>/bexio-payroll-live-differences.txt`. The screen keeps the counts.
 
 ## Paystub figures (pdftotext, host only)
 

@@ -17,6 +17,7 @@ Municipal holidays and administration closures are excluded.
 
 import argparse
 import datetime
+import http.client
 import json
 import os
 import stat
@@ -418,23 +419,22 @@ def main(argv):
     args = parser.parse_args(argv)
     if args.apply and args.dry_run:
         parser.error("--apply and --dry-run are mutually exclusive")
-    exports, _paystubs = load_payroll(os.path.join(PRIVATE, "bexio-payroll"))
-    erp = Erp.from_file(args.token_file)
-    dry_run = not args.apply
-    overrides, malformed = read_overrides(OVERRIDES_FILE)
-    if malformed and not dry_run:
-        # An apply with a row that did not parse would write the default for that employee.
-        print(
-            "aborted: {} malformed row(s) in {} (lines {}), nothing written".format(
-                len(malformed),
-                OVERRIDES_FILE,
-                ", ".join(str(number) for number in malformed),
-            ),
-            file=sys.stderr,
-        )
-        return 2
-    importer = LeaveImporter(erp, dry_run=dry_run)
     try:
+        exports, _paystubs = load_payroll(os.path.join(PRIVATE, "bexio-payroll"))
+        erp = Erp.from_file(args.token_file)
+        dry_run = not args.apply
+        overrides, malformed = read_overrides(OVERRIDES_FILE)
+        if malformed and not dry_run:
+            # An apply with a row that did not parse would write the default for that employee.
+            print(
+                "aborted: {} malformed row(s) in the overrides file (lines {}), nothing written".format(
+                    len(malformed),
+                    ", ".join(str(number) for number in malformed),
+                ),
+                file=sys.stderr,
+            )
+            return 2
+        importer = LeaveImporter(erp, dry_run=dry_run)
         all_employees = erp.list(
             "Employee",
             fields=[
@@ -470,7 +470,19 @@ def main(argv):
             importer.counts["unchanged"] += 1
         write_defaults(DEFAULTS_FILE, defaults)
     except ErpError as err:
-        print(f"aborted: {err}", file=sys.stderr)
+        # The server's message can carry employee data; the status says what to look at.
+        print(f"aborted: ERPNext request failed (status {err.status})", file=sys.stderr)
+        return 2
+    except (
+        ValueError,
+        OSError,
+        KeyError,
+        TypeError,
+        AttributeError,
+        http.client.HTTPException,
+    ):
+        # A file name, a path, a key or the server's status line in the message carries the same data.
+        print("aborted: unable to read or process the leave setup", file=sys.stderr)
         return 2
     for key, value in importer.counts.items():
         print(f"{key}: {value}")

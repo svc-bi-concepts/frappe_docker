@@ -41,6 +41,7 @@ import argparse
 import collections
 import csv
 import datetime
+import http.client
 import os
 import sys
 
@@ -433,11 +434,12 @@ def rate_report(plan, figures, settings, active):
                 "{} for {}".format(rate, ", ".join(ids))
                 for rate, ids in sorted(by_rate.items())
             )
+            # the rates per employee go to the problems file only: stderr gets the text
             plan.add(
                 None,
-                "",
+                detail,
                 f"rate {field}: the active employees' latest paystubs print {len(by_rate)} rates, "
-                f"not filled: {detail}",
+                "not filled",
             )
             continue
         rate = next(iter(by_rate))
@@ -655,37 +657,49 @@ def main(argv):
         parser.error("--dry-run and --apply are mutually exclusive")
     dry_run = not args.apply
 
-    employees, _paystubs = load_payroll(PAYROLL_DIR)
-    figures = read_figures()
-    erp = Erp.from_file(args.token_file)
     try:
+        employees, _paystubs = load_payroll(PAYROLL_DIR)
+        figures = read_figures()
+        erp = Erp.from_file(args.token_file)
         erp_employees = erp_employees_by_bexio_id(erp)
         structure = structure_name(erp)
         settings = erp.call("frappe.client.get", doctype=SETTINGS, name=SETTINGS)
         existing = existing_assignments(erp)
+        plan = build_plan(
+            employees,
+            figures,
+            erp_employees,
+            settings,
+            structure,
+            tariff_reader(erp),
+            existing,
+        )
+        active = {
+            bexio_id
+            for bexio_id, row in erp_employees.items()
+            if row["status"] == STATUS_ACTIVE
+        }
+        fills = rate_report(plan, figures, settings, active)
+        writer = Writer(erp, dry_run)
+        writer.run(plan, fills, erp_employees)
+        write_problems(PROBLEMS_TXT, plan)
+        write_calibration(CALIBRATION_TXT, plan)
+        report(plan, writer, fills, dry_run)
     except ErpError as err:
-        print(f"aborted: {err}", file=sys.stderr)
+        # The server's message can carry employee data; the status says what to look at.
+        print(f"aborted: ERPNext request failed (status {err.status})", file=sys.stderr)
         return 2
-    plan = build_plan(
-        employees,
-        figures,
-        erp_employees,
-        settings,
-        structure,
-        tariff_reader(erp),
-        existing,
-    )
-    active = {
-        bexio_id
-        for bexio_id, row in erp_employees.items()
-        if row["status"] == STATUS_ACTIVE
-    }
-    fills = rate_report(plan, figures, settings, active)
-    writer = Writer(erp, dry_run)
-    writer.run(plan, fills, erp_employees)
-    write_problems(PROBLEMS_TXT, plan)
-    write_calibration(CALIBRATION_TXT, plan)
-    report(plan, writer, fills, dry_run)
+    except (
+        ValueError,
+        OSError,
+        KeyError,
+        TypeError,
+        AttributeError,
+        http.client.HTTPException,
+    ):
+        # A file name, a path, a key or the server's status line in the message carries the same data.
+        print("aborted: unable to read or process the assignments", file=sys.stderr)
+        return 2
     for position, _name, text in plan.problems:
         print(f"  problem: {Plan.where(position)}: {text}", file=sys.stderr)
     for text in writer.failures:

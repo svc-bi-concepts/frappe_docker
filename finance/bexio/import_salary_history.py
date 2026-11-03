@@ -10,6 +10,7 @@ month; rerun --apply, then --check. Loads are rerun safe, create no GL, and
 
 import argparse
 import csv
+import http.client
 import os
 import sys
 from collections import Counter
@@ -388,8 +389,16 @@ def main(argv=None):
         if args.apply:
             failed = failed or any(r["outcome"] != LOADED for r in rows)
         return 1 if failed else 0
-    except (im.ErpError, ValueError, OSError, KeyError, TypeError):
-        # Server errors and local paths can contain employee identifiers or payroll figures.
+    except (
+        im.ErpError,
+        ValueError,
+        OSError,
+        KeyError,
+        TypeError,
+        AttributeError,
+        http.client.HTTPException,
+    ):
+        # Server errors, the server's status line and local paths can contain employee identifiers or payroll figures.
         print(
             "aborted: unable to read, validate or process salary history",
             file=sys.stderr,

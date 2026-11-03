@@ -2,6 +2,7 @@
 
 import contextlib
 import csv
+import http.client
 import io
 import os
 import tempfile
@@ -464,6 +465,19 @@ class SalaryHistoryTests(unittest.TestCase):
                 0
             ],
         )
+
+    def test_a_malformed_status_line_or_a_bad_shape_prints_none_of_it(self):
+        for failure in (
+            http.client.BadStatusLine("invented-private-detail"),
+            AttributeError("invented-private-detail"),
+        ):
+            for args in ([], ["--remove-month", "2026-10", "--apply"]):
+                erp = FakeErp()
+                with patch.object(erp, "list", side_effect=failure):
+                    result, output, errors, _ = self.run_command(erp, args=args)
+                self.assertEqual(2, result)
+                self.assertNotIn("invented-private-detail", output + errors)
+                self.assertNotIn("Traceback", output + errors)
 
     def test_report_redacts_unknown_csv_text_and_repairs_permissions(self):
         rows = records() + [{**records()[0], "wage_type": "invented-sensitive-text"}]

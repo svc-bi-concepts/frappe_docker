@@ -5,12 +5,16 @@ record of the real export (the privacy rule on the bead). Run with:
 python3 -m unittest discover -s finance/bexio -p 'test_*.py'
 """
 
+import contextlib
 import csv
 import datetime
+import http.client
+import io
 import os
 import stat
 import tempfile
 import unittest
+from unittest import mock
 
 import import_assignments as ia
 from import_master import ErpError
@@ -536,10 +540,13 @@ class TestRates(Base):
             plan, figs, settings(swiss_nbu_ee=None), {"test-emp-1", "test-emp-2"}
         )
         self.assertNotIn("swiss_nbu_ee", fills)
-        self.assertProblem(
-            plan,
-            "rate swiss_nbu_ee: the active employees' latest paystubs print 2 rates, not filled: "
-            "0.5 for test-emp-1; 0.8 for test-emp-2",
+        self.assertIn(
+            (
+                None,
+                "0.5 for test-emp-1; 0.8 for test-emp-2",
+                "rate swiss_nbu_ee: the active employees' latest paystubs print 2 rates, not filled",
+            ),
+            plan.problems,
         )
 
     def test_a_left_employee_does_not_decide_the_nbu_rate(self):
@@ -678,6 +685,128 @@ class TestPrivacy(unittest.TestCase):
     def test_stderr_names_the_position_only(self):
         self.assertEqual(ia.Plan.where(3), "record 3")
         self.assertEqual(ia.Plan.where(None), "settings")
+
+
+class TestFailure(unittest.TestCase):
+    """A failing run prints a status or a fixed line: no server text, path or record field."""
+
+    def run_main(self, **patches):
+        out, err = io.StringIO(), io.StringIO()
+        defaults = {
+            "load_payroll": mock.patch.object(
+                ia, "load_payroll", return_value=({}, [])
+            ),
+            "read_figures": mock.patch.object(ia, "read_figures", return_value={}),
+            "from_file": mock.patch.object(ia.Erp, "from_file", return_value=object()),
+        }
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            with contextlib.ExitStack() as stack:
+                for name, patch in defaults.items():
+                    if name not in patches:
+                        stack.enter_context(patch)
+                for patch in patches.values():
+                    stack.enter_context(patch)
+                code = ia.main([])
+        return code, out.getvalue(), err.getvalue()
+
+    def assert_none_of(self, texts, secret):
+        for text in texts:
+            self.assertNotIn(secret, text)
+            self.assertNotIn("Traceback", text)
+
+    def test_a_server_message_prints_the_status_only(self):
+        failure = ErpError(417, "GET /api/resource/Employee: Invented Person")
+        code, out, err = self.run_main(
+            from_file=mock.patch.object(ia.Erp, "from_file", side_effect=failure)
+        )
+        self.assertEqual(code, 2)
+        self.assertIn("status 417", err)
+        self.assert_none_of((out, err), "Invented Person")
+
+    def test_a_server_message_from_a_list_call_prints_the_status_only(self):
+        failure = ErpError(500, "Invented Person")
+        code, out, err = self.run_main(
+            employees=mock.patch.object(
+                ia, "erp_employees_by_bexio_id", side_effect=failure
+            )
+        )
+        self.assertEqual(code, 2)
+        self.assertIn("status 500", err)
+        self.assert_none_of((out, err), "Invented Person")
+
+    def test_a_malformed_status_line_prints_none_of_it(self):
+        failure = http.client.BadStatusLine("Invented Person")
+        code, out, err = self.run_main(
+            from_file=mock.patch.object(ia.Erp, "from_file", side_effect=failure)
+        )
+        self.assertEqual(code, 2)
+        self.assert_none_of((out, err), "Invented Person")
+
+    def test_a_malformed_status_line_from_a_list_call_prints_none_of_it(self):
+        failure = http.client.BadStatusLine("Invented Person")
+        code, out, err = self.run_main(
+            employees=mock.patch.object(
+                ia, "erp_employees_by_bexio_id", side_effect=failure
+            )
+        )
+        self.assertEqual(code, 2)
+        self.assert_none_of((out, err), "Invented Person")
+
+    def test_a_file_error_prints_no_path(self):
+        failure = FileNotFoundError(2, "No such file", "/invented/path/figures.csv")
+        code, out, err = self.run_main(
+            read_figures=mock.patch.object(ia, "read_figures", side_effect=failure)
+        )
+        self.assertEqual(code, 2)
+        self.assert_none_of((out, err), "invented")
+
+    def after_the_reads(self, **patches):
+        """main with the reads of the try passing, so that what fails is what comes after them."""
+        return self.run_main(
+            from_file=mock.patch.object(ia.Erp, "from_file", return_value=mock.Mock()),
+            employees=mock.patch.object(
+                ia, "erp_employees_by_bexio_id", return_value={}
+            ),
+            structure=mock.patch.object(ia, "structure_name", return_value="s"),
+            existing=mock.patch.object(ia, "existing_assignments", return_value={}),
+            rate_report=mock.patch.object(ia, "rate_report", return_value={}),
+            **patches,
+        )
+
+    def test_a_failure_after_the_reads_prints_none_of_it(self):
+        # build_plan reads the QST tariffs, the writer writes, and the private files come last
+        server = http.client.BadStatusLine("Invented Person")
+        denied = PermissionError(13, "Denied", "/invented/path/problems.txt")
+        for name, failure, line in (
+            ("build_plan", ErpError(502, "Invented Person"), "status 502"),
+            ("build_plan", server, "unable to read or process"),
+            ("Writer", server, "unable to read or process"),
+            ("write_problems", denied, "unable to read or process"),
+        ):
+            with self.subTest(name=name, failure=type(failure).__name__):
+                patches = {
+                    "build_plan": mock.patch.object(
+                        ia, "build_plan", return_value=ia.Plan()
+                    ),
+                    name: mock.patch.object(ia, name, side_effect=failure),
+                }
+                code, out, err = self.after_the_reads(**patches)
+                self.assertEqual(code, 2)
+                self.assertIn(line, err)
+                self.assert_none_of((out, err), "Invented Person")
+                self.assert_none_of((out, err), "invented")
+
+    def test_a_rate_per_employee_stays_off_the_screen(self):
+        plan = ia.Plan()
+        plan.add(None, "0.5 for 8001", "rate swiss_nbu_ee: 2 rates, not filled")
+        code, out, err = self.after_the_reads(
+            build_plan=mock.patch.object(ia, "build_plan", return_value=plan),
+            problems=mock.patch.object(ia, "write_problems"),
+            calibration=mock.patch.object(ia, "write_calibration"),
+        )
+        self.assertEqual(code, 0)
+        self.assertIn("rate swiss_nbu_ee", err)
+        self.assertNotIn("8001", out + err)
 
 
 if __name__ == "__main__":
