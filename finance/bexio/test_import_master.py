@@ -5,6 +5,8 @@ Run with: python3 -m unittest discover -s finance/bexio -p 'test_*.py'
 
 import copy
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -869,6 +871,36 @@ class TakenBexioIdsTest(unittest.TestCase):
 
 class TokenFileTest(unittest.TestCase):
     """Each runnable consumer passes the selected key path to the ERP client."""
+
+    def token_file_in(self, env):
+        code = "import import_master as im; print(im.TOKEN_FILE)"
+        proc = subprocess.run(
+            [sys.executable, "-c", code],
+            cwd=os.path.dirname(os.path.abspath(__file__)),
+            env=dict({"PATH": os.environ["PATH"]}, **env),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        return proc.stdout.strip()
+
+    def test_the_default_is_the_agent_key(self):
+        self.assertEqual(
+            self.token_file_in({}), "/Users/bsaladin/ws_yardr_finance/.erpnext-api"
+        )
+
+    def test_an_empty_variable_is_the_default_too(self):
+        self.assertEqual(
+            self.token_file_in({"ERPNEXT_TOKEN_FILE": ""}),
+            "/Users/bsaladin/ws_yardr_finance/.erpnext-api",
+        )
+
+    def test_the_variable_wins(self):
+        self.assertEqual(
+            self.token_file_in({"ERPNEXT_TOKEN_FILE": "/x/.erpnext-api-sync"}),
+            "/x/.erpnext-api-sync",
+        )
 
     def test_delta_counts_uses_selected_key_path(self):
         import delta_counts
