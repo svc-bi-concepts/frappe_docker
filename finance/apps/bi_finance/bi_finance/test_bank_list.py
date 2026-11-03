@@ -3,8 +3,8 @@ and the Treasury shortcuts to the Desk pages. Invented data only (made-up accoun
 database, no network. The module imports frappe, so run it in the image (finance/docs/erpnext-setup.md):
 
     docker run --rm -v "$PWD/finance/apps/bi_finance:/home/frappe/frappe-bench/apps/bi_finance:ro" \
-        frappe-finance-custom:v16.50.0-swiss-bi9 \
-        sh -c 'cd /home/frappe/frappe-bench/apps/bi_finance && ../../env/bin/python -m unittest -v bi_finance.test_bank_list'
+        "$(sh finance/scripts/gate-image.sh)" \
+        sh -c 'mkdir -p /home/frappe/logs /home/frappe/frappe-bench/apps/logs && cd /home/frappe/frappe-bench/apps/bi_finance && ../../env/bin/python -m unittest -v bi_finance.test_bank_list'
 """
 
 import json

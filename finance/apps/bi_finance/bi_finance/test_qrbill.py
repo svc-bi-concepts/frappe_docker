@@ -5,7 +5,7 @@ The module imports frappe, so run it in the image, where pyqrcode, pypng and cv2
 are installed (finance/scripts/build-image.sh builds it):
 
     docker run --rm -v "$PWD/finance/apps/bi_finance:/home/frappe/frappe-bench/apps/bi_finance:ro" \
-        frappe-finance-custom:v16.50.0-swiss-bi3 \
+        "$(sh finance/scripts/gate-image.sh)" \
         sh -c 'cd /home/frappe/frappe-bench/apps/bi_finance && ../../env/bin/python -m unittest -v bi_finance.test_qrbill'
 """
 

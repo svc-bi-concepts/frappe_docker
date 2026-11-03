@@ -87,7 +87,7 @@ Offline, invented data, in the image (no site, no database):
 
 ```sh
 docker run --rm -v "$PWD/finance/apps/bi_finance:/home/frappe/frappe-bench/apps/bi_finance:ro" \
-    frappe-finance-custom:v16.50.0-swiss-bi9 \
+    "$(sh finance/scripts/gate-image.sh)" \
     sh -c 'mkdir -p /home/frappe/logs && cd /home/frappe/frappe-bench/apps/bi_finance && ../../env/bin/python -m unittest -v bi_finance.test_payment_run'
 ```
 

@@ -5,8 +5,8 @@ run (see finance/docs/erpnext-setup.md). The client's own tests (HTTP, amounts, 
 test_wise_client.py:
 
     docker run --rm -v "$PWD/finance/apps/bi_finance:/home/frappe/frappe-bench/apps/bi_finance:ro" \
-        frappe-finance-custom:v16.50.0-swiss-bi11 \
-        sh -c 'cd /home/frappe/frappe-bench/apps/bi_finance && ../../env/bin/python -m unittest -v bi_finance.test_wise'
+        "$(sh finance/scripts/gate-image.sh)" \
+        sh -c 'mkdir -p /home/frappe/logs /home/frappe/frappe-bench/apps/logs && cd /home/frappe/frappe-bench/apps/bi_finance && ../../env/bin/python -m unittest -v bi_finance.test_wise'
 """
 
 import collections
