@@ -504,16 +504,20 @@ finance/scripts/switch-image.sh <new-tag>
 
 It reads the previous tag from `finance-local.yml`, sets the new one on all eight
 services there and in `finance-coolify.yml`, brings the stack up, restarts `frontend` and `websocket`, and waits for
-ping 200. On 200 it removes the image the stack ran before, and the new image's
-`-base` layer. If ping does not answer, it sets both files back to the
+ping 200. On 200 it removes the image the stack ran before and its `-base` layer,
+and the new image's `-base` and `-finance` layers. If ping does not answer, it sets both files back to the
 previous tag, brings the stack up on it and keeps the old image; the new image
 stays, and a person removes it.
 
 **One image at rest:** only one `frappe-finance-custom` image is kept, the one the
-stack runs. A build leaves two tags (`<tag>-base` and `<tag>`) until a switch
-removes the base. A switch-free build (a copy for a test, say) is removed by hand
-once it is no longer needed: `docker rmi frappe-finance-custom:<tag>` and
-`frappe-finance-custom:<tag>-base`.
+stack runs. A build leaves three tags (`<tag>-base`, `<tag>-finance` and `<tag>`)
+until a switch removes the two layers. A switch-free build (a copy for a test, say)
+is removed by hand once it is no longer needed: `docker rmi` on all three tags, by
+tag (`frappe-finance-custom:<tag>`, `frappe-finance-custom:<tag>-base` and
+`frappe-finance-custom:<tag>-finance`). A switch does not take the previous image's
+`-finance` tag, which a build by hand can leave, so check that
+`docker images frappe-finance-custom` shows one line; the gate's fallback to the
+image at rest needs exactly one.
 
 A change to `bi_finance` needs the full build (`build-image.sh`, a new tag). There is no
 one-layer shortcut: IT's capped builder cannot read the local image store, so a layer
