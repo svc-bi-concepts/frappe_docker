@@ -9,11 +9,16 @@ single or child doctype), and the check adds Employee, Deleted Document and Vers
 File on Salary Slip and on Employee, where the paystub PDFs are. The key under test then asks each
 for ONE row, field name only.
 
-One line per doctype: refused (HTTP 403, Frappe's answer to a list without read), visible (a
-row came back) or empty (allowed to list, no row there); the File lines say which filter ran. Then
-a total. No row and no name is ever printed, and neither is a key.
+Then the two payroll reports that were open to the key roles (keyaccess in swiss-setup.py closes them
+with a Custom Role): each is asked through frappe.desk.query_report.get_script, which passes the same gate
+as the report (Report.is_permitted, then read on its doctype) and returns no report data. The report itself
+is never run, and the script that comes back is dropped on the spot.
 
-Exit 0 only when every line is refused, the File lines alone may also be empty: File is filtered
+One line per doctype: refused (HTTP 403, Frappe's answer to a list without read), visible (a
+row came back) or empty (allowed to list, no row there); the File lines say which filter ran. One
+line per report, starting "report": refused (403) or visible (an answer came back). Then a total. No row and no name is ever printed, and neither is a key.
+
+Exit 0 only when every line is refused (reports included), the File lines alone may also be empty: File is filtered
 row by row, so anyone may list it. Exit 1 otherwise: empty on another line means the key may list
 that doctype, and the rows come later. Exit 2 when the check could not finish (a call failed for
 another reason, a key file is unreadable, or a module that holds doctypes listed none, which would
@@ -49,6 +54,9 @@ EXTRA = [
     ("File", [["attached_to_doctype", "=", "Salary Slip"]]),
     ("File", [["attached_to_doctype", "=", "Employee"]]),
 ]
+# Reports that read payroll and are asked besides the doctypes: Cash Flow Forecast (net pay per run, raw SQL)
+# and Project Profitability (gross pay per slip).
+REPORTS = ["Cash Flow Forecast", "Project Profitability"]
 
 
 def targets(lister):
@@ -75,20 +83,36 @@ def probe(erp, doctype, filters):
     return "visible" if rows else "empty"
 
 
+def probe_report(erp, report):
+    """refused or visible for one report; get_script never runs it and its answer is dropped on the spot."""
+    try:
+        erp.call("frappe.desk.query_report.get_script", report_name=report)
+    except im.ErpError as err:
+        if err.status == 403:
+            return "refused"
+        raise
+    return "visible"
+
+
 def label(doctype, filters):
     """The doctype, and the filter when one ran, so the two File lines can be told apart."""
     return " ".join([doctype] + [f"({f} {op} {v})" for f, op, v in filters])
 
 
 def check(lister, erp, out):
-    results = [
-        (doctype, filters, probe(erp, doctype, filters))
-        for doctype, filters in targets(lister)
-    ]
-    for doctype, filters, verdict in results:
-        print(f"{verdict:8} {label(doctype, filters)}", file=out)
+    # (line, verdict, whether empty passes): only the File lines may be empty
+    results = []
+    for doctype, filters in targets(lister):
+        verdict = probe(erp, doctype, filters)
+        line = f"{verdict:8} {label(doctype, filters)}"
+        results.append((line, verdict, doctype == "File"))
+    for name in REPORTS:
+        verdict = probe_report(erp, name)
+        results.append((f"report   {verdict:8} {name}", verdict, False))
+    for line, _verdict, _ok_empty in results:
+        print(line, file=out)
     counts = {
-        v: sum(1 for _d, _f, r in results if r == v)
+        v: sum(1 for _l, r, _e in results if r == v)
         for v in ("visible", "refused", "empty")
     }
     print(
@@ -97,10 +121,7 @@ def check(lister, erp, out):
         ),
         file=out,
     )
-    passed = all(
-        r == "refused" or (r == "empty" and doctype == "File")
-        for doctype, _f, r in results
-    )
+    passed = all(r == "refused" or (r == "empty" and ok) for _l, r, ok in results)
     return 0 if passed else 1
 
 

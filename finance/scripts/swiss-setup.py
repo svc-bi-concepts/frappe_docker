@@ -1,6 +1,6 @@
 """Swiss setup of company BI Concepts, run inside the backend container by
 swiss-setup.sh. Steps are named on the command line (coa, accounts, vat, fiscal,
-fields, currencies, banks, gebuev, qrbill, payslip, host, payments, hr, payroll_accounts, lohnausweis,
+fields, currencies, banks, gebuev, keyaccess, qrbill, payslip, host, payments, hr, payroll_accounts, lohnausweis,
 expenses); each one is re-runnable and skips what
 already exists. `freeze <date> [--apply]` is a separate command: it closes the
 books up to a date and is a dry run unless --apply is given."""
@@ -1578,6 +1578,163 @@ def payroll_accounts():
     say(f"payroll_accounts: default payroll payable set to {PAYROLL_PAYABLE_ACCOUNT}")
 
 
+# What the API keys may reach (erp-qg70, keys split 1b). The sync key's roles, the longer of the two
+# lists in create-api-user.sh (test_swiss_setup compares the two): the MCP key's roles are a subset.
+KEY_ROLES = [
+    "Accounts User",
+    "Sales User",
+    "Purchase User",
+    "Stock User",
+    "Sales Master Manager",
+    "Purchase Master Manager",
+    "Item Manager",
+]
+# Payroll reports the key roles opened: Cash Flow Forecast reads net pay per run, Project Profitability
+# gross pay per slip. The key check (api_key_check.py) asks the same two.
+KEY_REPORTS = ["Cash Flow Forecast", "Project Profitability"]
+LEAVE_LEDGER = "Leave Ledger Entry"
+# The roles that keep a level 0 row on the leave ledger once All is gone.
+LEAVE_LEDGER_ROLES = ["HR Manager", "HR User", "System Manager"]
+
+
+def employee_rows_to_remove(perms, key_roles):
+    """perms: (role, permlevel, read, select, if_owner) rows of Employee. Returns the
+    (role, if_owner) pairs of the key roles' level 0 rows that hold select and no read.
+    A key role with read at level 0 stops: that is a grant this step does not own."""
+    stops = sorted(
+        {
+            r
+            for r, level, read, _s, _o in perms
+            if level == 0 and read and r in key_roles
+        }
+    )
+    if stops:
+        raise SystemExit("keyaccess: Employee: read at level 0 for " + ", ".join(stops))
+    return [
+        (role, if_owner)
+        for role, level, read, select, if_owner in perms
+        if level == 0 and select and not read and role in key_roles
+    ]
+
+
+def report_roles(report, has_role, key_roles):
+    """has_role: the roles of the report's Has Role rows. Returns them without the key roles, in order.
+    Empty is a stop: a report with no roles is open to everyone."""
+    wanted = []
+    for role in has_role:
+        if role not in key_roles and role not in wanted:
+            wanted.append(role)
+    if not wanted:
+        raise SystemExit(f"keyaccess: no role is left for {report}")
+    return wanted
+
+
+def leave_ledger_all_row(perms):
+    """perms: (role, permlevel, if_owner) rows. True when All still holds the level 0
+    if_owner row, the one that lets any user create, write and delete its own entries.
+    """
+    return any(r == "All" and level == 0 and o for r, level, o in perms)
+
+
+def leave_ledger_mismatch(perms):
+    """The roles with a level 0 row on the leave ledger that are not exactly LEAVE_LEDGER_ROLES."""
+    roles = {r for r, level, *_ in perms if level == 0}
+    return sorted(roles ^ set(LEAVE_LEDGER_ROLES))
+
+
+def keyaccess():
+    from frappe.core.page.permission_manager.permission_manager import remove
+
+    def rows(dt, *fields):
+        frappe.clear_cache(doctype=dt)
+        return [
+            tuple(p.get(f) or 0 for f in fields)
+            for p in frappe.get_meta(dt).permissions
+        ]
+
+    def employee():
+        return rows("Employee", "role", "permlevel", "read", "select", "if_owner")
+
+    def leave_ledger():
+        return rows(LEAVE_LEDGER, "role", "permlevel", "if_owner")
+
+    def custom_role(report):
+        return frappe.db.get_value("Custom Role", {"report": report}, "name")
+
+    # Everything that can stop is read before the first write.
+    employee_drop = employee_rows_to_remove(employee(), KEY_ROLES)
+    wanted = {}
+    for report in KEY_REPORTS:
+        if not frappe.db.exists("Report", report):
+            raise SystemExit(f"keyaccess: no report {report}")
+        has_role = frappe.get_all(
+            "Has Role",
+            {"parent": report, "parenttype": "Report"},
+            pluck="role",
+            order_by="idx",
+        )
+        wanted[report] = report_roles(report, has_role, KEY_ROLES)
+
+    changed = False
+    for role, if_owner in employee_drop:
+        remove("Employee", role, 0, if_owner)
+        say(f"keyaccess: Employee: level 0 row of {role} removed")
+        changed = True
+    if leave_ledger_all_row(leave_ledger()):
+        remove(LEAVE_LEDGER, "All", 0, 1)
+        say(f"keyaccess: {LEAVE_LEDGER}: level 0 row of All removed")
+        changed = True
+    for report, roles in wanted.items():
+        name = custom_role(report)
+        doc = (
+            frappe.get_doc("Custom Role", name)
+            if name
+            else frappe.new_doc("Custom Role")
+        )
+        if name and sorted(d.role for d in doc.roles) == sorted(roles):
+            continue
+        doc.report = report
+        doc.set("roles", [{"role": r} for r in roles])
+        doc.save() if name else doc.insert()
+        say(f"keyaccess: {report}: roles set to {', '.join(roles)}")
+        changed = True
+
+    # Read back, from the database, not from what this run meant to write.
+    frappe.clear_cache()
+    problems = []
+    left = [r for r, _o in employee_rows_to_remove(employee(), KEY_ROLES)]
+    if left:
+        problems.append(
+            "Employee still has a select row for " + ", ".join(sorted(left))
+        )
+    if leave_ledger_mismatch(leave_ledger()):
+        problems.append(
+            f"{LEAVE_LEDGER} level 0 differs in "
+            + ", ".join(leave_ledger_mismatch(leave_ledger()))
+        )
+    for report, roles in wanted.items():
+        name = custom_role(report)
+        have = (
+            sorted(d.role for d in frappe.get_doc("Custom Role", name).roles)
+            if name
+            else []
+        )
+        if have != sorted(roles):
+            problems.append(f"{report} roles differ")
+    if problems:
+        raise SystemExit("keyaccess: read-back failed: " + "; ".join(problems))
+    frappe.clear_cache()
+    frappe.db.commit()
+    say(
+        "keyaccess: "
+        + ("done" if changed else "nothing to change")
+        + ": Employee, "
+        + LEAVE_LEDGER
+        + ", "
+        + ", ".join(KEY_REPORTS)
+    )
+
+
 STEPS = {
     "coa": coa,
     "accounts": accounts,
@@ -1587,6 +1744,7 @@ STEPS = {
     "currencies": currencies,
     "banks": banks,
     "gebuev": gebuev,
+    "keyaccess": keyaccess,
     "qrbill": qrbill,
     "payslip": payslip,
     "host": host,

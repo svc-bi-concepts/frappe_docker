@@ -16,10 +16,13 @@ Why this one:
   URL it is given. No bench or shell access, no telemetry, no other hosts.
 - Authenticates with the API key and secret of `api-mcp@finance.local`, the
   dedicated user from `finance/scripts/create-api-user.sh --user mcp`. It holds
-  Accounts, Sales, Purchase and Stock User and no payroll role (no HR User, no
-  System Manager): everything a session reads goes to the model provider, so
-  payroll must stay out of its reach. The importers keep `api-agent`, the hourly
-  sync uses `api-sync`; the three key files are listed in `README-finance.md`.
+  exactly Accounts, Sales, Purchase and Stock User: no HR User or HR Manager,
+  no System Manager, no AI Approver (the script refuses them). Everything a
+  session reads goes to the model provider, so payroll, HR and Employee data
+  must stay out of its reach, see "What the keys reach" below. The importers
+  keep `api-agent`, the hourly sync uses `api-sync` (the same four roles plus
+  Sales and Purchase Master Manager and Item Manager); the three key files are
+  listed in `README-finance.md`.
 - Generic CRUD and a method call, so it needs no code in the ERPNext site.
 
 ## Evaluation
@@ -187,7 +190,53 @@ Results:
   `api-mcp@finance.local` once its key file exists).
 
 The server's `frappe_run_method` and `frappe_get_doc` reach the same data the
-API user may see; the write tools were not exercised.
+MCP user may see; the write tools were not exercised.
+
+## What the keys reach
+
+The MCP key and the sync key must read no payroll, HR or Employee data. Their
+roles are the first half of that; the rest is what those roles open in the site.
+
+Closed by `sh finance/scripts/swiss-setup.sh keyaccess` (re-runnable; it says
+"nothing to change" on a second run, reads back at the end and stops on a
+mismatch, printing role and report names only):
+
+- Employee: the level 0 rows that give a key role `select` and no `read`
+  (Accounts User, Sales Master Manager) are removed. Frappe lets a select-only
+  user list a doctype and read its search field, here the employee's name. A key
+  role with `read` on Employee stops the step. Accounts Manager and the HR roles
+  keep their rows.
+- Leave Ledger Entry: the row of role All (permlevel 0, only if creator) is
+  removed. It carried create, write, submit and delete as well, and nothing in
+  hrms goes through it: ledger rows are written with `ignore_permissions` and
+  read by query. System Manager, HR Manager and HR User stay.
+- The reports Cash Flow Forecast (net pay per run) and Project Profitability
+  (gross pay per slip) get a Custom Role without the key roles. A report with no
+  roles is open to everyone, so an empty result stops the step.
+
+What `finance/bexio/api_key_check.py` asks of a key: one row from every doctype of
+the hrms and BI Payroll modules, from Employee, Deleted Document and Version, from
+File on Salary Slip and on Employee, and for the two reports above whether
+`frappe.desk.query_report.get_script` answers. That call passes the same gate as
+the report and returns no report data, so the check never runs a report. Exit 0
+means every line was refused (File may be empty).
+
+Sweep of whitelisted methods (erp-qg70, read from source at the image's pins): every
+`@frappe.whitelist` function of hrms (221) and bi_payroll (4), and in erpnext and
+erpnextswiss the ones that name Salary Slip, net pay, gross pay, Employee or Payroll in their
+body (16). Document methods are guarded by Frappe's read check on the document;
+functions that answer for the session user only, or check permission first, are fine.
+The sweep found functions that answer a caller holding only the key roles. They are
+open until fixed and are listed in the notes of erp-qg70, not here.
+
+What the proof does not cover:
+
+- Salary traces in the ledger (GL Entry, Journal Entry, Payment Entry, Bank
+  Transaction): Benchi decides through yard-xsab.
+- Eight more reports show employee names through Timesheet or party rows. Live has
+  no Timesheet and no Employee party posting; if that changes, they are read again.
+- Dashboards, number cards and other generic frappe endpoints were not swept.
+  The check shows what it asks, no more.
 
 ## Not covered
 
