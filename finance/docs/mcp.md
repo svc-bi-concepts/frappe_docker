@@ -230,10 +230,13 @@ mismatch, printing role and report names only):
 
 What `finance/bexio/api_key_check.py` asks of a key: one row from every doctype of
 the hrms and BI Payroll modules, from Employee, Deleted Document and Version, from
-File on Salary Slip and on Employee, and for the five reports above whether
-`frappe.desk.query_report.get_script` answers. That call passes the same gate as
-the report and returns no report data, so the check never runs a report. Exit 0
-means every line was refused (File may be empty).
+File on Salary Slip and on Employee, for the five reports above whether
+`frappe.desk.query_report.get_script` answers, and employee and amount from
+Payment Proposal Salary Slip and Payment Proposal Expense listed directly with
+parent=Payment Proposal. The report call passes the same gate as the report and
+returns no report data, so the check never runs a report. Exit 0 means every line
+was refused (the File and child lines may be empty: File is filtered row by row,
+and without a proposal there is no child row to show).
 
 Sweep of whitelisted methods (erp-qg70, read from source at the image's pins): every
 `@frappe.whitelist` function of hrms (221) and bi_payroll (4), and in erpnext and

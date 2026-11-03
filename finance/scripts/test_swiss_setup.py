@@ -3,7 +3,6 @@
 Run with: python3 -m unittest discover -s finance/scripts -p 'test_*.py'
 """
 
-import ast
 import importlib.util
 import os
 import pathlib
@@ -31,6 +30,13 @@ sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(_path), "..", "apps", "bi_payroll"))
 )
 from bi_payroll.test_payroll_accounts import BEXIO_ADDED  # noqa: E402
+
+# api_key_check.py (the proof of the keys split) asks the reports keyaccess closes and watches the key roles for a
+# level 1 row: both lists must be the ones here. Its directory goes on the path so the comparison tests import them.
+sys.path.insert(
+    0, os.path.abspath(os.path.join(os.path.dirname(_path), "..", "bexio"))
+)
+import api_key_check  # noqa: E402
 
 
 class SwissSetupProjectTest(unittest.TestCase):
@@ -262,14 +268,7 @@ class KeyRolesTest(unittest.TestCase):
         )
 
     def test_the_key_check_holds_the_same_key_roles(self):
-        check = pathlib.Path(_path).parents[1] / "bexio" / "api_key_check.py"
-        node = next(
-            n.value
-            for n in ast.parse(check.read_text()).body
-            if isinstance(n, ast.Assign)
-            and any(getattr(t, "id", "") == "KEY_ROLES" for t in n.targets)
-        )
-        self.assertEqual(swiss_setup.KEY_ROLES, ast.literal_eval(node))
+        self.assertEqual(swiss_setup.KEY_ROLES, api_key_check.KEY_ROLES)
 
     def test_the_mcp_roles_are_a_subset_of_the_key_roles(self):
         script = (pathlib.Path(_path).parent / "create-api-user.sh").read_text()
@@ -278,15 +277,7 @@ class KeyRolesTest(unittest.TestCase):
         self.assertTrue(set(mcp) <= set(swiss_setup.KEY_ROLES))
 
     def test_the_key_check_asks_the_reports_keyaccess_closes(self):
-        check = pathlib.Path(_path).parents[1] / "bexio" / "api_key_check.py"
-        # Read the assignment, not a source line: the formatter spreads the list over several.
-        node = next(
-            n.value
-            for n in ast.parse(check.read_text()).body
-            if isinstance(n, ast.Assign)
-            and any(getattr(t, "id", "") == "REPORTS" for t in n.targets)
-        )
-        self.assertEqual(swiss_setup.KEY_REPORTS, ast.literal_eval(node))
+        self.assertEqual(swiss_setup.KEY_REPORTS, api_key_check.REPORTS)
 
     def test_keyaccess_is_a_step_and_named_in_the_usage_line(self):
         self.assertIn("keyaccess", swiss_setup.STEPS)
@@ -434,13 +425,23 @@ class ProposalHelpersTest(unittest.TestCase):
         perms = [("Accounts Manager", 1, 1, 1, 0), ("System Manager", 1, 1, 1, 0)]
         self.assertEqual(swiss_setup.proposal_rows_to_add(perms), [])
 
+    def level0(self, *extra):
+        return [(r, 0, 1, 1, 0) for r in swiss_setup.PROPOSAL_ROLES] + list(extra)
+
     def test_a_key_role_at_level_1_stops_and_level_0_does_not(self):
         swiss_setup.proposal_stops(
-            [("Accounts User", 0, 1, 1, 0)], swiss_setup.KEY_ROLES
+            self.level0(("Accounts User", 0, 1, 1, 0)), swiss_setup.KEY_ROLES
         )
         with self.assertRaisesRegex(SystemExit, "Item Manager"):
             swiss_setup.proposal_stops(
-                [("Item Manager", 1, 1, 0, 0)], swiss_setup.KEY_ROLES
+                self.level0(("Item Manager", 1, 1, 0, 0)), swiss_setup.KEY_ROLES
+            )
+
+    def test_a_manager_role_without_a_level_0_row_stops(self):
+        with self.assertRaisesRegex(SystemExit, "no level 0 row for System Manager"):
+            swiss_setup.proposal_stops(
+                [("Accounts Manager", 0, 1, 1, 0), ("System Manager", 1, 1, 1, 0)],
+                swiss_setup.KEY_ROLES,
             )
 
     def test_users_stop_names_the_count_and_no_user(self):
@@ -642,6 +643,13 @@ class KeyaccessTest(unittest.TestCase):
         site = FakeKeySite()
         site.perms[swiss_setup.PROPOSAL].append(("Stock User", 1, 1, 0, 0))
         with self.assertRaisesRegex(SystemExit, "Stock User"):
+            site.run()
+        self.assertEqual((site.removed, site.setters, site.custom), ([], [], {}))
+
+    def test_a_manager_role_without_a_level_0_row_stops_before_any_change(self):
+        site = FakeKeySite()
+        site.perms[swiss_setup.PROPOSAL].remove(("System Manager", 0, 1, 1, 0))
+        with self.assertRaisesRegex(SystemExit, "System Manager"):
             site.run()
         self.assertEqual((site.removed, site.setters, site.custom), ([], [], {}))
 
