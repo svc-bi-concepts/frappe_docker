@@ -263,6 +263,16 @@ ledgerdemain`: a minor move, not this procedure; it is a decision bead. erpnexts
     - QR: the bi_finance QR print format is the default, and the erpnextswiss QR formats show as disabled (Desk, Print Format);
     - erpnextswiss and hrms patches: the build applied them (`apply-patches.sh` stops the build on a patch that does not
       apply); by hand as `finance/docs/erpnextswiss-patches.md` says (the hrms bump re-checks `hrms/0001-dock-mounts-on-erpnext.patch` like the erpnextswiss ones);
+    - one PDF renders: a ping, the counts and the QR check do not render one, and a `host_name` that points at a
+      removed port fails only in the PDF. Fetch one Sales Invoice through `frappe.utils.print_format.download_pdf`
+      with the API key and print the status and the size only, never the body:
+
+          curl -s -o /dev/null -w '%{http_code} %{content_type} %{size_download}\n' \
+            -H "Authorization: token $FRAPPE_API_KEY:$FRAPPE_API_SECRET" \
+            "http://127.0.0.1:8082/api/method/frappe.utils.print_format.download_pdf?doctype=Sales%20Invoice&name=<invoice>"
+
+      It must print `200 application/pdf` and a size above zero. A 500 or an HTML type
+      means `host_name` is wrong: rerun the `host` step (`finance/docs/erpnext-setup.md`, "host");
     - the Treasury workspace and ERPNext › Swiss Payroll open in the Desk: a person opens both. With no person at
       hand, a non-empty answer of `frappe.desk.desktop.get_desktop_page` for Treasury (a missing workspace answers
       `{}`) and the Swiss Payroll dock file with `mount_on` erpnext stand in; the note says no person opened them, and

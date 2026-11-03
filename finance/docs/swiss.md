@@ -487,7 +487,8 @@ Build result: see the bead note.
    allows. No template change.
    **PDF host, fixed (2026-10-10):** `host_name` is the tailnet URL, set by the
    `host` step. The backend and queue containers reach it; a stock format renders.
-   Mails and prints link to that URL.
+   Mails and prints link to that URL. The tailnet port in that value moved the same
+   day and the value did not follow until 2026-11-03.
    **Nothing to pay (erp-rj7b):** a document with a total of zero or less, a credit note, prints
    without the slip: a QR-bill cannot ask for that amount.
 3. **Overlap with `swiss_accounting_software`.** Both claim QR and camt/pain.

@@ -14,7 +14,7 @@
 #   FINANCE_PROJECT=frappe-finance-copy finance/scripts/swiss-setup.sh hr  # run a step on the copy
 #
 # host sets the site's host_name from HOST_NAME (the URL the backend can reach, e.g.
-# https://<machine>.<tailnet>.ts.net:8448); it is skipped when HOST_NAME is empty.
+# https://<machine>.<tailnet>.ts.net:8447); it is skipped when HOST_NAME is empty.
 # expenses sets the Expense Approver role on the user in HR_USER (Benchi); skipped when empty.
 set -eu
 

@@ -233,17 +233,22 @@ payload passed the official swiss-qr-bill.org validator with no findings (see
 (`bi_finance/setup.py`) disables the erpnextswiss print formats whose HTML names
 `data.libracore.ch`, so erpnextswiss's own fixtures cannot turn them back on.
 **host.** Sets the site's `host_name` from the `HOST_NAME` environment variable, the
-URL the containers can reach (`https://<machine>.<tailnet>.ts.net:8448`, the tailnet
+URL the containers can reach (`https://<machine>.<tailnet>.ts.net:8447`, the tailnet
 name of the host). Without it, `wkhtmltopdf` fetches `/assets` from `frontend` port 80,
 where nothing listens, and every PDF on the site fails with `ConnectionRefusedError`.
 The name stays out of the repo, so it is passed on the command line:
 
 ```sh
-HOST_NAME=https://<machine>.<tailnet>.ts.net:8448 finance/scripts/swiss-setup.sh host
+HOST_NAME=https://<machine>.<tailnet>.ts.net:8447 finance/scripts/swiss-setup.sh host
 ```
 
 The URL is also what mails and prints link to. Check it from the backend and the
 queue containers (`curl .../api/method/ping` gives 200) before relying on it.
+
+`host_name` follows the port the tailnet serves ERPNext on. Whoever changes that port,
+or moves the name, reruns the `host` step the same day and proves one PDF (step 11 of
+the D4 list in `finance/docs/operating.md`). A removed port shows nowhere but in the
+next PDF, and the failure reaches the user, not the Error Log.
 
 **coa.** Stops with exit 3 if the company has GL entries. Otherwise it deletes
 the 3+3 templates, clears the company's account links and the Mode of Payment
