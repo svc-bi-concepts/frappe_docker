@@ -43,6 +43,8 @@ COUNTS_AFTER_PE_8 = COUNTS.format(10, 5, 8)  # a doctype no loader writes moved
 
 PYTHON_STUB = """#!/bin/sh
 printf '%s\\n' "$*" >>"$SYNC_LOG"
+# the key file the run handed every step (ERPNEXT_TOKEN_FILE), one line per call, apart from the call log
+printf '%s\\n' "${ERPNEXT_TOKEN_FILE-UNSET}" >>"$TOKEN_LOG"
 case "$*" in
 *delta_counts.py*)
   if [ -n "${COUNTS_SEQ_DIR:-}" ]; then
@@ -118,6 +120,7 @@ class SyncHourlyTest(unittest.TestCase):
         self.wakelog = os.path.join(self.temp, "wake.log")
         self.log = os.path.join(self.temp, "calls.log")
         self.maillog = os.path.join(self.temp, "mail.log")
+        self.tokenlog = os.path.join(self.temp, "token.log")
         self.envlog = os.path.join(self.temp, "yardr-env.log")
         self.actorlog = os.path.join(self.temp, "yardr-actor.log")
         self.seqdir = os.path.join(self.temp, "counts-seq")
@@ -135,6 +138,8 @@ class SyncHourlyTest(unittest.TestCase):
         env["PATH"] = self.stubdir + os.pathsep + env.get("PATH", "")
         env["HOME"] = self.home
         env["SYNC_LOG"] = self.log
+        env["TOKEN_LOG"] = self.tokenlog
+        env.pop("ERPNEXT_TOKEN_FILE", None)
         env["COUNTS_SEQ_DIR"] = self.seqdir
         env["BEXIO_PRIVATE"] = self.private
         env["BEXIO_SYNC_EXPORTER"] = self.exporter
@@ -196,6 +201,49 @@ class SyncHourlyTest(unittest.TestCase):
             return []
         with open(self.envlog) as f:
             return f.read().splitlines()
+
+    def token_files(self):
+        """The ERPNEXT_TOKEN_FILE each python3 step saw, in order."""
+        with open(self.tokenlog) as f:
+            return f.read().splitlines()
+
+    # ---- the key file ----------------------------------------------------------------
+
+    def test_without_the_sync_key_every_step_keeps_the_agent_key(self):
+        """No .erpnext-api-sync: ERPNEXT_TOKEN_FILE stays unset, so the steps read .erpnext-api as before."""
+        self.counts_seq(COUNTS_BEFORE, COUNTS_BEFORE)
+        proc = self.run_script("--dry-run")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual(set(self.token_files()), {"UNSET"})
+
+    def test_with_the_sync_key_every_step_reads_it(self):
+        """.erpnext-api-sync beside the private folder: all four python3 steps get it through ERPNEXT_TOKEN_FILE."""
+        sync_key = os.path.join(self.temp, ".erpnext-api-sync")
+        with open(sync_key, "w") as f:
+            f.write("token-for-tests")
+        self.counts_seq(COUNTS_BEFORE, COUNTS_BEFORE)
+        proc = self.run_script("--dry-run")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual(self.token_files(), [sync_key] * 4)
+
+    def test_a_callers_token_file_is_not_passed_on(self):
+        """The run is the sync's: an ERPNEXT_TOKEN_FILE from the caller does not reach the steps."""
+        self.counts_seq(COUNTS_BEFORE, COUNTS_BEFORE)
+        proc = self.run_script(
+            "--dry-run", ERPNEXT_TOKEN_FILE="/elsewhere/.erpnext-api-mcp"
+        )
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual(set(self.token_files()), {"UNSET"})
+
+    def test_the_sync_key_alone_is_enough(self):
+        """.erpnext-api gone, .erpnext-api-sync there: the token check passes."""
+        os.remove(os.path.join(self.private, ".erpnext-api"))
+        sync_key = os.path.join(self.temp, ".erpnext-api-sync")
+        with open(sync_key, "w") as f:
+            f.write("token-for-tests")
+        self.counts_seq(COUNTS_BEFORE, COUNTS_BEFORE)
+        proc = self.run_script("--dry-run")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
 
     # ---- the clean runs ------------------------------------------------------------
 

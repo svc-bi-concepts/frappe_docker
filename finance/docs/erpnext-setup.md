@@ -131,8 +131,8 @@ not open) and caps the confidence at 0.5 when it is a duplicate or the ledger da
 
 Every proposal, approval, refusal and undo writes or updates one **AI Action** row (state proposed, auto-done, approved,
 approved-dry-run, rejected, failed, undone) with its scores and its checks. A refusal does not throw: the row says why.
-The API user never approves. The role AI Approver is created by the patch `ai_approver_role`; give it to Benchi's user, not
-to the API user.
+The API users (`assistant_actions.API_USERS`: api-agent, api-sync and api-mcp) never approve. The role AI Approver is
+created by the patch `ai_approver_role`; give it to Benchi's user, never to an API user.
 
 **Settings** (AI Assistant Settings, Actions section): `actions_enabled` (the kill switch, off: reads only; Undo still
 works), `auto_level_enabled` (off: level 0 goes to 1), `auto_threshold` 0.80, `one_click_threshold` 0.90,
@@ -188,7 +188,7 @@ session user, and a user who neither asked nor is an AI Approver is turned away 
 before the ledger date lands on level 2 (the ledger date check caps its confidence at 0.5); level 1 needs a lowered
 `one_click_threshold`.
 
-**Level 2 approval (erp-ss1j).** Give someone the role AI Approver in User > Roles (never the API user, which never approves).
+**Level 2 approval (erp-ss1j).** Give someone the role AI Approver in User > Roles (never an API user: none of them approves).
 When the assistant proposes a level 2 action, every enabled AI Approver except the requester gets a ToDo (shown in their ToDo
 list and on the Home page, "Approve AI Action ...: type and target", no amount); the requester gets it only when they are the
 only AI Approver, which is Benchi's case today. The ToDo opens the AI Action form: the checks table, the payload and, for a
@@ -421,8 +421,8 @@ prints every enabled user that holds an HR or payroll role (HR Manager, HR
 User, Leave Approver, Expense Approver, Payroll Manager, Employee Self
 Service), the two settings' values, the employees that carry a user and the
 Employee Onboarding count. With `HR_USER` set it also compares the wanted state
-and exits 1 on any difference. The API user keeps System Manager and its
-existing roles; the step touches only `HR_USER` (erp-wnx7). Live run and the
+and exits 1 on any difference. The agent API user (`api-agent`) keeps System
+Manager and its existing roles; the step touches only `HR_USER` (erp-wnx7). Live run and the
 rerun on the copy are the go-live bead's (train rule): backup first, one
 writer, read back, rerun 0.
 

@@ -66,23 +66,47 @@ its network and router constraints.
 
 ## API access
 
-Scripts and agents call the API as `api-agent@finance.local`, not as
-`Administrator`. The user is a System User with no login password, and has the
-roles Accounts User, Sales User, Purchase User and Stock User.
+Scripts and agents call the API as one of three users, never as
+`Administrator`. Each is a System User with no login password and its own key
+file (mode 600, lines `url=`, `api_key=`, `api_secret=`):
+
+| User                      | Key file                               | Used by                            | Roles                                                                                                                                    |
+| ------------------------- | -------------------------------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `api-agent@finance.local` | `~/ws_yardr_finance/.erpnext-api`      | the importers                      | Accounts, Sales, Purchase and Stock User, the Sales and Purchase Master Managers, Item Manager, HR User; System Manager stays (erp-wnx7) |
+| `api-sync@finance.local`  | `~/ws_yardr_finance/.erpnext-api-sync` | the hourly sync (`sync_hourly.sh`) | the agent's list without HR User                                                                                                         |
+| `api-mcp@finance.local`   | `~/ws_yardr_finance/.erpnext-api-mcp`  | every MCP session                  | Accounts, Sales, Purchase and Stock User                                                                                                 |
+
+The MCP user holds no payroll role (HR User reads Employee and Salary Slip) and
+no System Manager: what an MCP session reads goes to the model provider, so
+payroll must not be reachable through it. The sync and mcp lists are exact, a
+provisioning run removes any other role, and the script refuses to run if
+either list holds System Manager, HR User, HR Manager or AI Approver.
+`assistant_actions.API_USERS` names all three, so none of them approves an AI
+Action. An agent with a shell can still read `.erpnext-api` or use `docker exec`;
+the split closes the MCP path only. `python3 finance/bexio/api_key_check.py
+<key file>` asks the doctypes of every hrms module and BI Payroll, Employee,
+Deleted Document, Version, and File on Salary Slip and on Employee for one row
+each, and says for each whether the key is refused, sees a row, or may list an
+empty doctype. It exits 0 only when every line is refused (File lines may be
+empty).
+
+Until a key file exists, its consumer falls back: `sync_hourly.sh` to
+`.erpnext-api`, `run-frappe-mcp.sh` to `.erpnext-api` with one warning on stderr.
 
 - Base URLs:
   - https://bsaladins-mac-mini-1.tail61fee9.ts.net:8448/api/ (tailnet)
   - http://127.0.0.1:8080/api/ (on the mini; IT's front door wakes the VM and refreshes its idle clock)
 - Header: `Authorization: token <key>:<secret>`
-- Credentials: `~/ws_yardr_finance/.erpnext-api` (mode 600, lines `url=`,
-  `api_key=`, `api_secret=`). Read them from there; never copy them into the
-  repo, a commit or a note.
+- Credentials: the key files above. Read them from there; never copy them into
+  the repo, a commit or a note.
 - Rerun the provisioning script from the repo root. It is idempotent: a second
   run changes nothing.
 
   ```sh
-  finance/scripts/create-api-user.sh            # create or repair the user
+  finance/scripts/create-api-user.sh            # create or repair api-agent
   finance/scripts/create-api-user.sh --rotate   # also issue a new key and secret
+  finance/scripts/create-api-user.sh --user sync   # api-sync, keys in .erpnext-api-sync
+  finance/scripts/create-api-user.sh --user mcp    # api-mcp, keys in .erpnext-api-mcp
   ```
 
   The script also issues keys when the keys file is missing, because the

@@ -1,16 +1,24 @@
 #!/bin/sh
-# Start the ERPNext MCP server as the agent API user. Claude Code runs this
-# as its MCP command (see mcp.example.json). The credentials are read from
-# ~/ws_yardr_finance/.erpnext-api at each start and passed on as environment,
-# so neither the key nor the secret is written to the repo or to argv.
+# Start the ERPNext MCP server as the MCP API user (api-mcp@finance.local, no
+# payroll role). Claude Code runs this as its MCP command (see mcp.example.json).
+# The credentials are read from ~/ws_yardr_finance/.erpnext-api-mcp at each
+# start and passed on as environment, so neither the key nor the secret is
+# written to the repo or to argv.
+# Until keys split 2 has made that file, it falls back to .erpnext-api (the
+# agent user, which reads payroll) and says so on stderr; the fallback goes
+# once the split has passed.
 set -eu
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-KEYS="$HOME/ws_yardr_finance/.erpnext-api"
+KEYS="$HOME/ws_yardr_finance/.erpnext-api-mcp"
 
 if [ ! -f "$KEYS" ]; then
-  echo "run-frappe-mcp: $KEYS is missing; run finance/scripts/create-api-user.sh" >&2
-  exit 1
+  KEYS="$HOME/ws_yardr_finance/.erpnext-api"
+  if [ ! -f "$KEYS" ]; then
+    echo "run-frappe-mcp: no key file; run finance/scripts/create-api-user.sh --user mcp" >&2
+    exit 1
+  fi
+  echo "run-frappe-mcp: warning: $HOME/ws_yardr_finance/.erpnext-api-mcp is missing, using the agent key $KEYS (it reads payroll); run finance/scripts/create-api-user.sh --user mcp" >&2
 fi
 
 # The keys file holds the API URL with a trailing /api/; the client adds

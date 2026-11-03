@@ -42,7 +42,15 @@ from bi_finance.assistant_levels import (
 
 DOCTYPE = "AI Action"
 APPROVER_ROLE = "AI Approver"
-API_USER = "api-agent@finance.local"  # never approves: it is the assistant's own transport, not a person
+# Never approve: they are the assistant's own transport (the importers, the hourly sync, the MCP session), not
+# people. approve() is whitelisted, so api-mcp must be named here or it could approve its own level 1 action.
+API_USERS = frozenset(
+    {
+        "api-agent@finance.local",
+        "api-sync@finance.local",
+        "api-mcp@finance.local",
+    }
+)
 
 SAVEPOINT = "ai_action_apply"
 DUE_SOON_DAYS = (
@@ -211,7 +219,7 @@ def approve(action, user, confirmed_amount=None):
         )
     if not settings["actions_enabled"]:
         return _refused(doc, "Actions are switched off in AI Assistant Settings.")
-    if user == API_USER:
+    if user in API_USERS:
         return _refused(doc, "The API user does not approve.")
     if str(doc.level) == "1":
         if user != doc.requested_by:
@@ -460,7 +468,7 @@ def _other_approver_exists(requester):
         pluck="parent",
         limit_page_length=50,
     )
-    others = [name for name in names if name not in (requester, API_USER)]
+    others = [name for name in names if name != requester and name not in API_USERS]
     return bool(
         others
         and frappe.get_all(
@@ -479,7 +487,7 @@ def can_decide(doc, user):
     return (
         doc.state == PROPOSED
         and str(doc.level) == "2"
-        and user != API_USER
+        and user not in API_USERS
         and APPROVER_ROLE in frappe.get_roles(user)
         and not (user == doc.requested_by and _other_approver_exists(user))
     )
@@ -494,7 +502,7 @@ def _todo_recipients(requester):
         pluck="parent",
         limit_page_length=50,
     )
-    names = [name for name in dict.fromkeys(names) if name != API_USER]
+    names = [name for name in dict.fromkeys(names) if name not in API_USERS]
     if not names:
         return []
     enabled = frappe.get_all(

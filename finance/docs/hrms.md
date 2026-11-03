@@ -133,8 +133,8 @@ What HRMS v16.50.0 installs and what the `hr` setup step makes of it
   the payroll doctypes — Salary Slip, Salary Structure, Payroll Entry — are the
   HR Manager's (`payroll_entry.json`: HR Manager only). Benchi's user therefore
   gets HR Manager, HR User and Leave Approver; Payroll Manager is granted by the
-  step only when the site has the Role document, never created. The API user
-  keeps System Manager and its HR User, and gets nothing more (erp-wnx7).
+  step only when the site has the Role document, never created. The agent API
+  user (`api-agent`) keeps System Manager and its HR User, and gets nothing more (erp-wnx7).
 - **Payroll Settings.** `payroll_based_on` = Leave (the default),
   `include_holidays_in_total_working_days` = 1, `email_salary_slip_to_employee`
   = 0. That last check is the only slip e-mail switch: `salary_slip.py`

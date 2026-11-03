@@ -14,8 +14,12 @@ Why this one:
 - MIT, one small package, two runtime dependencies (`mcp`, `httpx`).
 - Talks only to the ERPNext REST API (`/api/resource`, `/api/method`) at the
   URL it is given. No bench or shell access, no telemetry, no other hosts.
-- Authenticates with the API key and secret of `api-agent@finance.local`, the
-  dedicated user from `finance/scripts/create-api-user.sh`.
+- Authenticates with the API key and secret of `api-mcp@finance.local`, the
+  dedicated user from `finance/scripts/create-api-user.sh --user mcp`. It holds
+  Accounts, Sales, Purchase and Stock User and no payroll role (no HR User, no
+  System Manager): everything a session reads goes to the model provider, so
+  payroll must stay out of its reach. The importers keep `api-agent`, the hourly
+  sync uses `api-sync`; the three key files are listed in `README-finance.md`.
 - Generic CRUD and a method call, so it needs no code in the ERPNext site.
 
 ## Evaluation
@@ -64,10 +68,8 @@ diff it against the GitHub tag, and we did not run its own test suite.
   optionally `FRAPPE_VERIFY_SSL` and `FRAPPE_TIMEOUT`. Logs go to stderr, so
   stdio stays clean. It exposes seven tools (listed in the test below).
 - `frappe_run_method` calls `/api/method/<dotted path>`. What it can reach is
-  limited by the API user's roles, which are Accounts User, Sales User,
-  Purchase User, Stock User, Sales Master Manager, Purchase Master Manager and
-  Item Manager (the last three for the bexio master-data import), not System
-  Manager.
+  limited by the MCP user's roles (listed above; the table under "API access"
+  in `README-finance.md` owns the three users' role lists), not System Manager.
 
 ## How it runs
 
@@ -76,9 +78,12 @@ diff it against the GitHub tag, and we did not run its own test suite.
   `uv pip install -r finance/mcp/requirements.txt`. It is git-ignored (the
   `venv` pattern in `.gitignore`).
 - `finance/mcp/run-frappe-mcp.sh` reads `url=`, `api_key=` and `api_secret=`
-  from `~/ws_yardr_finance/.erpnext-api` at each start. It strips the `/api/`
-  suffix from the URL, exports the three variables, and execs the server. The
-  secret never goes into the repo, into argv, or into the output.
+  from `~/ws_yardr_finance/.erpnext-api-mcp` at each start. While that file is
+  missing (before keys split 2) it reads `.erpnext-api` instead and prints one
+  warning on stderr; the fallback is removed once the split has passed. It
+  strips the `/api/` suffix from the URL, exports the three variables, and
+  execs the server. The secret never goes into the repo, into argv, or into
+  the output.
 - `finance/mcp/mcp.example.json` is the Claude Code config. Copy its `erpnext`
   entry into your own config and set the absolute path to the wrapper.
 
@@ -177,8 +182,9 @@ Results:
 - Customer: 1 listed (`Grant Plastics Ltd.`).
 - Item: 1 read (`SKU008`, Backpack). It was created by `Administrator` on
   2026-10-08, before this bead; we did not create it.
-- Identity: the server calls the site as `api-agent@finance.local`, not
-  `Administrator`.
+- Identity: the server called the site as `api-agent@finance.local`, not
+  `Administrator` (the evaluation ran before the split; sessions run as
+  `api-mcp@finance.local` once its key file exists).
 
 The server's `frappe_run_method` and `frappe_get_doc` reach the same data the
 API user may see; the write tools were not exercised.

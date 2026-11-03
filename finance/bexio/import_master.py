@@ -7,8 +7,9 @@ matched by name. A second run on the same export therefore changes nothing.
 One exception needs a first-run bridge: the accounts of the KMU chart carry
 no bexio_id yet and are adopted by account number.
 
-Runs as api-agent@finance.local through the REST API; the key and secret are
-read from the token file and never printed. Run it as:
+Runs as api-agent@finance.local through the REST API (or as the user whose key
+file ERPNEXT_TOKEN_FILE names); the key and secret are read from the token file
+and never printed. Run it as:
 
     python3 finance/bexio/import_master.py [--export DIR] [--dry-run]
 
@@ -34,7 +35,12 @@ import urllib.request
 from decimal import Decimal
 
 PRIVATE = os.environ.get("BEXIO_PRIVATE") or "/Users/bsaladin/ws_yardr_finance/private"
-TOKEN_FILE = "/Users/bsaladin/ws_yardr_finance/.erpnext-api"
+# ERPNEXT_TOKEN_FILE lets a caller pick another API user's key file (the hourly sync runs as api-sync);
+# every script that takes im.TOKEN_FILE as its --token-file default follows.
+TOKEN_FILE = (
+    os.environ.get("ERPNEXT_TOKEN_FILE")
+    or "/Users/bsaladin/ws_yardr_finance/.erpnext-api"
+)
 COMPANY = "BI Concepts"
 ABBR = "bic"
 
@@ -141,12 +147,12 @@ class Erp:
                 "network", "{} {}".format(method, path.split("?")[0])
             ) from None
 
-    def list(self, doctype, filters=None, fields=("name",)):
+    def list(self, doctype, filters=None, fields=("name",), limit=100000):
         query = urllib.parse.urlencode(
             {
                 "filters": json.dumps(filters or []),
                 "fields": json.dumps(list(fields)),
-                "limit_page_length": 100000,
+                "limit_page_length": limit,
             }
         )
         return self._request("GET", f"/resource/{urllib.parse.quote(doctype)}?{query}")[

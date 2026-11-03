@@ -5,8 +5,11 @@ Run with: python3 -m unittest discover -s finance/bexio -p 'test_*.py'
 
 import copy
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import import_master as im
 from private_guard import (  # every test below runs against a temp private folder, never the real one
@@ -864,6 +867,91 @@ class TakenBexioIdsTest(unittest.TestCase):
             self.doc("PE-3-1", 1, None, amended_from="PE-3"),
         )
         self.assertEqual(taken, {"b-3": "PE-3-1"})
+
+
+class TokenFileTest(unittest.TestCase):
+    """Each runnable consumer passes the selected key path to the ERP client."""
+
+    def token_file_in(self, env):
+        code = "import import_master as im; print(im.TOKEN_FILE)"
+        proc = subprocess.run(
+            [sys.executable, "-c", code],
+            cwd=os.path.dirname(os.path.abspath(__file__)),
+            env=dict({"PATH": os.environ["PATH"]}, **env),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        return proc.stdout.strip()
+
+    def test_the_default_is_the_agent_key(self):
+        self.assertEqual(
+            self.token_file_in({}), "/Users/bsaladin/ws_yardr_finance/.erpnext-api"
+        )
+
+    def test_an_empty_variable_is_the_default_too(self):
+        self.assertEqual(
+            self.token_file_in({"ERPNEXT_TOKEN_FILE": ""}),
+            "/Users/bsaladin/ws_yardr_finance/.erpnext-api",
+        )
+
+    def test_the_variable_wins(self):
+        self.assertEqual(
+            self.token_file_in({"ERPNEXT_TOKEN_FILE": "/x/.erpnext-api-sync"}),
+            "/x/.erpnext-api-sync",
+        )
+
+    def test_delta_counts_uses_selected_key_path(self):
+        import delta_counts
+
+        expected = "/tmp/.erpnext-api-sync"
+        erp = type("ErpStub", (), {"list": lambda *args, **kwargs: []})()
+        with patch.object(im, "TOKEN_FILE", expected), patch.object(
+            im.Erp, "from_file", return_value=erp
+        ) as from_file, patch.object(im.Erp, "list", return_value=[]):
+            self.assertEqual(delta_counts.main([]), 0)
+        from_file.assert_called_once_with(expected)
+
+    def test_importer_commands_use_selected_key_path(self):
+        import import_purchase
+        import import_sales
+
+        expected = "/tmp/.erpnext-api-sync"
+        sales_data = {}
+        with tempfile.TemporaryDirectory(
+            dir=os.path.dirname(os.path.abspath(__file__))
+        ) as tmp:
+            report_path = os.path.join(tmp, "report.txt")
+            with patch.object(im, "TOKEN_FILE", expected), patch.object(
+                im.Erp, "from_file", return_value=object()
+            ) as from_file, patch.object(
+                import_sales, "load_documents", return_value=sales_data
+            ), patch.object(
+                import_sales, "lookups_from_erp", return_value={}
+            ), patch.object(
+                import_sales, "doctype_fields", return_value={}
+            ):
+                import_sales.main(["--export", "/tmp/export", "--report", report_path])
+        from_file.assert_called_once_with(expected)
+
+        with patch.object(im, "TOKEN_FILE", expected), patch.object(
+            im.Erp, "from_file", return_value=object()
+        ) as from_file, patch.object(
+            import_purchase, "load_records", return_value=([], [])
+        ), patch.object(
+            import_purchase.Lookups, "from_erp", return_value=object()
+        ), patch.object(
+            import_purchase, "load_booked", return_value={}
+        ), patch.object(
+            import_purchase,
+            "dry_run",
+            return_value=type("Totals", (), {"rows": {}, "problems": []})(),
+        ), patch.object(
+            import_purchase, "report", return_value=""
+        ):
+            import_purchase.main(["--export", "/tmp/export"])
+        from_file.assert_called_once_with(expected)
 
 
 if __name__ == "__main__":

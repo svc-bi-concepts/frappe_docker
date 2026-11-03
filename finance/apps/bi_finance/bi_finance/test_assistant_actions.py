@@ -31,6 +31,7 @@ TODAY = date(2027, 2, 10)
 USER = "owner@example.com"
 OTHER = "second@example.com"
 API = "api-agent@finance.local"
+API_USERS = (API, "api-sync@finance.local", "api-mcp@finance.local")
 
 
 class Doc:
@@ -421,6 +422,18 @@ class LevelOneApproval(Base):
         )
         self.assertEqual(self.one_click_applied[0][1], False)
 
+    def test_an_api_user_cannot_approve_its_own_level_1_action(self):
+        for api_user in API_USERS:
+            with self.subTest(api_user=api_user):
+                proposed = self.propose(
+                    "stub_book",
+                    {"amount": "137.35", "date": "2027-03-01"},
+                    user=api_user,
+                )
+                self.switch(api_user)
+                self.assertFalse(actions.approve(proposed["name"], api_user)["ok"])
+        self.assertEqual(self.one_click_applied, [])
+
     def test_another_user_cannot_approve_level_1(self):
         proposed = self.book()
         self.switch(OTHER)
@@ -541,6 +554,18 @@ class LevelTwoApproval(Base):
         self.assertIn("API user", self.row(self.proposed).error)
         self.assertEqual(self.one_click_applied, [])
 
+    def test_no_api_user_approves_level_2_even_with_the_role(self):
+        for api_user in API_USERS:
+            with self.subTest(api_user=api_user):
+                self.frappe.roles[api_user] = ["AI Approver"]
+                self.assertFalse(self.approve(api_user)["ok"])
+        self.assertEqual(self.one_click_applied, [])
+
+    def test_an_api_user_does_not_count_as_a_second_approver(self):
+        self.frappe.roles[USER] = ["AI Approver"]
+        self.frappe.has_role = [(USER, 1)] + [(api_user, 1) for api_user in API_USERS]
+        self.assertTrue(self.approve(USER)["ok"])
+
     def test_the_approver_check_reads_with_a_limit(self):
         self.frappe.roles[USER] = ["AI Approver"]
         self.frappe.has_role = [(USER, 1)]
@@ -600,6 +625,13 @@ class LevelTwoTodos(Base):
         self.level_two()
         self.assertEqual(self.owners(), [self.THIRD])
 
+    def test_no_api_user_gets_a_todo(self):
+        self.frappe.has_role = [(api_user, 1) for api_user in API_USERS] + [
+            (self.THIRD, 1)
+        ]
+        self.level_two()
+        self.assertEqual(self.owners(), [self.THIRD])
+
     def test_no_approver_means_no_todo(self):
         self.level_two()
         self.assertEqual(self.owners(), [])
@@ -655,6 +687,12 @@ class FormButtons(Base):
     def test_a_user_without_the_role_and_the_api_user_do_not(self):
         self.assertFalse(actions.can_decide(self.doc, "nobody@example.com"))
         self.assertFalse(actions.can_decide(self.doc, API))
+
+    def test_no_api_user_is_offered_approve(self):
+        for api_user in API_USERS:
+            with self.subTest(api_user=api_user):
+                self.frappe.roles[api_user] = ["AI Approver"]
+                self.assertFalse(actions.can_decide(self.doc, api_user))
 
     def test_nobody_sees_them_once_decided(self):
         self.switch(OTHER)
