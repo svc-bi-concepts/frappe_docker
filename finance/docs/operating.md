@@ -231,7 +231,9 @@ ledgerdemain`: a minor move, not this procedure; it is a decision bead. erpnexts
 7. **Before** (yardmaster, before the switch). Save under `private/`, never in the repo or a note:
    - counts: `python3 finance/bexio/delta_counts.py > private/d4-counts-before.txt`
    - trial balance: ERPNext's standard Trial Balance report in the Desk, for the same period, per account, saved as
-     `private/d4-trial-balance-before.csv`.
+     `private/d4-trial-balance-before.csv`. With no browser on the host, run the same report through
+     `erpnext.accounts.report.trial_balance.trial_balance.execute` in the backend container, per company and fiscal
+     year, with the filters in a `frappe._dict`. Its rows are written to the private file only, never printed.
 8. **Switch** (yardmaster):
 
        finance/scripts/switch-image.sh v16.<minor>.<patch>-swiss-bi<N>
@@ -239,6 +241,11 @@ ledgerdemain`: a minor move, not this procedure; it is a decision bead. erpnexts
    Tag update and rollback behavior is documented in
    [the image switch procedure](erpnext-setup.md#switching-the-stack-to-a-new-image).
    It does not migrate: step 9 does.
+
+   After a switch that answered 200, `docker images --format '{{.Tag}}' frappe-finance-custom` must print exactly one
+   line; remove a leftover tag by that tag. `gate-image.sh` falls back to the image at rest only when one is at rest,
+   so a second image fails the gate on every branch that pins the old tag. `switch_image.py remove` does not take the
+   previous image's `-finance` tag, which a build by hand can leave. After a failed ping both images stay: step 12.
 
 9. **Migrate** (yardmaster; the bi_finance `after_migrate` hook runs with it):
 
@@ -250,12 +257,16 @@ ledgerdemain`: a minor move, not this procedure; it is a decision bead. erpnexts
         curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8082/api/method/ping
 
 11. **Checks** (yardmaster). Every one must hold:
-    - trial balance: the Trial Balance report for the same period equals `private/d4-trial-balance-before.csv` per account;
+    - trial balance: the Trial Balance report for the same period (in the Desk, or through the `execute` call of step 7)
+      equals `private/d4-trial-balance-before.csv`, per company and fiscal year, per account;
     - counts: `python3 finance/bexio/delta_counts.py > private/d4-counts-after.txt` equals the before file per doctype (it counts the documents that carry a bexio_id, not the Wise and PayPal syncs or HR data);
     - QR: the bi_finance QR print format is the default, and the erpnextswiss QR formats show as disabled (Desk, Print Format);
     - erpnextswiss and hrms patches: the build applied them (`apply-patches.sh` stops the build on a patch that does not
       apply); by hand as `finance/docs/erpnextswiss-patches.md` says (the hrms bump re-checks `hrms/0001-dock-mounts-on-erpnext.patch` like the erpnextswiss ones);
-    - the Treasury workspace and ERPNext › Swiss Payroll open in the Desk.
+    - the Treasury workspace and ERPNext › Swiss Payroll open in the Desk: a person opens both. With no person at
+      hand, a non-empty answer of `frappe.desk.desktop.get_desktop_page` for Treasury (a missing workspace answers
+      `{}`) and the Swiss Payroll dock file with `mount_on` erpnext stand in; the note says no person opened them, and
+      the opening stays owed by the next person in the Desk.
 
     Then delete the `private/d4-*` files that served these checks; the totals go in the note.
 
@@ -266,3 +277,20 @@ ledgerdemain`: a minor move, not this procedure; it is a decision bead. erpnexts
       removed the previous image, so going back means building the old tag again, and a restore from the step 6
       backup needs the same ERPNext version and has not been tested (`finance/docs/archiving.md`). Only a person
       decides which way.
+
+13. **Pin main** (after step 11 held). `switch-image.sh` leaves `finance-local.yml` and `finance-coolify.yml` changed
+    and uncommitted in the main checkout; ledgerdemain files the pin bead, a builder commits the same change. The main
+    checkout is left as it is until that merges: its files are the ones the stack runs on. `erp-land.sh` then merges on
+    GitHub, does not touch a dirty checkout, says "Local main NOT moved" and mails the yardmaster; the bead still
+    reaches merged. The yardmaster then syncs:
+
+        git fetch origin
+        git diff --quiet origin/main -- finance-local.yml finance-coolify.yml &&
+          git merge-base --is-ancestor HEAD origin/main &&
+          git restore finance-local.yml finance-coolify.yml &&
+          git merge --ff-only origin/main
+
+    Both guards must exit 0 before the restore runs; if one does not, the chain stops there and so do you. A failed
+    `git diff --quiet` means the pin differs from what runs; a failed `merge-base --is-ancestor` means local main
+    holds a commit origin/main does not, so the merge would refuse and the restore would leave the checkout pinning
+    the removed tag. Until the sync, any other landing also leaves local main behind.
