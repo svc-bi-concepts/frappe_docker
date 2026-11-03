@@ -575,13 +575,14 @@ docker run --rm -v "$PWD/finance/apps/bi_finance:/home/frappe/frappe-bench/apps/
 The Cash Position report has its own offline tests, in the same way (`bi_finance.test_cash_position`).
 The modules that import frappe (`test_payment_run`, `test_treasury`, `test_bank_list`, `test_bank_statement_upload`) run
 in the image as one gate step in `.yardr/check`. That step runs the tag `finance/scripts/gate-image.sh` picks: main's deploy pin, then the branch's pin, then the one image at rest. After a switch the previous image may be gone, so merge main into the branch.
-The whole package runs with one command, the one to run before a test line (0 errors, 0 failures):
-
-```sh
-docker run --rm -v "$PWD/finance/apps/bi_finance:/home/frappe/frappe-bench/apps/bi_finance:ro" \
-    "$(sh finance/scripts/gate-image.sh)" \
-    sh -c 'mkdir -p /home/frappe/logs /home/frappe/frappe-bench/apps/logs && cd /home/frappe/frappe-bench/apps/bi_finance && ../../env/bin/python -m unittest discover -s bi_finance -t .'
-```
+The package has host modules, which stub frappe and run on the host in
+`.yardr/check-host.sh`, and image modules, which use real frappe and run on the
+gate-image line in `.yardr/check`. Each top-level `test_*.py` module in
+`bi_finance/bi_finance` is named in exactly one of those two lines; together
+they cover every top-level module, and `sh .yardr/check` runs both. A test
+module inside a subpackage (`doctype/`, `report/`) is seen by neither guard
+today. A single discover over the package fails because the host modules'
+frappe stub stays in `sys.modules`.
 
 The setup script's pure parts are tested without a container:
 `python3 -m unittest discover -s finance/scripts -p 'test_*.py'`.
