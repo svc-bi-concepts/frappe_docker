@@ -144,6 +144,17 @@ Abschlussbuchungen, when bexio's business year is closed:**
        python3 finance/bexio/import_salary_history.py --figures private/payroll/paystub-figures-<month>.csv --apply
        python3 finance/bexio/import_salary_history.py --figures private/payroll/paystub-figures-<month>.csv --check
 
+   Run the month's parallel comparison on the copy before this step loads the month: a submitted history slip
+   takes its employee out of a same-month Payroll Entry's list ('No employees found', see `finance/docs/hrms.md`,
+   "History slip empties the employee list"). If the month is already loaded, add the employees to the draft
+   entry by hand on the copy, save it, and run `create_salary_slips` on the saved draft entry from site python
+   (`bench console`): the Desk button 'Create Salary Slips' saves with submit and throws 'Duplicate Entry'. The
+   entry stays draft and cannot be submitted, which is enough for a comparison. After the call, read the entry's
+   `status` and `error_message` and count the draft slips: the status shows Submitted because
+   `create_salary_slips_for_employees` sets the status field, while `docstatus` stays 0; a failed insert is
+   rolled back and written to status Failed and `error_message` (`log_payroll_failure`), with no exception to the
+   caller. No live Payroll Entry for a 2026 month.
+
    Use this step only for October, November and December 2026. Since `--year 2026` exports every 2026 month,
    earlier months in the CSV are reported `loaded` when unchanged, or `differs` if bexio corrected a stub; a
    differing slip is never overwritten. History slips are submitted snapshots: they do not make Payroll Entries

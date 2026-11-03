@@ -328,6 +328,22 @@ Risks:
   Entries in the GL. They have no Payroll Entry, so no accrual is created; the forecast uses only slips linked
   to a Payroll Entry, and hand-over excludes `swiss_bexio_id`. Keep these safeguards and the Payment Proposal
   exclusion (`is_proposed` 1); the pin test `bi_finance.test_hrms_accrual_filter` must pass before any live run.
+- **History slip empties the employee list of a same-month Payroll Entry.** hrms `remove_payrolled_employees`
+  (`payroll_entry.py`, called from `get_employee_list`) drops every employee with a submitted Salary Slip of the
+  same start and end date. It does not filter on the Payroll Entry, so a history slip counts: the list of a
+  Payroll Entry for that month leaves those employees out, and says 'No employees found' when none is left. That
+  is not a fault of the load. Employees added to the entry by hand still get draft slips, but not through the
+  Desk button 'Create Salary Slips': it saves with submit, and `validate_existing_salary_slips` does not filter
+  on the Payroll Entry either, so it throws 'Duplicate Entry'. On the copy, add the employees to the draft entry,
+  save it, then run `create_salary_slips` on the saved draft entry from site python (`bench console`). It skips
+  only employees who already have a slip tied to this entry (`get_existing_salary_slips` filters on the entry).
+  The entry stays draft and cannot be submitted, which is enough for a comparison; the history slip is unchanged.
+  After the call, read the entry's `status` and `error_message` and count the draft slips: the status shows
+  Submitted because `create_salary_slips_for_employees` sets the status field, while `docstatus` stays 0; a
+  failed insert is rolled back and written to status Failed and `error_message` (`log_payroll_failure`), with no
+  exception to the caller. January 2027 is out of reach, because history refuses dates after 2026-12-31. It
+  touches only a 2026 parallel run on the copy: no live Payroll Entry exists for a 2026 month. No hrms patch; for
+  the order of the comparison see `finance/docs/operating.md`, "Cutover", step 7.
 
 ## Recommendation
 
@@ -622,7 +638,12 @@ create-site. That is what a Desk test needs. On the first start create-site wait
 redis-queue, which is not up yet, and then goes on.
 
 - `--jobs` for a step that enqueues work: redis-queue, queue-short, queue-long and the scheduler start after
-  the restore and the safety settings, so the scheduler is already paused. The enqueue points on the copy:
+  the restore and the safety settings, so the scheduler is already paused. A run that makes a copy token
+  (saving a User, `generate_keys`) starts with `--jobs`: a lean copy has no redis-queue to take that job. The
+  enqueue points on the copy:
+  - Saving a User, `generate_keys` for a copy token included.
+  - Deleting a Salary Slip: frappe's `delete_dynamic_links` removes its Version rows in a job. `--jobs` is what
+    lets that job run; on a lean copy the Version rows of a deleted slip stay.
   - hrms Payroll Entry (`hrms/payroll/doctype/payroll_entry/payroll_entry.py`): create salary slips, submit
     salary slips, and Overtime Slip create and submit, in the background above 30 employees; cancel above
     50 linked salary slips.
@@ -632,8 +653,9 @@ redis-queue, which is not up yet, and then goes on.
 - `--websocket` for realtime updates in the Desk (progress bars). frontend starts websocket anyway, because
   its nginx resolves the websocket host at start, so on the frontend path the flag changes nothing.
 
-The lean start is not run on a copy yet: the stub-docker tests in `finance/scripts/test_copy_stack.py` prove
-the calls, and the first real start proves the restore and migrate without redis-queue.
+The erp-v9wr rehearsal of 2026-11-03 started the copy lean, without `--jobs`: restore and migrate passed without
+redis-queue. Saving a User for the copy token needed redis-queue started by hand, and the Version rows of deleted
+slips stayed with no worker. The stub-docker tests in `finance/scripts/test_copy_stack.py` prove the calls.
 
 Down when the test is done (Benchi via IT, 2026-10-12: everything on the mini runs lean).
 
