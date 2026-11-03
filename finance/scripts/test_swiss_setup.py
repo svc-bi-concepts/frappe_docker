@@ -3,6 +3,7 @@
 Run with: python3 -m unittest discover -s finance/scripts -p 'test_*.py'
 """
 
+import ast
 import importlib.util
 import os
 import pathlib
@@ -266,6 +267,15 @@ class KeyRolesTest(unittest.TestCase):
         mcp = line.split("=", 1)[1].strip('"').split("|")
         self.assertTrue(set(mcp) <= set(swiss_setup.KEY_ROLES))
 
+    def test_the_key_check_asks_the_reports_keyaccess_closes(self):
+        check = pathlib.Path(_path).parents[1] / "bexio" / "api_key_check.py"
+        line = next(
+            l for l in check.read_text().splitlines() if l.startswith("REPORTS = ")
+        )
+        self.assertEqual(
+            swiss_setup.KEY_REPORTS, ast.literal_eval(line.split("=")[1].strip())
+        )
+
     def test_keyaccess_is_a_step_and_named_in_the_usage_line(self):
         self.assertIn("keyaccess", swiss_setup.STEPS)
         wrapper = (pathlib.Path(_path).parent / "swiss-setup.sh").read_text()
@@ -383,6 +393,7 @@ class FakeKeySite:
         }
         self.has_role = {
             "Cash Flow Forecast": ["Accounts Manager", "Accounts User"],
+            "Cash Flow Forecast Lines": ["Accounts Manager", "Accounts User"],
             "Project Profitability": ["Projects Manager", "Accounts User"],
         }
         self.custom = {}
@@ -464,6 +475,7 @@ class KeyaccessTest(unittest.TestCase):
             ],
         )
         self.assertEqual(site.custom["Cash Flow Forecast"], ["Accounts Manager"])
+        self.assertEqual(site.custom["Cash Flow Forecast Lines"], ["Accounts Manager"])
         self.assertEqual(site.custom["Project Profitability"], ["Projects Manager"])
         self.assertEqual(site.commits, 1)
 

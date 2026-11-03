@@ -9,20 +9,21 @@ single or child doctype), and the check adds Employee, Deleted Document and Vers
 File on Salary Slip and on Employee, where the paystub PDFs are. The key under test then asks each
 for ONE row, field name only.
 
-Then the two payroll reports that were open to the key roles (keyaccess in swiss-setup.py closes them
-with a Custom Role): each is asked through frappe.desk.query_report.get_script, which passes the same gate
-as the report (Report.is_permitted, then read on its doctype) and returns no report data. The report itself
-is never run, and the script that comes back is dropped on the spot.
+Then the payroll reports that were open to the key roles (keyaccess in swiss-setup.py closes them
+with a Custom Role): each is asked through frappe.desk.query_report.get_script, which passes the
+same gate as the report (Report.is_permitted, then report permission on its doctype) and returns no
+report data. The report itself is never run, and the script that comes back is dropped on the spot.
 
 One line per doctype: refused (HTTP 403, Frappe's answer to a list without read), visible (a
 row came back) or empty (allowed to list, no row there); the File lines say which filter ran. One
-line per report, starting "report": refused (403) or visible (an answer came back). Then a total. No row and no name is ever printed, and neither is a key.
+line per report, starting "report": refused (403) or visible (an answer came back). Then a total.
+No row and no name is ever printed, and neither is a key.
 
-Exit 0 only when every line is refused (reports included), the File lines alone may also be empty: File is filtered
-row by row, so anyone may list it. Exit 1 otherwise: empty on another line means the key may list
-that doctype, and the rows come later. Exit 2 when the check could not finish (a call failed for
-another reason, a key file is unreadable, or a module that holds doctypes listed none, which would
-otherwise pass by probing nothing).
+Exit 0 only when every line is refused (reports included), the File lines alone may also be empty:
+File is filtered row by row, so anyone may list it. Exit 1 otherwise: empty on another line means
+the key may list that doctype, and the rows come later. Exit 2 when the check could not finish (a
+call failed for another reason, a key file is unreadable, or a module that holds doctypes listed
+none, which would otherwise pass by probing nothing).
 """
 
 import argparse
@@ -54,9 +55,10 @@ EXTRA = [
     ("File", [["attached_to_doctype", "=", "Salary Slip"]]),
     ("File", [["attached_to_doctype", "=", "Employee"]]),
 ]
-# Reports that read payroll and are asked besides the doctypes: Cash Flow Forecast (net pay per run, raw SQL)
-# and Project Profitability (gross pay per slip).
-REPORTS = ["Cash Flow Forecast", "Project Profitability"]
+# Reports that read payroll and are asked besides the doctypes: Cash Flow Forecast (net pay per run, raw SQL),
+# Cash Flow Forecast Lines (the same computation, line by line) and Project Profitability (gross pay per slip).
+# swiss-setup.py's KEY_REPORTS closes the same ones.
+REPORTS = ["Cash Flow Forecast", "Cash Flow Forecast Lines", "Project Profitability"]
 
 
 def targets(lister):

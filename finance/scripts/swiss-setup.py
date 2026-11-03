@@ -1589,9 +1589,14 @@ KEY_ROLES = [
     "Purchase Master Manager",
     "Item Manager",
 ]
-# Payroll reports the key roles opened: Cash Flow Forecast reads net pay per run, Project Profitability
-# gross pay per slip. The key check (api_key_check.py) asks the same two.
-KEY_REPORTS = ["Cash Flow Forecast", "Project Profitability"]
+# Payroll reports the key roles opened: Cash Flow Forecast reads net pay per run, Cash Flow Forecast Lines shows
+# the same computation line by line (it names no Salary Slip itself, it calls the other's compute), Project
+# Profitability gross pay per slip. The key check (api_key_check.py) asks the same ones.
+KEY_REPORTS = [
+    "Cash Flow Forecast",
+    "Cash Flow Forecast Lines",
+    "Project Profitability",
+]
 LEAVE_LEDGER = "Leave Ledger Entry"
 # The roles that keep a level 0 row on the leave ledger once All is gone.
 LEAVE_LEDGER_ROLES = ["HR Manager", "HR User", "System Manager"]
@@ -1723,8 +1728,9 @@ def keyaccess():
             problems.append(f"{report} roles differ")
     if problems:
         raise SystemExit("keyaccess: read-back failed: " + "; ".join(problems))
-    frappe.clear_cache()
+    # Commit first: a worker that fills the cache before the commit would keep the old rows.
     frappe.db.commit()
+    frappe.clear_cache()
     say(
         "keyaccess: "
         + ("done" if changed else "nothing to change")

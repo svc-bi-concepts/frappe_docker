@@ -23,7 +23,7 @@ HR_DOCTYPES = ["Appraisal Cycle", "Leave Type"]
 BI_PAYROLL_DOCTYPES = ["Qst Code"]
 ON_SALARY_SLIP = "File (attached_to_doctype = Salary Slip)"
 ON_EMPLOYEE = "File (attached_to_doctype = Employee)"
-REPORTS = ["Cash Flow Forecast", "Project Profitability"]
+REPORTS = ["Cash Flow Forecast", "Cash Flow Forecast Lines", "Project Profitability"]
 ALL_PROBED = sorted(PAYROLL_DOCTYPES + HR_DOCTYPES + BI_PAYROLL_DOCTYPES) + [
     "Employee",
     "Deleted Document",
@@ -105,7 +105,7 @@ class ApiKeyCheck(unittest.TestCase):
         code, text = self.run_check(FakeSite())
         self.assertEqual(code, 0)
         self.assertIn("refused  Salary Slip", text)
-        self.assertIn("total 13: 0 visible, 13 refused, 0 empty", text)
+        self.assertIn("total 14: 0 visible, 14 refused, 0 empty", text)
 
     def test_empty_file_lines_exit_0(self):
         probed = FakeSite(readable={"File"}, rows={"File": False})
@@ -113,7 +113,7 @@ class ApiKeyCheck(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn(f"empty    {ON_SALARY_SLIP}", text)
         self.assertIn(f"empty    {ON_EMPLOYEE}", text)
-        self.assertIn("total 13: 0 visible, 11 refused, 2 empty", text)
+        self.assertIn("total 14: 0 visible, 12 refused, 2 empty", text)
 
     def test_a_visible_file_line_exits_1(self):
         code, text = self.run_check(FakeSite(readable={"File"}))
@@ -125,7 +125,7 @@ class ApiKeyCheck(unittest.TestCase):
         code, text = self.run_check(probed)
         self.assertEqual(code, 1)
         self.assertIn("empty    Leave Type", text)
-        self.assertIn("total 13: 0 visible, 12 refused, 1 empty", text)
+        self.assertIn("total 14: 0 visible, 13 refused, 1 empty", text)
 
     def test_empty_on_the_unfiltered_extras_exits_1(self):
         for doctype in ("Employee", "Deleted Document", "Version"):
@@ -144,7 +144,7 @@ class ApiKeyCheck(unittest.TestCase):
         code, text = self.run_check(FakeSite(readable={"Salary Slip"}))
         self.assertEqual(code, 1)
         self.assertIn("visible  Salary Slip", text)
-        self.assertIn("1 visible, 12 refused", text)
+        self.assertIn("1 visible, 13 refused", text)
 
     def test_every_doctype_gets_a_line_in_order(self):
         _code, text = self.run_check(FakeSite())
@@ -195,7 +195,7 @@ class ApiKeyCheck(unittest.TestCase):
                 code, text = self.run_check(FakeSite(open_reports={name}))
                 self.assertEqual(code, 1)
                 self.assertIn(f"report   visible  {name}", text.splitlines())
-                self.assertIn("1 visible, 12 refused", text)
+                self.assertIn("1 visible, 13 refused", text)
 
     def test_an_empty_leave_ledger_entry_exits_1_as_any_line_but_file(self):
         lister = FakeSite(
