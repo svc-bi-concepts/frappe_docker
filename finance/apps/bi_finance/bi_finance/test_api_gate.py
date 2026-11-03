@@ -7,7 +7,7 @@ Runs on the host, in the light gate:
 
 Pinned: every path shape that reaches a whitelisted function (v1, v2, the v2 doctype route, cmd on any path) and the
 two that do not (resource, document); a listed and an unlisted method per gated user; a human, Guest and api-agent
-pass the unlisted one; the nine functions of erp-qg70, create_payment_proposal and search_link are refused; a name
+pass the unlisted one; the nine functions of erp-qg70, create_payment_proposal, search_link and submit are refused; a name
 that only starts with a listed one is refused; the refusal is PermissionError (HTTP 403) and names the method alone;
 the hook is auth_hooks; GATED_USERS stays inside assistant_actions.API_USERS.
 """
@@ -42,6 +42,7 @@ ALSO_REFUSED = [
     "bi_finance.payment_run.create_payment_proposal",
     "erpnextswiss.erpnextswiss.doctype.payment_proposal.payment_proposal.create_payment_proposal",
     "bi_finance.assistant.approve_action",
+    "frappe.client.submit",
     "frappe.client.get_list",
     "run_doc_method",
     "frappe.handler.run_doc_method",
@@ -200,6 +201,18 @@ class Gate(unittest.TestCase):
                 with self.subTest(user=user, method=method):
                     self.assertRefused(user, "/api/method/" + method)
                     self.assertNotIn(method, gate.ALLOWED_METHODS)
+
+    def test_submit_is_refused_for_each_gated_user_on_every_shape(self):
+        for user in (SYNC, MCP):
+            for path, form in (
+                ("/api/method/frappe.client.submit", None),
+                ("/api/v1/method/frappe.client.submit", None),
+                ("/api/v2/method/frappe.client.submit", None),
+                ("/api/resource/Sales Invoice", {"cmd": "frappe.client.submit"}),
+            ):
+                with self.subTest(user=user, path=path):
+                    self.assertRefused(user, path, form)
+        self.assertNotIn("frappe.client.submit", gate.ALLOWED_METHODS)
 
     def test_search_link_is_refused_with_a_query_that_names_a_whitelisted_function(
         self,

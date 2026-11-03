@@ -18,8 +18,10 @@ import frappe
 GATED_USERS = frozenset({"api-sync@finance.local", "api-mcp@finance.local"})
 
 # Exact dotted names, no prefix match. What the hourly sync calls (getdoctype, the meta its loaders read), what
-# frappe-mcp-server 1.2.0 calls itself (ping) or names for the model (get_logged_user, submit), and the two report
-# calls the key check asks. Each reads or writes as the session user and checks that user's permission; none is in
+# frappe-mcp-server 1.2.0 calls itself (ping) or names for the model (get_logged_user), run for the ledger reports an
+# MCP session asks through frappe_run_method (Trial Balance, General Ledger, Profit and Loss, Balance Sheet, the
+# ageing reports), and get_script, the one report call the key check asks: it passes the same report role gate as
+# run and runs no report. Each reads as the session user and checks that user's permission; none writes, none is in
 # frappe.desk.search (it calls any whitelisted query by name), none runs a document method, hrms or erpnextswiss
 # (employee_query and create_payment_proposal_for_mcp answer without a payroll role). No bi_finance method: neither
 # the sync nor an MCP tool calls one.
@@ -28,7 +30,6 @@ ALLOWED_METHODS = frozenset(
         "ping",  # the MCP's ping tool, /api/method/ping
         "frappe.ping",
         "frappe.auth.get_logged_user",
-        "frappe.client.submit",  # permission "submit" on the document, see Document.check_docstatus_transition
         "frappe.desk.form.load.getdoctype",
         "frappe.desk.query_report.get_script",
         "frappe.desk.query_report.run",

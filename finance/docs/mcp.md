@@ -265,10 +265,11 @@ so a ban on single names is not enough. The method gate (erp-kb06) turns it roun
   `cmd` in the query or the body on any path, must name a method in `ALLOWED_METHODS`
   of the same file, an exact dotted name with no prefix match. Anything else answers
   403 and the message names the method only. The list is short: `ping` and
-  `frappe.ping`, `frappe.auth.get_logged_user`, `frappe.client.submit`,
-  `frappe.desk.form.load.getdoctype` (the sync reads doctype meta), and
-  `frappe.desk.query_report.run` and `get_script`. Nothing in `frappe.desk.search`,
-  no `run_doc_method`, no hrms, erpnextswiss or bi_finance method is on it.
+  `frappe.ping`, `frappe.auth.get_logged_user`, `frappe.desk.form.load.getdoctype`
+  (the sync reads doctype meta), and `frappe.desk.query_report.run` (the ledger
+  reports an MCP session asks) and `get_script`. Nothing that writes, nothing in
+  `frappe.desk.search`, no `run_doc_method`, no hrms, erpnextswiss or bi_finance
+  method is on it.
 - What it leaves alone: `/api/resource/...` and `/api/v2/document/...`, including
   document methods. Frappe checks the document's permission there, and the key roles
   and `keyaccess` are what limit them.
