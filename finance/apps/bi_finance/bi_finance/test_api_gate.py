@@ -10,11 +10,14 @@ two that do not (resource, document); a listed and an unlisted method per gated 
 pass the unlisted one; the nine functions of erp-qg70, create_payment_proposal, search_link and submit are refused; a name
 that only starts with a listed one is refused; the refusal is PermissionError (HTTP 403) and names the method alone;
 the hook is auth_hooks; GATED_USERS stays inside assistant_actions.API_USERS.
+The list in finance/docs/mcp.md equals ALLOWED_METHODS.
 """
 
+import re
 import sys
 import types
 import unittest
+from pathlib import Path
 from unittest import mock
 
 SYNC = "api-sync@finance.local"
@@ -265,6 +268,31 @@ class Gate(unittest.TestCase):
                 self.assertEqual(name, name.strip())
                 self.assertNotIn("*", name)
                 self.assertNotIn("/", name)
+
+    def test_mcp_doc_lists_the_allowed_methods(self):
+        doc = Path(__file__).resolve().parents[3] / "docs" / "mcp.md"
+        text = doc.read_text()
+        # Dots inside backticked method names do not end the sentence.
+        match = re.search(
+            r"The list is short:((?:`[^`]+`|[^`.])*)\.(?=\s|$)", text, re.DOTALL
+        )
+        self.assertIsNotNone(
+            match, "Could not find the allowed-method sentence in mcp.md"
+        )
+        names = set(re.findall(r"`([^`]+)`", match.group(1)))
+        missing = sorted(gate.ALLOWED_METHODS - names)
+        extra = sorted(names - gate.ALLOWED_METHODS)
+        self.assertEqual(
+            names,
+            set(gate.ALLOWED_METHODS),
+            f"mcp.md missing allowed methods: {missing}; extra methods: {extra}",
+        )
+
+    def test_mcp_doc_ignores_methods_in_following_prose(self):
+        names = ", ".join(f"`{name}`" for name in sorted(gate.ALLOWED_METHODS))
+        text = f"The list is short: {names}. Excluded: `run_doc_method`."
+        with mock.patch.object(Path, "read_text", return_value=text):
+            self.test_mcp_doc_lists_the_allowed_methods()
 
     # ---- the refusal
 
