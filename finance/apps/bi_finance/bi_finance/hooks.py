@@ -21,6 +21,10 @@ override_whitelisted_methods = {
     "erpnextswiss.erpnextswiss.doctype.payment_proposal.payment_proposal.create_payment_proposal": "bi_finance.payment_run.create_payment_proposal",
 }
 
+# api-sync and api-mcp call only the methods listed in api_gate.py; anything else answers 403 (erp-kb06). auth_hooks, not
+# before_request: a token is validated after the before_request hooks run, so there the user is still Guest.
+auth_hooks = ["bi_finance.api_gate.refuse"]
+
 # the Desk buttons of the VAT Declaration (public/js/vat_declaration.js): Fill from payments, with its preview
 doctype_js = {"VAT Declaration": "public/js/vat_declaration.js"}
 
