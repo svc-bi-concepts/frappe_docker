@@ -6,7 +6,7 @@
 #
 # usage: finance/scripts/gate-image.sh
 #   Prints the image reference (repository:tag) on stdout. When the branch pins another tag than main, one warning line on
-#   stderr says to rebase onto main. Exits 1 when none of those tags is present, naming them.
+#   stderr says to merge main into the branch. Exits 1 when none of those tags is present, naming them.
 set -eu
 
 case "${1:-}" in
@@ -46,7 +46,7 @@ else
 fi
 
 if [ "$BRANCH" != "$MAIN" ] || [ "$TAG" != "$MAIN" ]; then
-  echo "gate-image: origin/main pins $REPO:${MAIN:-(unreadable)}, this branch pins $REPO:$BRANCH, the gate runs $REPO:$TAG: rebase onto main" >&2
+  echo "gate-image: origin/main pins $REPO:${MAIN:-(unreadable)}, this branch pins $REPO:$BRANCH, the gate runs $REPO:$TAG: merge main into this branch" >&2
 fi
 
 echo "$REPO:$TAG"
