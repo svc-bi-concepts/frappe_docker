@@ -661,7 +661,10 @@ class KeyaccessTest(unittest.TestCase):
         del site.levels["Payment Proposal Expense", "amount"]
         with self.assertRaisesRegex(SystemExit, "Payment Proposal Expense.amount"):
             site.run()
-        self.assertEqual(site.removed, [])
+        self.assertEqual((site.removed, site.setters, site.custom), ([], [], {}))
+        self.assertNotIn(
+            ("Accounts Manager", 1, 1, 1, 0), site.perms[swiss_setup.PROPOSAL]
+        )
 
     def test_it_leaves_the_other_employee_rows_alone(self):
         site = FakeKeySite()
@@ -708,6 +711,21 @@ class KeyaccessTest(unittest.TestCase):
         site.perms[swiss_setup.LEAVE_LEDGER].append(("Employee", 0, 0, 0, 0))
         with self.assertRaisesRegex(SystemExit, "read-back.*Employee"):
             site.run()
+
+    def test_a_level_1_insert_that_loses_a_level_0_row_fails_the_read_back(self):
+        site = FakeKeySite()
+        add = site.add_permission
+
+        def add_and_lose(doctype, role, permlevel=0, ptype=None):
+            add(doctype, role, permlevel, ptype)
+            site.perms[doctype] = [
+                p for p in site.perms[doctype] if p[0] != "Accounts User"
+            ]
+
+        site.add_permission = add_and_lose
+        with self.assertRaisesRegex(SystemExit, "read-back.*level 0 rows differ"):
+            site.run()
+        self.assertEqual(site.commits, 0)
 
     def test_only_roles_and_report_names_are_printed(self):
         said = " ".join(FakeKeySite().run())

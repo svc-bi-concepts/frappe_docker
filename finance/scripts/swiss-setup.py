@@ -1793,6 +1793,8 @@ def keyaccess():
     proposal_users_stop(human_roles())
     fields_raise = proposal_fields_to_raise(proposal_levels())
     perms_add = proposal_rows_to_add(proposal_perms())
+    # add_permission copies the standard rows before it adds one; the read-back holds it to that.
+    proposal_level0 = sorted(p for p in proposal_perms() if p[1] == 0)
     wanted = {}
     for report in KEY_REPORTS:
         if not frappe.db.exists("Report", report):
@@ -1866,6 +1868,8 @@ def keyaccess():
         problems.append(PROPOSAL + " field levels differ")
     if proposal_rows_to_add(proposal_perms()):
         problems.append(PROPOSAL + " level 1 rows differ")
+    if sorted(p for p in proposal_perms() if p[1] == 0) != proposal_level0:
+        problems.append(PROPOSAL + " level 0 rows differ")
     for report, roles in wanted.items():
         name = custom_role(report)
         have = (
