@@ -3,6 +3,7 @@
 Run with: python3 -m unittest discover -s finance/scripts -p 'test_*.py'
 """
 
+import ast
 import importlib.util
 import os
 import pathlib
@@ -250,6 +251,281 @@ class GebuevVersionedTest(unittest.TestCase):
         self.assertFalse(
             any("track changes on" in c.args[0] for c in say.call_args_list)
         )
+
+
+class KeyRolesTest(unittest.TestCase):
+    def test_key_roles_are_the_sync_roles_of_create_api_user(self):
+        script = (pathlib.Path(_path).parent / "create-api-user.sh").read_text()
+        line = next(l for l in script.splitlines() if l.startswith("SYNC_ROLES="))
+        self.assertEqual(
+            swiss_setup.KEY_ROLES, line.split("=", 1)[1].strip('"').split("|")
+        )
+
+    def test_the_mcp_roles_are_a_subset_of_the_key_roles(self):
+        script = (pathlib.Path(_path).parent / "create-api-user.sh").read_text()
+        line = next(l for l in script.splitlines() if l.startswith("MCP_ROLES="))
+        mcp = line.split("=", 1)[1].strip('"').split("|")
+        self.assertTrue(set(mcp) <= set(swiss_setup.KEY_ROLES))
+
+    def test_the_key_check_asks_the_reports_keyaccess_closes(self):
+        check = pathlib.Path(_path).parents[1] / "bexio" / "api_key_check.py"
+        line = next(
+            l for l in check.read_text().splitlines() if l.startswith("REPORTS = ")
+        )
+        self.assertEqual(
+            swiss_setup.KEY_REPORTS, ast.literal_eval(line.split("=")[1].strip())
+        )
+
+    def test_keyaccess_is_a_step_and_named_in_the_usage_line(self):
+        self.assertIn("keyaccess", swiss_setup.STEPS)
+        wrapper = (pathlib.Path(_path).parent / "swiss-setup.sh").read_text()
+        self.assertIn(" keyaccess ", wrapper)
+
+
+class EmployeeRowsToRemoveTest(unittest.TestCase):
+    # (role, permlevel, read, select, if_owner)
+    def test_select_only_rows_of_key_roles_go(self):
+        perms = [
+            ("Accounts User", 0, 0, 1, 0),
+            ("Sales Master Manager", 0, 0, 1, 0),
+            ("HR User", 0, 1, 1, 0),
+            ("Accounts Manager", 0, 1, 1, 0),
+        ]
+        self.assertEqual(
+            swiss_setup.employee_rows_to_remove(perms, swiss_setup.KEY_ROLES),
+            [("Accounts User", 0), ("Sales Master Manager", 0)],
+        )
+
+    def test_the_rows_if_owner_goes_along(self):
+        self.assertEqual(
+            swiss_setup.employee_rows_to_remove(
+                [("Accounts User", 0, 0, 1, 1)], ["Accounts User"]
+            ),
+            [("Accounts User", 1)],
+        )
+
+    def test_a_row_at_another_permlevel_or_without_select_stays(self):
+        perms = [("Accounts User", 1, 0, 1, 0), ("Accounts User", 0, 0, 0, 0)]
+        self.assertEqual(
+            swiss_setup.employee_rows_to_remove(perms, swiss_setup.KEY_ROLES), []
+        )
+
+    def test_nothing_to_remove_on_a_second_run(self):
+        perms = [("Accounts Manager", 0, 1, 1, 0), ("HR User", 0, 1, 1, 0)]
+        self.assertEqual(
+            swiss_setup.employee_rows_to_remove(perms, swiss_setup.KEY_ROLES), []
+        )
+
+    def test_a_key_role_with_read_stops_and_is_named(self):
+        perms = [("Accounts User", 0, 0, 1, 0), ("Item Manager", 0, 1, 1, 0)]
+        with self.assertRaisesRegex(SystemExit, "Item Manager") as stop:
+            swiss_setup.employee_rows_to_remove(perms, swiss_setup.KEY_ROLES)
+        self.assertNotIn("Accounts User", str(stop.exception))
+
+
+class ReportRolesTest(unittest.TestCase):
+    def test_the_key_roles_leave_and_the_order_stays(self):
+        self.assertEqual(
+            swiss_setup.report_roles(
+                "R", ["Accounts Manager", "Accounts User", "Auditor"], ["Accounts User"]
+            ),
+            ["Accounts Manager", "Auditor"],
+        )
+
+    def test_a_role_listed_twice_is_listed_once(self):
+        self.assertEqual(
+            swiss_setup.report_roles("R", ["A", "A"], ["B"]),
+            ["A"],
+        )
+
+    def test_no_role_left_stops_and_names_the_report(self):
+        with self.assertRaisesRegex(SystemExit, "R2"):
+            swiss_setup.report_roles("R2", ["Accounts User"], swiss_setup.KEY_ROLES)
+
+    def test_a_report_without_roles_stops_too(self):
+        with self.assertRaises(SystemExit):
+            swiss_setup.report_roles("R", [], swiss_setup.KEY_ROLES)
+
+
+class LeaveLedgerTest(unittest.TestCase):
+    def test_the_all_row_with_if_owner_is_found(self):
+        self.assertTrue(swiss_setup.leave_ledger_all_row([("All", 0, 1)]))
+
+    def test_other_all_rows_are_not_it(self):
+        perms = [("All", 1, 1), ("All", 0, 0), ("HR User", 0, 1)]
+        self.assertFalse(swiss_setup.leave_ledger_all_row(perms))
+
+    def test_the_three_hr_roles_match(self):
+        perms = [("System Manager", 0, 0), ("HR Manager", 0, 0), ("HR User", 0, 0)]
+        self.assertEqual(swiss_setup.leave_ledger_mismatch(perms), [])
+
+    def test_a_missing_or_extra_role_at_level_0_is_a_mismatch(self):
+        perms = [("System Manager", 0, 0), ("HR Manager", 0, 0), ("All", 0, 1)]
+        self.assertEqual(swiss_setup.leave_ledger_mismatch(perms), ["All", "HR User"])
+
+    def test_rows_at_other_levels_do_not_count(self):
+        perms = [
+            ("System Manager", 0, 0),
+            ("HR Manager", 0, 0),
+            ("HR User", 0, 0),
+            ("All", 1, 0),
+        ]
+        self.assertEqual(swiss_setup.leave_ledger_mismatch(perms), [])
+
+
+class FakeKeySite:
+    """The permission rows, report roles and Custom Roles the keyaccess step reads and writes."""
+
+    def __init__(self):
+        self.perms = {
+            "Employee": [
+                ("Accounts User", 0, 0, 1, 0),
+                ("Sales Master Manager", 0, 0, 1, 0),
+                ("Accounts Manager", 0, 1, 1, 0),
+                ("HR User", 0, 1, 1, 0),
+            ],
+            swiss_setup.LEAVE_LEDGER: [
+                ("System Manager", 0, 0, 0, 0),
+                ("HR Manager", 0, 0, 0, 0),
+                ("HR User", 0, 0, 0, 0),
+                ("All", 0, 0, 0, 1),
+            ],
+        }
+        self.has_role = {
+            "Cash Flow Forecast": ["Accounts Manager", "Accounts User"],
+            "Cash Flow Forecast Lines": ["Accounts Manager", "Accounts User"],
+            "Project Profitability": ["Projects Manager", "Accounts User"],
+        }
+        self.custom = {}
+        self.removed = []
+        self.commits = 0
+
+    def remove(self, doctype, role, permlevel, if_owner=0):
+        self.removed.append((doctype, role))
+        self.perms[doctype] = [
+            p
+            for p in self.perms[doctype]
+            if not (p[0] == role and p[1] == permlevel and p[-1] == if_owner)
+        ]
+
+    def meta(self, doctype):
+        fields = {
+            "Employee": ("role", "permlevel", "read", "select", "if_owner"),
+            swiss_setup.LEAVE_LEDGER: ("role", "permlevel", "x", "y", "if_owner"),
+        }[doctype]
+        rows = [
+            types.SimpleNamespace(get=dict(zip(fields, p)).get)
+            for p in self.perms[doctype]
+        ]
+        return types.SimpleNamespace(permissions=rows)
+
+    def custom_role(self, name=None):
+        site = self
+
+        class Doc:
+            def __init__(self, report=None):
+                self.report = report
+                self.roles = [
+                    types.SimpleNamespace(role=r) for r in site.custom.get(report, [])
+                ]
+
+            def set(self, _field, rows):
+                self.roles = [types.SimpleNamespace(role=r["role"]) for r in rows]
+
+            def save(self):
+                site.custom[self.report] = [d.role for d in self.roles]
+
+            insert = save
+
+        return Doc(name)
+
+    def run(self):
+        remove_module = types.SimpleNamespace(remove=self.remove)
+        name = "frappe.core.page.permission_manager.permission_manager"
+        with mock.patch.dict(sys.modules, {name: remove_module}), mock.patch.object(
+            swiss_setup, "frappe"
+        ) as frappe, mock.patch.object(swiss_setup, "say") as say:
+            frappe.get_meta.side_effect = self.meta
+            frappe.db.exists.return_value = True
+            frappe.get_all.side_effect = lambda _dt, filters, **kw: list(
+                self.has_role[filters["parent"]]
+            )
+            frappe.db.get_value.side_effect = lambda _dt, filters, _f: (
+                filters["report"] if filters["report"] in self.custom else None
+            )
+            frappe.get_doc.side_effect = lambda _dt, name: self.custom_role(name)
+            frappe.new_doc.side_effect = lambda _dt: self.custom_role()
+            frappe.db.commit.side_effect = lambda: setattr(
+                self, "commits", self.commits + 1
+            )
+            swiss_setup.keyaccess()
+        return [c.args[0] for c in say.call_args_list]
+
+
+class KeyaccessTest(unittest.TestCase):
+    def test_it_closes_employee_the_leave_ledger_and_both_reports(self):
+        site = FakeKeySite()
+        site.run()
+        self.assertEqual(
+            site.removed,
+            [
+                ("Employee", "Accounts User"),
+                ("Employee", "Sales Master Manager"),
+                ("Leave Ledger Entry", "All"),
+            ],
+        )
+        self.assertEqual(site.custom["Cash Flow Forecast"], ["Accounts Manager"])
+        self.assertEqual(site.custom["Cash Flow Forecast Lines"], ["Accounts Manager"])
+        self.assertEqual(site.custom["Project Profitability"], ["Projects Manager"])
+        self.assertEqual(site.commits, 1)
+
+    def test_it_leaves_the_other_employee_rows_alone(self):
+        site = FakeKeySite()
+        site.run()
+        self.assertEqual(
+            [p[0] for p in site.perms["Employee"]], ["Accounts Manager", "HR User"]
+        )
+
+    def test_a_second_run_changes_nothing_and_says_so(self):
+        site = FakeKeySite()
+        site.run()
+        removed, custom = list(site.removed), dict(site.custom)
+        said = site.run()
+        self.assertEqual(site.removed, removed)
+        self.assertEqual(site.custom, custom)
+        self.assertTrue(any("nothing to change" in line for line in said))
+
+    def test_an_existing_custom_role_is_updated(self):
+        site = FakeKeySite()
+        site.custom["Cash Flow Forecast"] = ["Accounts Manager", "Accounts User"]
+        site.run()
+        self.assertEqual(site.custom["Cash Flow Forecast"], ["Accounts Manager"])
+
+    def test_a_stop_comes_before_any_change(self):
+        site = FakeKeySite()
+        site.perms["Employee"].append(("Item Manager", 0, 1, 1, 0))
+        with self.assertRaisesRegex(SystemExit, "Item Manager"):
+            site.run()
+        self.assertEqual(site.removed, [])
+        self.assertEqual(site.custom, {})
+
+    def test_a_report_left_without_roles_stops_before_any_change(self):
+        site = FakeKeySite()
+        site.has_role["Cash Flow Forecast"] = ["Accounts User"]
+        with self.assertRaisesRegex(SystemExit, "Cash Flow Forecast"):
+            site.run()
+        self.assertEqual(site.removed, [])
+
+    def test_a_leave_ledger_that_differs_after_the_removal_fails_the_read_back(self):
+        site = FakeKeySite()
+        site.perms[swiss_setup.LEAVE_LEDGER].append(("Employee", 0, 0, 0, 0))
+        with self.assertRaisesRegex(SystemExit, "read-back.*Employee"):
+            site.run()
+
+    def test_only_roles_and_report_names_are_printed(self):
+        said = " ".join(FakeKeySite().run())
+        self.assertIn("Accounts User", said)
+        self.assertNotIn("employee_name", said)
 
 
 class PayslipChangesTest(unittest.TestCase):

@@ -199,7 +199,7 @@ so the buttons are a convenience, not the check.
 
 ## The setup script
 
-`finance/scripts/swiss-setup.sh [coa] [accounts] [vat] [fiscal] [fields] [currencies] [banks] [gebuev] [qrbill] [host] [payments] [hr]`
+`finance/scripts/swiss-setup.sh [coa] [accounts] [vat] [fiscal] [fields] [currencies] [banks] [gebuev] [keyaccess] [qrbill] [host] [payments] [hr]`
 pipes `swiss-setup.py` into bench's Python in the backend container. No argument
 runs all steps. Every step skips what exists, so a second run changes nothing.
 
@@ -376,6 +376,9 @@ prints what changed. A second run changes nothing.
 
 Not in the step: v16 has no separate audit-trail setting; Track Changes is the
 version history. Freezing is a separate command, below.
+
+**keyaccess.** Closes Employee, Leave Ledger Entry and three payroll reports for
+the roles of the MCP and sync keys; see "What the keys reach" in `mcp.md`.
 
 **freeze.** `swiss-setup.sh freeze <YYYY-MM-DD> [--apply]` sets the company's
 "Accounts Frozen Till Date": no posting dated on or before the date. It is a dry
