@@ -374,11 +374,11 @@ prints what changed. A second run changes nothing.
   one. `--remove-month` cancels first, which writes one, and the background job
   that follows the delete removes it with the slip.
 
-**keyaccess.** Closes Employee, Leave Ledger Entry and three payroll reports for
-the roles of the MCP and sync keys; see "What the keys reach" in `mcp.md`.
-
 Not in the step: v16 has no separate audit-trail setting; Track Changes is the
 version history. Freezing is a separate command, below.
+
+**keyaccess.** Closes Employee, Leave Ledger Entry and three payroll reports for
+the roles of the MCP and sync keys; see "What the keys reach" in `mcp.md`.
 
 **freeze.** `swiss-setup.sh freeze <YYYY-MM-DD> [--apply]` sets the company's
 "Accounts Frozen Till Date": no posting dated on or before the date. It is a dry
