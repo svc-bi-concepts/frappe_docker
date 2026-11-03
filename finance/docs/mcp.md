@@ -211,13 +211,26 @@ mismatch, printing role and report names only):
   hrms goes through it: ledger rows are written with `ignore_permissions` and
   read by query. System Manager, HR Manager and HR User stay.
 - The reports Cash Flow Forecast (net pay per run), Cash Flow Forecast Lines
-  (the same computation, line by line) and Project Profitability (gross pay per
-  slip) get a Custom Role without the key roles. A report with no roles is open
-  to everyone, so an empty result stops the step.
+  (the same computation, line by line), Project Profitability (gross pay per
+  slip), Monthly Worktime and Worktime Overview (given an employee id they read
+  name, target and actual hours and leave balance past the Employee permission,
+  with no Timesheet row needed) get a Custom Role without the key roles. A
+  report with no roles is open to everyone, so an empty result stops the step.
+- Payment Proposal: the `salaries` and `expenses` tables, and the employee, slip,
+  claim, amount, account and date fields of their two child doctypes, are raised
+  to permlevel 1, with level 1 read and write for Accounts Manager and System
+  Manager added beside the level 0 rows (Accounts User keeps those). A key then
+  gets neither the tables from a document read or a list, nor the fields from
+  the child doctypes listed directly. The step stops if a key role holds level 1
+  on the doctype, or if an enabled person holds Accounts User without Accounts
+  Manager or System Manager (that person would lose the tables). The child-field
+  closure holds only while no key role has a level 1 row on Payment Proposal (a
+  direct child list is judged by the parent's permissions); the check has a
+  "level1" line for that.
 
 What `finance/bexio/api_key_check.py` asks of a key: one row from every doctype of
 the hrms and BI Payroll modules, from Employee, Deleted Document and Version, from
-File on Salary Slip and on Employee, and for the three reports above whether
+File on Salary Slip and on Employee, and for the five reports above whether
 `frappe.desk.query_report.get_script` answers. That call passes the same gate as
 the report and returns no report data, so the check never runs a report. Exit 0
 means every line was refused (File may be empty).
@@ -234,19 +247,24 @@ among them `create_payment_proposal_for_mcp` in erpnextswiss (salary and expense
 lines) and `erpnext.controllers.queries.employee_query` (employee names). They stay
 open until the method gate of erp-kb06 lands, which limits both keys to a named list
 of methods; the full list is in the notes of erp-qg70. The salary and expense tables
-of Payment Proposal, which Accounts User reads, are closed by erp-btgr. So a key that
+of Payment Proposal, which Accounts User reads, are closed by keyaccess. So a key that
 passes the check today does not yet mean a key that reaches no payroll, HR or Employee
 data.
 
 What the proof does not cover:
 
-- The nine functions and the Payment Proposal tables above, until erp-kb06 and
-  erp-btgr land.
+- The nine functions above, until erp-kb06 lands; and the Payment Proposal tables
+  until keyaccess has run on live (erp-95bt). Live holds no proposal yet, so the
+  child-doctype lines of the check come back empty and prove nothing until the
+  first one exists (erp-nwbd reads it with the MCP key).
 - bi_finance's own whitelisted functions were not swept; the method gate covers them.
 - Salary traces in the ledger (GL Entry, Journal Entry, Payment Entry, Bank
   Transaction): Benchi decides through yard-xsab.
-- Eight more reports show employee names through Timesheet or party rows. Live has
-  no Timesheet and no Employee party posting; if that changes, they are read again.
+- Eight other reports the key roles open name employees only through Timesheet or
+  party rows: Accounts Receivable, Daily Timesheet Summary, General Ledger, Service
+  Invoicing, Timesheet Billing Summary, Timesheet Month per Activity, Timesheet
+  Month per Project and Trial Balance for Party. Live has no Timesheet and no
+  Employee party posting; if that changes, they are read again.
 - Dashboards, number cards and other generic frappe endpoints were not swept.
   The check shows what it asks, no more.
 

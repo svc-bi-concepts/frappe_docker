@@ -1589,14 +1589,41 @@ KEY_ROLES = [
     "Purchase Master Manager",
     "Item Manager",
 ]
-# Payroll reports the key roles opened: Cash Flow Forecast reads net pay per run, Cash Flow Forecast Lines shows
-# the same computation line by line (it names no Salary Slip itself, it calls the other's compute), Project
-# Profitability gross pay per slip. The key check (api_key_check.py) asks the same ones.
+# Reports the key roles opened that read payroll or HR: Cash Flow Forecast reads net pay per run, Cash Flow
+# Forecast Lines shows the same computation line by line (it names no Salary Slip itself, it calls the other's
+# compute), Project Profitability gross pay per slip. Monthly Worktime and Worktime Overview (erp-btgr) take an
+# employee id and read it past the Employee permission (frappe.get_doc without a check): name, target and actual
+# hours and leave balance, with no Timesheet row needed. The key check (api_key_check.py) asks the same ones.
 KEY_REPORTS = [
     "Cash Flow Forecast",
     "Cash Flow Forecast Lines",
     "Project Profitability",
+    "Monthly Worktime",
+    "Worktime Overview",
 ]
+# Payment Proposal (erp-btgr): Accounts User holds level 0 read and write, and the two tables carry employee,
+# slip and amount. Raised to permlevel 1, which only PROPOSAL_ROLES hold. The child fields too: a child doctype
+# listed directly (parent=Payment Proposal) is judged by the parent's level 0 row and its own field levels.
+PROPOSAL = "Payment Proposal"
+PROPOSAL_ROLES = ["Accounts Manager", "System Manager"]
+PROPOSAL_FIELDS = {
+    PROPOSAL: ["salaries", "expenses"],
+    "Payment Proposal Salary Slip": [
+        "salary_slip",
+        "employee",
+        "employee_name",
+        "amount",
+        "payable_account",
+        "target_date",
+    ],
+    "Payment Proposal Expense": [
+        "expense_claim",
+        "employee",
+        "employee_name",
+        "amount",
+        "payable_account",
+    ],
+}
 LEAVE_LEDGER = "Leave Ledger Entry"
 # The roles that keep a level 0 row on the leave ledger once All is gone.
 LEAVE_LEDGER_ROLES = ["HR Manager", "HR User", "System Manager"]
@@ -1647,6 +1674,64 @@ def leave_ledger_mismatch(perms):
     return sorted(roles ^ set(LEAVE_LEDGER_ROLES))
 
 
+def proposal_fields_to_raise(levels):
+    """levels: {(doctype, fieldname): permlevel or None} as read from the site. Returns the (doctype, fieldname)
+    pairs of PROPOSAL_FIELDS whose permlevel is not 1, in order. A field the site does not know stops.
+    """
+    missing = [f"{dt}.{f}" for (dt, f), level in levels.items() if level is None]
+    if missing:
+        raise SystemExit("keyaccess: " + PROPOSAL + ": no field " + ", ".join(missing))
+    return [
+        (dt, f)
+        for dt, fields in PROPOSAL_FIELDS.items()
+        for f in fields
+        if levels[dt, f] != 1
+    ]
+
+
+def proposal_rows_to_add(perms):
+    """perms: (role, permlevel, read, write, if_owner) rows of Payment Proposal. Returns (role, [ptype]) for
+    each PROPOSAL_ROLES role whose level 1 row is missing or lacks read or write. Level 0 rows stay.
+    """
+    out = []
+    for role in PROPOSAL_ROLES:
+        have = {
+            ptype
+            for r, level, read, write, o in perms
+            if r == role and level == 1 and not o
+            for ptype, on in (("read", read), ("write", write))
+            if on
+        }
+        missing = [p for p in ("read", "write") if p not in have]
+        if missing:
+            out.append((role, missing))
+    return out
+
+
+def proposal_stops(perms, key_roles):
+    """A key role with a level 1 row on Payment Proposal is a grant this step does not own."""
+    stops = sorted({r for r, level, *_ in perms if level == 1 and r in key_roles})
+    if stops:
+        raise SystemExit(
+            "keyaccess: " + PROPOSAL + ": level 1 held by " + ", ".join(stops)
+        )
+
+
+def proposal_users_stop(user_roles):
+    """user_roles: the role sets of the enabled human users. Whoever holds Accounts User and neither of
+    PROPOSAL_ROLES would lose the tables at level 1: role name and count only."""
+    stuck = sum(
+        1
+        for roles in user_roles
+        if "Accounts User" in roles and not set(PROPOSAL_ROLES) & set(roles)
+    )
+    if stuck:
+        raise SystemExit(
+            f"keyaccess: {PROPOSAL}: {stuck} enabled user(s) hold Accounts User "
+            f"without {' or '.join(PROPOSAL_ROLES)}"
+        )
+
+
 def keyaccess():
     from frappe.core.page.permission_manager.permission_manager import remove
 
@@ -1666,8 +1751,48 @@ def keyaccess():
     def custom_role(report):
         return frappe.db.get_value("Custom Role", {"report": report}, "name")
 
+    def proposal_perms():
+        return rows(PROPOSAL, "role", "permlevel", "read", "write", "if_owner")
+
+    def proposal_levels():
+        levels = {}
+        for dt, names in PROPOSAL_FIELDS.items():
+            frappe.clear_cache(doctype=dt)
+            meta = frappe.get_meta(dt)
+            for name in names:
+                field = meta.get_field(name)
+                levels[dt, name] = (field.permlevel or 0) if field else None
+        return levels
+
+    def human_roles():
+        # Enabled people, not the API users (api-*@finance.local) and not Administrator.
+        users = frappe.get_all(
+            "User",
+            {
+                "enabled": 1,
+                "user_type": "System User",
+                "name": ["not in", ["Administrator", "Guest"]],
+            },
+            pluck="name",
+        )
+        users = [
+            u
+            for u in users
+            if not (u.startswith("api-") and u.endswith("@finance.local"))
+        ]
+        return [
+            frappe.get_all(
+                "Has Role", {"parent": u, "parenttype": "User"}, pluck="role"
+            )
+            for u in users
+        ]
+
     # Everything that can stop is read before the first write.
     employee_drop = employee_rows_to_remove(employee(), KEY_ROLES)
+    proposal_stops(proposal_perms(), KEY_ROLES)
+    proposal_users_stop(human_roles())
+    fields_raise = proposal_fields_to_raise(proposal_levels())
+    perms_add = proposal_rows_to_add(proposal_perms())
     wanted = {}
     for report in KEY_REPORTS:
         if not frappe.db.exists("Report", report):
@@ -1688,6 +1813,26 @@ def keyaccess():
     if leave_ledger_all_row(leave_ledger()):
         remove(LEAVE_LEDGER, "All", 0, 1)
         say(f"keyaccess: {LEAVE_LEDGER}: level 0 row of All removed")
+        changed = True
+    for dt, field in fields_raise:
+        frappe.make_property_setter(
+            {
+                "doctype": dt,
+                "doctype_or_field": "DocField",
+                "fieldname": field,
+                "property": "permlevel",
+                "value": 1,
+                "property_type": "Int",
+            }
+        )
+        say(f"keyaccess: {dt}.{field}: permlevel set to 1")
+        changed = True
+    for role, ptypes in perms_add:
+        # add_permission copies the standard rows to Custom DocPerm first (setup_custom_perms), so level 0 stays.
+        frappe.permissions.add_permission(PROPOSAL, role, 1)
+        for ptype in ptypes:
+            frappe.permissions.update_permission_property(PROPOSAL, role, 1, ptype, 1)
+        say(f"keyaccess: {PROPOSAL}: level 1 {' and '.join(ptypes)} for {role}")
         changed = True
     for report, roles in wanted.items():
         name = custom_role(report)
@@ -1717,6 +1862,10 @@ def keyaccess():
             f"{LEAVE_LEDGER} level 0 differs in "
             + ", ".join(leave_ledger_mismatch(leave_ledger()))
         )
+    if proposal_fields_to_raise(proposal_levels()):
+        problems.append(PROPOSAL + " field levels differ")
+    if proposal_rows_to_add(proposal_perms()):
+        problems.append(PROPOSAL + " level 1 rows differ")
     for report, roles in wanted.items():
         name = custom_role(report)
         have = (
@@ -1736,6 +1885,8 @@ def keyaccess():
         + ("done" if changed else "nothing to change")
         + ": Employee, "
         + LEAVE_LEDGER
+        + ", "
+        + PROPOSAL
         + ", "
         + ", ".join(KEY_REPORTS)
     )

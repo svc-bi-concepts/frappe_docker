@@ -14,12 +14,20 @@ with a Custom Role): each is asked through frappe.desk.query_report.get_script, 
 same gate as the report (Report.is_permitted, then report permission on its doctype) and returns no
 report data. The report itself is never run, and the script that comes back is dropped on the spot.
 
+Then Payment Proposal's two child doctypes, listed directly with parent=Payment Proposal and asked for employee and
+amount (keyaccess raises those fields to permlevel 1): refused, empty (no row, or a row with its name alone, which is
+what Frappe returns once the fields are dropped) or visible (a row carrying employee or amount).
+
+One "level1" line: visible when a key role holds a permlevel 1 row on Payment Proposal (read through the agent
+key), which would reopen the child fields; refused when none does.
+
 One line per doctype: refused (HTTP 403, Frappe's answer to a list without read), visible (a
 row came back) or empty (allowed to list, no row there); the File lines say which filter ran. One
-line per report, starting "report": refused (403) or visible (an answer came back). Then a total.
+line per report, starting "report": refused (403) or visible (an answer came back). One line per child doctype,
+starting "child". Then a total.
 No row and no name is ever printed, and neither is a key.
 
-Exit 0 only when every line is refused (reports included), the File lines alone may also be empty:
+Exit 0 only when every line is refused (reports included), the File and child lines alone may also be empty:
 File is filtered row by row, so anyone may list it. Exit 1 otherwise: empty on another line means
 the key may list that doctype, and the rows come later. Exit 2 when the check could not finish (a
 call failed for another reason, a key file is unreadable, or a module that holds doctypes listed
@@ -47,6 +55,24 @@ MODULES = [
 ]
 # The modules that hold doctypes today; the other hrms entries list none yet, and that is no failure.
 MUST_LIST = ["Payroll", "HR", "BI Payroll"]
+# Payment Proposal's two child doctypes, listed directly with parent=Payment Proposal (erp-btgr): the key may not
+# read employee or amount from them. Empty passes, as the File lines do: with no proposal there is no row to show.
+CHILDREN = [
+    ("Payment Proposal Salary Slip", "Payment Proposal", ("employee", "amount")),
+    ("Payment Proposal Expense", "Payment Proposal", ("employee", "amount")),
+]
+# The roles of the sync key (the longer list in create-api-user.sh; test_swiss_setup compares it with keyaccess's
+# KEY_ROLES). A direct child list is filtered by the parent's permissions, so the child fields stay closed only
+# while none of them holds a level 1 row on Payment Proposal (erp-btgr).
+KEY_ROLES = [
+    "Accounts User",
+    "Sales User",
+    "Purchase User",
+    "Stock User",
+    "Sales Master Manager",
+    "Purchase Master Manager",
+    "Item Manager",
+]
 # Doctypes outside those modules that carry payroll data, with the filter that narrows them.
 EXTRA = [
     ("Employee", []),
@@ -55,10 +81,17 @@ EXTRA = [
     ("File", [["attached_to_doctype", "=", "Salary Slip"]]),
     ("File", [["attached_to_doctype", "=", "Employee"]]),
 ]
-# Reports that read payroll and are asked besides the doctypes: Cash Flow Forecast (net pay per run, raw SQL),
-# Cash Flow Forecast Lines (the same computation, line by line) and Project Profitability (gross pay per slip).
+# Reports that read payroll or HR and are asked besides the doctypes: Cash Flow Forecast (net pay per run, raw SQL),
+# Cash Flow Forecast Lines (the same computation, line by line), Project Profitability (gross pay per slip), and
+# Monthly Worktime and Worktime Overview (given an employee id, they read it past the Employee permission).
 # swiss-setup.py's KEY_REPORTS closes the same ones.
-REPORTS = ["Cash Flow Forecast", "Cash Flow Forecast Lines", "Project Profitability"]
+REPORTS = [
+    "Cash Flow Forecast",
+    "Cash Flow Forecast Lines",
+    "Project Profitability",
+    "Monthly Worktime",
+    "Worktime Overview",
+]
 
 
 def targets(lister):
@@ -96,6 +129,27 @@ def probe_report(erp, report):
     return "visible"
 
 
+def probe_child(erp, doctype, parent, fields):
+    """refused or visible or empty for a child doctype listed directly with its parent doctype named: visible
+    only when a row came back carrying one of the person or money fields. Frappe drops a field the key may not
+    read, so a row with the name alone counts as empty. The row is dropped on the spot.
+    """
+    try:
+        rows = erp.list(doctype, [], fields=fields, limit=1, parent=parent)
+    except im.ErpError as err:
+        if err.status == 403:
+            return "refused"
+        raise
+    return "visible" if any(row.get(f) for row in rows for f in fields) else "empty"
+
+
+def probe_level1(lister, doctype, key_roles):
+    """visible when a key role holds a permlevel 1 row on the doctype, else refused. Roles are not printed."""
+    rows = lister.meta(doctype).get("permissions", [])
+    held = any(r.get("permlevel") == 1 and r.get("role") in key_roles for r in rows)
+    return "visible" if held else "refused"
+
+
 def label(doctype, filters):
     """The doctype, and the filter when one ran, so the two File lines can be told apart."""
     return " ".join([doctype] + [f"({f} {op} {v})" for f, op, v in filters])
@@ -111,6 +165,13 @@ def check(lister, erp, out):
     for name in REPORTS:
         verdict = probe_report(erp, name)
         results.append((f"report   {verdict:8} {name}", verdict, False))
+    for doctype, parent, fields in CHILDREN:
+        verdict = probe_child(erp, doctype, parent, fields)
+        results.append((f"child    {verdict:8} {doctype}", verdict, True))
+    verdict = probe_level1(lister, "Payment Proposal", KEY_ROLES)
+    results.append(
+        (f"level1   {verdict:8} Payment Proposal, key roles", verdict, False)
+    )
     for line, _verdict, _ok_empty in results:
         print(line, file=out)
     counts = {
