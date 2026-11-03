@@ -330,11 +330,12 @@ Risks:
   exclusion (`is_proposed` 1); the pin test `bi_finance.test_hrms_accrual_filter` must pass before any live run.
 - **History slip empties the employee list of a same-month Payroll Entry.** hrms `remove_payrolled_employees`
   (`payroll_entry.py`, called from `get_employee_list`) drops every employee with a submitted Salary Slip of the
-  same start and end date. It does not filter on the Payroll Entry, so a history slip counts, and the list of a
-  Payroll Entry for that month says 'No employees found'. That is not a fault of the load. Employees added to the
-  entry by hand still get draft slips, and the history slip is unchanged. January 2027 is out of reach, because
-  history refuses dates after 2026-12-31. It touches only a 2026 parallel run on the copy: no live Payroll Entry
-  exists for a 2026 month. No hrms patch; see [Paystub history](operating.md) for the order of the comparison.
+  same start and end date. It does not filter on the Payroll Entry, so a history slip counts: the list of a
+  Payroll Entry for that month leaves those employees out, and says 'No employees found' when none is left. That
+  is not a fault of the load. Employees added to the entry by hand still get draft slips, and the history slip is
+  unchanged. January 2027 is out of reach, because history refuses dates after 2026-12-31. It touches only a 2026
+  parallel run on the copy: no live Payroll Entry exists for a 2026 month. No hrms patch; for the order of the
+  comparison see `finance/docs/operating.md`, "Cutover", step 7.
 
 ## Recommendation
 
@@ -630,10 +631,11 @@ redis-queue, which is not up yet, and then goes on.
 
 - `--jobs` for a step that enqueues work: redis-queue, queue-short, queue-long and the scheduler start after
   the restore and the safety settings, so the scheduler is already paused. A run that makes a copy token
-  (saving a User, `generate_keys`) starts with `--jobs`: a lean copy has no redis-queue to take that job. `--jobs`
-  is also what lets the job behind a Salary Slip deletion run, so the Version rows of a deleted slip stay on a
-  lean copy. The enqueue points on the copy:
+  (saving a User, `generate_keys`) starts with `--jobs`: a lean copy has no redis-queue to take that job. The
+  enqueue points on the copy:
   - Saving a User, `generate_keys` for a copy token included.
+  - Deleting a Salary Slip: frappe's `delete_dynamic_links` removes its Version rows in a job. `--jobs` is what
+    lets that job run; on a lean copy the Version rows of a deleted slip stay.
   - hrms Payroll Entry (`hrms/payroll/doctype/payroll_entry/payroll_entry.py`): create salary slips, submit
     salary slips, and Overtime Slip create and submit, in the background above 30 employees; cancel above
     50 linked salary slips.

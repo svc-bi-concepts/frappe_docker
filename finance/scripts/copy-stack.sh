@@ -10,9 +10,10 @@
 #        finance/scripts/copy-stack.sh remove              stop the copy and delete its volumes and staged backups
 #   up starts lean: db, redis-cache, backend, frontend (and the one-shot configurator and create-site). A Desk
 #   test needs no more. --jobs adds the background-job services (redis-queue, queue-short, queue-long, scheduler),
-#   for the steps that enqueue work: Payroll Entry over 30 employees, Overtime Slip over 30, cancelling a Payroll
-#   Entry with over 50 salary slips. --websocket adds websocket, for realtime updates in the Desk. frontend
-#   starts websocket anyway (its nginx needs the host at start), so the flag changes nothing on the frontend path.
+#   for the steps that enqueue work: saving a User (a copy token too), deleting a Salary Slip, Payroll Entry over
+#   30 employees, Overtime Slip over 30, cancelling a Payroll Entry with over 50 salary slips. --websocket adds
+#   websocket, for realtime updates in the Desk. frontend starts websocket anyway (its nginx needs the host at
+#   start), so the flag changes nothing on the frontend path.
 #   Down when the test is done (Benchi via IT, 2026-10-12: everything on the mini runs lean).
 #   The image frappe-finance-custom:<image-tag> must exist (build-image.sh copy builds it).
 #   The copy's frontend listens on 127.0.0.1:8815. Nothing is served on the tailnet here: the yardmaster
