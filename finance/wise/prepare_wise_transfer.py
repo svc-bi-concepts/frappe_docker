@@ -293,7 +293,7 @@ def main(argv=None):
         expected_iban = re.sub(r"\s+", "", args.expect_iban).upper()
         normalized_iban = re.sub(r"\s+", "", str(actual_iban or "")).upper()
         actual_name = recipient_name(recipient)
-        if (not actual_iban or normalized_iban != expected_iban
+        if (not normalized_iban or normalized_iban != expected_iban
                 or not normalized_name(actual_name)
                 or normalized_name(actual_name) != normalized_name(args.expect_name)):
             raise SystemExit("refused: first-payment recipient identity mismatch; IBAN Wise={!r}, expected={!r}; name Wise={!r}, expected={!r}".format(
