@@ -290,13 +290,18 @@ def main(argv=None):
     parser.add_argument("--pdftotext", default=PDFTOTEXT)
     args = parser.parse_args(argv)
 
-    with open(args.paystubs_json, encoding="utf-8") as f:
-        records = json.load(f)
-    rows, per_file, counts, per_type = parse_records(
-        records, args.paystubs_dir, args.pdftotext
-    )
-    write_csv(args.out, rows)
-    write_report(args.report, per_file, counts, per_type)
+    try:
+        with open(args.paystubs_json, encoding="utf-8") as f:
+            records = json.load(f)
+        rows, per_file, counts, per_type = parse_records(
+            records, args.paystubs_dir, args.pdftotext
+        )
+        write_csv(args.out, rows)
+        write_report(args.report, per_file, counts, per_type)
+    except (ValueError, OSError, KeyError, TypeError, RuntimeError):
+        # A path, a file name (it holds an employee id) or pdftotext's stderr in the message: a fixed line only.
+        print("aborted: unable to read or parse the paystubs", file=sys.stderr)
+        return 2
 
     print(f"files: {counts['files']}")
     print(f"parsed: {counts['parsed']}")

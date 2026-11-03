@@ -3,6 +3,9 @@
 Run with: python3 -m unittest discover -s finance/bexio -p 'test_*.py'
 """
 
+import contextlib
+import http.client
+import io
 import json
 import os
 import tempfile
@@ -321,6 +324,109 @@ class MainTest(unittest.TestCase):
                     1,
                 )
         self.assertEqual(write.call_args[0][1], ["paystub record 1: no content"])
+
+    def run_failing(self, setup, records=None):
+        """main's (code, stdout, stderr) when from_file or the Employee read raises what setup builds."""
+        out, err = io.StringIO(), io.StringIO()
+        with tempfile.TemporaryDirectory() as root:
+            write_export(root, records=records)
+            with setup(), contextlib.redirect_stdout(out), contextlib.redirect_stderr(
+                err
+            ):
+                code = ips.main(
+                    ["--paystubs-json", os.path.join(root, "paystubs.json")]
+                )
+        return code, out.getvalue(), err.getvalue()
+
+    def test_a_server_error_prints_the_status_and_none_of_its_text(self):
+        failure = im.ErpError(417, "GET /api/resource/Employee: Invented Person")
+        code, out, err = self.run_failing(
+            lambda: mock.patch.object(im.Erp, "from_file", side_effect=failure),
+            records=[record(EMP_A, 2024, 3)],
+        )
+        self.assertEqual(code, 2)
+        self.assertIn("status 417", err)
+        for text in (out, err):
+            self.assertNotIn("Invented Person", text)
+
+    def test_a_network_failure_prints_the_status(self):
+        failure = im.ErpError("network", "GET /api/resource/Employee")
+        code, _, err = self.run_failing(
+            lambda: mock.patch.object(im.Erp, "from_file", side_effect=failure),
+            records=[record(EMP_A, 2024, 3)],
+        )
+        self.assertEqual(code, 2)
+        self.assertIn("status network", err)
+
+    def test_a_malformed_status_line_prints_none_of_it(self):
+        failure = http.client.BadStatusLine("Invented Person")
+        code, out, err = self.run_failing(
+            lambda: mock.patch.object(im.Erp, "from_file", side_effect=failure),
+            records=[record(EMP_A, 2024, 3)],
+        )
+        self.assertEqual(code, 2)
+        for text in (out, err):
+            self.assertNotIn("Invented Person", text)
+
+    def test_an_unexpected_server_shape_prints_no_traceback(self):
+        erp = mock.Mock()
+        erp.list.return_value = [{"bexio_id": 7, "name": "Invented Person"}]
+        code, out, err = self.run_failing(
+            lambda: mock.patch.object(im.Erp, "from_file", return_value=erp),
+            records=[record(EMP_A, 2024, 3)],
+        )
+        self.assertEqual(code, 2)
+        for text in (out, err):
+            self.assertNotIn("Invented Person", text)
+
+    def test_an_unwritable_problems_list_prints_no_path(self):
+        failure = PermissionError(13, "denied", "/invented/Invented Person.txt")
+        erp = mock.Mock()
+        erp.list.return_value = []
+
+        @contextlib.contextmanager
+        def setup():
+            with mock.patch.object(im.Erp, "from_file", return_value=erp):
+                with mock.patch.object(ips.ip, "write_private", side_effect=failure):
+                    yield
+
+        code, out, err = self.run_failing(setup, records=[record(EMP_A, 2024, 3)])
+        self.assertEqual(code, 2)
+        for text in (out, err):
+            self.assertNotIn("Invented Person", text)
+            self.assertNotIn("/invented", text)
+
+    def test_a_file_error_prints_no_path(self):
+        failure = OSError(2, "No such file", "/invented/path/Invented Person.pdf")
+        code, out, err = self.run_failing(
+            lambda: mock.patch.object(ips, "load_records", side_effect=failure)
+        )
+        self.assertEqual(code, 2)
+        for text in (out, err):
+            self.assertNotIn("Invented Person", text)
+            self.assertNotIn("/invented", text)
+
+    def test_a_broken_paystubs_json_prints_no_traceback_and_no_path(self):
+        out, err = io.StringIO(), io.StringIO()
+        with tempfile.TemporaryDirectory() as root:
+            path = os.path.join(root, "paystubs.json")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("{not json")
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = ips.main(["--paystubs-json", path])
+        self.assertEqual(code, 2)
+        self.assertNotIn(root, out.getvalue() + err.getvalue())
+        self.assertNotIn("Traceback", err.getvalue())
+
+    def test_a_missing_paystubs_json_prints_no_path(self):
+        out, err = io.StringIO(), io.StringIO()
+        with tempfile.TemporaryDirectory() as root:
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = ips.main(
+                    ["--paystubs-json", os.path.join(root, "paystubs.json")]
+                )
+        self.assertEqual(code, 2)
+        self.assertNotIn(root, out.getvalue() + err.getvalue())
 
 
 if __name__ == "__main__":

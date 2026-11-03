@@ -147,7 +147,8 @@ Abschlussbuchungen, when bexio's business year is closed:**
    Use this step only for October, November and December 2026. Since `--year 2026` exports every 2026 month,
    earlier months in the CSV are reported `loaded` when unchanged, or `differs` if bexio corrected a stub; a
    differing slip is never overwritten. History slips are submitted snapshots: they do not make Payroll Entries
-   or accruals, and the GL remains the books. Screen output and bead notes contain counts only.
+   or accruals, and the GL remains the books. Screen output and bead notes contain counts only; a failure prints a
+   status, a document id or a count, never what the server or a file said.
 
 **December only, before the January 2027 revaluation run (erp-f5ss):** one Currency Exchange row per foreign
 currency the books hold (EUR, USD, PLN, as the bank accounts show), dated 2026-12-31, with the ESTV

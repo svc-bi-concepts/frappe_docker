@@ -38,6 +38,7 @@ Standard library only.
 import argparse
 import calendar
 import csv
+import http.client
 import json
 import os
 import sys
@@ -254,7 +255,7 @@ def build_plan(employees, paystubs, overrides, gender_names):
     for emp in employees:
         gender = gender_of.get(str(emp.get("gender") or "").lower())
         if not gender:
-            plan.append((emp, None, "unknown gender: {}".format(emp.get("gender"))))
+            plan.append((emp, None, "unknown gender"))
             continue
         dates = dates_for(
             months.get(str(emp["id"])), last_month, overrides.get(str(emp["id"]))
@@ -392,9 +393,7 @@ def report(importer, plan, dry_run):
         + ", ".join(f"{label}/{count}" for label, count in fill_counts(employees))
     )
     unknown = sum(
-        1
-        for _emp, doc, reason in plan
-        if doc is None and reason.startswith("unknown gender")
+        1 for _emp, doc, reason in plan if doc is None and reason == "unknown gender"
     )
     print(f"unknown gender: {unknown}  needs joining date: {len(importer.needs_dates)}")
     print("status: Active {}, Left {}".format(status["Active"], status["Left"]))
@@ -429,24 +428,44 @@ def main(argv):
         parser.error("--dry-run and --apply are mutually exclusive")
     dry_run = not args.apply
 
-    employees, paystubs = load_payroll(PAYROLL_DIR)
-    overrides = read_dates_csv()
-    erp = Erp.from_file(args.token_file)
     try:
-        genders = [row["name"] for row in erp.list("Gender")]
-    except ErpError as err:
-        print(f"aborted: the Gender list is not readable: {err}", file=sys.stderr)
+        employees, paystubs = load_payroll(PAYROLL_DIR)
+        overrides = read_dates_csv()
+        erp = Erp.from_file(args.token_file)
+        try:
+            genders = [row["name"] for row in erp.list("Gender")]
+        except ErpError as err:
+            print(
+                f"aborted: the Gender list is not readable (status {err.status})",
+                file=sys.stderr,
+            )
+            return 2
+        importer = EmployeeImporter(erp, dry_run=dry_run)
+        try:
+            plan = build_plan(employees, paystubs, overrides, genders)
+            counts = importer.run(plan)
+        except ErpError as err:
+            # the lookup every record depends on failed (the bexio_id field is
+            # missing: run finance/scripts/swiss-setup.sh fields first)
+            print(
+                f"aborted: the Employee lookup failed (status {err.status})",
+                file=sys.stderr,
+            )
+            return 2
+        write_needs_dates(NEEDS_DATES, importer.needs_dates)
+    except (
+        ErpError,
+        ValueError,
+        OSError,
+        KeyError,
+        TypeError,
+        AttributeError,
+        csv.Error,
+        http.client.HTTPException,
+    ):
+        # The server's message, a path or a key in a message can carry employee data: a fixed line only.
+        print("aborted: unable to read or process the payroll export", file=sys.stderr)
         return 2
-    importer = EmployeeImporter(erp, dry_run=dry_run)
-    try:
-        plan = build_plan(employees, paystubs, overrides, genders)
-        counts = importer.run(plan)
-    except ErpError as err:
-        # the lookup every record depends on failed (the bexio_id field is
-        # missing: run finance/scripts/swiss-setup.sh fields first)
-        print(f"aborted: {err}", file=sys.stderr)
-        return 2
-    write_needs_dates(NEEDS_DATES, importer.needs_dates)
     report(importer, plan, dry_run)
     for line in importer.problems:
         print("  problem: " + line, file=sys.stderr)

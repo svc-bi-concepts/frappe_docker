@@ -380,6 +380,74 @@ class MainTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("checks failed: 1", printed)
 
+    def run_failing(self, argv, **patches):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.ExitStack() as stack:
+            for patch in patches.values():
+                stack.enter_context(patch)
+            stack.enter_context(contextlib.redirect_stdout(out))
+            stack.enter_context(contextlib.redirect_stderr(err))
+            code = pp.main(argv)
+        return code, out.getvalue() + err.getvalue()
+
+    def test_a_missing_paystubs_json_prints_no_traceback_and_no_path(self):
+        code, text = self.run_failing(
+            ["--paystubs-json", "/invented/Invented Person.json"]
+        )
+        self.assertEqual(code, 2)
+        self.assertNotIn("Traceback", text)
+        self.assertNotIn("/invented", text)
+
+    def test_a_broken_paystubs_json_prints_no_traceback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "paystubs.json")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("{not json")
+            code, text = self.run_failing(["--paystubs-json", path])
+        self.assertEqual(code, 2)
+        self.assertNotIn("Traceback", text)
+        self.assertNotIn(tmp, text)
+
+    def test_a_pdftotext_failure_prints_neither_file_name_nor_its_stderr(self):
+        failure = RuntimeError(
+            "pdftotext failed on invented-emp-1.pdf: Invented Person"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "paystubs.json")
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(
+                    [
+                        {
+                            "employee_id": "x",
+                            "year": 2026,
+                            "month": 9,
+                            "file": "invented-emp-1.pdf",
+                            "bytes": 1,
+                        }
+                    ],
+                    f,
+                )
+            code, text = self.run_failing(
+                ["--paystubs-json", path, "--paystubs-dir", tmp],
+                parse=mock.patch.object(pp, "pdftotext_text", side_effect=failure),
+            )
+        self.assertEqual(code, 2)
+        self.assertNotIn("invented-emp-1", text)
+        self.assertNotIn("Invented Person", text)
+
+    def test_an_unwritable_output_prints_no_path(self):
+        failure = PermissionError(13, "denied", "/invented/Invented Person.csv")
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "paystubs.json")
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump([], f)
+            write = mock.patch.object(pp, "write_csv", side_effect=failure)
+            with write as written:
+                code, text = self.run_failing(["--paystubs-json", path])
+        written.assert_called_once()
+        self.assertEqual(code, 2)
+        self.assertNotIn("/invented", text)
+
 
 if __name__ == "__main__":
     unittest.main()

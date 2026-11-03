@@ -5,11 +5,15 @@ must never match a record of the real export (the privacy rule on the bead).
 Run with: python3 -m unittest discover -s finance/bexio -p 'test_*.py'
 """
 
+import contextlib
 import copy
+import http.client
+import io
 import os
 import stat
 import tempfile
 import unittest
+from unittest import mock
 
 import import_employees as ie
 from private_guard import (  # every test below runs against a temp private folder, never the real one
@@ -412,6 +416,127 @@ class WriteFailureTest(unittest.TestCase):
         counts.created = 2
         self.assertTrue(counts.line(True).startswith("to create: 2"))
         self.assertTrue(counts.line(False).startswith("created: 2"))
+
+
+class MainFailureTest(unittest.TestCase):
+    """A failing run prints a status or a fixed line: no server text, no path, no record field."""
+
+    def run_main(self, **patches):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(
+                mock.patch.object(ie, "load_payroll", return_value=([], []))
+            )
+            stack.enter_context(
+                mock.patch.object(ie, "read_dates_csv", return_value={})
+            )
+            stack.enter_context(
+                mock.patch.object(ie.Erp, "from_file", return_value=FakeErp())
+            )
+            stack.enter_context(mock.patch.object(ie, "write_needs_dates"))
+            for name, patch in patches.items():
+                stack.enter_context(patch)
+            stack.enter_context(contextlib.redirect_stdout(out))
+            stack.enter_context(contextlib.redirect_stderr(err))
+            code = ie.main([])
+        return code, out.getvalue() + err.getvalue()
+
+    def assert_clean(self, text):
+        for value in ("Invented Person", "/invented", "1980-01-02"):
+            self.assertNotIn(value, text)
+        self.assertNotIn("Traceback", text)
+
+    def test_a_server_error_on_the_gender_list_prints_the_status_only(self):
+        failure = ie.ErpError(500, "GET /api/resource/Gender: Invented Person")
+        with mock.patch.object(FakeErp, "list", side_effect=failure):
+            code, text = self.run_main()
+        self.assertEqual(code, 2)
+        self.assertIn("status 500", text)
+        self.assert_clean(text)
+
+    def test_a_server_error_on_the_employee_lookup_prints_the_status_only(self):
+        failure = ie.ErpError(417, "GET /api/resource/Employee: Invented Person")
+        lookup = mock.patch.object(ie.EmployeeImporter, "run", side_effect=failure)
+        code, text = self.run_main(lookup=lookup)
+        self.assertEqual(code, 2)
+        self.assertIn("status 417", text)
+        self.assert_clean(text)
+
+    def test_a_token_file_error_prints_no_path(self):
+        failure = OSError(2, "No such file", "/invented/Invented Person.json")
+        code, text = self.run_main(
+            from_file=mock.patch.object(ie.Erp, "from_file", side_effect=failure)
+        )
+        self.assertEqual(code, 2)
+        self.assert_clean(text)
+
+    def test_an_unreadable_export_prints_no_path(self):
+        failure = OSError(2, "No such file", "/invented/Invented Person.json")
+        code, text = self.run_main(
+            load=mock.patch.object(ie, "load_payroll", side_effect=failure)
+        )
+        self.assertEqual(code, 2)
+        self.assert_clean(text)
+
+    def test_a_bad_dates_csv_prints_no_value(self):
+        failure = ValueError("bad row 1980-01-02 Invented Person")
+        code, text = self.run_main(
+            csv=mock.patch.object(ie, "read_dates_csv", side_effect=failure)
+        )
+        self.assertEqual(code, 2)
+        self.assert_clean(text)
+
+    def test_an_unwritable_needs_dates_list_prints_no_path(self):
+        failure = PermissionError(13, "denied", "/invented/needs-dates.txt")
+        code, text = self.run_main(
+            write=mock.patch.object(ie, "write_needs_dates", side_effect=failure)
+        )
+        self.assertEqual(code, 2)
+        self.assert_clean(text)
+
+    def test_a_malformed_status_line_prints_none_of_it(self):
+        failure = http.client.BadStatusLine("Invented Person")
+        with mock.patch.object(FakeErp, "list", side_effect=failure):
+            code, text = self.run_main()
+        self.assertEqual(code, 2)
+        self.assert_clean(text)
+
+    def test_records_that_are_not_objects_print_no_traceback(self):
+        load = mock.patch.object(
+            ie, "load_payroll", return_value=(["Invented Person"], [])
+        )
+        code, text = self.run_main(load=load)
+        self.assertEqual(code, 2)
+        self.assert_clean(text)
+
+    def run_with_dates_csv(self, content):
+        real = ie.read_dates_csv
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "employee-dates.csv")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(content)
+            return self.run_main(
+                csv=mock.patch.object(ie, "read_dates_csv", lambda: real(path))
+            )
+
+    def test_a_dates_row_with_too_many_columns_prints_no_value(self):
+        code, text = self.run_with_dates_csv(
+            "bexio_id,joined,left\n1,2020-01-02,,Invented Person\n"
+        )
+        self.assertEqual(code, 2)
+        self.assert_clean(text)
+
+    def test_an_oversized_dates_field_prints_no_traceback(self):
+        code, text = self.run_with_dates_csv("bexio_id,joined\n1," + "x" * 200000)
+        self.assertEqual(code, 2)
+        self.assert_clean(text)
+
+    def test_an_unknown_gender_problem_carries_no_value(self):
+        importer = import_all(
+            FakeErp(), [invented_employee(gender="Invented Person")], stubs([(2025, 1)])
+        )
+        self.assertEqual(len(importer.problems), 1)
+        self.assertNotIn("Invented Person", importer.problems[0])
 
 
 class CsvTest(unittest.TestCase):
