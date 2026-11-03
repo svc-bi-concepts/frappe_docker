@@ -18,9 +18,9 @@ if [ "${GATE_ANY_PATH:-}" != 1 ]; then
     ;;
   esac
 fi
-# The host part (the erp-5x04 guard, the compose config checks and the stdlib unittest lines)
-# lives in .yardr/check-host.sh, and GitHub CI (.github/workflows/finance-tests.yml) calls the
-# same file, so the two callers cannot drift apart. What stays here is what a GitHub runner
+# The host part (the erp-5x04 guard and every other check that needs no private/ data and
+# no image) lives in .yardr/check-host.sh, and GitHub CI (.github/workflows/finance-tests.yml)
+# calls the same file, so the two callers cannot drift apart. What stays here is what a GitHub runner
 # cannot do: the frappe-image run (it needs the custom image, built locally) and upstream's
 # pre-commit (upstream's lint workflow does that).
 sh .yardr/check-host.sh
