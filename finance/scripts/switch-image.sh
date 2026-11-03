@@ -1,7 +1,9 @@
 #!/bin/sh
 # Switch the finance stack to a built image, then clean up: after the stack runs the new
-# image and ERPNext answers, the image it replaced and the new image's -base layer are
-# removed, so one frappe-finance-custom image is at rest (finance/docs/erpnext-setup.md).
+# image and ERPNext answers, four refs are removed: the previous image and its -base layer, and
+# the new image's -base and -finance layers (as `python3 finance/scripts/switch_image.py remove
+# oldtag newtag` prints them), so one frappe-finance-custom image is at rest
+# (finance/docs/erpnext-setup.md).
 # A deploy bead runs this, after a backup and with no other session writing to ERPNext.
 #
 # usage: finance/scripts/switch-image.sh <new-tag>
