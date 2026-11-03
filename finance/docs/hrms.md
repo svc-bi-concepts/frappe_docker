@@ -332,10 +332,15 @@ Risks:
   (`payroll_entry.py`, called from `get_employee_list`) drops every employee with a submitted Salary Slip of the
   same start and end date. It does not filter on the Payroll Entry, so a history slip counts: the list of a
   Payroll Entry for that month leaves those employees out, and says 'No employees found' when none is left. That
-  is not a fault of the load. Employees added to the entry by hand still get draft slips, and the history slip is
-  unchanged. January 2027 is out of reach, because history refuses dates after 2026-12-31. It touches only a 2026
-  parallel run on the copy: no live Payroll Entry exists for a 2026 month. No hrms patch; for the order of the
-  comparison see `finance/docs/operating.md`, "Cutover", step 7.
+  is not a fault of the load. Employees added to the entry by hand still get draft slips, but not through the
+  Desk button 'Create Salary Slips': it saves with submit, and `validate_existing_salary_slips` does not filter
+  on the Payroll Entry either, so it throws 'Duplicate Entry'. On the copy, add the employees to the draft entry,
+  save it, then run `create_salary_slips` on the saved draft entry from site python (`bench console`). It skips
+  only employees who already have a slip tied to this entry (`get_existing_salary_slips` filters on the entry).
+  The entry stays draft and cannot be submitted, which is enough for a comparison; the history slip is unchanged.
+  January 2027 is out of reach, because history refuses dates after 2026-12-31. It touches only a 2026 parallel
+  run on the copy: no live Payroll Entry exists for a 2026 month. No hrms patch; for the order of the comparison
+  see `finance/docs/operating.md`, "Cutover", step 7.
 
 ## Recommendation
 
