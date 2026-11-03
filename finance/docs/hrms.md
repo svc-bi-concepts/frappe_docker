@@ -328,6 +328,13 @@ Risks:
   Entries in the GL. They have no Payroll Entry, so no accrual is created; the forecast uses only slips linked
   to a Payroll Entry, and hand-over excludes `swiss_bexio_id`. Keep these safeguards and the Payment Proposal
   exclusion (`is_proposed` 1); the pin test `bi_finance.test_hrms_accrual_filter` must pass before any live run.
+- **History slip empties the employee list of a same-month Payroll Entry.** hrms `remove_payrolled_employees`
+  (`payroll_entry.py`, called from `get_employee_list`) drops every employee with a submitted Salary Slip of the
+  same start and end date. It does not filter on the Payroll Entry, so a history slip counts, and the list of a
+  Payroll Entry for that month says 'No employees found'. That is not a fault of the load. Employees added to the
+  entry by hand still get draft slips, and the history slip is unchanged. January 2027 is out of reach, because
+  history refuses dates after 2026-12-31. It touches only a 2026 parallel run on the copy: no live Payroll Entry
+  exists for a 2026 month. No hrms patch; see [Paystub history](operating.md) for the order of the comparison.
 
 ## Recommendation
 
@@ -622,7 +629,11 @@ create-site. That is what a Desk test needs. On the first start create-site wait
 redis-queue, which is not up yet, and then goes on.
 
 - `--jobs` for a step that enqueues work: redis-queue, queue-short, queue-long and the scheduler start after
-  the restore and the safety settings, so the scheduler is already paused. The enqueue points on the copy:
+  the restore and the safety settings, so the scheduler is already paused. A run that makes a copy token
+  (saving a User, `generate_keys`) starts with `--jobs`: a lean copy has no redis-queue to take that job. `--jobs`
+  is also what lets the job behind a Salary Slip deletion run, so the Version rows of a deleted slip stay on a
+  lean copy. The enqueue points on the copy:
+  - Saving a User, `generate_keys` for a copy token included.
   - hrms Payroll Entry (`hrms/payroll/doctype/payroll_entry/payroll_entry.py`): create salary slips, submit
     salary slips, and Overtime Slip create and submit, in the background above 30 employees; cancel above
     50 linked salary slips.

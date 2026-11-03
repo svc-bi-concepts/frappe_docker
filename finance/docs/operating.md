@@ -144,6 +144,11 @@ Abschlussbuchungen, when bexio's business year is closed:**
        python3 finance/bexio/import_salary_history.py --figures private/payroll/paystub-figures-<month>.csv --apply
        python3 finance/bexio/import_salary_history.py --figures private/payroll/paystub-figures-<month>.csv --check
 
+   Run the month's parallel comparison on the copy before this step loads the month: a submitted history slip
+   takes its employee out of a same-month Payroll Entry's list ('No employees found', see `finance/docs/hrms.md`,
+   "Double booking" and the bullet after it). If the month is already loaded, add the employees to the entry by
+   hand on the copy. No live Payroll Entry for a 2026 month.
+
    Use this step only for October, November and December 2026. Since `--year 2026` exports every 2026 month,
    earlier months in the CSV are reported `loaded` when unchanged, or `differs` if bexio corrected a stub; a
    differing slip is never overwritten. History slips are submitted snapshots: they do not make Payroll Entries
