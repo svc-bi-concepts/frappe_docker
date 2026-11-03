@@ -1710,7 +1710,8 @@ def proposal_rows_to_add(perms):
 
 def proposal_stops(perms, key_roles):
     """A key role with a level 1 row on Payment Proposal is a grant this step does not own. A PROPOSAL_ROLES
-    role without a level 0 row stops too: Frappe refuses a level 1 row for a role that has none at level 0."""
+    role without a level 0 row stops too: Frappe refuses a level 1 row for a role that has none at level 0.
+    """
     stops = sorted({r for r, level, *_ in perms if level == 1 and r in key_roles})
     if stops:
         raise SystemExit(

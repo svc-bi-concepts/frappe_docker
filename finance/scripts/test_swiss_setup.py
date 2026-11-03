@@ -33,9 +33,7 @@ from bi_payroll.test_payroll_accounts import BEXIO_ADDED  # noqa: E402
 
 # api_key_check.py (the proof of the keys split) asks the reports keyaccess closes and watches the key roles for a
 # level 1 row: both lists must be the ones here. Its directory goes on the path so the comparison tests import them.
-sys.path.insert(
-    0, os.path.abspath(os.path.join(os.path.dirname(_path), "..", "bexio"))
-)
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(_path), "..", "bexio")))
 import api_key_check  # noqa: E402
 
 
