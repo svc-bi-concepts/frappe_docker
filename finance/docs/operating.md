@@ -273,6 +273,7 @@ ledgerdemain`: a minor move, not this procedure; it is a decision bead. erpnexts
 
       It must print `200 application/pdf` and a size above zero. A 500 or an HTML type
       means `host_name` is wrong: rerun the `host` step (`finance/docs/erpnext-setup.md`, "host");
+
     - the Treasury workspace and ERPNext › Swiss Payroll open in the Desk: a person opens both. With no person at
       hand, a non-empty answer of `frappe.desk.desktop.get_desktop_page` for Treasury (a missing workspace answers
       `{}`) and the Swiss Payroll dock file with `mount_on` erpnext stand in; the note says no person opened them, and
