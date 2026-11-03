@@ -210,27 +210,39 @@ mismatch, printing role and report names only):
   removed. It carried create, write, submit and delete as well, and nothing in
   hrms goes through it: ledger rows are written with `ignore_permissions` and
   read by query. System Manager, HR Manager and HR User stay.
-- The reports Cash Flow Forecast (net pay per run) and Project Profitability
-  (gross pay per slip) get a Custom Role without the key roles. A report with no
-  roles is open to everyone, so an empty result stops the step.
+- The reports Cash Flow Forecast (net pay per run), Cash Flow Forecast Lines
+  (the same computation, line by line) and Project Profitability (gross pay per
+  slip) get a Custom Role without the key roles. A report with no roles is open
+  to everyone, so an empty result stops the step.
 
 What `finance/bexio/api_key_check.py` asks of a key: one row from every doctype of
 the hrms and BI Payroll modules, from Employee, Deleted Document and Version, from
-File on Salary Slip and on Employee, and for the two reports above whether
+File on Salary Slip and on Employee, and for the three reports above whether
 `frappe.desk.query_report.get_script` answers. That call passes the same gate as
 the report and returns no report data, so the check never runs a report. Exit 0
 means every line was refused (File may be empty).
 
 Sweep of whitelisted methods (erp-qg70, read from source at the image's pins): every
 `@frappe.whitelist` function of hrms (221) and bi_payroll (4), and in erpnext and
-erpnextswiss the ones that name Salary Slip, net pay, gross pay, Employee or Payroll in their
-body (16). Document methods are guarded by Frappe's read check on the document;
-functions that answer for the session user only, or check permission first, are fine.
-The sweep found functions that answer a caller holding only the key roles. They are
-open until fixed and are listed in the notes of erp-qg70, not here.
+erpnextswiss the ones in a file that names Salary Slip, net_pay or gross_pay, and
+those whose body names Employee or Payroll. Document methods are guarded by Frappe's
+read check on the document; functions that answer for the session user only, or
+check permission first, are fine.
+
+The sweep found nine functions that answer a caller holding only the key roles,
+among them `create_payment_proposal_for_mcp` in erpnextswiss (salary and expense
+lines) and `erpnext.controllers.queries.employee_query` (employee names). They stay
+open until the method gate of erp-kb06 lands, which limits both keys to a named list
+of methods; the full list is in the notes of erp-qg70. The salary and expense tables
+of Payment Proposal, which Accounts User reads, are closed by erp-btgr. So a key that
+passes the check today does not yet mean a key that reaches no payroll, HR or Employee
+data.
 
 What the proof does not cover:
 
+- The nine functions and the Payment Proposal tables above, until erp-kb06 and
+  erp-btgr land.
+- bi_finance's own whitelisted functions were not swept; the method gate covers them.
 - Salary traces in the ledger (GL Entry, Journal Entry, Payment Entry, Bank
   Transaction): Benchi decides through yard-xsab.
 - Eight more reports show employee names through Timesheet or party rows. Live has
