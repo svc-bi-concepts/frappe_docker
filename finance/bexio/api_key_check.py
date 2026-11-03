@@ -9,7 +9,7 @@ single or child doctype), and the check adds Employee, Deleted Document and Vers
 File on Salary Slip and on Employee, where the paystub PDFs are. The key under test then asks each
 for ONE row, field name only.
 
-Then the payroll reports that were open to the key roles (keyaccess in swiss-setup.py closes them
+Then the payroll and HR reports that were open to the key roles (keyaccess in swiss-setup.py closes them
 with a Custom Role): each is asked through frappe.desk.query_report.get_script, which passes the
 same gate as the report (Report.is_permitted, then report permission on its doctype) and returns no
 report data. The report itself is never run, and the script that comes back is dropped on the spot.
