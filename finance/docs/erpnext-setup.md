@@ -516,7 +516,7 @@ is removed by hand once it is no longer needed: `docker rmi` on all three tags, 
 tag (`frappe-finance-custom:<tag>`, `frappe-finance-custom:<tag>-base` and
 `frappe-finance-custom:<tag>-finance`). A switch does not take the previous image's
 `-finance` tag, which a build by hand can leave, so check that
-`docker images frappe-finance-custom` shows one line; the gate's fallback to the
+`docker images frappe-finance-custom` lists one tag; the gate's fallback to the
 image at rest needs exactly one.
 
 A change to `bi_finance` needs the full build (`build-image.sh`, a new tag). There is no
