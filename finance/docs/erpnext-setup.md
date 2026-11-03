@@ -580,7 +580,7 @@ The whole package runs with one command, the one to run before a test line (0 er
 ```sh
 docker run --rm -v "$PWD/finance/apps/bi_finance:/home/frappe/frappe-bench/apps/bi_finance:ro" \
     "$(sh finance/scripts/gate-image.sh)" \
-    sh -c 'cd /home/frappe/frappe-bench/apps/bi_finance && ../../env/bin/python -m unittest discover -s bi_finance -t .'
+    sh -c 'mkdir -p /home/frappe/logs /home/frappe/frappe-bench/apps/logs && cd /home/frappe/frappe-bench/apps/bi_finance && ../../env/bin/python -m unittest discover -s bi_finance -t .'
 ```
 
 The setup script's pure parts are tested without a container:
