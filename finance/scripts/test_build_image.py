@@ -338,7 +338,6 @@ APPLY = os.path.join(ROOT, "finance", "scripts", "apply-patches.sh")
 PATCH_DIR = os.path.join(ROOT, "finance", "patches", "erpnextswiss")
 FRAPPE_PATCH_DIR = os.path.join(ROOT, "finance", "patches", "frappe")
 HRMS_PATCH_DIR = os.path.join(ROOT, "finance", "patches", "hrms")
-CONTAINERFILE = os.path.join(ROOT, "images", "custom", "Containerfile")
 
 # The lines of frappe bundler.py at v16.51.1 around get_node_env (its line 296): the context of
 # the real patch, so the patch applies to this file as to the app. The body is the upstream one.
@@ -1094,53 +1093,6 @@ class PatchStep(unittest.TestCase):
         self.assertEqual(len(dock["items"]), 9)
         self.assertGreater(dock["modified"], "2026-10-05 12:30:00.000000")
 
-    def test_the_containerfile_builds_assets_after_the_frappe_patch(self):
-        with open(CONTAINERFILE) as f:
-            text = f.read()
-        self.assertIn("--skip-assets", text)
-        patched = text.index("apply-patches.sh /home/frappe/patches/frappe apps/frappe")
-        self.assertLess(patched, text.index("bench build --production"))
-
-    def test_the_containerfile_applies_the_hrms_patch_before_the_asset_build(self):
-        with open(CONTAINERFILE) as f:
-            text = f.read()
-        self.assertIn(
-            "COPY --chown=frappe:0 finance/patches/hrms /home/frappe/patches/hrms", text
-        )
-        hrms = text.index("apply-patches.sh /home/frappe/patches/hrms apps/hrms")
-        self.assertLess(
-            text.index("apply-patches.sh /home/frappe/patches/frappe apps/frappe"), hrms
-        )
-        self.assertLess(hrms, text.index("bench build --production"))
-
-    def test_the_containerfile_removes_the_erpnextswiss_desk_folders(self):
-        # Regression: erpnextswiss shipped its five workspaces, a desktop icon and a v16 sidebar archive row, and its
-        # after_migrate upserted them on every migrate. A missing folder is skipped by its ensure function, so the
-        # removal is the whole fix; it must run after the patches that touch erpnextswiss and before the asset build.
-        with open(CONTAINERFILE) as f:
-            text = f.read()
-        removals = [
-            line.strip()
-            for line in text.splitlines()
-            if line.strip().startswith("rm -r apps/erpnextswiss")
-        ]
-        self.assertEqual(len(removals), 1, removals)
-        self.assertIn(
-            "apps/erpnextswiss/erpnextswiss/erpnextswiss/workspace ", removals[0]
-        )
-        self.assertIn("apps/erpnextswiss/erpnextswiss/desktop_icon ", removals[0])
-        self.assertIn("apps/erpnextswiss/erpnextswiss/workspace_sidebar ", removals[0])
-        removed = text.index(removals[0])
-        self.assertLess(
-            text.index(
-                "apply-patches.sh /home/frappe/patches/erpnextswiss apps/erpnextswiss"
-            ),
-            removed,
-        )
-        self.assertLess(
-            text.index("apply-patches.sh /home/frappe/patches/hrms apps/hrms"), removed
-        )
-        self.assertLess(removed, text.index("bench build --production"))
 
 
 def invented_year(ktg=(11.47, 17.47)):

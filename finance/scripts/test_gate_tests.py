@@ -1,5 +1,6 @@
 """Image gate contract, exercised in a disposable bench without Docker or Frappe."""
 
+import json
 import os
 import pathlib
 import shlex
@@ -79,70 +80,171 @@ class ImageGate(unittest.TestCase):
         self.assertTrue(all(m.startswith("bi_finance.test_") for m in modules))
 
 
+def build_stages(source):
+    lines = "\n".join(
+        line for line in source.splitlines() if not line.lstrip().startswith("#")
+    )
+    stages = {}
+    current = None
+    for line in lines.replace("\\\n", " ").splitlines():
+        if not line.strip():
+            continue
+        op, _, value = line.strip().partition(" ")
+        if op == "FROM":
+            base, _, current = shlex.split(value)
+            stages[current] = {"base": base, "instructions": []}
+        elif current:
+            stages[current]["instructions"].append((op, value))
+    return stages
+
+
 class FinanceBuildGraph(unittest.TestCase):
     """Static Dockerfile graph proof; the first real consumer build runs in Coolify."""
 
-    def test_finance_target_inherits_patched_backend_and_installs_both_apps(self):
-        source = (ROOT / "images/custom/Containerfile").read_text()
-        # Normalize Dockerfile instructions, excluding comments and continuations.
-        lines = "\n".join(
-            line for line in source.splitlines() if not line.lstrip().startswith("#")
-        )
-        stages = {}
-        current = None
-        for line in lines.replace("\\\n", " ").splitlines():
-            if not line.strip():
-                continue
-            op, _, value = line.strip().partition(" ")
-            if op == "FROM":
-                base, _, current = shlex.split(value)
-                stages[current] = {"base": base, "instructions": []}
-            elif current:
-                stages[current]["instructions"].append((op, value))
+    def test_finance_target_inherits_backend_without_serializing_secrets(self):
+        stages = build_stages((ROOT / "images/custom/Containerfile").read_text())
         self.assertEqual(stages["builder"]["base"], "base")
         self.assertEqual(stages["backend"]["base"], "base")
         self.assertEqual(stages["finance"]["base"], "backend")
         self.assertEqual(stages["default"]["base"], "backend")
-        backend = stages["backend"]["instructions"]
-        self.assertTrue(
-            any(op == "COPY" and "--from=builder" in value for op, value in backend)
-        )
-        finance = stages["finance"]["instructions"]
-        copies = [shlex.split(value) for op, value in finance if op == "COPY"]
-        for app in ("bi_finance", "bi_payroll"):
-            dest = f"/home/frappe/frappe-bench/apps/{app}"
-            self.assertIn(["--chown=frappe:0", f"finance/apps/{app}", dest], copies)
-            self.assertTrue(
-                any(
-                    op == "RUN" and f"pip install --no-cache-dir -e {dest}" in value
-                    for op, value in finance
-                )
-            )
-        self.assertIn(
-            [
-                "--chown=frappe:0",
-                "finance/scripts/gate-tests.sh",
-                "finance/scripts/gate-modules.sh",
-                "/home/frappe/frappe-bench/finance/scripts/",
-            ],
-            copies,
-        )
-        # An ARG or ENV would serialize the secret in provenance or image config.
         for stage in stages.values():
             for op, value in stage["instructions"]:
-                if op in ("ARG", "ENV"):
-                    self.assertNotIn("APPS_JSON", value)
-        builder_runs = [
-            value for op, value in stages["builder"]["instructions"] if op == "RUN"
-        ]
-        init = next(value for value in builder_runs if "bench init" in value)
-        self.assertIn("type=secret,id=APPS_JSON", init)
-        for app in ("frappe", "erpnextswiss", "hrms"):
-            self.assertLess(
-                init.index(f"/home/frappe/patches/{app} apps/{app}"),
-                init.index("bench build --production"),
+                if op == "ARG":
+                    self.assertNotEqual(value.split("=", 1)[0], "APPS_JSON")
+                elif op == "ENV":
+                    self.assertNotIn("APPS_JSON", dict(word.split("=", 1) for word in shlex.split(value) if "=" in word))
+
+
+class FinanceBuildExecution(unittest.TestCase):
+    """Run build shell instructions with bench, pip and patch tools at fake boundaries.
+
+    The oracle is the live-image contract: pins before patches before assets,
+    no Swiss desk records, and both editable apps plus the executable gate.
+    Distro provisioning is outside this daemon-free fixture's scope.
+    """
+
+    def test_build_executes_patches_and_installs_image_contents(self):
+        stages = build_stages((ROOT / "images/custom/Containerfile").read_text())
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            tools = root / "bin"
+            tools.mkdir()
+            calls = root / "calls"
+            stub = tools / "boundary"
+            stub.write_text(
+                f"#!{sys.executable}\n" + r'''
+import json, os, pathlib, sys
+name = pathlib.Path(sys.argv[0]).name
+args = sys.argv[1:]
+bench = pathlib.Path(os.environ['BENCH'])
+log = pathlib.Path(os.environ['CALLS'])
+event = [name]
+if name == 'bench' and args[0] == 'init':
+    assert '--skip-assets' in args, args
+    secret = next(a.split('=', 1)[1] for a in args if a.startswith('--apps_path='))
+    assert pathlib.Path(secret).read_text() == 'fixture-apps'
+    for path in ('env/bin', 'sites/assets', 'apps/frappe', 'apps/hrms',
+                 'apps/erpnextswiss/erpnextswiss/erpnextswiss/workspace',
+                 'apps/erpnextswiss/erpnextswiss/desktop_icon',
+                 'apps/erpnextswiss/erpnextswiss/workspace_sidebar'):
+        (bench / path).mkdir(parents=True, exist_ok=True)
+    (bench / 'env/bin/pip').symlink_to(pathlib.Path(sys.argv[0]).resolve())
+    event += ['init']
+elif name == 'bench' and args == ['build', '--production']:
+    event += ['build', sorted(str(p.relative_to(bench)) for p in bench.rglob('*') if p.is_dir())]
+elif name == 'python3':
+    assert pathlib.Path(args[0]).is_file(), args
+    assert pathlib.Path(args[1]).read_text() == 'fixture-apps'
+    assert pathlib.Path(args[2]).is_dir(), args
+    event += ['pins']
+elif name == 'sh':
+    assert pathlib.Path(args[0]).is_file(), args
+    assert list(pathlib.Path(args[1]).glob('*.patch')), args
+    assert pathlib.Path(args[1]).name == pathlib.Path(args[2]).name, args
+    assert pathlib.Path(args[2]).is_dir(), args
+    event += [pathlib.Path(args[2]).name]
+elif name == 'pip':
+    assert args[:3] == ['install', '--no-cache-dir', '-e'], args
+    app = pathlib.Path(args[3])
+    assert (app / 'pyproject.toml').is_file(), args
+    event += [app.name]
+else:
+    raise AssertionError((name, args))
+with log.open('a') as f:
+    f.write(json.dumps(event) + '\n')
+'''
             )
-        self.assertLess(init.index("check_app_pins.py"), init.index("apply-patches.sh"))
+            stub.chmod(0o755)
+            for name in ("bench", "python3", "sh"):
+                (tools / name).symlink_to(stub)
+            outputs = {}
+            for name in ("builder", "backend", "finance"):
+                stage_root = root / name
+                parent = stages[name]["base"]
+                if parent in outputs:
+                    shutil.copytree(outputs[parent], stage_root, symlinks=True)
+                else:
+                    stage_root.mkdir()
+                outputs[name] = stage_root
+                bench = stage_root / "home/frappe/frappe-bench"
+                env = dict(os.environ, PATH=str(tools) + os.pathsep + os.defpath, BENCH=str(bench), CALLS=str(calls), FRAPPE_BRANCH="fixture", FRAPPE_PATH="fixture", CACHE_BUST="")
+                cwd = stage_root
+                for op, value in stages[name]["instructions"]:
+                    if op == "COPY":
+                        words = shlex.split(value)
+                        options = {}
+                        while words[0].startswith("--"):
+                            key, val = words.pop(0)[2:].split("=", 1)
+                            options[key] = val
+                        origin = outputs[options["from"]] if "from" in options else ROOT
+                        dest = stage_root / words[-1].lstrip("/")
+                        for source in words[:-1]:
+                            src = origin / source.lstrip("/")
+                            target = dest / src.name if len(words) > 2 or words[-1].endswith("/") else dest
+                            target.parent.mkdir(parents=True, exist_ok=True)
+                            if src.is_dir():
+                                shutil.copytree(src, target, dirs_exist_ok=True, symlinks=True)
+                            else:
+                                shutil.copy2(src, target)
+                    elif op == "WORKDIR":
+                        cwd = stage_root / value.lstrip("/")
+                    elif op == "RUN":
+                        command = value
+                        mounts = []
+                        while command.startswith("--mount="):
+                            option, command = command.split(None, 1)
+                            mounts.append(dict(item.split("=", 1) for item in option[8:].split(",")))
+                        if name == "builder" and not mounts:
+                            continue
+                        for mount in mounts:
+                            if mount.get("type") == "secret" and mount.get("id") == "APPS_JSON":
+                                target = stage_root / mount["target"].lstrip("/")
+                                target.parent.mkdir(parents=True, exist_ok=True)
+                                target.write_text("fixture-apps")
+                        command = command.replace("/home/frappe/", str(stage_root / "home/frappe") + "/").replace("/opt/frappe/", str(stage_root / "opt/frappe") + "/").replace("/usr/local/bin/", str(stage_root / "usr/local/bin") + "/")
+                        run = subprocess.run(["/bin/sh", "-ec", command], cwd=cwd, env=env, capture_output=True, text=True)
+                        self.assertEqual(run.returncode, 0, run.stderr)
+            events = [json.loads(line) for line in calls.read_text().splitlines()]
+            self.assertEqual([e[:2] for e in events], [
+                ["bench", "init"], ["python3", "pins"],
+                ["sh", "erpnextswiss"], ["sh", "frappe"], ["sh", "hrms"],
+                ["bench", "build"], ["pip", "bi_finance"], ["pip", "bi_payroll"],
+            ])
+            for path in (
+                "apps/erpnextswiss/erpnextswiss/erpnextswiss/workspace",
+                "apps/erpnextswiss/erpnextswiss/desktop_icon",
+                "apps/erpnextswiss/erpnextswiss/workspace_sidebar",
+            ):
+                self.assertNotIn(path, events[5][2])
+            final = outputs["finance"] / "home/frappe/frappe-bench"
+            for name in ("gate-tests.sh", "gate-modules.sh"):
+                self.assertEqual((final / "finance/scripts" / name).read_bytes(), (SCRIPTS / name).read_bytes())
+            for app in ("bi_finance", "bi_payroll"):
+                source = ROOT / "finance/apps" / app
+                for path in source.rglob("*"):
+                    if path.is_file():
+                        copied = final / "apps" / app / path.relative_to(source)
+                        self.assertEqual(copied.read_bytes(), path.read_bytes(), str(copied))
 
 
 class GateCheckoutRunner(unittest.TestCase):
