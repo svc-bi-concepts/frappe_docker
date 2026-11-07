@@ -49,7 +49,8 @@ The local `finance/scripts/build-image.sh live|copy <tag>` delegates to the same
 `finance` target, retaining the capped-builder and existing-tag guards.
 No GitHub Actions workflow is added or required for this build.
 
-Finance's handoff is bead **erp-ve60**, paired with IT's **yard-7yt7**. IT owns
+Finance's handoff is bead **erp-ve60**. IT's **yard-x1sn** starts after merge
+(initial coordination: **yard-7yt7**); notify yardmaster-chris@it on merge. IT owns
 the Coolify resource, per-PR-head trigger and SHA-bound result check. No image
 build runs on the mini; static tests and `.yardr/check-host.sh` cover this
 change there. IT's first Coolify dev run must prove the full image build and

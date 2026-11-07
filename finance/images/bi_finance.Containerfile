@@ -1,6 +1,7 @@
 # Adds the bi_finance app (finance/apps/bi_finance) on top of the finance image.
 # apps.json cannot carry it: bench clones each app from a git URL, and this app
-# lives in this repo only. build-image.sh builds this layer after the main image.
+# lives in this repo only. Kept for standalone layering; build-image.sh uses the
+# finance target in images/custom/Containerfile.
 ARG BASE=frappe-finance-custom:v16.50.0-swiss-bi3-base
 FROM ${BASE}
 
