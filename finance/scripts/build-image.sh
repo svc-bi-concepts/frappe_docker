@@ -92,7 +92,8 @@ fi
 # bench clones each app with `git clone --branch`, which takes a branch or tag,
 # not a commit. So apps.json pins erpnextswiss to a branch and records the
 # commit in "commit". Refuse to build if the branch has moved off that commit.
-# The check runs before the build, so a move after it is not caught.
+# This preflight fails early; the Containerfile checks the fetched revision again
+# before patches, catching a branch move between this check and the clone.
 python3 - "$APPS" <<'PY'
 import json, subprocess, sys
 
