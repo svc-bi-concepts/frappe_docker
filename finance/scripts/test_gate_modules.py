@@ -10,7 +10,7 @@ from unittest import mock
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 MODULES = os.path.join(ROOT, "finance", "apps", "bi_finance", "bi_finance")
 HOST_GATE = os.path.join(ROOT, ".yardr", "check-host.sh")
-IMAGE_GATE = os.path.join(ROOT, ".yardr", "check")
+IMAGE_GATE = os.path.join(ROOT, "finance", "scripts", "gate-modules.sh")
 MODULE_PATTERN = re.compile(r"\bbi_finance\.(test_[A-Za-z0-9_]+)\b")
 
 
@@ -51,7 +51,12 @@ class GateModules(unittest.TestCase):
             if name.startswith("test_") and name.endswith(".py")
         }
         host = modules_on_unittest_line(HOST_GATE)
-        image = modules_on_unittest_line(IMAGE_GATE)
+        with open(IMAGE_GATE) as manifest:
+            words = shlex.split(manifest.read(), comments=True)
+        image = set(MODULE_PATTERN.findall(" ".join(words)))
+        self.assertEqual(
+            len(image), len([word for word in words if word.startswith("bi_finance.")])
+        )
 
         for module in sorted(host - on_disk):
             self.fail("%s is named in host list but has no module on disk" % module)

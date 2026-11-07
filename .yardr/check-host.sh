@@ -5,10 +5,10 @@
 # cannot drift apart. Run from the repository root, with a python3 that has jinja2 (only
 # test_payslip needs it).
 # The guard: every test_*.py under bi_finance, bi_payroll and finance/scripts must be named
-# in this file or in .yardr/check (the guard reads both, the gate is the two together), so a
+# in this file, .yardr/check or the shared image manifest (the guard reads all three), so a
 # new module that is in no list fails the gate here instead of waiting unseen on main (IT's
 # standing rule, 2026-10-15). The stdlib-only modules are named on the host lines below, the
-# frappe-image modules in the docker run line of .yardr/check; no list names a module twice.
+# frappe-image modules in finance/scripts/gate-modules.sh; no list names a module twice.
 # A module counts as named only as its whole dotted name on a code line (comments are not
 # read): bi_finance.test_treasury hides neither behind bi_finance.test_treasury_card nor
 # behind bi_payroll's test_layout (review, erp-evgh).
@@ -17,7 +17,7 @@ export PYTHONDONTWRITEBYTECODE=1
 PYTHONPYCACHEPREFIX="$(mktemp -d)"
 export PYTHONPYCACHEPREFIX
 set -e
-python3 - "$0" "$(dirname "$0")/check" <<'EOF'
+python3 - "$0" "$(dirname "$0")/check" finance/scripts/gate-modules.sh <<'EOF'
 import pathlib, re, sys
 gate = "\n".join(l for a in sys.argv[1:] for l in pathlib.Path(a).read_text().splitlines() if not l.lstrip().startswith("#"))
 roots = {"finance/apps/bi_finance/bi_finance": "bi_finance.", "finance/apps/bi_payroll/bi_payroll": "bi_payroll.", "finance/scripts": ""}
@@ -123,4 +123,4 @@ done
 # The D4 patch check (update-check.sh): invented tag lists, the upstream replaced, no network.
 # swiss-setup.py's pure helpers (frappe mocked): the payslip and the hr steps among them.
 # The structure remake's plan (frappe mocked): create, move, restore, the wrapper's project.
-(cd finance/scripts && python3 -m unittest test_build_image test_switch_image test_gate_image test_copy_stack test_update_check test_load_swiss_rates test_swiss_setup test_swiss_structure_remake test_bexio_drafts test_swiss_vat test_site_check test_public_check test_create_api_user test_run_frappe_mcp test_gate_modules)
+(cd finance/scripts && python3 -m unittest test_build_image test_switch_image test_gate_image test_copy_stack test_update_check test_load_swiss_rates test_swiss_setup test_swiss_structure_remake test_bexio_drafts test_swiss_vat test_site_check test_public_check test_create_api_user test_run_frappe_mcp test_gate_modules test_gate_tests test_gate_check)

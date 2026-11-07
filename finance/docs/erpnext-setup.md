@@ -458,7 +458,7 @@ A doctype's controller class is its name with spaces and hyphens removed, case k
 ## Building an image
 
 `finance/scripts/build-image.sh live|copy <tag>` builds the base layer, the `bi_finance`
-layer and the `bi_payroll` layer, each with `docker buildx build --load` on IT's capped
+layer and the `bi_payroll` layer in one `docker buildx build --load --target finance` on IT's capped
 builder (buildx builder `capped`, a 1.2 GiB hard cap including swap). The capped builder
 only: a plain `docker build` runs on the default builder and shares the mini's memory
 with the live stack — on 2026-10-11 that OOM-killed the live containers twice. IT's rule
@@ -482,7 +482,8 @@ The mini has three capped builders: `capped` (1.2 GiB), `capped-2g` (2 GiB) and 
 The full asset build (hrms and erpnextswiss bundles included) needs `capped-5g`: on the 1.2 GiB
 builder the asset step is SIGKILLed (status 137) and buildkit reports ResourceExhausted, as on
 2026-10-12. Build with `BUILDER=capped-5g finance/scripts/build-image.sh live <tag>`.
-The script needs free disk for the scratch layouts (about the size of the image, twice).
+The multi-stage build needs no intermediate OCI scratch layouts. For the remote dev
+build and baked test entrypoint, see [Coolify build](coolify-build.md).
 IT's ci-bridge launchd job reclaims under 20G free every 5 minutes: a stopped container, then every image no running
 container uses. A built image left idle is removed (on 2026-10-12 bi23 went that way), so switch or remove it at once,
 and keep 20G free after a build. Remove images by tag only (`docker rmi frappe-finance-custom:<tag>`), never `docker image prune -a`.

@@ -397,18 +397,18 @@ The script:
    exists, so a build never overwrites a tag in use. Pick a new tag.
 3. Checks that the `v16` branch of erpnextswiss still points at the commit in the list
    (`git ls-remote`). It stops if the branch has moved.
-4. Runs `docker build` with `--secret id=apps_json`, `FRAPPE_BRANCH=v16.51.1`,
+4. Runs one `docker buildx build --target finance` with `--secret id=APPS_JSON`, `FRAPPE_BRANCH=v16.51.1`,
    and `--no-cache`. The cache is off on purpose: a secret is not part of the
    layer cache key, so a cached `bench init` layer would keep the old apps.
-5. Builds the `bi_finance` layer on top.
+5. Includes `bi_finance` and `bi_payroll` in that multi-stage build.
 
 Result: `frappe-finance-custom:<tag>`. Not run against site `frontend`.
 
 Why a commit in a JSON key and not in the ref: bench clones each app with
 `git clone --depth 1 --branch <ref>`, so it accepts a branch or tag, not a
 commit. The `commit` key is ignored by bench; the script enforces it. The
-check happens before the build, so a branch move after the check and before
-the clone is not caught.
+local preflight happens before the build; the Containerfile also checks the fetched
+revision before applying patches, catching a branch move between preflight and clone.
 
 Docker: `docker-buildx` was missing from the CLI. It was installed with
 Homebrew (`brew install docker-buildx`) and linked into `~/.docker/cli-plugins`.

@@ -175,48 +175,30 @@ class BuildImageModes(unittest.TestCase):
         self.assertIn("the list pins " + pinned, err)
         self.assertNotIn("buildx build", calls)
 
-    def test_live_builds_base_then_bi_finance_then_bi_payroll(self):
-        # Each layer sits on the one before it; the live tag is the last layer.
+    def test_live_builds_complete_finance_target_once(self):
         hrms = [{"url": "https://github.com/frappe/hrms", "branch": "v16.50.0"}]
         code, err, calls = self.run_in_layout({"apps.json": hrms}, tag="t1")
         self.assertEqual(code, 0, err)
         builds = [
             line for line in calls.splitlines() if line.startswith("buildx build ")
         ]
-        self.assertEqual(len(builds), 3, calls)
-        for build in builds:
-            # The capped builder only (the 2026-10-11 OOMs), and --load so the tag
-            # lands in the local store for switch-image.sh.
-            self.assertIn(" --builder capped ", build)
-            self.assertIn(" --load ", build)
-        self.assertIn("--tag frappe-finance-custom:t1-base ", builds[0])
-        # Frappe is one tag for the whole image; ERPNext and HRMS declare frappe >=16.50.0,<17.0.0.
-        self.assertIn("--build-arg FRAPPE_BRANCH=v16.51.1 ", builds[0])
-        # The asset build's node heap cap, and the app list as a BuildKit secret.
-        self.assertIn("--build-arg NODE_OPTIONS=--max-old-space-size=900 ", builds[0])
-        self.assertIn("--secret id=apps_json,src=", builds[0])
-        # The capped builder cannot read the local image store: each layer's BASE comes
-        # from the OCI layout the build before wrote, as a named context.
-        self.assertIn("--output type=oci,tar=false,dest=", builds[0])
-        self.assertIn(
-            "--build-context frappe-finance-custom:t1-base=oci-layout://", builds[1]
-        )
-        self.assertIn(":t1-base ", builds[1])
-        self.assertIn("--output type=oci,tar=false,dest=", builds[1])
-        self.assertIn(
-            "--build-context frappe-finance-custom:t1-finance=oci-layout://", builds[2]
-        )
-        self.assertIn(":t1-finance ", builds[2])
-        self.assertIn(
-            "--build-arg BASE=frappe-finance-custom:t1-base --tag frappe-finance-custom:t1-finance ",
-            builds[1],
-        )
-        self.assertIn("--file finance/images/bi_finance.Containerfile", builds[1])
-        self.assertIn(
-            "--build-arg BASE=frappe-finance-custom:t1-finance --tag frappe-finance-custom:t1 ",
-            builds[2],
-        )
-        self.assertIn("--file finance/images/bi_payroll.Containerfile", builds[2])
+        self.assertEqual(len(builds), 1, calls)
+        build = builds[0]
+        for option in (
+            "--builder capped",
+            "--load",
+            "--no-cache",
+            "--target finance",
+            "--tag frappe-finance-custom:t1",
+            "--file images/custom/Containerfile",
+            "--build-arg FRAPPE_BRANCH=v16.51.1",
+            "--build-arg NODE_OPTIONS=--max-old-space-size=900",
+            "--secret id=APPS_JSON,src=",
+        ):
+            self.assertIn(option, build)
+        self.assertNotIn("--build-context", build)
+        self.assertNotIn("--output", build)
+        self.assertNotIn("--build-arg APPS_JSON", build)
 
     def test_node_heap_defaults_to_900_and_follows_node_heap_mb(self):
         hrms = [{"url": "https://github.com/frappe/hrms", "branch": "v16.50.0"}]
@@ -309,6 +291,47 @@ class BuildImageModes(unittest.TestCase):
         for args in ([], ["bogus", "t1"], ["live"], ["live", "t1", "x"]):
             run = subprocess.run(["sh", SCRIPT] + args, capture_output=True, text=True)
             self.assertEqual(run.returncode, 2, args)
+
+
+class FetchedAppPins(unittest.TestCase):
+    def test_verifies_the_actual_checkout_and_refuses_a_moved_branch(self):
+        spec = importlib.util.spec_from_file_location(
+            "check_app_pins", os.path.join(ROOT, "finance/scripts/check_app_pins.py")
+        )
+        checker = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(checker)
+        with tempfile.TemporaryDirectory() as tmp:
+            apps_file = os.path.join(tmp, "apps.json")
+            with open(apps_file, "w") as source:
+                json.dump(
+                    [
+                        {"url": "https://example.test/app.git", "commit": "a" * 40},
+                        {"url": "https://example.test/unpinned", "branch": "v16"},
+                    ],
+                    source,
+                )
+            with mock.patch.object(
+                checker.subprocess, "check_output", return_value="a" * 40 + "\n"
+            ) as git:
+                checker.check(apps_file, tmp)
+                git.assert_called_once_with(
+                    ["git", "-C", os.path.join(tmp, "app"), "rev-parse", "HEAD"],
+                    text=True,
+                )
+            with mock.patch.object(
+                checker.subprocess, "check_output", return_value="b" * 40 + "\n"
+            ):
+                with self.assertRaisesRegex(
+                    SystemExit, "differs from its pinned commit"
+                ):
+                    checker.check(apps_file, tmp)
+            with mock.patch.object(
+                checker.subprocess,
+                "check_output",
+                side_effect=subprocess.CalledProcessError(128, "git"),
+            ):
+                with self.assertRaises(subprocess.CalledProcessError):
+                    checker.check(apps_file, tmp)
 
 
 APPLY = os.path.join(ROOT, "finance", "scripts", "apply-patches.sh")
