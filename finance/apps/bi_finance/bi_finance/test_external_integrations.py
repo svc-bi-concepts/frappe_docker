@@ -7,7 +7,6 @@ from unittest import mock
 import frappe
 from bi_finance import (
     bank_feed,
-    external_integrations,
     paypal,
     paypal_client,
     wise,
@@ -35,7 +34,10 @@ class Disabled(unittest.TestCase):
     def refused(self, call):
         with self.assertRaises(RuntimeError):
             call()
-        self.thrown.assert_called_with(external_integrations.MESSAGE)
+        self.thrown.assert_called_with(mock.ANY)
+        message = self.thrown.call_args.args[0]
+        self.assertIn("external integrations are disabled", message.lower())
+        self.assertIn("disable_external_integrations", message)
         self.opener.assert_not_called()
 
     def test_manual_entrypoints(self):
@@ -59,9 +61,10 @@ class Disabled(unittest.TestCase):
                     frappe, "get_single"
                 ) as settings:
                     module.sync_scheduled()
-                    logger.return_value.info.assert_called_once_with(
-                        external_integrations.MESSAGE
-                    )
+                    logger.return_value.info.assert_called_once()
+                    message = logger.return_value.info.call_args.args[0]
+                    self.assertIn("external integrations are disabled", message.lower())
+                    self.assertIn("disable_external_integrations", message)
                     settings.assert_not_called()
                     self.thrown.assert_not_called()
                     self.opener.assert_not_called()
