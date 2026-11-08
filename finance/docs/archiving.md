@@ -27,10 +27,10 @@ is in `erpnext-setup.md`; the rules ERPNext enforces on posted records are the
   (System Settings). So at most three sets survive, however old they are.
 - **The database itself** (volume `frappe-finance_db-data`) is the live copy,
   not a backup.
-- **The software.** A restore needs the same ERPNext version as the backup:
-  `frappe-finance-custom:v16.50.0-swiss`, built by `finance/scripts/build-image.sh`
-  from `finance/apps.json`. The build is local; nothing in the repo pushes it
-  to a registry.
+- **The software.** A restore needs the ERPNext version and custom apps that
+  produced the backup. The local stack's image is configured in
+  [`finance-local.yml`](../../finance-local.yml); record the running image digest
+  and app versions with each backup set rather than assuming today's pin.
 
 ## What is missing for 10 years
 
