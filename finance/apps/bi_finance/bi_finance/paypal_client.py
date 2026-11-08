@@ -1,6 +1,6 @@
 """PayPal Transaction Search, read only: the token, the transactions and the balances the feed reads, and the rows they give.
 
-Standard library only, no frappe import: the tests run without the image. The client secret goes in the Authorization
+Importable without Frappe; HTTP calls check the site policy through external_integrations. The client secret goes in the Authorization
 header of the token request and nowhere else; the access token goes in the Authorization header of each call. An error
 names the HTTP status and the path, never a response body (it holds account data) and never a credential.
 

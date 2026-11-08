@@ -1,6 +1,6 @@
 """Wise Platform API, read only: the calls the feed makes, and the feed rows they give.
 
-Standard library only, no frappe import: the tests run without the image. The token goes in the Authorization header
+Importable without Frappe; HTTP calls check the site policy through external_integrations. The token goes in the Authorization header
 of each request and nowhere else: it is not in a URL, an error or a log. An error names the HTTP status and the path,
 never the response body, which holds account data.
 
