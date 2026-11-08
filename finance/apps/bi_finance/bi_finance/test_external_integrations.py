@@ -1,6 +1,10 @@
 """Offline site-switch tests: invented credentials, patched HTTP, no site or network."""
 
 import datetime
+import logging
+import os
+from pathlib import Path
+import tempfile
 import unittest
 from unittest import mock
 
@@ -55,19 +59,43 @@ class Disabled(unittest.TestCase):
                         settings.assert_not_called()
 
     def test_scheduled_jobs_log_and_skip_without_reading_secrets(self):
-        for module in (wise, paypal):
-            with self.subTest(module=module.__name__):
-                with mock.patch.object(frappe, "logger") as logger, mock.patch.object(
-                    frappe, "get_single"
-                ) as settings:
-                    module.sync_scheduled()
-                    logger.return_value.info.assert_called_once()
-                    message = logger.return_value.info.call_args.args[0]
-                    self.assertIn("external integrations are disabled", message.lower())
-                    self.assertIn("disable_external_integrations", message)
-                    settings.assert_not_called()
-                    self.thrown.assert_not_called()
-                    self.opener.assert_not_called()
+        # Contract: each disabled scheduled job persists a clear skip message.
+        # Real Frappe file handlers reject an INFO call at production's ERROR level.
+        with tempfile.TemporaryDirectory() as root:
+            site = Path(root).name + ".test"
+            sites = Path(root) / "sites"
+            (sites / site / "logs").mkdir(parents=True)
+            (Path(root) / "logs").mkdir()
+            previous = os.getcwd()
+            os.chdir(sites)
+            try:
+                with mock.patch.object(frappe, "loggers", {}), mock.patch.object(
+                    frappe, "log_level", logging.ERROR
+                ), mock.patch.object(frappe.local, "site", site, create=True):
+                    logger = frappe.logger("bi_finance")
+                    try:
+                        for module in (wise, paypal):
+                            with self.subTest(module=module.__name__):
+                                before = (sites / site / "logs/bi_finance.log").read_text()
+                                with mock.patch.object(frappe, "get_single") as settings:
+                                    module.sync_scheduled()
+                                    settings.assert_not_called()
+                                for handler in logger.handlers:
+                                    handler.flush()
+                                log = (sites / site / "logs/bi_finance.log").read_text()
+                                message = log[len(before):]
+                                self.assertIn(
+                                    "external integrations are disabled", message.lower()
+                                )
+                                self.assertIn("disable_external_integrations", message)
+                                self.thrown.assert_not_called()
+                                self.opener.assert_not_called()
+                    finally:
+                        for handler in logger.handlers[:]:
+                            handler.close()
+                            logger.removeHandler(handler)
+            finally:
+                os.chdir(previous)
 
     def test_every_client_request_path_including_injected_openers(self):
         calls = (

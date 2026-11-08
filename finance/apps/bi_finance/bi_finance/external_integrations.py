@@ -16,7 +16,9 @@ def check(scheduled=False):
     if not frappe.conf.get("disable_external_integrations"):
         return True
     if scheduled:
-        frappe.logger("bi_finance").info(MESSAGE)
+        logger = frappe.logger("bi_finance")
+        logger.setLevel("INFO")
+        logger.info(MESSAGE)
         return False
     frappe.throw(frappe._(MESSAGE))
 
