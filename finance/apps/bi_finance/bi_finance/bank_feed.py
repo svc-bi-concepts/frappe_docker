@@ -26,9 +26,10 @@ import json
 import re
 import urllib.error
 import urllib.parse
-import urllib.request
+from urllib.request import Request
 
 import frappe
+from bi_finance.external_integrations import check, open_request
 from frappe import _
 
 RATE_URL = "https://api.frankfurter.dev/v2/rates"
@@ -277,13 +278,14 @@ def same_merchant(row_text, line_text):
     return bool(words and words & merchant_words(line_text))
 
 
-def load_rates(currency, start, end, dry_run, opener=urllib.request.urlopen):
+def load_rates(currency, start, end, dry_run, opener=None):
     """The CHF rate of a currency for each day from start to end, as {(currency, day): rate} for the run's conversion.
 
     One request for the range, from the latest stored day or start, whichever is later. A live run stores each day it
     did not have as a Currency Exchange, named as ERPNext names them, so ERPNext's own lookup finds it later. A dry run
     stores nothing and converts with the fetched rates. A weekend or a holiday takes the latest earlier rate.
     """
+    check()
     _check_source()
     stored = frappe.get_all(
         "Currency Exchange",
@@ -311,16 +313,18 @@ def fetch_start(start, latest):
     return start
 
 
-def fetch_rates(currency, start, end, opener=urllib.request.urlopen):
+def fetch_rates(currency, start, end, opener=None):
     """The CHF rate the source gives for each day from start to end: {day: rate}, days as YYYY-MM-DD. One request."""
     params = {"from": str(start), "to": str(end), "base": currency, "quotes": "CHF"}
     # the source answers 403 to urllib's default agent, so the request names itself
     headers = {"Accept": "application/json", "User-Agent": RATE_USER_AGENT}
-    request = urllib.request.Request(
+    request = Request(
         RATE_URL + "?" + urllib.parse.urlencode(params), headers=headers, method="GET"
     )
     try:
-        with opener(request, timeout=RATE_TIMEOUT_SECONDS) as response:
+        with open_request(
+            request, timeout=RATE_TIMEOUT_SECONDS, opener=opener
+        ) as response:
             payload = json.load(response)
     except urllib.error.HTTPError as err:
         raise RateError(f"HTTP {err.code} from the rate source") from None

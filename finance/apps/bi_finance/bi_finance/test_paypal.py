@@ -19,7 +19,9 @@ import types
 import unittest
 import urllib.error
 import urllib.parse
+from unittest import mock
 
+import frappe
 from bi_finance import paypal, paypal_client
 
 CLIENT_ID = "invented-client-id"
@@ -311,6 +313,17 @@ class FeedRows(unittest.TestCase):
         }
         with self.assertRaises(paypal_client.PayPalError):
             paypal_client.feed_rows([broken])
+
+
+def setUpModule():
+    global site_config
+    # These client tests have no site; explicitly exercise the default policy.
+    site_config = mock.patch.object(frappe, "conf", {})
+    site_config.start()
+
+
+def tearDownModule():
+    site_config.stop()
 
 
 if __name__ == "__main__":

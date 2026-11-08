@@ -18,7 +18,9 @@ import json
 import re
 import urllib.error
 import urllib.parse
-import urllib.request
+from urllib.request import Request
+
+from bi_finance.external_integrations import open_request
 
 BASE_URL = "https://api.wise.com"
 
@@ -43,17 +45,17 @@ class WiseError(Exception):
     """A failed call. The message names the status and the path, never the token or a response body."""
 
 
-def _get(token, path, params=None, opener=urllib.request.urlopen):
+def _get(token, path, params=None, opener=None):
     url = BASE_URL + path
     if params:
         url += "?" + urllib.parse.urlencode(params)
-    request = urllib.request.Request(
+    request = Request(
         url,
         headers={"Authorization": "Bearer " + token, "Accept": "application/json"},
         method="GET",
     )
     try:
-        with opener(request, timeout=TIMEOUT_SECONDS) as response:
+        with open_request(request, timeout=TIMEOUT_SECONDS, opener=opener) as response:
             return json.load(response)
     except urllib.error.HTTPError as err:
         raise WiseError(f"HTTP {err.code} from Wise on {path}") from None
@@ -64,12 +66,12 @@ def _get(token, path, params=None, opener=urllib.request.urlopen):
         ) from None
 
 
-def profiles(token, opener=urllib.request.urlopen):
+def profiles(token, opener=None):
     """The profiles the token belongs to: a list of dicts with id and type (PERSONAL or BUSINESS)."""
     return _get(token, "/v2/profiles", opener=opener)
 
 
-def balances(token, profile_id, opener=urllib.request.urlopen):
+def balances(token, profile_id, opener=None):
     """The standard and savings balances of a profile: a list of dicts with id, currency and amount."""
     return _get(
         token,
@@ -79,7 +81,7 @@ def balances(token, profile_id, opener=urllib.request.urlopen):
     )
 
 
-def activities(token, profile_id, start, opener=urllib.request.urlopen):
+def activities(token, profile_id, start, opener=None):
     """The profile's activities created at or after start (a datetime, UTC), newest first, paged by nextCursor."""
     path = f"/v1/profiles/{profile_id}/activities"
     out = []
@@ -106,7 +108,7 @@ def activities(token, profile_id, start, opener=urllib.request.urlopen):
     return [item for item in out if _created(item) >= start]
 
 
-def transfers(token, profile_id, start, end, opener=urllib.request.urlopen):
+def transfers(token, profile_id, start, end, opener=None):
     """The profile's transfers created between start and end (datetimes, UTC): a list, paged by offset."""
     path = "/v1/transfers"
     out = []
@@ -128,17 +130,17 @@ def transfers(token, profile_id, start, end, opener=urllib.request.urlopen):
         offset += PAGE_SIZE
 
 
-def quote(token, profile_id, quote_uuid, opener=urllib.request.urlopen):
+def quote(token, profile_id, quote_uuid, opener=None):
     """One quote of a transfer: the JSON with its payment options, the fee among them."""
     return _get(token, f"/v3/profiles/{profile_id}/quotes/{quote_uuid}", opener=opener)
 
 
-def recipient(token, account_id, opener=urllib.request.urlopen):
+def recipient(token, account_id, opener=None):
     """One recipient account of a payout: the JSON, with its ownedByCustomer flag. Its other details are not kept."""
     return _get(token, f"/v1/accounts/{account_id}", opener=opener)
 
 
-def payout_recipients(token, transfer_items, opener=urllib.request.urlopen):
+def payout_recipients(token, transfer_items, opener=None):
     """How the completed payouts to another currency go, by their recipient's ownedByCustomer: the counts.
 
     Only the flag is counted; the recipient's details are not kept. A payout to an account the customer owns still leaves

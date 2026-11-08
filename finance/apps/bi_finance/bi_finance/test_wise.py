@@ -16,7 +16,9 @@ import json
 import types
 import unittest
 import urllib.error
+from unittest import mock
 
+import frappe
 from bi_finance import bank_feed, wise
 
 BANK_ROW = {"date": "2026-03-04", "deposit": 0.0, "withdrawal": 50.0}
@@ -672,6 +674,17 @@ class _Opener:
         if self.error:
             raise self.error
         return io.BytesIO(json.dumps(self.answer).encode("utf-8"))
+
+
+def setUpModule():
+    global site_config
+    # These client tests have no site; explicitly exercise the default policy.
+    site_config = mock.patch.object(frappe, "conf", {})
+    site_config.start()
+
+
+def tearDownModule():
+    site_config.stop()
 
 
 if __name__ == "__main__":

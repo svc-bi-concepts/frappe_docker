@@ -255,5 +255,49 @@ class Navigation(unittest.TestCase):
                     )
 
 
+class HTTPBoundary(unittest.TestCase):
+    def test_network_imports_stay_at_the_guarded_boundary(self):
+        # The assistant has its own enabled switch and is outside this feed switch.
+        # Request construction is safe; opening a connection belongs to one module.
+        allowed = {"external_integrations.py", "assistant_client.py"}
+        violations = []
+        for root, _, files in os.walk(PACKAGE):
+            for name in files:
+                if not name.endswith(".py") or name.startswith("test_"):
+                    continue
+                path = os.path.join(root, name)
+                with open(path) as source:
+                    tree = ast.parse(source.read())
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.Import):
+                        imports = [alias.name for alias in node.names]
+                    elif isinstance(node, ast.ImportFrom):
+                        imports = [node.module or ""]
+                        if node.module == "urllib.request" and all(
+                            alias.name == "Request" for alias in node.names
+                        ):
+                            continue
+                    else:
+                        continue
+                    if any(
+                        (
+                            item.split(".")[0] in {"requests", "httpx"}
+                            and name != "external_integrations.py"
+                        )
+                        or (
+                            name not in allowed
+                            and (
+                                item.split(".")[0] in {"http", "urllib3"}
+                                or item in {"urllib", "urllib.request"}
+                            )
+                        )
+                        for item in imports
+                    ):
+                        violations.append(os.path.relpath(path, PACKAGE))
+        self.assertEqual(
+            violations, [], "HTTP must go through external_integrations.open_request"
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
