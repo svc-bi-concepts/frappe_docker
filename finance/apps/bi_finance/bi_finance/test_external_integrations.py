@@ -3,9 +3,9 @@
 import datetime
 import logging
 import os
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 import frappe
@@ -76,16 +76,21 @@ class Disabled(unittest.TestCase):
                     try:
                         for module in (wise, paypal):
                             with self.subTest(module=module.__name__):
-                                before = (sites / site / "logs/bi_finance.log").read_text()
-                                with mock.patch.object(frappe, "get_single") as settings:
+                                before = (
+                                    sites / site / "logs/bi_finance.log"
+                                ).read_text()
+                                with mock.patch.object(
+                                    frappe, "get_single"
+                                ) as settings:
                                     module.sync_scheduled()
                                     settings.assert_not_called()
                                 for handler in logger.handlers:
                                     handler.flush()
                                 log = (sites / site / "logs/bi_finance.log").read_text()
-                                message = log[len(before):]
+                                message = log[len(before) :]
                                 self.assertIn(
-                                    "external integrations are disabled", message.lower()
+                                    "external integrations are disabled",
+                                    message.lower(),
                                 )
                                 self.assertIn("disable_external_integrations", message)
                                 self.thrown.assert_not_called()

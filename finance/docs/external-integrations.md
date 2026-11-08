@@ -1,7 +1,7 @@
 # Disabling external bank integrations
 
 Set `disable_external_integrations` to JSON `1` in the site's `site_config.json`
-(or use `bench --site <site> set-config disable_external_integrations 1`).
+(or use `bench --site <site> set-config -p disable_external_integrations 1`).
 The setting is off when absent or `0`.
 
 This switch is implemented for every Wise, PayPal and Frankfurter request made
