@@ -118,10 +118,9 @@ all site/DB off switches in place.
 There is no single existing flag that disables every outside integration.
 Follow-up for finance: add one site-config guard, for example
 `disable_external_integrations`, checked before all Wise/PayPal manual and
-scheduled calls and Frankfurter requests. That name is **proposed, not
-implemented**; setting it today does nothing. The bexio host wrapper separately
-needs a fail-closed dev-target refusal if IT ever ports it. Neither change is
-part of this documentation bead. IT must inventory restored Server Scripts,
+scheduled calls and Frankfurter requests. It is **not implemented yet, see
+erp-ksff**; setting it today does nothing. The bexio host job stays off dev;
+no host-job change is part of this documentation bead. IT must inventory restored Server Scripts,
 other apps' integrations and user/API access privately; the hook list is code
 evidence, not a complete inventory of the restored DB. Do not treat tailnet
 membership or the restricted API users as a universal integration barrier
