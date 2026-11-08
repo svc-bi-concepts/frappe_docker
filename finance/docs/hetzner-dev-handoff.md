@@ -165,15 +165,20 @@ without files, encryption or checksums. Do not enable that cron on dev.
 For yard-f1hw, the smallest one-time addition is a SHA-256 member manifest inside
 an age-encrypted archive, then a checksum of that ciphertext. After staging
 only the four selected files in a protected directory, run there with
-`BACKUP_PREFIX` set privately to their common prefix:
+`BACKUP_PREFIX` set privately to their common prefix. Run the block as one unit;
+the subshell stops on any missing member, checksum, archive or encryption failure:
 
 ```sh
+(
+set -eu
+: "${BACKUP_PREFIX:?Set BACKUP_PREFIX to the selected backup generation}"
 umask 077
 shasum -a 256 -- "$BACKUP_PREFIX-database.sql.gz" "$BACKUP_PREFIX-site_config_backup.json" "$BACKUP_PREFIX-files.tar" "$BACKUP_PREFIX-private-files.tar" > SHA256SUMS
 shasum -a 256 -c SHA256SUMS
 tar -cf finance-dev-backup.tar SHA256SUMS "$BACKUP_PREFIX-database.sql.gz" "$BACKUP_PREFIX-site_config_backup.json" "$BACKUP_PREFIX-files.tar" "$BACKUP_PREFIX-private-files.tar"
 age -R <recipient-file> -o finance-dev-backup.tar.age finance-dev-backup.tar
 shasum -a 256 finance-dev-backup.tar.age > finance-dev-backup.tar.age.sha256
+)
 ```
 
 The SHA/tar steps are a proposed transfer procedure, not existing repo
