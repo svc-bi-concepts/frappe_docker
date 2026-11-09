@@ -84,13 +84,12 @@ class BuildImageModes(unittest.TestCase):
                     '  [ -n "$DOCKER_STUB_NO_BUILDER" ] && exit 1\n'
                     "  exit 0\nfi\n"
                     'if [ "$1 $2" = "buildx build" ]; then\n'
-                    '  for option do\n'
+                    "  for option do\n"
                     '    case "$option" in id=APPS_JSON,src=*)\n'
                     '      printf "apps-secret:"; cat "${option#id=APPS_JSON,src=}"; echo;;\n'
-                    '    esac\n'
-                    '  done\n'
-                    '  exit 0\nfi\nexit 1\n'
-                    % (log, " ".join(existing_images))
+                    "    esac\n"
+                    "  done\n"
+                    "  exit 0\nfi\nexit 1\n" % (log, " ".join(existing_images))
                 )
             os.chmod(stub, 0o755)
             env = {"PATH": os.path.join(tmp, "bin") + os.pathsep + os.environ["PATH"]}
@@ -222,12 +221,14 @@ class BuildImageModes(unittest.TestCase):
                 ]
                 self.assertEqual(payloads, [apps])
                 build = next(
-                    shlex.split(line) for line in calls.splitlines()
+                    shlex.split(line)
+                    for line in calls.splitlines()
                     if line.startswith("buildx build ")
                 )
                 build_args = [
                     build[i + 1].split("=", 1)[0]
-                    for i, arg in enumerate(build) if arg == "--build-arg"
+                    for i, arg in enumerate(build)
+                    if arg == "--build-arg"
                 ]
                 self.assertNotIn("APPS_JSON", build_args)
 
@@ -1123,7 +1124,6 @@ class PatchStep(unittest.TestCase):
         self.assertEqual(dock["app"], "hrms")
         self.assertEqual(len(dock["items"]), 9)
         self.assertGreater(dock["modified"], "2026-10-05 12:30:00.000000")
-
 
 
 def invented_year(ktg=(11.47, 17.47)):

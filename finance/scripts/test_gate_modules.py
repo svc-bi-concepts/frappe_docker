@@ -36,7 +36,17 @@ class GateModules(unittest.TestCase):
             shutil.copytree(ROOT / ".yardr", root / ".yardr")
             for name in ("gate-tests.sh", "gate-modules.sh"):
                 shutil.copy(ROOT / "finance/scripts" / name, scripts)
-            for path in ("finance/apps/bi_finance", "finance/apps/bi_payroll", "finance/bexio", "finance/sharepoint", "finance/mail", "finance/wise", "apps/bi_finance", "env/bin", "bin"):
+            for path in (
+                "finance/apps/bi_finance",
+                "finance/apps/bi_payroll",
+                "finance/bexio",
+                "finance/sharepoint",
+                "finance/mail",
+                "finance/wise",
+                "apps/bi_finance",
+                "env/bin",
+                "bin",
+            ):
                 (root / path).mkdir(parents=True)
             stub = root / "bin/python3"
             stub.write_text(
@@ -50,24 +60,45 @@ class GateModules(unittest.TestCase):
             for name in ("docker", "git"):
                 command = root / "bin" / name
                 command.write_text(
-                    '#!/bin/sh\n'
+                    "#!/bin/sh\n"
                     'case "$*" in *finance-coolify.yml*)\n'
                     '  [ -n "${LEDGER_HOST:-}" ] && [ -n "${DB_ROOT_PASSWORD:-}" ] && [ -n "${ADMIN_PASSWORD:-}" ] || exit 1;;\n'
                     'esac\nprintf "{}\\n"\n'
-                    if name == "docker" else "#!/bin/sh\nexit 0\n"
+                    if name == "docker"
+                    else "#!/bin/sh\nexit 0\n"
                 )
                 command.chmod(0o755)
-            env = dict(os.environ, PATH=str(root / "bin") + os.pathsep + os.defpath, TMPDIR=tmp, CALLS=str(root / "calls"))
+            env = dict(
+                os.environ,
+                PATH=str(root / "bin") + os.pathsep + os.defpath,
+                TMPDIR=tmp,
+                CALLS=str(root / "calls"),
+            )
             observed = []
             for command in (".yardr/check-host.sh", "finance/scripts/gate-tests.sh"):
-                run = subprocess.run(["sh", command], cwd=root, env=env, capture_output=True, text=True)
+                run = subprocess.run(
+                    ["sh", command], cwd=root, env=env, capture_output=True, text=True
+                )
                 self.assertEqual(run.returncode, 0, run.stderr)
-                calls = [json.loads(line) for line in (root / "calls").read_text().splitlines()]
-                observed.append([arg for call in calls for arg in call if arg.startswith("bi_finance.")])
+                calls = [
+                    json.loads(line)
+                    for line in (root / "calls").read_text().splitlines()
+                ]
+                observed.append(
+                    [
+                        arg
+                        for call in calls
+                        for arg in call
+                        if arg.startswith("bi_finance.")
+                    ]
+                )
                 (root / "calls").unlink()
             host, image = observed
             self.assertCountEqual(image, IMAGE_MODULES)
-            on_disk = {"bi_finance." + p.stem for p in (ROOT / "finance/apps/bi_finance/bi_finance").glob("test_*.py")}
+            on_disk = {
+                "bi_finance." + p.stem
+                for p in (ROOT / "finance/apps/bi_finance/bi_finance").glob("test_*.py")
+            }
             self.assertCountEqual(host + image, on_disk)
 
 

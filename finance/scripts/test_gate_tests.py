@@ -112,7 +112,14 @@ class FinanceBuildGraph(unittest.TestCase):
                 if op == "ARG":
                     self.assertNotEqual(value.split("=", 1)[0], "APPS_JSON")
                 elif op == "ENV":
-                    self.assertNotIn("APPS_JSON", dict(word.split("=", 1) for word in shlex.split(value) if "=" in word))
+                    self.assertNotIn(
+                        "APPS_JSON",
+                        dict(
+                            word.split("=", 1)
+                            for word in shlex.split(value)
+                            if "=" in word
+                        ),
+                    )
 
 
 class FinanceBuildExecution(unittest.TestCase):
@@ -154,8 +161,7 @@ class FinanceBuildExecution(unittest.TestCase):
             tools.mkdir()
             calls = root / "calls"
             stub = tools / "boundary"
-            stub.write_text(
-                f"#!{sys.executable}\n" + r'''
+            stub.write_text(f"#!{sys.executable}\n" + r"""
 import json, os, pathlib, sys
 name = pathlib.Path(sys.argv[0]).name
 args = sys.argv[1:]
@@ -195,8 +201,7 @@ else:
     raise AssertionError((name, args))
 with log.open('a') as f:
     f.write(json.dumps(event) + '\n')
-'''
-            )
+""")
             stub.chmod(0o755)
             for name in ("bench", "python3", "sh"):
                 (tools / name).symlink_to(stub)
@@ -210,7 +215,16 @@ with log.open('a') as f:
                     stage_root.mkdir()
                 outputs[name] = stage_root
                 bench = stage_root / "home/frappe/frappe-bench"
-                env = dict(os.environ, PATH=str(tools) + os.pathsep + os.defpath, BENCH=str(bench), CALLS=str(calls), EXPECTED_APPS=expected_apps, FRAPPE_BRANCH="fixture", FRAPPE_PATH="fixture", CACHE_BUST="")
+                env = dict(
+                    os.environ,
+                    PATH=str(tools) + os.pathsep + os.defpath,
+                    BENCH=str(bench),
+                    CALLS=str(calls),
+                    EXPECTED_APPS=expected_apps,
+                    FRAPPE_BRANCH="fixture",
+                    FRAPPE_PATH="fixture",
+                    CACHE_BUST="",
+                )
                 cwd = stage_root
                 for op, value in stages[name]["instructions"]:
                     if op == "COPY":
@@ -223,10 +237,16 @@ with log.open('a') as f:
                         dest = stage_root / words[-1].lstrip("/")
                         for source in words[:-1]:
                             src = origin / source.lstrip("/")
-                            target = dest / src.name if len(words) > 2 or words[-1].endswith("/") else dest
+                            target = (
+                                dest / src.name
+                                if len(words) > 2 or words[-1].endswith("/")
+                                else dest
+                            )
                             target.parent.mkdir(parents=True, exist_ok=True)
                             if src.is_dir():
-                                shutil.copytree(src, target, dirs_exist_ok=True, symlinks=True)
+                                shutil.copytree(
+                                    src, target, dirs_exist_ok=True, symlinks=True
+                                )
                             else:
                                 shutil.copy2(src, target)
                     elif op == "WORKDIR":
@@ -236,23 +256,55 @@ with log.open('a') as f:
                         mounts = []
                         while command.startswith("--mount="):
                             option, command = command.split(None, 1)
-                            mounts.append(dict(item.split("=", 1) for item in option[8:].split(",")))
+                            mounts.append(
+                                dict(
+                                    item.split("=", 1) for item in option[8:].split(",")
+                                )
+                            )
                         if name == "builder" and not mounts:
                             continue
                         for mount in mounts:
-                            if mount.get("type") == "secret" and mount.get("id") in secrets:
+                            if (
+                                mount.get("type") == "secret"
+                                and mount.get("id") in secrets
+                            ):
                                 target = stage_root / mount["target"].lstrip("/")
                                 target.parent.mkdir(parents=True, exist_ok=True)
                                 target.write_text(secrets[mount["id"]])
-                        command = command.replace("/home/frappe/", str(stage_root / "home/frappe") + "/").replace("/opt/frappe/", str(stage_root / "opt/frappe") + "/").replace("/usr/local/bin/", str(stage_root / "usr/local/bin") + "/")
-                        run = subprocess.run(["/bin/sh", "-ec", command], cwd=cwd, env=env, capture_output=True, text=True)
+                        command = (
+                            command.replace(
+                                "/home/frappe/", str(stage_root / "home/frappe") + "/"
+                            )
+                            .replace(
+                                "/opt/frappe/", str(stage_root / "opt/frappe") + "/"
+                            )
+                            .replace(
+                                "/usr/local/bin/",
+                                str(stage_root / "usr/local/bin") + "/",
+                            )
+                        )
+                        run = subprocess.run(
+                            ["/bin/sh", "-ec", command],
+                            cwd=cwd,
+                            env=env,
+                            capture_output=True,
+                            text=True,
+                        )
                         self.assertEqual(run.returncode, 0, run.stderr)
             events = [json.loads(line) for line in calls.read_text().splitlines()]
-            self.assertEqual([e[:2] for e in events], [
-                ["bench", "init"], ["python3", "pins"],
-                ["sh", "erpnextswiss"], ["sh", "frappe"], ["sh", "hrms"],
-                ["bench", "build"], ["pip", "bi_finance"], ["pip", "bi_payroll"],
-            ])
+            self.assertEqual(
+                [e[:2] for e in events],
+                [
+                    ["bench", "init"],
+                    ["python3", "pins"],
+                    ["sh", "erpnextswiss"],
+                    ["sh", "frappe"],
+                    ["sh", "hrms"],
+                    ["bench", "build"],
+                    ["pip", "bi_finance"],
+                    ["pip", "bi_payroll"],
+                ],
+            )
             for path in (
                 "apps/erpnextswiss/erpnextswiss/erpnextswiss/workspace",
                 "apps/erpnextswiss/erpnextswiss/desktop_icon",
@@ -261,13 +313,18 @@ with log.open('a') as f:
                 self.assertNotIn(path, events[5][2])
             final = outputs["finance"] / "home/frappe/frappe-bench"
             for name in ("gate-tests.sh", "gate-modules.sh"):
-                self.assertEqual((final / "finance/scripts" / name).read_bytes(), (SCRIPTS / name).read_bytes())
+                self.assertEqual(
+                    (final / "finance/scripts" / name).read_bytes(),
+                    (SCRIPTS / name).read_bytes(),
+                )
             for app in ("bi_finance", "bi_payroll"):
                 source = ROOT / "finance/apps" / app
                 for path in source.rglob("*"):
                     if path.is_file():
                         copied = final / "apps" / app / path.relative_to(source)
-                        self.assertEqual(copied.read_bytes(), path.read_bytes(), str(copied))
+                        self.assertEqual(
+                            copied.read_bytes(), path.read_bytes(), str(copied)
+                        )
 
 
 class GateCheckoutRunner(unittest.TestCase):
