@@ -63,6 +63,7 @@ process, set parsed numeric values in `sites/<site>/site_config.json`:
 bench --site <site> set-config -p pause_scheduler 1
 bench --site <site> set-config -p disable_scheduler 1
 bench --site <site> set-config -p mute_emails 1
+bench --site <site> set-config -p disable_external_integrations 1
 bench --site <site> set-config host_name http://frontend:8080
 ```
 
@@ -105,9 +106,9 @@ all site/DB off switches in place.
 | Integration or job                          | Scope of the switch; evidence and remaining barrier                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Outgoing and incoming mail                  | `mute_emails=1` plus every Email Account's `enable_outgoing=0`, `enable_incoming=0`. Frappe checks muted mail before sending ([email_queue.py:174-180](https://github.com/frappe/frappe/blob/v16.51.1/frappe/email/doctype/email_queue/email_queue.py#L174-L180), [frappe/**init**.py:1455-1456](https://github.com/frappe/frappe/blob/v16.51.1/frappe/__init__.py#L1455-L1456)). Keep workers off and SMTP/HTTPS egress denied, including any default SMTP configuration restored outside Email Account. Do not flush the restored Email Queue. |
-| Wise                                        | `Wise Settings.sync_enabled=0` stops only the hourly entrypoint (`finance/apps/bi_finance/bi_finance/wise.py:85-100`). Test connection, Sync now and dry runs still contact Wise (`wise.py:38-83,100-108`); no universal off flag exists. Egress denial must cover those manual paths.                                                                                                                                                                                                                                                           |
-| PayPal                                      | `PayPal Settings.sync_enabled=0` stops only the hourly entrypoint (`finance/apps/bi_finance/bi_finance/paypal.py:37-89`). Test connection, Sync now and dry runs still obtain tokens/read PayPal. No universal off flag exists; deny egress.                                                                                                                                                                                                                                                                                                     |
-| Exchange rates (Frankfurter)                | No off flag in the rate client. Even a dry run fetches rates (`finance/apps/bi_finance/bi_finance/bank_feed.py:280-296,314-323`). Deny egress; do not exercise external rate lookups on this copy.                                                                                                                                                                                                                                                                                                                                               |
+| Wise                                        | Implemented: `disable_external_integrations=1` blocks Test connection, Sync now, dry runs and scheduled syncs before credentials are read (`finance/apps/bi_finance/bi_finance/wise.py:29-45,88-105`). The shared HTTP guard also blocks direct client calls (`wise_client.py:49-60`, `external_integrations.py:12-29`). Keep `Wise Settings.sync_enabled=0` and egress denial.                                                                                                                                                                  |
+| PayPal                                      | Implemented: `disable_external_integrations=1` blocks Test connection, Sync now, dry runs and scheduled syncs before credentials are read (`finance/apps/bi_finance/bi_finance/paypal.py:30-44,68-85`). The shared HTTP guard also blocks direct client calls, including token requests (`paypal_client.py:39-73`, `external_integrations.py:12-29`). Keep `PayPal Settings.sync_enabled=0` and egress denial.                                                                                                                                   |
+| Exchange rates (Frankfurter)                | Implemented: `disable_external_integrations=1` blocks rate loading, including dry runs, and the shared HTTP guard checks before each Frankfurter request (`finance/apps/bi_finance/bi_finance/bank_feed.py:282-325`, `external_integrations.py:12-29`). Keep egress denied; do not exercise external rate lookups on this copy.                                                                                                                                                                                                                  |
 | AI assistant (OpenRouter)                   | `AI Assistant Settings.enabled=0` rejects ask before loading its key or sending ledger context (`finance/apps/bi_finance/bi_finance/assistant.py:144-165`). `actions_enabled=0` also turns off assistant actions (`assistant_actions.py:168-169,220-221`). Keep HTTPS egress denied.                                                                                                                                                                                                                                                             |
 | Webhooks                                    | Every restored `Webhook.enabled=0`, as in `finance/scripts/copy-stack.sh:183`; field defined in [Frappe webhook.json:154-159](https://github.com/frappe/frappe/blob/v16.51.1/frappe/integrations/doctype/webhook/webhook.json#L154-L159). This does not cancel an already enqueued webhook. Fresh Redis, stopped workers and denied egress remain necessary.                                                                                                                                                                                     |
 | bexio -> ERPNext hourly importer            | Not a `bi_finance` scheduler job. It is a Mac launchd wrapper (`finance/bexio/ch.bi-concepts.bexio-sync.plist:2-10`, `finance/bexio/sync_hourly.sh:1-31`). No site-config off flag exists. Do not install its launchd/cron equivalent on dev, run its wrapper, grant vault access, copy token files or point the existing Mac job at dev. `--dry-run` still contacts bexio and ERPNext (`sync_hourly.sh:44-47`); it is not an off switch. Do not disable the Mac's live sync for this copy.                                                      |
@@ -115,12 +116,16 @@ all site/DB off switches in place.
 | Local bank matching and monthly revaluation | `Bank Matching Settings.enabled=0`, `rules_enabled=0` prevent automatic matching/rule booking after imports (`finance/apps/bi_finance/bi_finance/bank_match_job.py:85-89,109-115`). These are local bookkeeping, not bank API kill switches. The monthly draft job is blocked by disabling the scheduler (`hooks.py:77-78`). Manual matching remains possible; do not run it as an isolation check.                                                                                                                                              |
 | External Swiss QR rendering                 | `bi_finance.setup.disable_libracore_print_formats` disables inherited print formats that send invoice data to an outside QR renderer (`finance/apps/bi_finance/bi_finance/setup.py:1-49`). The migrate hook repeats it (`hooks.py:47-50`). Use the local BI QR format only; deny renderer egress.                                                                                                                                                                                                                                                |
 
-There is no single existing flag that disables every outside integration.
-Follow-up for finance: add one site-config guard, for example
-`disable_external_integrations`, checked before all Wise/PayPal manual and
-scheduled calls and Frankfurter requests. It is **not implemented yet, see
-erp-ksff**; setting it today does nothing. The bexio host job stays off dev;
-no host-job change is part of this documentation bead. IT must inventory restored Server Scripts,
+The implemented `disable_external_integrations` site-config guard covers
+Wise, PayPal and Frankfurter in `bi_finance`; see
+[Disabling external bank integrations](external-integrations.md) for its scope
+and manual-error/scheduled-skip behaviour (`finance/apps/bi_finance/bi_finance/external_integrations.py:12-29`).
+The key takes effect only on an image containing erp-ksff; dev must deploy that
+image before relying on it.
+It does not disable every outside integration: keep the separate mail,
+scheduler, assistant and webhook switches, stopped workers and egress denial.
+The bexio host job stays off dev; no host-job change is part of this documentation
+bead. IT must inventory restored Server Scripts,
 other apps' integrations and user/API access privately; the hook list is code
 evidence, not a complete inventory of the restored DB. Do not treat tailnet
 membership or the restricted API users as a universal integration barrier
@@ -203,7 +208,8 @@ integrations. Restored credential decryptability must never be the isolation
 barrier.
 
 Before opening dev, verify only off-state flags and counts: scheduler status
-disabled, both feed switches zero, assistant/matching switches zero, no enabled
+disabled, `disable_external_integrations=1`, both feed switches zero,
+assistant/matching switches zero, no enabled
 mail accounts or webhooks, no running workers/scheduler, and IT's egress/ingress
 checks. Do not test isolation by sending real mail or making a real API call.
 After tests, IT removes the dev resource, its volumes and all dev transfer and
