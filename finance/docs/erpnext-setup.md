@@ -469,6 +469,10 @@ inspect capped` first); if that check fails, ask IT. `BUILDER=<name>` points the
 at another builder — on a machine without IT's setup, name that machine's own capped
 builder, never the default.
 
+The script refuses an existing output tag or its legacy `-base` or `-finance`
+tags, and refuses a `copy` build whose app list lacks HRMS. Building does not
+switch the running stack; use the switch procedure below after a backup.
+
 For an unresponsive Docker runtime, follow [local operations](../../AGENTS.md).
 The asset build's node heap is capped with `NODE_OPTIONS=--max-old-space-size=$NODE_HEAP_MB`
 (the script passes it into `images/custom/Containerfile`); `NODE_HEAP_MB` defaults to 900. The
@@ -524,20 +528,18 @@ previous tag, brings the stack up on it and keeps the old image; the new image
 stays, and a person removes it.
 
 **One image at rest:** only one `frappe-finance-custom` image is kept, the one the
-stack runs. A build leaves three tags (`<tag>-base`, `<tag>-finance` and `<tag>`)
-until a switch removes the two layers. A switch-free build (a copy for a test, say)
-is removed by hand once it is no longer needed: `docker rmi` on all three tags, by
-tag (`frappe-finance-custom:<tag>`, `frappe-finance-custom:<tag>-base` and
-`frappe-finance-custom:<tag>-finance`). A switch does not take the previous image's
-`-finance` tag, which a build by hand can leave, so check that
+stack runs. A build now leaves only `frappe-finance-custom:<tag>`. A switch-free
+build (a copy for a test, say) is removed by hand once it is no longer needed:
+`docker rmi frappe-finance-custom:<tag>`. Older builds may have left `-base` and
+`-finance` tags; the switch still cleans up legacy tags as described above.
+A switch does not take the previous image's `-finance` tag, so check that
 `docker images frappe-finance-custom` lists one tag; the gate's fallback to the
 image at rest needs exactly one.
 
 A change to `bi_finance` needs the full build (`build-image.sh`, a new tag). There is no
 one-layer shortcut: IT's capped builder cannot read the local image store, so a layer
-cannot be built `FROM` a tag that exists only there. The script gets around that inside
-one run, writing each layer as an OCI layout in a scratch directory (removed at the end)
-that the next layer takes as its base.
+cannot be built `FROM` a tag that exists only there. The build graph is documented in
+[Coolify build](coolify-build.md).
 
 ## Redo on a fresh site
 
@@ -574,12 +576,15 @@ docker run --rm -v "$PWD/finance/apps/bi_finance:/home/frappe/frappe-bench/apps/
 ```
 
 The Cash Position report has its own offline tests, in the same way (`bi_finance.test_cash_position`).
-The modules that import frappe (`test_payment_run`, `test_treasury`, `test_bank_list`, `test_bank_statement_upload`) run
-in the image as one gate step in `.yardr/check`. That step runs the tag `finance/scripts/gate-image.sh` picks: main's deploy pin, then the branch's pin, then the one image at rest. After a switch the previous image may be gone, so merge main into the branch.
+The image gate's runner and authoritative module manifest are described in
+[Coolify build](coolify-build.md). `.yardr/check` runs the tag
+`finance/scripts/gate-image.sh` picks: main's deploy pin, then the branch's pin,
+then the one image at rest. After a switch the previous image may be gone, so
+merge main into the branch.
 The package has host modules, which stub frappe and run on the host in
 `.yardr/check-host.sh`, and image modules, which use real frappe and run on the
-gate-image line in `.yardr/check`. Each top-level `test_*.py` module in
-`bi_finance/bi_finance` is named in exactly one of those two lines; together
+shared runner. Each top-level `test_*.py` module in
+`bi_finance/bi_finance` is named in exactly one of the host list or image manifest; together
 they cover every top-level module, and `sh .yardr/check` runs both. A test
 module inside a subpackage (`doctype/`, `report/`) is seen by neither guard
 today. A single discover over the package fails because the host modules'

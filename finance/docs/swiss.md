@@ -381,28 +381,10 @@ MWST. This is a decision for Benchi.
 ## Build
 
 Two app lists: `finance/apps.json` (ERPNext, erpnextswiss and HRMS at its pinned tag, the live
-image) and `finance/apps-copy.json` (the same, the copy site's list, see `hrms.md`). The build uses
-`images/custom/Containerfile`, which is the upstream full-image build. It takes the apps through
-`bench init --apps_path`, with the list as a BuildKit secret.
-
-```sh
-finance/scripts/build-image.sh live <tag>     # finance/apps.json, with hrms
-finance/scripts/build-image.sh copy <tag>     # finance/apps-copy.json, with hrms
-```
-
-The script:
-
-1. Refuses a `copy` build if its list has no `hrms`.
-2. Refuses if `frappe-finance-custom:<tag>` (or its `-base` or `-finance` layer) already
-   exists, so a build never overwrites a tag in use. Pick a new tag.
-3. Checks that the `v16` branch of erpnextswiss still points at the commit in the list
-   (`git ls-remote`). It stops if the branch has moved.
-4. Runs one `docker buildx build --target finance` with `--secret id=APPS_JSON`, `FRAPPE_BRANCH=v16.51.1`,
-   and `--no-cache`. The cache is off on purpose: a secret is not part of the
-   layer cache key, so a cached `bench init` layer would keep the old apps.
-5. Includes `bi_finance` and `bi_payroll` in that multi-stage build.
-
-Result: `frappe-finance-custom:<tag>`. Not run against site `frontend`.
+image) and `finance/apps-copy.json` (the same, the copy site's list, see `hrms.md`).
+For local build commands and builder safeguards, see
+[Building an image](erpnext-setup.md#building-an-image). For the build target,
+secret handling and baked gate, see [Coolify build](coolify-build.md).
 
 Why a commit in a JSON key and not in the ref: bench clones each app with
 `git clone --depth 1 --branch <ref>`, so it accepts a branch or tag, not a
