@@ -57,3 +57,47 @@ build runs on the mini; static tests and `.yardr/check-host.sh` cover this
 change there. IT's first Coolify dev run must prove the full image build and
 baked test run before enabling the replacement check. Production deployment
 and image pinning belong to erp-mnkv.
+
+## Isolated dev resource
+
+The image build and baked gate above are owned by erp-ve60 / IT yard-x1sn.
+The dev resource configuration does not build or publish an image.
+
+For the dev resource, IT must build **main containing both the finance target
+and `391fadb5`**, the `disable_external_integrations` implementation. Verify
+source ancestry before building:
+
+```sh
+git merge-base --is-ancestor 391fadb5 <main-build-source-sha>
+```
+
+Run the baked offline gate as that build's instructions specify. Publish the
+successful image to IT's registry and obtain the **registry manifest digest**
+from the build/push result (or `docker buildx imagetools inspect <registry-image>:<build-tag>`).
+Do not use the local Docker image ID. Record source SHA plus digest privately.
+Set `FINANCE_DEV_IMAGE=<registry-image>@sha256:<64 hex digits>` in Coolify;
+a tag-only value is rejected by dev init. The runtime host must be able to pull
+the image before isolated containers start. No image is built on the mini.
+
+Select **`finance/deploy/finance-coolify.dev.yml` alone**, not the production
+Compose file or a merge with it. Keep the checkout's
+`finance/scripts/dev_site_init.py` alongside it for the Compose config mount.
+The required runtime settings are `FINANCE_DEV_IMAGE`, `DB_ROOT_PASSWORD`,
+`FINANCE_MUTE_EMAILS=1`, `FINANCE_PAUSE_SCHEDULER=1`, and
+`FINANCE_DISABLE_EXTERNAL_INTEGRATIONS=1`. No `LEDGER_HOST` or `ADMIN_PASSWORD`
+is needed: this resource opens an already restored dev site, not a new site.
+
+`dev-init` validates all settings and atomically writes the three numeric flags
+into the restored `sites/frontend/site_config.json`. Missing config or invalid
+settings fail closed. Every other service, including DB/Redis/configurator,
+waits for successful init; application processes also wait for configurator,
+and frontend waits for backend/websocket. Automatic restarts are disabled.
+After a restore, stop the resource and redeploy with init recreated; do not
+restart consumers against a newly restored config using an old init result.
+
+There are no published ports, enabled routers or external networks. Only the
+internal `ledger-dev` network connects the services; init has no network.
+Disable Coolify's automatic domain/router and external-network attachment.
+IT must verify the effective resource retains the isolation. See
+[hetzner-dev-handoff.md](hetzner-dev-handoff.md) for volume preparation,
+restore authorization, additional DB off switches and cleanup.

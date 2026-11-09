@@ -1,0 +1,253 @@
+# Standalone dev resource. Never merge with finance-coolify.yml.
+# Restore the frontend site and database into this resource's own volumes first.
+services:
+  dev-init:
+    image: ${FINANCE_DEV_IMAGE:?Set FINANCE_DEV_IMAGE to the main build repository@sha256:digest}
+    pull_policy: missing
+    restart: "no"
+    network_mode: none
+    entrypoint:
+      - /home/frappe/frappe-bench/env/bin/python
+      - /dev-site-init.py
+    environment:
+      FINANCE_DEV_IMAGE: ${FINANCE_DEV_IMAGE:?Digest required}
+      FINANCE_MUTE_EMAILS: ${FINANCE_MUTE_EMAILS:?Must be 1}
+      FINANCE_PAUSE_SCHEDULER: ${FINANCE_PAUSE_SCHEDULER:?Must be 1}
+      FINANCE_DISABLE_EXTERNAL_INTEGRATIONS: ${FINANCE_DISABLE_EXTERNAL_INTEGRATIONS:?1 required}
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+    configs:
+      - source: dev-site-init
+        target: /dev-site-init.py
+    labels:
+      traefik.enable: "false"
+  backend:
+    image: ${FINANCE_DEV_IMAGE:?Set FINANCE_DEV_IMAGE to the main build repository@sha256:digest}
+    pull_policy: missing
+    networks:
+      - ledger-dev
+    restart: "no"
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+    depends_on:
+      dev-init:
+        condition: service_completed_successfully
+      configurator:
+        condition: service_completed_successfully
+    labels:
+      traefik.enable: "false"
+  configurator:
+    image: ${FINANCE_DEV_IMAGE:?Set FINANCE_DEV_IMAGE to the main build repository@sha256:digest}
+    pull_policy: missing
+    networks:
+      - ledger-dev
+    entrypoint:
+      - bash
+      - -c
+    command:
+      - >-
+        set -e;
+        ls -1 apps > sites/apps.txt;
+        bench set-config -g db_host $$DB_HOST;
+        bench set-config -gp db_port $$DB_PORT;
+        bench set-config -g redis_cache "redis://$$REDIS_CACHE";
+        bench set-config -g redis_queue "redis://$$REDIS_QUEUE";
+        bench set-config -g redis_socketio "redis://$$REDIS_QUEUE";
+        bench set-config -gp socketio_port $$SOCKETIO_PORT;
+    environment:
+      DB_HOST: db
+      DB_PORT: "3306"
+      REDIS_CACHE: redis-cache:6379
+      REDIS_QUEUE: redis-queue:6379
+      SOCKETIO_PORT: "9000"
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+    restart: "no"
+    labels:
+      traefik.enable: "false"
+    depends_on:
+      dev-init:
+        condition: service_completed_successfully
+  db:
+    image: mariadb:11.8
+    networks:
+      - ledger-dev
+    healthcheck:
+      test:
+        - CMD
+        - healthcheck.sh
+        - --connect
+        - --innodb_initialized
+      start_period: 5s
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: "no"
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --skip-character-set-client-handshake
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?}
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?}
+    volumes:
+      - db-data:/var/lib/mysql
+    labels:
+      traefik.enable: "false"
+    depends_on:
+      dev-init:
+        condition: service_completed_successfully
+  frontend:
+    image: ${FINANCE_DEV_IMAGE:?Set FINANCE_DEV_IMAGE to the main build repository@sha256:digest}
+    pull_policy: missing
+    networks:
+      - ledger-dev
+    depends_on:
+      dev-init:
+        condition: service_completed_successfully
+      backend:
+        condition: service_started
+      websocket:
+        condition: service_started
+    restart: "no"
+    command:
+      - nginx-entrypoint.sh
+    environment:
+      BACKEND: backend:8000
+      FRAPPE_SITE_NAME_HEADER: frontend
+      SOCKETIO: websocket:9000
+      UPSTREAM_REAL_IP_ADDRESS: 127.0.0.1
+      UPSTREAM_REAL_IP_HEADER: X-Forwarded-For
+      UPSTREAM_REAL_IP_RECURSIVE: "off"
+      PROXY_READ_TIMEOUT: 120
+      CLIENT_MAX_BODY_SIZE: 50m
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+    labels:
+      traefik.enable: "false"
+  queue-long:
+    image: ${FINANCE_DEV_IMAGE:?Set FINANCE_DEV_IMAGE to the main build repository@sha256:digest}
+    pull_policy: missing
+    networks:
+      - ledger-dev
+    restart: "no"
+    command:
+      - bench
+      - worker
+      - --queue
+      - long,default,short
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+    environment:
+      FRAPPE_REDIS_CACHE: redis://redis-cache:6379
+      FRAPPE_REDIS_QUEUE: redis://redis-queue:6379
+    depends_on:
+      dev-init:
+        condition: service_completed_successfully
+      configurator:
+        condition: service_completed_successfully
+    labels:
+      traefik.enable: "false"
+  queue-short:
+    image: ${FINANCE_DEV_IMAGE:?Set FINANCE_DEV_IMAGE to the main build repository@sha256:digest}
+    pull_policy: missing
+    networks:
+      - ledger-dev
+    restart: "no"
+    command:
+      - bench
+      - worker
+      - --queue
+      - short,default
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+    environment:
+      FRAPPE_REDIS_CACHE: redis://redis-cache:6379
+      FRAPPE_REDIS_QUEUE: redis://redis-queue:6379
+    depends_on:
+      dev-init:
+        condition: service_completed_successfully
+      configurator:
+        condition: service_completed_successfully
+    labels:
+      traefik.enable: "false"
+  redis-queue:
+    image: redis:6.2-alpine
+    networks:
+      - ledger-dev
+    restart: "no"
+    volumes:
+      - redis-queue-data:/data
+    labels:
+      traefik.enable: "false"
+    depends_on:
+      dev-init:
+        condition: service_completed_successfully
+  redis-cache:
+    image: redis:6.2-alpine
+    networks:
+      - ledger-dev
+    restart: "no"
+    labels:
+      traefik.enable: "false"
+    depends_on:
+      dev-init:
+        condition: service_completed_successfully
+  scheduler:
+    image: ${FINANCE_DEV_IMAGE:?Set FINANCE_DEV_IMAGE to the main build repository@sha256:digest}
+    pull_policy: missing
+    networks:
+      - ledger-dev
+    restart: "no"
+    command:
+      - bench
+      - schedule
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+    depends_on:
+      dev-init:
+        condition: service_completed_successfully
+      configurator:
+        condition: service_completed_successfully
+    labels:
+      traefik.enable: "false"
+  websocket:
+    image: ${FINANCE_DEV_IMAGE:?Set FINANCE_DEV_IMAGE to the main build repository@sha256:digest}
+    pull_policy: missing
+    networks:
+      - ledger-dev
+    restart: "no"
+    command:
+      - node
+      - /home/frappe/frappe-bench/apps/frappe/socketio.js
+    environment:
+      FRAPPE_REDIS_CACHE: redis://redis-cache:6379
+      FRAPPE_REDIS_QUEUE: redis://redis-queue:6379
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+    depends_on:
+      dev-init:
+        condition: service_completed_successfully
+      configurator:
+        condition: service_completed_successfully
+    labels:
+      traefik.enable: "false"
+volumes:
+  db-data: null
+  redis-queue-data: null
+  sites: null
+  logs: null
+networks:
+  ledger-dev:
+    driver: bridge
+    internal: true
+configs:
+  dev-site-init:
+    file: ../scripts/dev_site_init.py
