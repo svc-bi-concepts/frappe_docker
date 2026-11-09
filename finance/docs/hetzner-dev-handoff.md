@@ -19,18 +19,14 @@ checkout. It is standalone, not a `-f` overlay on `finance-coolify.yml`: merging
 would retain production router labels and outbound network attachments. The
 production file and its local-image pin are unchanged.
 
-IT builds **main**, after erp-ve60's finance target is merged, following
-[coolify-build.md](coolify-build.md). The main source must contain
-`391fadb5` (erp-ksff, the bank integration guard). Set `FINANCE_DEV_IMAGE` to
-the resulting registry reference **`repository@sha256:<64 hex digits>`**, not
-a tag or local image ID. Record the source SHA and registry manifest digest
-privately. Pull policy is `missing`; the digest identifies the exact image.
-Init refuses tag-only values before any other container can start.
+Follow [coolify-build.md](coolify-build.md) for the required main build,
+source ancestry and registry digest. Use its resulting `FINANCE_DEV_IMAGE`
+value for every finance application service and init. Pull policy is `missing`.
 
 The dev file has one internal bridge, `ledger-dev`, for DB/Redis and application
 links. Init uses `network_mode: none`. No service publishes ports or enables
-Traefik; `LEDGER_HOST` is neither read nor required. Do not let Coolify attach
-an external/proxy network, auto-generate routers, publish ports or override the
+Traefik; neither `LEDGER_HOST` nor `ADMIN_PASSWORD` is read or required. Do not
+let Coolify attach an external/proxy network, auto-generate routers, publish ports or override the
 network settings. IT verifies the **effective** Coolify configuration retains
 these properties. This resource has no public route or general internet egress;
 IT's separately reviewed private access mechanism is outside this file.
@@ -41,7 +37,7 @@ Set these runtime variables when creating the resource:
 
 | Variable                                | Required value                                 |
 | --------------------------------------- | ---------------------------------------------- |
-| `FINANCE_DEV_IMAGE`                     | main build's `repository@sha256:<digest>`      |
+| `FINANCE_DEV_IMAGE`                     | [main build digest](coolify-build.md)          |
 | `FINANCE_MUTE_EMAILS`                   | `1`                                            |
 | `FINANCE_PAUSE_SCHEDULER`               | `1`                                            |
 | `FINANCE_DISABLE_EXTERNAL_INTEGRATIONS` | `1`                                            |
@@ -87,18 +83,17 @@ after it; it starts workers only afterwards (`finance/scripts/copy-stack.sh:166-
 Its `up`/`refresh` wrapper is not the Hetzner procedure: it starts HTTP services
 early and targets the local copy. Do not run it for this handoff.
 
-First, with the restored site directory present and before migrate or any app
-process, set parsed numeric values in `sites/<site>/site_config.json`:
+The three startup flags are owned by `dev-init` as described above. Ensure they
+are present before any separately authorized migrate. During the
+separately authorized restore procedure, with the restored site directory
+present and before migrate or any app process, apply the additional settings
+in `sites/<site>/site_config.json`:
 
 ```sh
-bench --site <site> set-config -p pause_scheduler 1
 bench --site <site> set-config -p disable_scheduler 1
-bench --site <site> set-config -p mute_emails 1
-bench --site <site> set-config -p disable_external_integrations 1
 bench --site <site> set-config host_name http://frontend:8080
 ```
 
-`pause_scheduler` and `mute_emails` follow `finance/scripts/copy-stack.sh:169-172`.
 The copy's internal `host_name` replaces the restored public URL; it is not the
 Coolify routing hostname. `disable_scheduler` is an extra Frappe site-level
 barrier, independent of the DB setting `System Settings.enable_scheduler`.
@@ -151,8 +146,8 @@ The implemented `disable_external_integrations` site-config guard covers
 Wise, PayPal and Frankfurter in `bi_finance`; see
 [Disabling external bank integrations](external-integrations.md) for its scope
 and manual-error/scheduled-skip behaviour (`finance/apps/bi_finance/bi_finance/external_integrations.py:12-29`).
-The key takes effect only on an image containing erp-ksff (`391fadb5`); dev must deploy that
-image before relying on it.
+Use the image selected by the [build requirements](coolify-build.md) before
+relying on this key.
 It does not disable every outside integration: keep the separate mail,
 scheduler, assistant and webhook switches, stopped workers and egress denial.
 The bexio host job stays off dev; no host-job change is part of this handoff. IT must inventory restored Server Scripts,

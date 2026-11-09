@@ -79,25 +79,10 @@ Set `FINANCE_DEV_IMAGE=<registry-image>@sha256:<64 hex digits>` in Coolify;
 a tag-only value is rejected by dev init. The runtime host must be able to pull
 the image before isolated containers start. No image is built on the mini.
 
-Select **`finance/deploy/finance-coolify.dev.yml` alone**, not the production
-Compose file or a merge with it. Keep the checkout's
-`finance/scripts/dev_site_init.py` alongside it for the Compose config mount.
-The required runtime settings are `FINANCE_DEV_IMAGE`, `DB_ROOT_PASSWORD`,
-`FINANCE_MUTE_EMAILS=1`, `FINANCE_PAUSE_SCHEDULER=1`, and
-`FINANCE_DISABLE_EXTERNAL_INTEGRATIONS=1`. No `LEDGER_HOST` or `ADMIN_PASSWORD`
-is needed: this resource opens an already restored dev site, not a new site.
-
-`dev-init` validates all settings and atomically writes the three numeric flags
-into the restored `sites/frontend/site_config.json`. Missing config or invalid
-settings fail closed. Every other service, including DB/Redis/configurator,
-waits for successful init; application processes also wait for configurator,
-and frontend waits for backend/websocket. Automatic restarts are disabled.
-After a restore, stop the resource and redeploy with init recreated; do not
-restart consumers against a newly restored config using an old init result.
-
-There are no published ports, enabled routers or external networks. Only the
-internal `ledger-dev` network connects the services; init has no network.
-Disable Coolify's automatic domain/router and external-network attachment.
-IT must verify the effective resource retains the isolation. See
-[hetzner-dev-handoff.md](hetzner-dev-handoff.md) for volume preparation,
-restore authorization, additional DB off switches and cleanup.
+After the image is available, follow the
+[dev handoff](hetzner-dev-handoff.md#1-compose-branch-and-image) for the standalone
+Compose selection and isolation requirements, and its
+[startup contract](hetzner-dev-handoff.md#2-off-switches-before-first-application-start)
+for required runtime environment values, init ordering and redeployment after
+restores. The handoff also owns volume preparation, restore authorization,
+additional DB off switches and cleanup.
