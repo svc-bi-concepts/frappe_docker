@@ -75,8 +75,8 @@ class ImageGate(unittest.TestCase):
             check=True,
         )
         modules = run.stdout.splitlines()
-        self.assertEqual(len(modules), 12)
-        self.assertEqual(len(set(modules)), 12)
+        self.assertEqual(len(modules), 13)
+        self.assertEqual(len(set(modules)), 13)
         self.assertTrue(all(m.startswith("bi_finance.test_") for m in modules))
 
 

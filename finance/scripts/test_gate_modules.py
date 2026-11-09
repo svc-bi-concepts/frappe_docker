@@ -19,6 +19,7 @@ IMAGE_MODULES = {
     "bi_finance.test_cash_position",
     "bi_finance.test_paypal",
     "bi_finance.test_paypal_sync",
+    "bi_finance.test_external_integrations",
     "bi_finance.test_qrbill",
     "bi_finance.test_setup",
     "bi_finance.test_wise",
