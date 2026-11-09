@@ -338,7 +338,7 @@ class GateCheckoutRunner(unittest.TestCase):
             (root / "finance/scripts/gate-image.sh").write_text(
                 "echo finance-gate:fixture\n"
             )
-            (root / "finance/scripts/test_gate_check.py").write_text("")
+            shutil.copy(SCRIPTS / "test_gate_check.py", root / "finance/scripts")
             bin_dir = root / "bin"
             bin_dir.mkdir()
             calls = root / "calls"
@@ -359,6 +359,7 @@ class GateCheckoutRunner(unittest.TestCase):
                 text=True,
             )
             self.assertEqual(run.returncode, 0, run.stderr)
+            self.assertIn("Ran 3 tests", run.stderr)
             args = calls.read_text().splitlines()
             self.assertEqual(args[:2], ["run", "--rm"])
             self.assertEqual(
