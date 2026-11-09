@@ -1,8 +1,8 @@
 #!/bin/sh
 # The host part of the finance gate: the check lines that need no private/ data and no custom
-# image. .yardr/check (the yard's merge gate) and .github/workflows/finance-tests.yml (GitHub
-# CI) both call this file, so the compose checks and the test-module lists exist once and
-# cannot drift apart. Run from the repository root, with a python3 that has jinja2 (only
+# image. Callers share this file so the compose checks and test-module lists exist once.
+# CI ownership and current statuses: AGENTS.md.
+# Run from the repository root, with a python3 that has jinja2 (only
 # test_payslip needs it).
 # The guard: every test_*.py under bi_finance, bi_payroll and finance/scripts must be named
 # in this file, .yardr/check or the shared image manifest (the guard reads all three), so a

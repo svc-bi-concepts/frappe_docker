@@ -41,7 +41,7 @@ docker run --rm --network none --entrypoint sh finance-gate:pr-head \
 ```
 
 The entrypoint runs the modules in `finance/scripts/gate-modules.sh` with the
-bench virtualenv, prints unittest counts and a short PASS/FAIL summary, and
+bench virtualenv, prints unittest counts to stderr and a short PASS/FAIL summary to stdout, and
 returns the failing status. `.yardr/check` uses the same runner and manifest,
 mounted alongside its app checkout so older gate images still work. Its Docker
 step remains mandatory until IT's replacement PR check is live.
