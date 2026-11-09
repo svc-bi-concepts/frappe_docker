@@ -109,10 +109,16 @@ class InitTests(unittest.TestCase):
                 self.assertEqual(path.read_text(), contents)
 
 
+WORKERS = ("scheduler", "queue-long", "queue-short")
+
+
 class ComposeTests(unittest.TestCase):
-    def render(self, environment):
+    def render(self, environment, profiles=()):
+        args = ["docker", "compose", "-f", str(COMPOSE)]
+        for profile in profiles:
+            args += ["--profile", profile]
         return subprocess.run(
-            ["docker", "compose", "-f", str(COMPOSE), "config", "--format", "json"],
+            [*args, "config", "--format", "json"],
             cwd=ROOT,
             env={
                 **os.environ,
@@ -124,8 +130,50 @@ class ComposeTests(unittest.TestCase):
             text=True,
         )
 
-    def test_isolated_startup_graph(self):
+    def test_workers_off_by_default(self):
         result = self.render(ENV)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        services = json.loads(result.stdout)["services"]
+        for name in WORKERS:
+            with self.subTest(service=name):
+                self.assertNotIn(name, services)
+        self.assertEqual(
+            set(services),
+            {
+                "dev-init",
+                "configurator",
+                "db",
+                "redis-cache",
+                "redis-queue",
+                "backend",
+                "frontend",
+                "websocket",
+            },
+        )
+        for name, service in services.items():
+            if name != "dev-init":
+                self.assertEqual(
+                    service["depends_on"]["dev-init"]["condition"],
+                    "service_completed_successfully",
+                )
+
+    def test_workers_wait_for_init_when_enabled(self):
+        result = self.render(ENV, ("workers",))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        services = json.loads(result.stdout)["services"]
+        for name in WORKERS:
+            with self.subTest(service=name):
+                self.assertEqual(
+                    services[name]["depends_on"]["dev-init"]["condition"],
+                    "service_completed_successfully",
+                )
+                self.assertEqual(
+                    services[name]["depends_on"]["configurator"]["condition"],
+                    "service_completed_successfully",
+                )
+
+    def test_isolated_startup_graph(self):
+        result = self.render(ENV, ("workers",))
         self.assertEqual(result.returncode, 0, result.stderr)
         config = json.loads(result.stdout)
         self.assertTrue(config["networks"])

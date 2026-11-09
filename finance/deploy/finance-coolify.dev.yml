@@ -129,6 +129,10 @@ services:
     labels:
       traefik.enable: "false"
   queue-long:
+    # Off by default: a restored copy holds real data, and workers start only with the
+    # profile, after a reviewed need (finance/docs/hetzner-dev-handoff.md, "Off switches").
+    profiles:
+      - workers
     image: ${FINANCE_DEV_IMAGE:?Set FINANCE_DEV_IMAGE to the main build repository@sha256:digest}
     pull_policy: missing
     networks:
@@ -153,6 +157,8 @@ services:
     labels:
       traefik.enable: "false"
   queue-short:
+    profiles:
+      - workers
     image: ${FINANCE_DEV_IMAGE:?Set FINANCE_DEV_IMAGE to the main build repository@sha256:digest}
     pull_policy: missing
     networks:
@@ -199,6 +205,8 @@ services:
       dev-init:
         condition: service_completed_successfully
   scheduler:
+    profiles:
+      - workers
     image: ${FINANCE_DEV_IMAGE:?Set FINANCE_DEV_IMAGE to the main build repository@sha256:digest}
     pull_policy: missing
     networks:

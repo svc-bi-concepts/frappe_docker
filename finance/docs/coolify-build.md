@@ -79,6 +79,10 @@ Set `FINANCE_DEV_IMAGE=<registry-image>@sha256:<64 hex digits>` in Coolify;
 a tag-only value is rejected by dev init. The runtime host must be able to pull
 the image before isolated containers start. No image is built on the mini.
 
+Workers (`scheduler`, `queue-long`, `queue-short`) stay off by default: they sit
+behind the dev overlay's `workers` profile. Do not enable it as part of the
+image step; it needs Benchi's yes first.
+
 After the image is available, follow the
 [dev handoff](hetzner-dev-handoff.md#1-compose-branch-and-image) for the standalone
 Compose selection and isolation requirements, and its

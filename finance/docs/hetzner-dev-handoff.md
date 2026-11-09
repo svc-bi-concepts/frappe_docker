@@ -53,14 +53,22 @@ Use fresh Redis: do not copy a live queue. No container exec or bench call is
 needed to apply the three startup flags.
 
 Startup order is `dev-init` alone, then DB/Redis/configurator, then
-backend/workers/scheduler/websocket after configurator, then frontend after
-backend/websocket. Every service directly depends on successful init. Init
+backend/websocket after configurator, then frontend after backend/websocket.
+Workers are off by default (next paragraph). Every service directly depends on
+successful init. Init
 validates all three variables are exactly `1` and validates the digest before
 writing anything. It atomically replaces `sites/frontend/site_config.json`,
 preserving existing keys while writing numeric `mute_emails=1`,
 `pause_scheduler=1`, and `disable_external_integrations=1`. Any failure holds
 all other services stopped. The bank guard blocks Wise, PayPal and Frankfurter
 manual and scheduled requests; it is not a universal third-party app switch.
+
+Workers are off by default. `scheduler`, `queue-long` and `queue-short` belong to
+the Compose profile `workers`, so a plain `docker compose up` or a Coolify deploy
+starts none of them. The copy holds real data, so enabling the profile
+(`COMPOSE_PROFILES=workers`) needs a reviewed need and Benchi's yes, as the other
+off switches do. When enabled, each worker still waits for successful `dev-init`
+and `configurator`, so the fail-closed order holds.
 
 All services have automatic restart disabled so a host reboot cannot bypass
 the init ordering. After every restore or config change, stop the whole dev
