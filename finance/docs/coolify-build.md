@@ -106,7 +106,8 @@ mounting a daemon socket into a container.
 | `lint`         | `pre-commit run --color=always --all-files` with `GO111MODULE=on`                                                | Pre-commit's exit status   |
 
 Each result is an object with `name`, integer `exit_code` and a short `summary`
-(`PASS (exit 0)` or `FAIL (exit N)`). The JSON file is an array, updated after
+(`PASS (exit 0)` or `FAIL (exit N)` for completed commands;
+`FAIL (<OS error>)` when a command cannot be launched). The JSON file is an array, updated after
 each completed check. The same object is printed as a `dev-gate-result: ` JSON
 line in stdout. Test counts and hook details stream to the run log. Missing
 executables report 127, other launch errors 126, and signals use 128 plus the
