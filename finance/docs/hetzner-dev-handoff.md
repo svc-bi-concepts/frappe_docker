@@ -31,6 +31,61 @@ network settings. IT verifies the **effective** Coolify configuration retains
 these properties. This resource has no public route or general internet egress;
 IT's separately reviewed private access mechanism is outside this file.
 
+## 1a. First start on empty volumes (restore profile)
+
+A fresh resource has empty volumes, and `dev-init` needs `sites/frontend/site_config.json` before any service can start.
+The profile `restore` fills the two volumes once, from the backup set in section 3. It is never started by a plain
+`up`, and nothing depends on it except `restore-files`.
+
+Order, once per resource:
+
+1. IT creates the two external volumes below, populates them, and sets the runtime variables of section 2 (the
+   `FINANCE_DEV_RESTORE_OVERWRITE` variable stays unset).
+2. Restore, with the same Compose project name as the resource (`-p <project>`), so `db-data` and `sites` resolve to the
+   resource's own volumes:
+
+   ```sh
+   docker compose -p <project> -f finance/deploy/finance-coolify.dev.yml --profile restore run --rm restore-files
+   ```
+
+   `restore-files` waits for `restore-db`, so `restore-db` runs first and loads the database, then `restore-files`
+   writes the site. Both exit non-zero on any failed check, and each writes nothing before every check has passed.
+
+3. Remove the two stopped one-shot containers: `docker compose -p <project> -f finance/deploy/finance-coolify.dev.yml --profile restore rm -f restore-db restore-files`.
+4. Run the normal deployment (`up -d`). `dev-init` runs first and writes the three startup flags, as in section 2.
+5. Before the application is opened, run the off-switch sequence of section 2 inside the dev bench. It still runs after
+   every restore; the restore does not automate it.
+
+Restore inputs (the contract with IT). Both are external, so an absent input fails the deployment instead of being made empty.
+
+| Volume                        | Contents                                                                                                                                                                                     | Mounted at                     |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| `finance-dev-restore-staging` | `finance-dev-backup.tar.age`, `finance-dev-backup.tar.age.sha256` (its ciphertext checksum, naming that file), and `tools/age`: the age v1.3.2 binary for the host's architecture, mode 0555 | `/restore/staging`, read-only  |
+| `finance-dev-age-identity`    | `identity.txt`, the age identity, mode 0440, group root (the app user reads it through its group)                                                                                            | `/restore/identity`, read-only |
+
+`tools/age` must match the hash pinned in `finance/scripts/dev_restore.sh` for the host's architecture (x86_64 and
+aarch64 are pinned). The binary is not downloaded at run time. Its checksum is checked before it runs.
+
+What the restore checks, in order, before the first write: the ciphertext checksum; the pinned age binary; that the
+archive decrypts with the identity; that the manifest (`SHA256SUMS`, inside the archive) lists exactly the four
+members; and each member's checksum against the manifest. A missing member, a checksum mismatch or a decrypt failure
+stops with a message and leaves both volumes as they were. Plaintext never becomes a file: each member is streamed from age into tar and on into MariaDB or the site folder.
+
+Refusals. The database restore refuses a non-empty `db-data`, and the site restore refuses a volume that already holds a
+site (the image's own seed files in `sites` do not count). Set `FINANCE_DEV_RESTORE_OVERWRITE=1` only to replace a
+restore that failed part-way, and then run both services again. It empties `db-data` and removes `sites/frontend`.
+
+The site configuration is written as the backup holds it, including `db_name` and `db_password`, which the restore
+uses to create the database user. The backup's `encryption_key` is in that file too. Section 3 warns against replacing
+a dev `site_config.json` with the source backup; this restore does so only on an empty volume, where no dev
+configuration exists yet. Whether the source `encryption_key` belongs on dev at all is Benchi's decision, and it is not
+settled by this change. The restore does not set `host_name` or `disable_scheduler`. The off-switch sequence of section 2
+does that after the restore.
+
+The restore was run by hand, on invented data only, in the `mariadb:11.8` and application images: the database,
+the site files and the root and site database logins were checked, and every refusal and failure above was exercised.
+It has not been run on the dev host. The live restore is IT's, on `erpnext-dev` (yard-7epr, runbook yard-f1hw).
+
 ## 2. Off switches before first application start
 
 Set these runtime variables when creating the resource:

@@ -1,5 +1,5 @@
 # Standalone dev resource. Never merge with finance-coolify.yml.
-# Restore the frontend site and database into this resource's own volumes first.
+# On empty volumes, the profile `restore` fills them first, from the backup set (finance/docs/hetzner-dev-handoff.md, "First start").
 services:
   dev-init:
     image: ${FINANCE_DEV_IMAGE:?Set FINANCE_DEV_IMAGE to the main build repository@sha256:digest}
@@ -247,11 +247,68 @@ services:
         condition: service_completed_successfully
     labels:
       traefik.enable: "false"
+  # One-shot restore, profile `restore` only: a plain up starts neither, and dev-init depends on neither. Both run with
+  # network_mode none and read the backup set from the read-only mounts only; they write nothing but db-data (restore-db)
+  # and sites (restore-files). restore-files waits for restore-db, so `run --rm restore-files` does both, in that order.
+  restore-db:
+    profiles:
+      - restore
+    image: mariadb:11.8
+    network_mode: none
+    restart: "no"
+    entrypoint:
+      - bash
+      - /dev-restore.sh
+      - db
+    environment:
+      DB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?}
+      FINANCE_DEV_RESTORE_OVERWRITE: ${FINANCE_DEV_RESTORE_OVERWRITE:-0}
+    volumes:
+      - db-data:/var/lib/mysql
+      - finance-dev-restore-staging:/restore/staging:ro
+      - finance-dev-age-identity:/restore/identity:ro
+    configs:
+      - source: dev-restore
+        target: /dev-restore.sh
+    labels:
+      traefik.enable: "false"
+  restore-files:
+    profiles:
+      - restore
+    image: ${FINANCE_DEV_IMAGE:?Set FINANCE_DEV_IMAGE to the main build repository@sha256:digest}
+    pull_policy: missing
+    network_mode: none
+    restart: "no"
+    # frappe, the image's user: the site files must be owned as dev-init and the bench expect them.
+    user: frappe
+    entrypoint:
+      - bash
+      - /dev-restore.sh
+      - files
+    environment:
+      FINANCE_DEV_RESTORE_OVERWRITE: ${FINANCE_DEV_RESTORE_OVERWRITE:-0}
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - finance-dev-restore-staging:/restore/staging:ro
+      - finance-dev-age-identity:/restore/identity:ro
+    configs:
+      - source: dev-restore
+        target: /dev-restore.sh
+    depends_on:
+      restore-db:
+        condition: service_completed_successfully
+    labels:
+      traefik.enable: "false"
 volumes:
   db-data: null
   redis-queue-data: null
   sites: null
   logs: null
+  # Created by IT before a restore, never by compose: an absent input must fail, not be made empty.
+  finance-dev-restore-staging:
+    external: true
+  finance-dev-age-identity:
+    external: true
 networks:
   ledger-dev:
     driver: bridge
@@ -259,3 +316,5 @@ networks:
 configs:
   dev-site-init:
     file: ../scripts/dev_site_init.py
+  dev-restore:
+    file: ../scripts/dev_restore.sh
