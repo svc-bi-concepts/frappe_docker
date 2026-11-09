@@ -1,6 +1,7 @@
 # Adds the bi_payroll app (finance/apps/bi_payroll) on top of the image that already carries
 # bi_finance and hrms. bi_payroll requires hrms, so it goes on every image that has hrms: the live
-# image and the copy (finance/docs/hrms.md, Decision 2026-10-10). build-image.sh builds this layer.
+# image and the copy (finance/docs/hrms.md, Decision 2026-10-10). Kept for standalone
+# layering; build-image.sh uses the finance target in images/custom/Containerfile.
 ARG BASE=frappe-finance-custom:v16.50.0-swiss-hrms1
 FROM ${BASE}
 

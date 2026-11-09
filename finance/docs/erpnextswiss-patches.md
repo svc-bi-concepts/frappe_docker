@@ -79,7 +79,8 @@ The gate applies the frappe directory over invented trees holding the pinned `bu
 ## How they are applied
 
 The image build fetches the apps with `bench init` (`images/custom/Containerfile`,
-builder stage). Right after that, `finance/scripts/apply-patches.sh` applies each
+builder stage). After verifying the fetched revisions against the app list's commit pins,
+`finance/scripts/apply-patches.sh` applies each
 `finance/patches/<app>/*.patch` in file-name order. Name them with a number prefix so the
 order is clear. If a patch does not apply, the build stops with
 `patch does not apply to apps/erpnextswiss: <patch>`.
@@ -88,8 +89,9 @@ The same step runs for the live image and the copy image, since both use the sam
 fetch. Patches are kept in the repository, so a rebuild applies the same fixes.
 
 The build also removes erpnextswiss's `workspace`, `desktop_icon` and `workspace_sidebar` folders, after the
-hrms patch (`images/custom/Containerfile`, the `rm -r` line; `test_the_containerfile_removes_the_erpnextswiss_desk_folders`
-in `finance/scripts/test_build_image.py`). Its after-migrate skips a missing folder, so the desk rows stay gone.
+hrms patch (`images/custom/Containerfile`, the `rm -r` line;
+`FinanceBuildExecution.test_build_executes_patches_and_installs_image_contents`
+in `finance/scripts/test_gate_tests.py`). Its after-migrate skips a missing folder, so the desk rows stay gone.
 
 ## Adding a patch
 

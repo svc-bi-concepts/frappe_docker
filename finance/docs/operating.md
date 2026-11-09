@@ -183,7 +183,8 @@ after; a minor or major move is a decision bead first.
 
 ## Monthly update (D4)
 
-The pins: `FRAPPE_TAG` in `finance/scripts/build-image.sh`; the `branch` of erpnext and hrms in
+The pins: `FRAPPE_TAG` in `finance/scripts/build-image.sh` and the matching
+`FRAPPE_BRANCH` default in `images/custom/Containerfile`; the `branch` of erpnext and hrms in
 `finance/apps.json` and `finance/apps-copy.json`; erpnextswiss on branch `v16` with the commit in `apps.json`. The
 record of what runs is the Apps row in `finance/docs/erpnext-setup.md`. The first slot is the night of 1 to 2
 November 2026.
@@ -208,7 +209,7 @@ ledgerdemain`: a minor move, not this procedure; it is a decision bead. erpnexts
    only reported; moving its pin is ledgerdemain's call, after its patches are checked against the new commit
    (`finance/docs/erpnextswiss-patches.md`). If no app says `update`, the month ends here.
 
-3. **Bump** (builder). `FRAPPE_TAG` in `build-image.sh` and the erpnext and hrms `branch` in both app lists go to the
+3. **Bump** (builder). The Frappe pins above and the erpnext and hrms `branch` in both app lists go to the
    newest patch tag `v16.<minor>.<patch>`. The image tag is `v16.<minor>.<patch>-swiss-bi<N>`, N one above the live
    one in `finance-local.yml`.
 4. **Pin tests** (builder). Then commit; the note carries the `test:` line.

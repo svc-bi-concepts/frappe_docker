@@ -6,6 +6,7 @@ Run with: cd finance/scripts && python3 -m unittest test_build_image
 import importlib.util
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -82,8 +83,13 @@ class BuildImageModes(unittest.TestCase):
                     'if [ "$1 $2" = "buildx inspect" ]; then\n'
                     '  [ -n "$DOCKER_STUB_NO_BUILDER" ] && exit 1\n'
                     "  exit 0\nfi\n"
-                    'if [ "$1 $2" = "buildx build" ]; then exit 0; fi\nexit 1\n'
-                    % (log, " ".join(existing_images))
+                    'if [ "$1 $2" = "buildx build" ]; then\n'
+                    "  for option do\n"
+                    '    case "$option" in id=APPS_JSON,src=*)\n'
+                    '      printf "apps-secret:"; cat "${option#id=APPS_JSON,src=}"; echo;;\n'
+                    "    esac\n"
+                    "  done\n"
+                    "  exit 0\nfi\nexit 1\n" % (log, " ".join(existing_images))
                 )
             os.chmod(stub, 0o755)
             env = {"PATH": os.path.join(tmp, "bin") + os.pathsep + os.environ["PATH"]}
@@ -175,48 +181,56 @@ class BuildImageModes(unittest.TestCase):
         self.assertIn("the list pins " + pinned, err)
         self.assertNotIn("buildx build", calls)
 
-    def test_live_builds_base_then_bi_finance_then_bi_payroll(self):
-        # Each layer sits on the one before it; the live tag is the last layer.
+    def test_live_builds_complete_finance_target_once(self):
         hrms = [{"url": "https://github.com/frappe/hrms", "branch": "v16.50.0"}]
         code, err, calls = self.run_in_layout({"apps.json": hrms}, tag="t1")
         self.assertEqual(code, 0, err)
         builds = [
             line for line in calls.splitlines() if line.startswith("buildx build ")
         ]
-        self.assertEqual(len(builds), 3, calls)
-        for build in builds:
-            # The capped builder only (the 2026-10-11 OOMs), and --load so the tag
-            # lands in the local store for switch-image.sh.
-            self.assertIn(" --builder capped ", build)
-            self.assertIn(" --load ", build)
-        self.assertIn("--tag frappe-finance-custom:t1-base ", builds[0])
-        # Frappe is one tag for the whole image; ERPNext and HRMS declare frappe >=16.50.0,<17.0.0.
-        self.assertIn("--build-arg FRAPPE_BRANCH=v16.51.1 ", builds[0])
-        # The asset build's node heap cap, and the app list as a BuildKit secret.
-        self.assertIn("--build-arg NODE_OPTIONS=--max-old-space-size=900 ", builds[0])
-        self.assertIn("--secret id=apps_json,src=", builds[0])
-        # The capped builder cannot read the local image store: each layer's BASE comes
-        # from the OCI layout the build before wrote, as a named context.
-        self.assertIn("--output type=oci,tar=false,dest=", builds[0])
-        self.assertIn(
-            "--build-context frappe-finance-custom:t1-base=oci-layout://", builds[1]
-        )
-        self.assertIn(":t1-base ", builds[1])
-        self.assertIn("--output type=oci,tar=false,dest=", builds[1])
-        self.assertIn(
-            "--build-context frappe-finance-custom:t1-finance=oci-layout://", builds[2]
-        )
-        self.assertIn(":t1-finance ", builds[2])
-        self.assertIn(
-            "--build-arg BASE=frappe-finance-custom:t1-base --tag frappe-finance-custom:t1-finance ",
-            builds[1],
-        )
-        self.assertIn("--file finance/images/bi_finance.Containerfile", builds[1])
-        self.assertIn(
-            "--build-arg BASE=frappe-finance-custom:t1-finance --tag frappe-finance-custom:t1 ",
-            builds[2],
-        )
-        self.assertIn("--file finance/images/bi_payroll.Containerfile", builds[2])
+        self.assertEqual(len(builds), 1, calls)
+        build = builds[0]
+        for option in (
+            "--builder capped",
+            "--load",
+            "--no-cache",
+            "--target finance",
+            "--tag frappe-finance-custom:t1",
+            "--file images/custom/Containerfile",
+            "--build-arg FRAPPE_BRANCH=v16.51.1",
+            "--build-arg NODE_OPTIONS=--max-old-space-size=900",
+            "--secret id=APPS_JSON,src=",
+        ):
+            self.assertIn(option, build)
+        self.assertNotIn("--build-context", build)
+        self.assertNotIn("--output", build)
+        self.assertNotIn("--build-arg APPS_JSON", build)
+
+    def test_local_build_forwards_selected_apps_only_as_secret(self):
+        # The wrapper must override the repository fallback with the selected
+        # list, including copy mode; inspect bytes at the Docker boundary.
+        for mode, filename in (("live", "apps.json"), ("copy", "apps-copy.json")):
+            with self.subTest(mode=mode):
+                apps = [{"url": "https://github.com/frappe/hrms", "branch": "fixture"}]
+                code, err, calls = self.run_in_layout({filename: apps}, mode=mode)
+                self.assertEqual(code, 0, err)
+                payloads = [
+                    json.loads(line.removeprefix("apps-secret:"))
+                    for line in calls.splitlines()
+                    if line.startswith("apps-secret:")
+                ]
+                self.assertEqual(payloads, [apps])
+                build = next(
+                    shlex.split(line)
+                    for line in calls.splitlines()
+                    if line.startswith("buildx build ")
+                )
+                build_args = [
+                    build[i + 1].split("=", 1)[0]
+                    for i, arg in enumerate(build)
+                    if arg == "--build-arg"
+                ]
+                self.assertNotIn("APPS_JSON", build_args)
 
     def test_node_heap_defaults_to_900_and_follows_node_heap_mb(self):
         hrms = [{"url": "https://github.com/frappe/hrms", "branch": "v16.50.0"}]
@@ -311,11 +325,51 @@ class BuildImageModes(unittest.TestCase):
             self.assertEqual(run.returncode, 2, args)
 
 
+class FetchedAppPins(unittest.TestCase):
+    def test_verifies_the_actual_checkout_and_refuses_a_moved_branch(self):
+        spec = importlib.util.spec_from_file_location(
+            "check_app_pins", os.path.join(ROOT, "finance/scripts/check_app_pins.py")
+        )
+        checker = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(checker)
+        with tempfile.TemporaryDirectory() as tmp:
+            apps_file = os.path.join(tmp, "apps.json")
+            with open(apps_file, "w") as source:
+                json.dump(
+                    [
+                        {"url": "https://example.test/app.git", "commit": "a" * 40},
+                        {"url": "https://example.test/unpinned", "branch": "v16"},
+                    ],
+                    source,
+                )
+            with mock.patch.object(
+                checker.subprocess, "check_output", return_value="a" * 40 + "\n"
+            ) as git:
+                checker.check(apps_file, tmp)
+                git.assert_called_once_with(
+                    ["git", "-C", os.path.join(tmp, "app"), "rev-parse", "HEAD"],
+                    text=True,
+                )
+            with mock.patch.object(
+                checker.subprocess, "check_output", return_value="b" * 40 + "\n"
+            ):
+                with self.assertRaisesRegex(
+                    SystemExit, "differs from its pinned commit"
+                ):
+                    checker.check(apps_file, tmp)
+            with mock.patch.object(
+                checker.subprocess,
+                "check_output",
+                side_effect=subprocess.CalledProcessError(128, "git"),
+            ):
+                with self.assertRaises(subprocess.CalledProcessError):
+                    checker.check(apps_file, tmp)
+
+
 APPLY = os.path.join(ROOT, "finance", "scripts", "apply-patches.sh")
 PATCH_DIR = os.path.join(ROOT, "finance", "patches", "erpnextswiss")
 FRAPPE_PATCH_DIR = os.path.join(ROOT, "finance", "patches", "frappe")
 HRMS_PATCH_DIR = os.path.join(ROOT, "finance", "patches", "hrms")
-CONTAINERFILE = os.path.join(ROOT, "images", "custom", "Containerfile")
 
 # The lines of frappe bundler.py at v16.51.1 around get_node_env (its line 296): the context of
 # the real patch, so the patch applies to this file as to the app. The body is the upstream one.
@@ -1070,54 +1124,6 @@ class PatchStep(unittest.TestCase):
         self.assertEqual(dock["app"], "hrms")
         self.assertEqual(len(dock["items"]), 9)
         self.assertGreater(dock["modified"], "2026-10-05 12:30:00.000000")
-
-    def test_the_containerfile_builds_assets_after_the_frappe_patch(self):
-        with open(CONTAINERFILE) as f:
-            text = f.read()
-        self.assertIn("--skip-assets", text)
-        patched = text.index("apply-patches.sh /home/frappe/patches/frappe apps/frappe")
-        self.assertLess(patched, text.index("bench build --production"))
-
-    def test_the_containerfile_applies_the_hrms_patch_before_the_asset_build(self):
-        with open(CONTAINERFILE) as f:
-            text = f.read()
-        self.assertIn(
-            "COPY --chown=frappe:0 finance/patches/hrms /home/frappe/patches/hrms", text
-        )
-        hrms = text.index("apply-patches.sh /home/frappe/patches/hrms apps/hrms")
-        self.assertLess(
-            text.index("apply-patches.sh /home/frappe/patches/frappe apps/frappe"), hrms
-        )
-        self.assertLess(hrms, text.index("bench build --production"))
-
-    def test_the_containerfile_removes_the_erpnextswiss_desk_folders(self):
-        # Regression: erpnextswiss shipped its five workspaces, a desktop icon and a v16 sidebar archive row, and its
-        # after_migrate upserted them on every migrate. A missing folder is skipped by its ensure function, so the
-        # removal is the whole fix; it must run after the patches that touch erpnextswiss and before the asset build.
-        with open(CONTAINERFILE) as f:
-            text = f.read()
-        removals = [
-            line.strip()
-            for line in text.splitlines()
-            if line.strip().startswith("rm -r apps/erpnextswiss")
-        ]
-        self.assertEqual(len(removals), 1, removals)
-        self.assertIn(
-            "apps/erpnextswiss/erpnextswiss/erpnextswiss/workspace ", removals[0]
-        )
-        self.assertIn("apps/erpnextswiss/erpnextswiss/desktop_icon ", removals[0])
-        self.assertIn("apps/erpnextswiss/erpnextswiss/workspace_sidebar ", removals[0])
-        removed = text.index(removals[0])
-        self.assertLess(
-            text.index(
-                "apply-patches.sh /home/frappe/patches/erpnextswiss apps/erpnextswiss"
-            ),
-            removed,
-        )
-        self.assertLess(
-            text.index("apply-patches.sh /home/frappe/patches/hrms apps/hrms"), removed
-        )
-        self.assertLess(removed, text.index("bench build --production"))
 
 
 def invented_year(ktg=(11.47, 17.47)):

@@ -18,11 +18,9 @@ if [ "${GATE_ANY_PATH:-}" != 1 ]; then
     ;;
   esac
 fi
-# The host part (the erp-5x04 guard and every other check that needs no private/ data and
-# no image) lives in .yardr/check-host.sh, and GitHub CI (.github/workflows/finance-tests.yml)
-# calls the same file, so the two callers cannot drift apart. What stays here is what a GitHub runner
-# cannot do: the frappe-image run (it needs the custom image, built locally) and upstream's
-# pre-commit (upstream's lint workflow does that).
+# The host checks live in .yardr/check-host.sh so callers share one implementation.
+# This gate also runs the frappe-image tests and upstream's pre-commit lint.
+# CI ownership and current statuses: AGENTS.md.
 sh .yardr/check-host.sh
 # The bi_finance test modules that import frappe need the image: every one of them runs here, in one container
 # start, so a change to a synced JSON cannot leave one of them red on main unseen (erp-jta3). The image is the tag
@@ -31,8 +29,9 @@ sh .yardr/check-host.sh
 # frappe's logger writes ../logs from the working directory (apps/logs here) when erpnext is imported, so that folder is made too.
 # A flake that depends on the clock (erp-c7wk) blocks a landing here instead of hiding in the how-to.
 IMAGE=$(sh finance/scripts/gate-image.sh)
-docker run --rm -v "$PWD/finance/apps/bi_finance:/home/frappe/frappe-bench/apps/bi_finance:ro" "$IMAGE" \
-  sh -c 'mkdir -p /home/frappe/logs /home/frappe/frappe-bench/apps/logs && cd /home/frappe/frappe-bench/apps/bi_finance && ../../env/bin/python -m unittest bi_finance.test_payment_run bi_finance.test_treasury bi_finance.test_bank_list bi_finance.test_bank_statement_upload bi_finance.test_cash_flow_forecast bi_finance.test_cash_position bi_finance.test_paypal bi_finance.test_paypal_sync bi_finance.test_external_integrations bi_finance.test_qrbill bi_finance.test_setup bi_finance.test_wise bi_finance.test_hrms_accrual_filter'
+docker run --rm -v "$PWD/finance/apps/bi_finance:/home/frappe/frappe-bench/apps/bi_finance:ro" \
+  -v "$PWD/finance/scripts:/home/frappe/frappe-bench/finance/scripts:ro" "$IMAGE" \
+  sh /home/frappe/frappe-bench/finance/scripts/gate-tests.sh
 # The checkout guard above, offline: a stub docker stands in for the real one (erp-e71y).
 (cd finance/scripts && python3 -m unittest test_gate_check)
 # Upstream's own lint, required: a red lint must stop the landing here, not pass unseen (erp-jmmz).

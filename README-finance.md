@@ -16,6 +16,8 @@ still describes the generic setup; this file covers only what this yard runs.
   `finance/scripts/build-image.sh live <tag>`. Swiss
   setup of the company: `finance/docs/erpnext-setup.md`. The recurring work (month, quarter,
   payroll) in Desk order: `finance/docs/operating.md`.
+  Building the PR head and running its baked gate on Coolify dev:
+  [Coolify build](finance/docs/coolify-build.md).
 - Services: `backend`, `frontend`, `websocket`, `scheduler`, `queue-short`,
   `queue-long`, `configurator`, `create-site`, `db` (MariaDB 11.8),
   `redis-cache` and `redis-queue`.
@@ -130,7 +132,7 @@ Until a key file exists, its consumer falls back: `sync_hourly.sh` to
 
 `.yardr/check` is the merge gate for this depot. It runs the host checks in
 `.yardr/check-host.sh`, the finance tests that need the custom image, and upstream's
-pre-commit lint when `pre-commit` is installed. The host checks validate both
+pre-commit lint (`pre-commit` is required). The host checks validate both
 compose configurations, run the tests that do not need the image, and refuse a real
 tailnet host name (a name ending in `.ts.net`) in any tracked file, since the repo is
 public; the placeholder form `<machine>.<tailnet>.ts.net` passes. A hit prints only
