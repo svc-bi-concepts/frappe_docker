@@ -57,3 +57,36 @@ build runs on the mini; static tests and `.yardr/check-host.sh` cover this
 change there. IT's first Coolify dev run must prove the full image build and
 baked test run before enabling the replacement check. Production deployment
 and image pinning belong to erp-mnkv.
+
+## Isolated dev resource
+
+The image build and baked gate above are owned by erp-ve60 / IT yard-x1sn.
+The dev resource configuration does not build or publish an image.
+
+For the dev resource, IT must build **main containing both the finance target
+and `391fadb5`**, the `disable_external_integrations` implementation. Verify
+source ancestry before building:
+
+```sh
+git merge-base --is-ancestor 391fadb5 <main-build-source-sha>
+```
+
+Run the baked offline gate as that build's instructions specify. Publish the
+successful image to IT's registry and obtain the **registry manifest digest**
+from the build/push result (or `docker buildx imagetools inspect <registry-image>:<build-tag>`).
+Do not use the local Docker image ID. Record source SHA plus digest privately.
+Set `FINANCE_DEV_IMAGE=<registry-image>@sha256:<64 hex digits>` in Coolify;
+a tag-only value is rejected by dev init. The runtime host must be able to pull
+the image before isolated containers start. No image is built on the mini.
+
+Workers (`scheduler`, `queue-long`, `queue-short`) stay off by default: they sit
+behind the dev overlay's `workers` profile. Do not enable it as part of the
+image step; it needs Benchi's yes first.
+
+After the image is available, follow the
+[dev handoff](hetzner-dev-handoff.md#1-compose-branch-and-image) for the standalone
+Compose selection and isolation requirements, and its
+[startup contract](hetzner-dev-handoff.md#2-off-switches-before-first-application-start)
+for required runtime environment values, init ordering and redeployment after
+restores. The handoff also owns volume preparation, restore authorization,
+additional DB off switches and cleanup.

@@ -14,39 +14,73 @@ contents into GitHub.
 
 ## 1. Compose, branch and image
 
-| Item                      | Answer and evidence                                                                                                                                                                                                                                                                                 |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Repository                | `svc-bi-concepts/frappe_docker`                                                                                                                                                                                                                                                                     |
-| Planned production branch | `main`, after PR review and a human merge; never deploy a feature branch to production. See the engineering standards linked above, Release flow.                                                                                                                                                   |
-| Compose path              | Repository-root `finance-coolify.yml`, used alone, without `pwd.yml` or `finance-local.yml` (`finance-coolify.yml:1-4`).                                                                                                                                                                            |
-| Frontend service          | `frontend`, container port `8080`, site name `frontend`; `FRAPPE_SITE_NAME_HEADER=frontend` (`finance-coolify.yml:137-168`). Container names are Coolify's, not a fixed name.                                                                                                                       |
-| Runtime setting names     | `LEDGER_HOST`, `DB_ROOT_PASSWORD`, `ADMIN_PASSWORD`; all required, no values supplied here (`finance-coolify.yml:10-13,39-40,87-88,164`). Set the dev host privately in Coolify.                                                                                                                    |
-| Current compose image     | `frappe-finance-custom:v16.51.1-swiss-bi30`, `pull_policy: never`. There is currently no `build:` block: this file expects an image already loaded into the host (`finance-coolify.yml:26-28,137-139`). `finance-local.yml:5-22` uses the same pin; it is the local override, not the Hetzner file. |
-| Pending dev build source  | `yard/erp-ve60`; use the PR head being checked. Build configuration, app inclusion, secret handling and the baked gate are owned by [Coolify build](coolify-build.md).                                                                                                                              |
+Use **`finance/deploy/finance-coolify.dev.yml` alone**, from the repository
+checkout. It is standalone, not a `-f` overlay on `finance-coolify.yml`: merging
+would retain production router labels and outbound network attachments. The
+production file and its local-image pin are unchanged.
 
-The branch-built image is the pending dev path, not a change already present in
-`finance-coolify.yml`. IT must wire its built image into the dev resource and
-record the tested source SHA and image digest. Do not start the old pin and
-assume it contains the branch. erp-ve60/yard-x1sn owns the build and baked gate;
-production image pinning is erp-mnkv. This document does not wait for either.
+Follow [coolify-build.md](coolify-build.md) for the required main build,
+source ancestry and registry digest. Use its resulting `FINANCE_DEV_IMAGE`
+value for every finance application service and init. Pull policy is `missing`.
 
-The three compose networks are not an integration kill switch: `ledger-data` is
-internal, but application services also join `ledger-out` for outbound traffic
-(`finance-coolify.yml:19-24,26-31,170-237`). Tailnet-only ingress does not prevent
-outgoing calls. IT must establish dev egress denial before restoring real data,
-including HTTPS and SMTP, while retaining only required internal service links.
-This is a requirement for IT's isolated resource, not an existing compose flag.
+The dev file has one internal bridge, `ledger-dev`, for DB/Redis and application
+links. Init uses `network_mode: none`. No service publishes ports or enables
+Traefik; neither `LEDGER_HOST` nor `ADMIN_PASSWORD` is read or required. Do not
+let Coolify attach an external/proxy network, auto-generate routers, publish ports or override the
+network settings. IT verifies the **effective** Coolify configuration retains
+these properties. This resource has no public route or general internet egress;
+IT's separately reviewed private access mechanism is outside this file.
 
 ## 2. Off switches before first application start
 
-There are no compose environment variables for these off switches today. They
-are site configuration and restored database settings. Do not run an unrestricted
-Coolify start and then turn them off. Keep the scheduler, `queue-long`,
-`queue-short`, backend HTTP, websocket and frontend stopped while restoring;
-use a one-off bench container on the isolated dev DB/sites volume to apply the
-commands. Start only the supporting DB/Redis/configurator needed for that work.
-Use fresh dev volumes, especially Redis: do not copy a live queue. A disabled
-scheduler does not cancel jobs already queued or running.
+Set these runtime variables when creating the resource:
+
+| Variable                                | Required value                                 |
+| --------------------------------------- | ---------------------------------------------- |
+| `FINANCE_DEV_IMAGE`                     | [main build digest](coolify-build.md)          |
+| `FINANCE_MUTE_EMAILS`                   | `1`                                            |
+| `FINANCE_PAUSE_SCHEDULER`               | `1`                                            |
+| `FINANCE_DISABLE_EXTERNAL_INTEGRATIONS` | `1`                                            |
+| `DB_ROOT_PASSWORD`                      | dev database root password, supplied privately |
+
+This is a **restored-site** resource, not a new-site installer. With the resource
+stopped, Benchi/IT stages the approved restored DB and `sites/frontend` in its
+own fresh dev volumes. The script is supplied as a Compose config from
+`finance/scripts/dev_site_init.py`; retain that file with the Compose checkout.
+The restored `site_config.json` must already contain the dev DB credentials;
+never attach live volumes. Missing, invalid or non-object JSON fails startup.
+Use fresh Redis: do not copy a live queue. No container exec or bench call is
+needed to apply the three startup flags.
+
+Startup order is `dev-init` alone, then DB/Redis/configurator, then
+backend/websocket after configurator, then frontend after backend/websocket.
+Workers are off by default (next paragraph). Every service directly depends on
+successful init. Init validates all three variables are exactly `1` and validates the digest before
+writing anything. It atomically replaces `sites/frontend/site_config.json`,
+preserving existing keys while writing numeric `mute_emails=1`,
+`pause_scheduler=1`, and `disable_external_integrations=1`. Any failure holds
+all other services stopped. The bank guard blocks Wise, PayPal and Frankfurter
+manual and scheduled requests; it is not a universal third-party app switch.
+
+Workers are off by default. `scheduler`, `queue-long` and `queue-short` belong to
+the Compose profile `workers`, so a plain `docker compose up` or a Coolify deploy
+starts none of them. The copy holds real data, so enabling the profile
+(`COMPOSE_PROFILES=workers`) needs a reviewed need and Benchi's yes, as the other
+off switches do. When enabled, each worker still waits for successful `dev-init`
+and `configurator`, so the fail-closed order holds.
+
+All services have automatic restart disabled so a host reboot cannot bypass
+the init ordering. After every restore or config change, stop the whole dev
+resource and use a full Compose deployment that **recreates `dev-init`** before
+starting consumers. Never use `--no-deps`, start a service individually, or
+restore while applications run. A previously completed init is not evidence
+for a subsequently replaced config.
+
+The remaining commands below are defense-in-depth checks/settings for the
+separately authorized restore procedure, **not prerequisites for the automated
+three-flag startup**. Keep consumers stopped while performing that work. A paused
+scheduler does not cancel already queued jobs; fresh Redis and network isolation
+remain necessary.
 
 Run the following **inside the dev bench**, where `<site>` is the restored site
 (`frontend` with this compose). Repeat the entire sequence after every restore
@@ -56,18 +90,17 @@ after it; it starts workers only afterwards (`finance/scripts/copy-stack.sh:166-
 Its `up`/`refresh` wrapper is not the Hetzner procedure: it starts HTTP services
 early and targets the local copy. Do not run it for this handoff.
 
-First, with the restored site directory present and before migrate or any app
-process, set parsed numeric values in `sites/<site>/site_config.json`:
+The three startup flags are owned by `dev-init` as described above. Ensure they
+are present before any separately authorized migrate. During the
+separately authorized restore procedure, with the restored site directory
+present and before migrate or any app process, apply the additional settings
+in `sites/<site>/site_config.json`:
 
 ```sh
-bench --site <site> set-config -p pause_scheduler 1
 bench --site <site> set-config -p disable_scheduler 1
-bench --site <site> set-config -p mute_emails 1
-bench --site <site> set-config -p disable_external_integrations 1
 bench --site <site> set-config host_name http://frontend:8080
 ```
 
-`pause_scheduler` and `mute_emails` follow `finance/scripts/copy-stack.sh:169-172`.
 The copy's internal `host_name` replaces the restored public URL; it is not the
 Coolify routing hostname. `disable_scheduler` is an extra Frappe site-level
 barrier, independent of the DB setting `System Settings.enable_scheduler`.
@@ -106,8 +139,8 @@ all site/DB off switches in place.
 | Integration or job                          | Scope of the switch; evidence and remaining barrier                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Outgoing and incoming mail                  | `mute_emails=1` plus every Email Account's `enable_outgoing=0`, `enable_incoming=0`. Frappe checks muted mail before sending ([email_queue.py:174-180](https://github.com/frappe/frappe/blob/v16.51.1/frappe/email/doctype/email_queue/email_queue.py#L174-L180), [frappe/**init**.py:1455-1456](https://github.com/frappe/frappe/blob/v16.51.1/frappe/__init__.py#L1455-L1456)). Keep workers off and SMTP/HTTPS egress denied, including any default SMTP configuration restored outside Email Account. Do not flush the restored Email Queue. |
-| Wise                                        | Implemented: `disable_external_integrations=1` blocks Test connection, Sync now, dry runs and scheduled syncs before credentials are read (`finance/apps/bi_finance/bi_finance/wise.py:29-45,88-105`). The shared HTTP guard also blocks direct client calls (`wise_client.py:49-60`, `external_integrations.py:12-29`). Keep `Wise Settings.sync_enabled=0` and egress denial.                                                                                                                                                                  |
-| PayPal                                      | Implemented: `disable_external_integrations=1` blocks Test connection, Sync now, dry runs and scheduled syncs before credentials are read (`finance/apps/bi_finance/bi_finance/paypal.py:30-44,68-85`). The shared HTTP guard also blocks direct client calls, including token requests (`paypal_client.py:39-73`, `external_integrations.py:12-29`). Keep `PayPal Settings.sync_enabled=0` and egress denial.                                                                                                                                   |
+| Wise                                        | Implemented: `disable_external_integrations=1` blocks Test connection, Sync now, dry runs and scheduled syncs before credentials are read (`finance/apps/bi_finance/bi_finance/wise.py:29-45,88-105`). The shared HTTP guard also blocks direct client calls (`wise_client.py:49-60`, `external_integrations.py:12-29`). Keep `Wise Settings.sync_enabled=0` (the hourly entrypoint switch) and egress denial.                                                                                                                                   |
+| PayPal                                      | Implemented: `disable_external_integrations=1` blocks Test connection, Sync now, dry runs and scheduled syncs before credentials are read (`finance/apps/bi_finance/bi_finance/paypal.py:30-44,68-85`). The shared HTTP guard also blocks direct client calls, including token requests (`paypal_client.py:39-73`, `external_integrations.py:12-29`). Keep `PayPal Settings.sync_enabled=0` (the hourly entrypoint switch) and egress denial.                                                                                                    |
 | Exchange rates (Frankfurter)                | Implemented: `disable_external_integrations=1` blocks rate loading, including dry runs, and the shared HTTP guard checks before each Frankfurter request (`finance/apps/bi_finance/bi_finance/bank_feed.py:282-325`, `external_integrations.py:12-29`). Keep egress denied; do not exercise external rate lookups on this copy.                                                                                                                                                                                                                  |
 | AI assistant (OpenRouter)                   | `AI Assistant Settings.enabled=0` rejects ask before loading its key or sending ledger context (`finance/apps/bi_finance/bi_finance/assistant.py:144-165`). `actions_enabled=0` also turns off assistant actions (`assistant_actions.py:168-169,220-221`). Keep HTTPS egress denied.                                                                                                                                                                                                                                                             |
 | Webhooks                                    | Every restored `Webhook.enabled=0`, as in `finance/scripts/copy-stack.sh:183`; field defined in [Frappe webhook.json:154-159](https://github.com/frappe/frappe/blob/v16.51.1/frappe/integrations/doctype/webhook/webhook.json#L154-L159). This does not cancel an already enqueued webhook. Fresh Redis, stopped workers and denied egress remain necessary.                                                                                                                                                                                     |
@@ -120,12 +153,11 @@ The implemented `disable_external_integrations` site-config guard covers
 Wise, PayPal and Frankfurter in `bi_finance`; see
 [Disabling external bank integrations](external-integrations.md) for its scope
 and manual-error/scheduled-skip behaviour (`finance/apps/bi_finance/bi_finance/external_integrations.py:12-29`).
-The key takes effect only on an image containing erp-ksff; dev must deploy that
-image before relying on it.
+Use the image selected by the [build requirements](coolify-build.md) before
+relying on this key.
 It does not disable every outside integration: keep the separate mail,
 scheduler, assistant and webhook switches, stopped workers and egress denial.
-The bexio host job stays off dev; no host-job change is part of this documentation
-bead. IT must inventory restored Server Scripts,
+The bexio host job stays off dev; no host-job change is part of this handoff. IT must inventory restored Server Scripts,
 other apps' integrations and user/API access privately; the hook list is code
 evidence, not a complete inventory of the restored DB. Do not treat tailnet
 membership or the restricted API users as a universal integration barrier
@@ -210,7 +242,7 @@ barrier.
 Before opening dev, verify only off-state flags and counts: scheduler status
 disabled, `disable_external_integrations=1`, both feed switches zero,
 assistant/matching switches zero, no enabled
-mail accounts or webhooks, no running workers/scheduler, and IT's egress/ingress
+mail accounts or webhooks, no running workers/scheduler or active scheduled jobs, and IT's egress/ingress
 checks. Do not test isolation by sending real mail or making a real API call.
 After tests, IT removes the dev resource, its volumes and all dev transfer and
 staging copies, including plaintext and encrypted bundles; preserve the source
