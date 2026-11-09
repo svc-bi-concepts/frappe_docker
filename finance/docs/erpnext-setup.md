@@ -469,8 +469,8 @@ inspect capped` first); if that check fails, ask IT. `BUILDER=<name>` points the
 at another builder — on a machine without IT's setup, name that machine's own capped
 builder, never the default.
 
-If docker itself answers nothing, the socket is gone: run IT's colima-sock-fix, then
-retry. The asset build's node heap is capped with `NODE_OPTIONS=--max-old-space-size=$NODE_HEAP_MB`
+For an unresponsive Docker runtime, follow [local operations](../../AGENTS.md).
+The asset build's node heap is capped with `NODE_OPTIONS=--max-old-space-size=$NODE_HEAP_MB`
 (the script passes it into `images/custom/Containerfile`); `NODE_HEAP_MB` defaults to 900. The
 cap bounds only the V8 heap, so the whole node process has to fit the builder's budget. It only
 counts since `finance/patches/frappe`: frappe's bundler replaced any `NODE_OPTIONS` with 75% of

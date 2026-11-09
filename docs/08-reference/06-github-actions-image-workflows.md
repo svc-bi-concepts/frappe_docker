@@ -2,7 +2,7 @@
 title: GitHub Actions Image Workflows
 ---
 
-This document describes the current workflow setup for shared core images and reusable downstream app images.
+This document describes the checked-in workflow definitions for shared core images and reusable downstream app images. For this fork's active CI and escalation procedure, see [local operations](../../AGENTS.md).
 
 # Workflow roles
 
