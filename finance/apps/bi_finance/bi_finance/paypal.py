@@ -10,6 +10,7 @@ import datetime
 
 import frappe
 from bi_finance import bank_feed, paypal_client
+from bi_finance.external_integrations import check
 from frappe import _
 
 BANK = "PAYPAL"
@@ -27,6 +28,7 @@ OVERLAP = datetime.timedelta(days=7)
 
 
 def _settings():
+    check()
     settings = frappe.get_single("PayPal Settings")
     secret = settings.get_password("client_secret", raise_exception=False)
     if not secret or not settings.client_id:
@@ -65,6 +67,8 @@ def sync_now(dry_run=True):
 
 def sync_scheduled():
     """The hourly job: a live run, only when PayPal Settings has sync on and a client id and secret."""
+    if not check(scheduled=True):
+        return
     settings = frappe.get_single("PayPal Settings")
     if not settings.sync_enabled:
         return

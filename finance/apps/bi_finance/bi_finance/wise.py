@@ -13,6 +13,7 @@ import datetime
 
 import frappe
 from bi_finance import bank_feed, bank_match_job, wise_client
+from bi_finance.external_integrations import check
 from erpnext.setup.utils import get_exchange_rate
 from frappe import _
 
@@ -26,6 +27,7 @@ OVERLAP = datetime.timedelta(days=7)
 
 
 def _settings():
+    check()
     settings = frappe.get_single("Wise Settings")
     token = settings.get_password("api_token", raise_exception=False)
     if not token or not settings.profile_id:
@@ -38,6 +40,7 @@ def _settings():
 @frappe.whitelist()
 def test_connection():
     """The profiles the token can see, as a message. Reads only."""
+    check()
     settings = frappe.get_single("Wise Settings")
     token = settings.get_password("api_token", raise_exception=False)
     if not token:
@@ -84,6 +87,8 @@ def _moment(value, last=False):
 
 def sync_scheduled():
     """The hourly job: a live run, only when Wise Settings has sync on and a token and profile."""
+    if not check(scheduled=True):
+        return
     settings = frappe.get_single("Wise Settings")
     if not settings.sync_enabled:
         return

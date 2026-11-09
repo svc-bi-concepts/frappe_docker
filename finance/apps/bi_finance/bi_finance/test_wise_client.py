@@ -10,6 +10,7 @@ import io
 import json
 import unittest
 import urllib.error
+from unittest import mock
 
 from bi_finance import wise_client
 
@@ -670,6 +671,16 @@ class PayoutRecipients(unittest.TestCase):
             TOKEN, [same, self._payout(7, status="processing")], opener=FakeOpener({})
         )
         self.assertEqual(counts, {})
+
+
+def setUpModule():
+    global site_check
+    site_check = mock.patch("bi_finance.external_integrations.check", return_value=True)
+    site_check.start()
+
+
+def tearDownModule():
+    site_check.stop()
 
 
 if __name__ == "__main__":

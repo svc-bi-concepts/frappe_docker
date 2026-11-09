@@ -57,6 +57,7 @@ Invoice prints, with the QR code drawn on our own server (no external host, see
   runs in the image with `bi_finance.test_wise`.
   CHF rates: a live run stores the day rates of each Wise currency as Currency Exchange rows, from frankfurter.dev v2
   (the source set in Currency Exchange Settings), one request per currency and range; a dry run stores none.
+  For the site-wide bank integration switch, see [Disabling external bank integrations](../../docs/external-integrations.md).
 - `bi_finance/bi_finance/doctype/bank_statement_upload/`: the doctype "Bank Statement Upload" (module BI Finance,
   `modules.txt`). A record per uploaded file: the Bank Account, the file, Dry run and Import buttons calling
   `camt_import` (the Bank Account is proposed from the file's IBAN; a camt or an MT940 file), the summary as the dry run gave it, and the count and who of the import. An upload imports once,

@@ -1,6 +1,6 @@
 """PayPal Transaction Search, read only: the token, the transactions and the balances the feed reads, and the rows they give.
 
-Standard library only, no frappe import: the tests run without the image. The client secret goes in the Authorization
+Importable without Frappe; HTTP calls check the site policy through external_integrations. The client secret goes in the Authorization
 header of the token request and nowhere else; the access token goes in the Authorization header of each call. An error
 names the HTTP status and the path, never a response body (it holds account data) and never a credential.
 
@@ -12,7 +12,9 @@ import datetime
 import json
 import urllib.error
 import urllib.parse
-import urllib.request
+from urllib.request import Request
+
+from bi_finance.external_integrations import open_request
 
 BASE_URL = "https://api-m.paypal.com"
 
@@ -38,11 +40,11 @@ def _request(path, opener, headers, data=None, params=None):
     url = BASE_URL + path
     if params:
         url += "?" + urllib.parse.urlencode(params)
-    request = urllib.request.Request(
+    request = Request(
         url, data=data, headers=headers, method="GET" if data is None else "POST"
     )
     try:
-        with opener(request, timeout=TIMEOUT_SECONDS) as response:
+        with open_request(request, timeout=TIMEOUT_SECONDS, opener=opener) as response:
             return json.load(response)
     except urllib.error.HTTPError as err:
         raise PayPalError(f"HTTP {err.code} from PayPal on {path}") from None
@@ -57,7 +59,7 @@ def _bearer(token):
     return {"Authorization": "Bearer " + token, "Accept": "application/json"}
 
 
-def access_token(client_id, client_secret, opener=urllib.request.urlopen):
+def access_token(client_id, client_secret, opener=None):
     """An access token for the REST app, by the client credentials grant. The secret is sent once, in this call only."""
     basic = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode("ascii")
     headers = {
@@ -73,7 +75,7 @@ def access_token(client_id, client_secret, opener=urllib.request.urlopen):
     return token
 
 
-def transactions(token, start, end, opener=urllib.request.urlopen):
+def transactions(token, start, end, opener=None):
     """Every transaction_details record between two datetimes (UTC), over all pages. start and end are at most a window apart."""
     records = []
     page = 1
@@ -98,7 +100,7 @@ def transactions(token, start, end, opener=urllib.request.urlopen):
         page += 1
 
 
-def balances(token, opener=urllib.request.urlopen):
+def balances(token, opener=None):
     """The total balance of each currency the account holds now: {currency: amount}."""
     answer = _request("/v1/reporting/balances", opener, _bearer(token))
     found = {}

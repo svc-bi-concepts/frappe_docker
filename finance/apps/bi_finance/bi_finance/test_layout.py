@@ -18,8 +18,10 @@ import glob
 import hashlib
 import json
 import os
+import tempfile
 import unittest
 from datetime import datetime
+from unittest import mock
 
 PACKAGE = os.path.dirname(os.path.abspath(__file__))
 APP = os.path.dirname(PACKAGE)
@@ -253,6 +255,67 @@ class Navigation(unittest.TestCase):
                         ),
                         item["link_to"],
                     )
+
+
+class HTTPBoundary(unittest.TestCase):
+    def test_network_imports_stay_at_the_guarded_boundary(self):
+        # The assistant has its own enabled switch and is outside this feed switch.
+        # Request construction is safe; opening a connection belongs to one module.
+        allowed = {"external_integrations.py", "assistant_client.py"}
+        violations = []
+        for root, _, files in os.walk(PACKAGE):
+            for name in files:
+                if not name.endswith(".py") or name.startswith("test_"):
+                    continue
+                path = os.path.join(root, name)
+                relative = os.path.relpath(path, PACKAGE)
+                with open(path) as source:
+                    tree = ast.parse(source.read())
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.Import):
+                        imports = [alias.name for alias in node.names]
+                    elif isinstance(node, ast.ImportFrom):
+                        imports = [node.module or ""]
+                        if node.module == "urllib.request" and all(
+                            alias.name == "Request" for alias in node.names
+                        ):
+                            continue
+                    else:
+                        continue
+                    if any(
+                        (
+                            item.split(".")[0] in {"requests", "httpx"}
+                            and relative != "external_integrations.py"
+                        )
+                        or (
+                            relative not in allowed
+                            and (
+                                item.split(".")[0] in {"http", "urllib3"}
+                                or item in {"urllib", "urllib.request"}
+                            )
+                        )
+                        for item in imports
+                    ):
+                        violations.append(relative)
+        self.assertEqual(
+            violations, [], "HTTP must go through external_integrations.open_request"
+        )
+
+    def test_nested_modules_cannot_inherit_boundary_exemptions(self):
+        for name, statement in (
+            ("external_integrations.py", "import requests"),
+            ("external_integrations.py", "import httpx"),
+            ("assistant_client.py", "import urllib.request"),
+        ):
+            with self.subTest(name=name, statement=statement):
+                with tempfile.TemporaryDirectory() as package:
+                    nested = os.path.join(package, "new_integration")
+                    os.mkdir(nested)
+                    with open(os.path.join(nested, name), "w") as source:
+                        source.write(statement + "\n")
+                    with mock.patch(__name__ + ".PACKAGE", package):
+                        with self.assertRaisesRegex(AssertionError, "HTTP must go"):
+                            self.test_network_imports_stay_at_the_guarded_boundary()
 
 
 if __name__ == "__main__":
