@@ -166,6 +166,23 @@ class ComposeTests(unittest.TestCase):
                     "restore-files", json.dumps(service.get("depends_on", {}))
                 )
 
+    def test_labels_are_list_form_in_source(self):
+        # Coolify's raw parser appends numeric label entries, which compose refuses in a mapping but takes as list
+        # items (note 3782). Compose renders both forms the same, so the source file is read here.
+        lines = COMPOSE.read_text().splitlines()
+        blocks = [i for i, line in enumerate(lines) if line.strip() == "labels:"]
+        self.assertFalse(
+            [line for line in lines if line.strip().startswith("traefik.enable:")]
+        )
+        for i in blocks:
+            with self.subTest(line=i + 1):
+                self.assertEqual(lines[i + 1].strip(), "- traefik.enable=false")
+        services = json.loads(self.render(("restore", "workers")).stdout)["services"]
+        self.assertEqual(len(blocks), len(services))
+        for name, service in services.items():
+            with self.subTest(service=name):
+                self.assertEqual(service["labels"], {"traefik.enable": "false"})
+
     def test_restore_inputs_are_external(self):
         volumes = json.loads(self.render(("restore",)).stdout)["volumes"]
         for name in ("finance-dev-restore-staging", "finance-dev-age-identity"):

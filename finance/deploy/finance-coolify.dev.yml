@@ -20,7 +20,7 @@ services:
       - source: dev-site-init
         target: /dev-site-init.py
     labels:
-      traefik.enable: "false"
+      - traefik.enable=false
   backend:
     image: ${FINANCE_DEV_IMAGE:?Set FINANCE_DEV_IMAGE to the main build repository@sha256:digest}
     pull_policy: missing
@@ -36,7 +36,7 @@ services:
       configurator:
         condition: service_completed_successfully
     labels:
-      traefik.enable: "false"
+      - traefik.enable=false
   configurator:
     image: ${FINANCE_DEV_IMAGE:?Set FINANCE_DEV_IMAGE to the main build repository@sha256:digest}
     pull_policy: missing
@@ -66,7 +66,7 @@ services:
       - logs:/home/frappe/frappe-bench/logs
     restart: "no"
     labels:
-      traefik.enable: "false"
+      - traefik.enable=false
     depends_on:
       dev-init:
         condition: service_completed_successfully
@@ -95,7 +95,7 @@ services:
     volumes:
       - db-data:/var/lib/mysql
     labels:
-      traefik.enable: "false"
+      - traefik.enable=false
     depends_on:
       dev-init:
         condition: service_completed_successfully
@@ -127,7 +127,7 @@ services:
       - sites:/home/frappe/frappe-bench/sites
       - logs:/home/frappe/frappe-bench/logs
     labels:
-      traefik.enable: "false"
+      - traefik.enable=false
   queue-long:
     # Off by default: a restored copy holds real data, and workers start only with the
     # profile, after a reviewed need (finance/docs/hetzner-dev-handoff.md, "Off switches").
@@ -155,7 +155,7 @@ services:
       configurator:
         condition: service_completed_successfully
     labels:
-      traefik.enable: "false"
+      - traefik.enable=false
   queue-short:
     profiles:
       - workers
@@ -181,7 +181,7 @@ services:
       configurator:
         condition: service_completed_successfully
     labels:
-      traefik.enable: "false"
+      - traefik.enable=false
   redis-queue:
     image: redis:6.2-alpine
     networks:
@@ -190,7 +190,7 @@ services:
     volumes:
       - redis-queue-data:/data
     labels:
-      traefik.enable: "false"
+      - traefik.enable=false
     depends_on:
       dev-init:
         condition: service_completed_successfully
@@ -200,7 +200,7 @@ services:
       - ledger-dev
     restart: "no"
     labels:
-      traefik.enable: "false"
+      - traefik.enable=false
     depends_on:
       dev-init:
         condition: service_completed_successfully
@@ -224,7 +224,7 @@ services:
       configurator:
         condition: service_completed_successfully
     labels:
-      traefik.enable: "false"
+      - traefik.enable=false
   websocket:
     image: ${FINANCE_DEV_IMAGE:?Set FINANCE_DEV_IMAGE to the main build repository@sha256:digest}
     pull_policy: missing
@@ -246,7 +246,7 @@ services:
       configurator:
         condition: service_completed_successfully
     labels:
-      traefik.enable: "false"
+      - traefik.enable=false
   # One-shot restore, profile `restore` only: a plain up starts neither, and dev-init depends on neither. Both run with
   # network_mode none and read the backup set from the read-only mounts only; they write nothing but db-data (restore-db)
   # and sites (restore-files). restore-files waits for restore-db, so `run --rm restore-files` does both, in that order.
@@ -271,7 +271,7 @@ services:
       - source: dev-restore
         target: /dev-restore.sh
     labels:
-      traefik.enable: "false"
+      - traefik.enable=false
   restore-files:
     profiles:
       - restore
@@ -298,7 +298,7 @@ services:
       restore-db:
         condition: service_completed_successfully
     labels:
-      traefik.enable: "false"
+      - traefik.enable=false
 volumes:
   db-data: null
   redis-queue-data: null

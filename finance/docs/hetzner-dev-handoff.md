@@ -55,6 +55,9 @@ Order, once per resource:
 4. Run the normal deployment (`up -d`). `dev-init` runs first and writes the three startup flags, as in section 2.
 5. Before the application is opened, run the off-switch sequence of section 2 inside the dev bench. It still runs after
    every restore; the restore does not automate it.
+6. After a good restore, remove the restore inputs: IT empties and removes the staging volume and the identity mount,
+   `finance-dev-restore-staging` and `finance-dev-age-identity`, once both restore services have exited 0 and the
+   deployment has started. Section 3 requires the same removal of every transfer and staging copy after the tests.
 
 Restore inputs (the contract with IT). Both are external, so an absent input fails the deployment instead of being made empty.
 

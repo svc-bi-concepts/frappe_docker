@@ -119,6 +119,7 @@ check_member() {
   local got
   got=$(member "$2" | sha256sum) || die "cannot read $2 from the archive"
   [ "${got%% *}" = "$1" ] || die "$2 does not match its checksum in SHA256SUMS"
+  echo "restore: verified $2 sha256 ${got%% *}"
 }
 check_member "$DB_HASH" "$DB_MEMBER"
 check_member "$CONF_HASH" "$CONF_MEMBER"
@@ -181,7 +182,10 @@ restore_db() {
     echo "CREATE USER '$DB_NAME'@'%' IDENTIFIED BY '$DB_PASSWORD';"
     echo "GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_NAME'@'%';"
   } | mariadb_root || die "could not create the site database and its user"
-  member "$DB_MEMBER" | gzip -dc | mariadb_root --database="$DB_NAME" || die "database import failed"
+  # The client's errors can quote row values, so they go to a file and only their count is printed.
+  if ! member "$DB_MEMBER" | gzip -dc | mariadb_root --database="$DB_NAME" 2>"$SOCKDIR/import.err"; then
+    die "database import failed: $(grep -c . "$SOCKDIR/import.err" || true) error line(s), not shown"
+  fi
   # The root account gets the dev root password here, as the db service would set it on a fresh volume.
   printf "ALTER USER 'root'@'localhost' IDENTIFIED BY %s;\n" "$(sql_string "$DB_ROOT_PASSWORD")" | mariadb_root ||
     die "could not set the root password"
