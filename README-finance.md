@@ -133,8 +133,8 @@ Until a key file exists, its consumer falls back: `sync_hourly.sh` to
 pre-commit lint when `pre-commit` is installed. The host checks validate both
 compose configurations, run the tests that do not need the image, and refuse a real
 tailnet host name (a name ending in `.ts.net`) in any tracked file, since the repo is
-public; the placeholder form `<machine>.<tailnet>.ts.net` passes. GitHub CI runs the
-same host checks, so a hit prints only the file names.
+public; the placeholder form `<machine>.<tailnet>.ts.net` passes. A hit prints only
+the file names. For current CI statuses and escalation, see [local operations](AGENTS.md).
 
 Before calling Docker, `.yardr/check` checks that the physical checkout path is
 under `$HOME`. Colima on the Mac mini mounts only the home folder, so an outside

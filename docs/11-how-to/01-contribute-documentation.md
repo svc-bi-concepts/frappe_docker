@@ -4,7 +4,7 @@ title: Contribute to the Documentation
 
 # Contribute to the documentation
 
-The documentation lives in Markdown files in `docs/`. The same files are also published as a website using VitePress. To update the documentation, edit the Markdown files; you do not need JavaScript or VitePress knowledge or a local website setup. CI builds the website from PRs that change `docs/` to check that the documentation builds correctly.
+The documentation lives in Markdown files in `docs/`. The same files are also published as a website using VitePress. To update the documentation, edit the Markdown files; you do not need JavaScript or VitePress knowledge or a local website setup. For this fork's active CI and escalation procedure, see [local operations](../../AGENTS.md).
 
 Include documentation changes in feature and fix PRs when they affect how people use the project; documentation-only improvements are also welcome.
 
@@ -45,6 +45,6 @@ Review the Markdown preview in your editor or on GitHub. Check heading levels, c
 
 Follow the repository's existing [pre-commit requirements](https://github.com/frappe/frappe_docker/blob/main/CONTRIBUTING.md#lint) and [commit conventions](https://github.com/frappe/frappe_docker/blob/main/CONTRIBUTING.md#commit-message-convention). Documentation changes accompanying a feature or fix belong with that change; they do not require a separate documentation branch or PR.
 
-The PR must pass the lint and documentation build checks. CI builds the site and reports errors such as broken page links or invalid Markdown syntax. If a check fails, read its log, correct the affected source, and push the fix. CI does not verify every heading fragment, so check those yourself.
+Follow the active CI requirements linked above. The documentation build can report errors such as broken page links or invalid Markdown syntax, but does not verify every heading fragment, so check those yourself. If a check fails, read its log, correct the affected source, and push the fix.
 
 Maintainers working on site configuration can use the specialist [Configuring VitePress](../08-reference/02-configuring-vitepress.md) guide.

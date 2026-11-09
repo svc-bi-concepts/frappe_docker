@@ -2,7 +2,7 @@
 
 Before publishing a PR, run the checks relevant to your change. Test Docker builds locally when changing images or container behavior; for documentation changes, follow the [documentation contribution guide](docs/11-how-to/01-contribute-documentation.md#check-the-documentation).
 
-On each PR that contains changes relevant to Docker builds, images are being built and tested in our CI (GitHub Actions).
+For this fork's current CI statuses and escalation procedure, see [local operations](AGENTS.md).
 
 > :evergreen_tree: Please be considerate when pushing commits and opening PR for multiple branches, as the process of building images uses energy and contributes to global warming.
 
