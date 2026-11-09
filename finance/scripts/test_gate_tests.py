@@ -124,6 +124,29 @@ class FinanceBuildExecution(unittest.TestCase):
     """
 
     def test_build_executes_patches_and_installs_image_contents(self):
+        self.run_build({"APPS_JSON": "fixture-apps"}, "fixture-apps")
+
+    def test_missing_secret_uses_repository_apps(self):
+        self.run_build({}, (ROOT / "finance/apps.json").read_text())
+
+    def test_empty_secrets_use_repository_apps(self):
+        self.run_build(
+            {"APPS_JSON": "", "apps_json": ""},
+            (ROOT / "finance/apps.json").read_text(),
+        )
+
+    def test_primary_secret_overrides_legacy_and_repository(self):
+        self.run_build(
+            {"APPS_JSON": "primary-apps", "apps_json": "legacy-apps"}, "primary-apps"
+        )
+
+    def test_empty_primary_secret_uses_legacy(self):
+        self.run_build({"APPS_JSON": "", "apps_json": "legacy-apps"}, "legacy-apps")
+
+    def test_legacy_secret_overrides_repository(self):
+        self.run_build({"apps_json": "legacy-apps"}, "legacy-apps")
+
+    def run_build(self, secrets, expected_apps):
         stages = build_stages((ROOT / "images/custom/Containerfile").read_text())
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
@@ -142,7 +165,7 @@ event = [name]
 if name == 'bench' and args[0] == 'init':
     assert '--skip-assets' in args, args
     secret = next(a.split('=', 1)[1] for a in args if a.startswith('--apps_path='))
-    assert pathlib.Path(secret).read_text() == 'fixture-apps'
+    assert pathlib.Path(secret).read_text() == os.environ['EXPECTED_APPS']
     for path in ('env/bin', 'sites/assets', 'apps/frappe', 'apps/hrms',
                  'apps/erpnextswiss/erpnextswiss/erpnextswiss/workspace',
                  'apps/erpnextswiss/erpnextswiss/desktop_icon',
@@ -154,7 +177,7 @@ elif name == 'bench' and args == ['build', '--production']:
     event += ['build', sorted(str(p.relative_to(bench)) for p in bench.rglob('*') if p.is_dir())]
 elif name == 'python3':
     assert pathlib.Path(args[0]).is_file(), args
-    assert pathlib.Path(args[1]).read_text() == 'fixture-apps'
+    assert pathlib.Path(args[1]).read_text() == os.environ['EXPECTED_APPS']
     assert pathlib.Path(args[2]).is_dir(), args
     event += ['pins']
 elif name == 'sh':
@@ -187,7 +210,7 @@ with log.open('a') as f:
                     stage_root.mkdir()
                 outputs[name] = stage_root
                 bench = stage_root / "home/frappe/frappe-bench"
-                env = dict(os.environ, PATH=str(tools) + os.pathsep + os.defpath, BENCH=str(bench), CALLS=str(calls), FRAPPE_BRANCH="fixture", FRAPPE_PATH="fixture", CACHE_BUST="")
+                env = dict(os.environ, PATH=str(tools) + os.pathsep + os.defpath, BENCH=str(bench), CALLS=str(calls), EXPECTED_APPS=expected_apps, FRAPPE_BRANCH="fixture", FRAPPE_PATH="fixture", CACHE_BUST="")
                 cwd = stage_root
                 for op, value in stages[name]["instructions"]:
                     if op == "COPY":
@@ -217,10 +240,10 @@ with log.open('a') as f:
                         if name == "builder" and not mounts:
                             continue
                         for mount in mounts:
-                            if mount.get("type") == "secret" and mount.get("id") == "APPS_JSON":
+                            if mount.get("type") == "secret" and mount.get("id") in secrets:
                                 target = stage_root / mount["target"].lstrip("/")
                                 target.parent.mkdir(parents=True, exist_ok=True)
-                                target.write_text("fixture-apps")
+                                target.write_text(secrets[mount["id"]])
                         command = command.replace("/home/frappe/", str(stage_root / "home/frappe") + "/").replace("/opt/frappe/", str(stage_root / "opt/frappe") + "/").replace("/usr/local/bin/", str(stage_root / "usr/local/bin") + "/")
                         run = subprocess.run(["/bin/sh", "-ec", command], cwd=cwd, env=env, capture_output=True, text=True)
                         self.assertEqual(run.returncode, 0, run.stderr)

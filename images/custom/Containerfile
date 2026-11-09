@@ -141,12 +141,14 @@ COPY --chown=frappe:0 finance/patches/erpnextswiss /home/frappe/patches/erpnexts
 COPY --chown=frappe:0 finance/patches/frappe /home/frappe/patches/frappe
 COPY --chown=frappe:0 finance/patches/hrms /home/frappe/patches/hrms
 
+COPY --chown=frappe:0 finance/apps.json /opt/frappe/repository-apps.json
+
 RUN --mount=type=secret,id=APPS_JSON,target=/opt/frappe/apps.json,uid=1000,gid=0 \
     --mount=type=secret,id=apps_json,target=/opt/frappe/legacy-apps.json,uid=1000,gid=0 \
   : "${CACHE_BUST}" && \
   APPS_FILE=/opt/frappe/apps.json && \
   if [ ! -s "$APPS_FILE" ]; then APPS_FILE=/opt/frappe/legacy-apps.json; fi && \
-  if [ ! -s "$APPS_FILE" ]; then echo "APPS_JSON build secret required" >&2; exit 2; fi && \
+  if [ ! -s "$APPS_FILE" ]; then APPS_FILE=/opt/frappe/repository-apps.json; fi && \
   bench_args="--apps_path=$APPS_FILE" && \
   bench init ${bench_args}\
     --frappe-branch=${FRAPPE_BRANCH} \

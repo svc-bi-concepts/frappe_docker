@@ -6,7 +6,8 @@ patched Frappe/ERPNext, erpnextswiss and HRMS base plus bi_finance and bi_payrol
 The default target remains the upstream base image. Frappe defaults to
 `v16.51.1`; `NODE_OPTIONS` defaults to `--max-old-space-size=900`.
 
-Provide the raw apps-list JSON as a **BuildKit secret named `APPS_JSON`**.
+Coolify builds read `finance/apps.json` from the repository by default.
+To override it, provide raw apps-list JSON as a **BuildKit secret named `APPS_JSON`**.
 A normal Docker build argument or runtime environment variable is insufficient;
 never declare `ARG APPS_JSON` or pass its value as `--build-arg`. In Coolify, add `APPS_JSON` with Build time available and Runtime unavailable,
 then select **Build secrets > Docker BuildKit secrets**. BuildKit must be
@@ -26,10 +27,10 @@ docker buildx build --no-cache --load \
 ```
 
 `finance/apps.json` contains only public repository URLs, tags, and a revision
-pin, with no credentials or company data. Reading it directly could make the
-secret optional; that remains Benchi's decision. Until then a missing secret
-fails the build. The fetched pinned app revision is verified before patches
-are applied. Avoid credential-bearing URLs: fetching apps inherently retains
+pin, with no credentials or company data. When `APPS_JSON` is absent or empty,
+the legacy `apps_json` secret is used if nonempty, then the repository file.
+The app list is never passed through a build argument or environment variable.
+The fetched pinned app revision is verified before patches are applied. Avoid credential-bearing URLs: fetching apps inherently retains
 source code and package metadata in the resulting image.
 
 Run the baked gate with no checkout mount, database, site or published port:

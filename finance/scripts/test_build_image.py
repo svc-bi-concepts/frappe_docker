@@ -6,6 +6,7 @@ Run with: cd finance/scripts && python3 -m unittest test_build_image
 import importlib.util
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -82,7 +83,13 @@ class BuildImageModes(unittest.TestCase):
                     'if [ "$1 $2" = "buildx inspect" ]; then\n'
                     '  [ -n "$DOCKER_STUB_NO_BUILDER" ] && exit 1\n'
                     "  exit 0\nfi\n"
-                    'if [ "$1 $2" = "buildx build" ]; then exit 0; fi\nexit 1\n'
+                    'if [ "$1 $2" = "buildx build" ]; then\n'
+                    '  for option do\n'
+                    '    case "$option" in id=APPS_JSON,src=*)\n'
+                    '      printf "apps-secret:"; cat "${option#id=APPS_JSON,src=}"; echo;;\n'
+                    '    esac\n'
+                    '  done\n'
+                    '  exit 0\nfi\nexit 1\n'
                     % (log, " ".join(existing_images))
                 )
             os.chmod(stub, 0o755)
@@ -199,6 +206,30 @@ class BuildImageModes(unittest.TestCase):
         self.assertNotIn("--build-context", build)
         self.assertNotIn("--output", build)
         self.assertNotIn("--build-arg APPS_JSON", build)
+
+    def test_local_build_forwards_selected_apps_only_as_secret(self):
+        # The wrapper must override the repository fallback with the selected
+        # list, including copy mode; inspect bytes at the Docker boundary.
+        for mode, filename in (("live", "apps.json"), ("copy", "apps-copy.json")):
+            with self.subTest(mode=mode):
+                apps = [{"url": "https://github.com/frappe/hrms", "branch": "fixture"}]
+                code, err, calls = self.run_in_layout({filename: apps}, mode=mode)
+                self.assertEqual(code, 0, err)
+                payloads = [
+                    json.loads(line.removeprefix("apps-secret:"))
+                    for line in calls.splitlines()
+                    if line.startswith("apps-secret:")
+                ]
+                self.assertEqual(payloads, [apps])
+                build = next(
+                    shlex.split(line) for line in calls.splitlines()
+                    if line.startswith("buildx build ")
+                )
+                build_args = [
+                    build[i + 1].split("=", 1)[0]
+                    for i, arg in enumerate(build) if arg == "--build-arg"
+                ]
+                self.assertNotIn("APPS_JSON", build_args)
 
     def test_node_heap_defaults_to_900_and_follows_node_heap_mb(self):
         hrms = [{"url": "https://github.com/frappe/hrms", "branch": "v16.50.0"}]
