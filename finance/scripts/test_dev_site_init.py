@@ -8,13 +8,21 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from dev_site_init import SWITCHES
-
 ROOT = Path(__file__).resolve().parents[2]
 COMPOSE = ROOT / "finance/deploy/finance-coolify.dev.yml"
 IMAGE = "registry.example.test/finance@sha256:" + "a" * 64
+REQUIRED_SWITCHES = {
+    "FINANCE_MUTE_EMAILS": "1",
+    "FINANCE_PAUSE_SCHEDULER": "1",
+    "FINANCE_DISABLE_EXTERNAL_INTEGRATIONS": "1",
+}
+EXPECTED_SITE_FLAGS = {
+    "mute_emails": 1,
+    "pause_scheduler": 1,
+    "disable_external_integrations": 1,
+}
 ENV = {
-    **{name: "1" for name in SWITCHES},
+    **REQUIRED_SWITCHES,
     "FINANCE_DEV_IMAGE": IMAGE,
     "DB_ROOT_PASSWORD": "invented-root",
 }
@@ -43,7 +51,7 @@ class InitTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "site_config.json"
             original = '{"db_name": "invented_dev", "mute_emails": 0}'
-            for name in SWITCHES:
+            for name in REQUIRED_SWITCHES:
                 for value in (None, "", "0", "true", " 1", "2"):
                     with self.subTest(name=name, value=value):
                         environment = dict(ENV)
@@ -84,7 +92,7 @@ class InitTests(unittest.TestCase):
                     json.loads(path.read_text()),
                     {
                         "db_name": "invented_dev",
-                        **{key: 1 for key in SWITCHES.values()},
+                        **EXPECTED_SITE_FLAGS,
                     },
                 )
                 self.assertEqual(list(path.parent.iterdir()), [path])
@@ -149,7 +157,8 @@ class ComposeTests(unittest.TestCase):
                     self.assertNotEqual(service.get("pull_policy"), "never")
         init = services["dev-init"]
         self.assertEqual(init["environment"]["FINANCE_DEV_IMAGE"], IMAGE)
-        self.assertTrue(all(init["environment"][key] == "1" for key in SWITCHES))
+        for key, value in REQUIRED_SWITCHES.items():
+            self.assertEqual(init["environment"][key], value)
         self.assertEqual(
             Path(config["configs"]["dev-site-init"]["file"]),
             ROOT / "finance/scripts/dev_site_init.py",
@@ -163,7 +172,7 @@ class ComposeTests(unittest.TestCase):
             )
 
     def test_required_env(self):
-        for key in ("FINANCE_DEV_IMAGE", *SWITCHES):
+        for key in ("FINANCE_DEV_IMAGE", *REQUIRED_SWITCHES):
             with self.subTest(key=key):
                 self.assertNotEqual(self.render({**ENV, key: ""}).returncode, 0)
 
