@@ -121,7 +121,7 @@ class ComposeTests(unittest.TestCase):
             [*args, "config", "--format", "json"],
             cwd=ROOT,
             env={
-                **os.environ,
+                **{k: v for k, v in os.environ.items() if k != "COMPOSE_PROFILES"},
                 **environment,
                 "COMPOSE_ENV_FILES": "",
                 "COMPOSE_DISABLE_ENV_FILE": "1",

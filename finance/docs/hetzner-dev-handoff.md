@@ -55,8 +55,7 @@ needed to apply the three startup flags.
 Startup order is `dev-init` alone, then DB/Redis/configurator, then
 backend/websocket after configurator, then frontend after backend/websocket.
 Workers are off by default (next paragraph). Every service directly depends on
-successful init. Init
-validates all three variables are exactly `1` and validates the digest before
+successful init. Init validates all three variables are exactly `1` and validates the digest before
 writing anything. It atomically replaces `sites/frontend/site_config.json`,
 preserving existing keys while writing numeric `mute_emails=1`,
 `pause_scheduler=1`, and `disable_external_integrations=1`. Any failure holds
