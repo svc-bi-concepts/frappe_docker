@@ -1,10 +1,10 @@
 # Finance repo: local operations
 
-- **Colima sleeps** after about 10 idle minutes; its Docker socket exists only while it runs.
-  Before Docker, run `/Users/bsaladin/ws_yardr/integrations/bin/colima-wake --hold <min> --reason <what>`;
-  hold longer than the job, then `export DOCKER_HOST=unix:///Users/bsaladin/.colima/default/docker.sock`.
-  A missing `/var/run/docker.sock` is not an outage. Never stop or restart Colima.
-  Until erp-xfem lands, `.yardr/check` also needs this explicit wake and socket setup.
+- **Docker runs on the default context.** If `docker info` does not answer, hold the bead
+  with the error and tell the yardmaster; never start, stop or reconfigure the runtime.
+  **Temporary, until IT finishes the switch away from Colima:** run
+  `/Users/bsaladin/ws_yardr/integrations/bin/colima-wake --hold <min> --reason <what>`
+  (hold longer than the job), then `export DOCKER_HOST=unix:///Users/bsaladin/.colima/default/docker.sock`.
 - **CI is local; GitHub Actions is off on purpose.** IT's ci-bridge runs via launchd every 5 minutes.
   Its log is `/Users/bsaladin/ws_yardr/integrations/state/ci-bridge.log`.
   It posts `finance tests / host-tests` and `Lint / lint` commit statuses on main and open PRs.
