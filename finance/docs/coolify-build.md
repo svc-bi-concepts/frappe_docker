@@ -57,3 +57,75 @@ build runs on the mini; static tests and `.yardr/check-host.sh` cover this
 change there. IT's first Coolify dev run must prove the full image build and
 baked test run before enabling the replacement check. Production deployment
 and image pinning belong to erp-mnkv.
+
+## Three results in one dev gate run (erp-s4c6 / yard-x1sn)
+
+IT runs the second entrypoint on the isolated **dev gate runner**, from the
+exact PR-head checkout used to build the image. It runs all three checks,
+including those after a failure. It does not install tools into the `finance`
+production image. No GitHub Actions enablement or production deployment is
+involved.
+
+Prerequisites match the workflow contracts:
+
+- `python3` uses the Python version and `jinja2` dependency selected in
+  `.github/workflows/finance-tests.yml`. The checkout includes Git metadata
+  (the host gate uses `git grep`) and all tracked files.
+- `pre-commit` is installed in a separate environment using the Python version
+  selected in `.github/workflows/lint.yml`, with its executable on PATH. Keep `python` and
+  `python3` on PATH for system hooks and the host tests, respectively.
+- Git, OpenSSL, Go 1.x, Docker CLI with Compose v2, and access to the dev
+  runner's existing rootless daemon are available. Pre-commit needs network
+  access to install the hooks from `.pre-commit-config.yaml` and fetch the
+  configured hadolint image. All hooks run unchanged; none are skipped.
+- The runner has its own writable HOME, pre-commit cache and scratch directory.
+  No production credentials, private exports, site volumes, published ports,
+  privileged containers or Docker socket mounts are needed. Host Compose
+  checks only render configurations; they start no stack.
+
+After building target `finance` from that checkout, resolve its immutable image
+digest and run on the dev runner (paths and digest are supplied by IT):
+
+```sh
+python3 finance/scripts/dev-gate.py \
+  --image 'registry.example.test/finance@sha256:<built-image-digest>' \
+  --results /run-specific-scratch/gate-results.json
+```
+
+Replace the example digest before executing the command. The results
+path belongs to this run; a previous file is cleared before any check starts.
+Relative result paths resolve from the caller's directory. Checks always run
+from the entrypoint's checkout root. Do not run this inside the finance image:
+the host checks and Docker-backed lint belong on the dev runner, without
+mounting a daemon socket into a container.
+
+| Result name    | Command                                                                                                          | Exit code                  |
+| -------------- | ---------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| `frappe-tests` | `docker run --rm --network none --entrypoint sh <image> /home/frappe/frappe-bench/finance/scripts/gate-tests.sh` | Baked runner's exit status |
+| `host-tests`   | `sh .yardr/check-host.sh`                                                                                        | Host gate's exit status    |
+| `lint`         | `pre-commit run --color=always --all-files` with `GO111MODULE=on`                                                | Pre-commit's exit status   |
+
+Each result is an object with `name`, integer `exit_code` and a short `summary`
+(`PASS (exit 0)` or `FAIL (exit N)`). The JSON file is an array, updated after
+each completed check. The same object is printed as a `dev-gate-result: ` JSON
+line in stdout. Test counts and hook details stream to the run log. Missing
+executables report 127, other launch errors 126, and signals use 128 plus the
+signal number. The entrypoint exits **0 only when all three pass**, otherwise
+**1**; invocation/output errors also fail the command. A missing or incomplete
+array, failed build, interrupted run or missing result is never success. Lint
+clears an inherited `SKIP` so an operator environment cannot omit hooks.
+
+IT's poster must validate exactly these three unique names, require all exit
+codes to be zero, and bind the checkout SHA and built image digest to the PR
+head. One green `frappe-tests` result cannot stand in for either other result.
+The existing `finance/frappe-gate` status and the two bridge rows remain in
+place until IT proves the same-SHA comparison and switches their posting.
+This bead supplies execution/results, not the Coolify resource or poster.
+No new artifacts are published: retain the JSON and combined run log with
+the existing private gate evidence, under IT's retention policy.
+
+The separate local `private/check-real-amounts.sh` remains required before
+push; it is a privacy check, not one of these workflow jobs. Its private data
+is never copied to the dev runner. A real hosted build and three-job run are
+verified by IT; local regression tests exercise the entrypoint with isolated
+CLI stand-ins.

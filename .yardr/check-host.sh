@@ -123,4 +123,4 @@ done
 # The D4 patch check (update-check.sh): invented tag lists, the upstream replaced, no network.
 # swiss-setup.py's pure helpers (frappe mocked): the payslip and the hr steps among them.
 # The structure remake's plan (frappe mocked): create, move, restore, the wrapper's project.
-(cd finance/scripts && python3 -m unittest test_build_image test_switch_image test_gate_image test_copy_stack test_update_check test_load_swiss_rates test_swiss_setup test_swiss_structure_remake test_bexio_drafts test_swiss_vat test_site_check test_public_check test_create_api_user test_run_frappe_mcp test_gate_modules test_gate_tests test_gate_check)
+(cd finance/scripts && python3 -m unittest test_build_image test_switch_image test_gate_image test_copy_stack test_update_check test_load_swiss_rates test_swiss_setup test_swiss_structure_remake test_bexio_drafts test_swiss_vat test_site_check test_public_check test_create_api_user test_run_frappe_mcp test_gate_modules test_gate_tests test_gate_check test_dev_gate)
