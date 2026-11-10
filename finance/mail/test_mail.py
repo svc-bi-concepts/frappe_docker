@@ -163,7 +163,9 @@ class DraftNewTest(unittest.TestCase):
                 "body": "Hello <b>there</b>\nSecond line",
             },
         )
-        self.assertEqual((did, link, attached), ("draft-1", "https://example.test/d1", 0))
+        self.assertEqual(
+            (did, link, attached), ("draft-1", "https://example.test/d1", 0)
+        )
         ((method, url, _, data),) = fake.sent("POST")[:1]
         self.assertEqual(url, PREFIX + "messages")
         msg = json.loads(data)
@@ -807,7 +809,12 @@ class DraftFilesTest(unittest.TestCase):
     def new_draft(self, g, paths):
         return mail.draft_new(
             g,
-            {"subject": "S", "to": ["a@example.test"], "body": "x", "attachments": paths},
+            {
+                "subject": "S",
+                "to": ["a@example.test"],
+                "body": "x",
+                "attachments": paths,
+            },
         )
 
     def test_two_files_are_posted_after_the_signature_image(self):
@@ -838,13 +845,16 @@ class DraftFilesTest(unittest.TestCase):
         g, fake = graph_with({"id": "draft-1", "isDraft": True}, {}, {})
         self.new_draft(g, [odd])
         self.assertEqual(
-            json.loads(fake.sent("POST")[2][3])["contentType"], "application/octet-stream"
+            json.loads(fake.sent("POST")[2][3])["contentType"],
+            "application/octet-stream",
         )
 
     def test_command_prints_the_count_and_never_the_content(self):
         g, _ = graph_with(
             {"id": "draft-1", "isDraft": True, "webLink": "https://example.test/d1"},
-            {}, {}, {},
+            {},
+            {},
+            {},
         )
         out = io.StringIO()
         with unittest.mock.patch.object(
@@ -860,7 +870,8 @@ class DraftFilesTest(unittest.TestCase):
             args = mail.parser().parse_args(["draft-new"])
             args.run(g, args, out)
         self.assertEqual(
-            out.getvalue(), "draft: draft-1\nwebLink: https://example.test/d1\nattached: 2\n"
+            out.getvalue(),
+            "draft: draft-1\nwebLink: https://example.test/d1\nattached: 2\n",
         )
 
     def assertRefusedBeforeAnyCall(self, paths, words):
@@ -881,7 +892,9 @@ class DraftFilesTest(unittest.TestCase):
         relative = os.path.relpath(self.pdf)
         for path in (outside, escape, link, relative, self.private + "-twin/x.pdf"):
             with self.subTest(path=path):
-                msg = self.assertRefusedBeforeAnyCall([self.pdf, path], "attachments[1]")
+                msg = self.assertRefusedBeforeAnyCall(
+                    [self.pdf, path], "attachments[1]"
+                )
                 self.assertIn("not a file under", msg)
                 self.assertNotIn("outside", msg)
 
@@ -912,7 +925,10 @@ class DraftFilesTest(unittest.TestCase):
 
     def test_failed_file_post_leaves_draft_tracked_and_counts_what_attached(self):
         g, _ = graph_with(
-            {"id": "draft-1", "isDraft": True}, {}, {}, GraphError("POST", 413, "TooLarge")
+            {"id": "draft-1", "isDraft": True},
+            {},
+            {},
+            GraphError("POST", 413, "TooLarge"),
         )
         with self.assertRaises(MailError) as ctx:
             self.new_draft(g, [self.pdf, self.sheet])
@@ -921,8 +937,12 @@ class DraftFilesTest(unittest.TestCase):
 
     def guarded(self, *rest):
         g, fake = graph_with(
-            {"id": "draft-x", "isDraft": True, "parentFolderId": "folder-drafts",
-             "webLink": "https://example.test/x"},
+            {
+                "id": "draft-x",
+                "isDraft": True,
+                "parentFolderId": "folder-drafts",
+                "webLink": "https://example.test/x",
+            },
             {"id": "folder-drafts"},
             *rest,
         )
