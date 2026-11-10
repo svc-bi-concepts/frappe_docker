@@ -914,11 +914,31 @@ class DraftFilesTest(unittest.TestCase):
         self.assertEqual(opened, [os.path.realpath(self.pdf)])
 
     def test_file_over_3_mb_is_refused(self):
-        big = self.file("invoices/big.pdf", b"x" * (mail.MAX_FILE + 1))
-        self.assertRefusedBeforeAnyCall([big], "over 3 MB")
-        exact = self.file("invoices/exact.pdf", b"x" * mail.MAX_FILE)
-        g, _ = graph_with({"id": "draft-1", "isDraft": True}, {}, {})
-        self.assertEqual(self.new_draft(g, [exact])[2], 1)
+        big = self.file("invoices/big.pdf", b"x" * 3_145_729)
+        exact = self.file("invoices/exact.pdf", b"x" * 3_145_728)
+        for command in ("draft-new", "draft-update"):
+            with self.subTest(command=command):
+                if command == "draft-new":
+                    self.assertRefusedBeforeAnyCall([big], "over 3 MB")
+                    g, fake = graph_with({"id": "draft-1", "isDraft": True}, {}, {})
+                    attached = self.new_draft(g, [exact])[2]
+                else:
+                    g, fake = self.guarded({})
+                    self.track(g)
+                    with self.assertRaises(MailError) as ctx:
+                        mail.draft_update(g, "draft-x", {"attachments": [big]})
+                    self.assertEqual(ctx.exception.code, 2)
+                    self.assertIn("over 3 MB", str(ctx.exception))
+                    self.assertEqual(fake.calls, [])
+                    attached = mail.draft_update(
+                        g, "draft-x", {"attachments": [exact]}
+                    )[1]
+                self.assertEqual(attached, 1)
+                attachment = json.loads(fake.sent("POST")[-1][3])
+                self.assertEqual(attachment["name"], "exact.pdf")
+                self.assertEqual(
+                    base64.b64decode(attachment["contentBytes"]), b"x" * 3_145_728
+                )
 
     def test_missing_file_or_directory_is_refused(self):
         missing = os.path.join(self.private, "invoices", "missing.pdf")
@@ -1010,16 +1030,47 @@ class DraftFilesTest(unittest.TestCase):
         self.assertEqual(ctx.exception.code, 2)
         self.assertEqual(fake.calls, [])
 
-    def test_allow_list_is_unchanged(self):
-        self.assertEqual(
-            [(m, r.pattern) for m, r in mail.DRAFT_WRITES],
-            [
-                ("POST", r"^messages$"),
-                ("POST", r"^messages/[^/]+/(createReply|createReplyAll|attachments)$"),
-                ("PATCH", r"^messages/[^/]+$"),
-                ("DELETE", r"^messages/[^/]+$"),
-            ],
+    def test_only_existing_draft_operations_reach_transport(self):
+        allowed_writes = {
+            ("POST", "messages"),
+            ("POST", "messages/draft-x/createReply"),
+            ("POST", "messages/draft-x/createReplyAll"),
+            ("POST", "messages/draft-x/attachments"),
+            ("PATCH", "messages/draft-x"),
+            ("PATCH", "messages/untracked"),
+            ("DELETE", "messages/draft-x"),
+        }
+        paths = (
+            "messages",
+            "messages/draft-x",
+            "messages/untracked",
+            "messages/draft-x/createReply",
+            "messages/draft-x/createReplyAll",
+            "messages/draft-x/attachments",
+            "messages/draft-x/attachments/attachment-x",
+            "messages/draft-x/attachments/createUploadSession",
+            "messages/draft-x/send",
+            "messages/draft-x/move",
+            "messages/draft-x/copy",
+            "messages/draft-x/permanentDelete",
+            "sendMail",
+            "mailFolders/drafts/messages",
         )
+        g, fake = graph_with()
+        self.track(g)
+        for method in ("GET", "POST", "PATCH", "DELETE", "PUT"):
+            for path in paths:
+                for query in ("", "?$select=id"):
+                    with self.subTest(method=method, path=path, query=query):
+                        fake.calls.clear()
+                        url = PREFIX + path + query
+                        if method == "GET" or (method, path) in allowed_writes:
+                            self.assertEqual(g._send(method, url, {}, b"{}"), b"{}")
+                            self.assertEqual(fake.calls, [(method, url, {}, b"{}")])
+                        else:
+                            with self.assertRaises(MailError):
+                                g._send(method, url, {}, b"{}")
+                            self.assertEqual(fake.calls, [])
 
 
 class RefusalTest(unittest.TestCase):
