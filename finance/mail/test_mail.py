@@ -898,6 +898,21 @@ class DraftFilesTest(unittest.TestCase):
                 self.assertIn("not a file under", msg)
                 self.assertNotIn("outside", msg)
 
+    def test_link_inside_private_opens_the_checked_target(self):
+        link = os.path.join(self.private, "invented-link.pdf")
+        os.symlink(self.pdf, link)
+        opened = []
+        real_open = open
+
+        def spy(path, *a, **kw):
+            opened.append(path)
+            return real_open(path, *a, **kw)
+
+        with unittest.mock.patch("builtins.open", spy):
+            ((name, data),) = mail.load_files([link])
+        self.assertEqual((name, data), ("invented-link.pdf", b"%PDF-invented"))
+        self.assertEqual(opened, [os.path.realpath(self.pdf)])
+
     def test_file_over_3_mb_is_refused(self):
         big = self.file("invoices/big.pdf", b"x" * (mail.MAX_FILE + 1))
         self.assertRefusedBeforeAnyCall([big], "over 3 MB")

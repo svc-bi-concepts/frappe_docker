@@ -93,7 +93,7 @@ MAX_IMG = 1024 * 1024
 # A file attachment goes up in one POST, and Graph takes those up to 3 MB; an upload session is not built.
 MAX_FILE = 3 * 1024 * 1024
 
-# The only writes: new/reply drafts, draft-update, draft-delete, and signature images.
+# The only writes: new/reply drafts, draft-update, draft-delete, and attachments (signature images, named files).
 # Paths are relative to the mailbox. DELETE also requires a tracked draft. No send or move.
 DRAFT_WRITES = (
     ("POST", re.compile(r"^messages$")),
@@ -652,15 +652,17 @@ def load_files(paths):
     root = os.path.realpath(PRIVATE) + os.sep
     files = []
     for i, path in enumerate(paths):
-        # realpath first: a symlink or ../ that leaves private/ is refused like any other path.
-        if not os.path.isabs(path) or not os.path.realpath(path).startswith(root):
+        # realpath first: a symlink or ../ that leaves private/ is refused like any other path. The
+        # checked path is the one opened, so a link changed after the check is not followed.
+        real = os.path.realpath(path)
+        if not os.path.isabs(path) or not real.startswith(root):
             raise MailError("attachments[%d] is not a file under %s" % (i, PRIVATE), 2)
         try:
-            if not os.path.isfile(path):
+            if not os.path.isfile(real):
                 raise MailError("attachments[%d] is missing or not a file" % i, 2)
-            if os.path.getsize(path) > MAX_FILE:
+            if os.path.getsize(real) > MAX_FILE:
                 raise MailError("attachments[%d] is over 3 MB: Graph takes no larger file in one POST" % i, 2)
-            with open(path, "rb") as f:
+            with open(real, "rb") as f:
                 data = f.read(MAX_FILE + 1)
         except OSError:
             raise MailError("attachments[%d] cannot be read" % i, 2)
