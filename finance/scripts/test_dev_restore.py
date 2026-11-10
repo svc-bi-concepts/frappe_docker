@@ -314,7 +314,9 @@ class ScriptTests(unittest.TestCase):
         result = self.run_script("db")
         self.assertEqual(result.returncode, 0, result.stderr)
         stdin_log = Path(str(self.log) + ".stdin").read_text()
-        self.assertIn(f"CREATE USER 'root'@'%' IDENTIFIED BY '{ROOT_PASSWORD}'", stdin_log)
+        self.assertIn(
+            f"CREATE USER 'root'@'%' IDENTIFIED BY '{ROOT_PASSWORD}'", stdin_log
+        )
         self.assertIn("GRANT ALL ON *.* TO 'root'@'%' WITH GRANT OPTION", stdin_log)
         for host in ("127.0.0.1", "::1", "localhost"):
             with self.subTest(host=host):
