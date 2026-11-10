@@ -188,7 +188,9 @@ class ComposeTests(unittest.TestCase):
 
     def test_label_contract_accepts_equivalent_yaml_sequences(self):
         for entry in (
-            "traefik.enable=false", "'traefik.enable=false'", '"traefik.enable=false"'
+            "traefik.enable=false",
+            "'traefik.enable=false'",
+            '"traefik.enable=false"',
         ):
             self.assert_label_contract(
                 yaml.safe_load("services:\n  sample:\n    labels:\n      - " + entry)
@@ -355,12 +357,17 @@ class ScriptTests(unittest.TestCase):
         self.assertNotIn(password, result.stdout + result.stderr)
 
     def test_failed_extraction_leaves_no_site_config(self):
-        for suffix, role in (("-files.tar", "public"), ("-private-files.tar", "private")):
+        for suffix, role in (
+            ("-files.tar", "public"),
+            ("-private-files.tar", "private"),
+        ):
             with self.subTest(role=role):
                 contents = members()
                 contents[f"{PREFIX}{suffix}"] = b"not a tar archive\n"
                 self.write_bundle(contents)
-                result = self.run_script("files", {"FINANCE_DEV_RESTORE_OVERWRITE": "1"})
+                result = self.run_script(
+                    "files", {"FINANCE_DEV_RESTORE_OVERWRITE": "1"}
+                )
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn(f"cannot extract the {role} files", result.stderr)
                 self.assertNotIn("frontend/site_config.json", self.site_files())
@@ -379,7 +386,9 @@ esac
 """)
         result = self.run_script("db")
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("database import failed: 2 error line(s), not shown", result.stderr)
+        self.assertIn(
+            "database import failed: 2 error line(s), not shown", result.stderr
+        )
         self.assertEqual(Path(str(self.log) + ".scratch").read_text(), "")
         self.assertEqual(list(self.scratch.iterdir()), [])
 
@@ -407,10 +416,12 @@ exit 1
     def test_successful_database_tools_do_not_forward_output(self):
         for name in ("mariadb-install-db", "mariadbd", "mariadb", "mariadb-admin"):
             stub = self.stubs / name
-            stub.write_text(STUB_RECORD.replace(
-                "#!/bin/sh\n",
-                "#!/bin/sh\necho RAW_TOOL_DIAGNOSTIC\necho RAW_TOOL_DIAGNOSTIC >&2\n",
-            ))
+            stub.write_text(
+                STUB_RECORD.replace(
+                    "#!/bin/sh\n",
+                    "#!/bin/sh\necho RAW_TOOL_DIAGNOSTIC\necho RAW_TOOL_DIAGNOSTIC >&2\n",
+                )
+            )
         result = self.run_script("db")
         self.assertEqual(result.returncode, 0, result.stderr)
 
@@ -420,7 +431,8 @@ exit 1
         tar = self.stubs / "tar"
         tar.write_text(
             '#!/bin/sh\necho RAW_TOOL_DIAGNOSTIC >&2\nexec "'
-            + shutil.which("tar") + '" "$@"\n'
+            + shutil.which("tar")
+            + '" "$@"\n'
         )
         tar.chmod(0o755)
         for mode in ("db", "files"):
