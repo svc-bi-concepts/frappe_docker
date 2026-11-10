@@ -15,6 +15,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[2]
 COMPOSE = ROOT / "finance/deploy/finance-coolify.dev.yml"
 SCRIPT = ROOT / "finance/scripts/dev_restore.sh"
@@ -45,7 +47,10 @@ RESTORE = ("restore-db", "restore-files")
 
 STUB_AGE = """#!/bin/sh
 # Decrypts nothing: the synthetic bundle is plain tar. Fails when the test asks for a decrypt failure.
-[ "${AGE_STUB_FAIL:-0}" = 1 ] && exit 1
+if [ "${AGE_STUB_FAIL:-0}" = 1 ]; then
+  echo RAW_TOOL_DIAGNOSTIC >&2
+  exit 1
+fi
 for last; do :; done
 cat "$last"
 """
@@ -169,22 +174,32 @@ class ComposeTests(unittest.TestCase):
                     "restore-files", json.dumps(service.get("depends_on", {}))
                 )
 
-    def test_labels_are_list_form_in_source(self):
-        # Coolify's raw parser appends numeric label entries, which compose refuses in a mapping but takes as list
-        # items (note 3782). Compose renders both forms the same, so the source file is read here.
-        lines = COMPOSE.read_text().splitlines()
-        blocks = [i for i, line in enumerate(lines) if line.strip() == "labels:"]
-        self.assertFalse(
-            [line for line in lines if line.strip().startswith("traefik.enable:")]
-        )
-        for i in blocks:
-            with self.subTest(line=i + 1):
-                self.assertEqual(lines[i + 1].strip(), "- traefik.enable=false")
+    def assert_label_contract(self, document):
+        for name, service in document["services"].items():
+            self.assertIsInstance(service["labels"], list, name)
+            self.assertIn("traefik.enable=false", service["labels"], name)
+
+    def test_labels_are_list_form(self):
+        self.assert_label_contract(yaml.safe_load(COMPOSE.read_text()))
         services = json.loads(self.render(("restore", "workers")).stdout)["services"]
-        self.assertEqual(len(blocks), len(services))
         for name, service in services.items():
             with self.subTest(service=name):
                 self.assertEqual(service["labels"], {"traefik.enable": "false"})
+
+    def test_label_contract_accepts_equivalent_yaml_sequences(self):
+        for entry in (
+            "traefik.enable=false", "'traefik.enable=false'", '"traefik.enable=false"'
+        ):
+            self.assert_label_contract(
+                yaml.safe_load("services:\n  sample:\n    labels:\n      - " + entry)
+            )
+
+    def test_label_contract_rejects_mapping(self):
+        document = yaml.safe_load(
+            'services:\n  sample:\n    labels:\n      traefik.enable: "false"'
+        )
+        with self.assertRaises(AssertionError):
+            self.assert_label_contract(document)
 
     def test_restore_inputs_are_external(self):
         volumes = json.loads(self.render(("restore",)).stdout)["volumes"]
@@ -232,6 +247,8 @@ class ScriptTests(unittest.TestCase):
         self.stubs = self.tmp / "stubs"
         self.stubs.mkdir()
         self.log = self.tmp / "stub.log"
+        self.scratch = self.tmp / "scratch"
+        self.scratch.mkdir()
 
         age = self.staging / "tools" / "age"
         age.write_text(STUB_AGE)
@@ -268,6 +285,7 @@ class ScriptTests(unittest.TestCase):
         environment = {
             "PATH": f"{self.stubs}{os.pathsep}{os.environ.get('PATH', '')}",
             "HOME": str(self.tmp),
+            "TMPDIR": str(self.scratch),
             "STUB_LOG": str(self.log),
             "DB_ROOT_PASSWORD": ROOT_PASSWORD,
             "DEV_RESTORE_STAGING": str(self.staging),
@@ -278,7 +296,7 @@ class ScriptTests(unittest.TestCase):
         if use_pin:
             environment["DEV_RESTORE_AGE_SHA256"] = self.pin
         environment.update(env_extra or {})
-        return subprocess.run(
+        result = subprocess.run(
             ["bash", str(SCRIPT), mode],
             env=environment,
             # The stubs read their stdin to the end: an open terminal or pipe of the caller would hold them forever.
@@ -287,6 +305,12 @@ class ScriptTests(unittest.TestCase):
             text=True,
             timeout=120,
         )
+        output = result.stdout + result.stderr
+        for secret in (PREFIX, *SOURCE_CONFIG.values(), "RAW_TOOL_DIAGNOSTIC"):
+            self.assertNotIn(secret, output)
+        for line in output.splitlines():
+            self.assertTrue(line.startswith("restore: "), line)
+        return result
 
     def stub_calls(self):
         return self.log.read_text() if self.log.exists() else ""
@@ -331,14 +355,78 @@ class ScriptTests(unittest.TestCase):
         self.assertNotIn(password, result.stdout + result.stderr)
 
     def test_failed_extraction_leaves_no_site_config(self):
-        # dev-init starts the resource once site_config.json exists: a half-restored site must not have one.
-        contents = members()
-        contents[f"{PREFIX}-private-files.tar"] = b"not a tar archive\n"
-        self.write_bundle(contents)
-        result = self.run_script("files")
+        for suffix, role in (("-files.tar", "public"), ("-private-files.tar", "private")):
+            with self.subTest(role=role):
+                contents = members()
+                contents[f"{PREFIX}{suffix}"] = b"not a tar archive\n"
+                self.write_bundle(contents)
+                result = self.run_script("files", {"FINANCE_DEV_RESTORE_OVERWRITE": "1"})
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(f"cannot extract the {role} files", result.stderr)
+                self.assertNotIn("frontend/site_config.json", self.site_files())
+
+    def test_import_errors_are_counted_without_diagnostic_files(self):
+        stub = self.stubs / "mariadb"
+        stub.write_text(STUB_RECORD.removesuffix("exit 0\n") + """
+case "$*" in
+  *--database=*)
+    echo RAW_TOOL_DIAGNOSTIC >&2
+    echo RAW_TOOL_DIAGNOSTIC >&2
+    find "$TMPDIR" -type f >"$STUB_LOG.scratch"
+    exit 1
+    ;;
+esac
+""")
+        result = self.run_script("db")
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("cannot extract the private files", result.stderr)
-        self.assertNotIn("frontend/site_config.json", self.site_files())
+        self.assertIn("database import failed: 2 error line(s), not shown", result.stderr)
+        self.assertEqual(Path(str(self.log) + ".scratch").read_text(), "")
+        self.assertEqual(list(self.scratch.iterdir()), [])
+
+    def test_database_tool_diagnostics_are_suppressed(self):
+        sleep = self.stubs / "sleep"
+        sleep.write_text("#!/bin/sh\nexit 0\n")
+        sleep.chmod(0o755)
+        for name in ("mariadb-install-db", "mariadbd", "mariadb", "mariadb-admin"):
+            stub = self.stubs / name
+            original = stub.read_text()
+            stub.write_text("""#!/bin/sh
+find "$TMPDIR" -type f >"$STUB_LOG.scratch"
+echo RAW_TOOL_DIAGNOSTIC
+echo RAW_TOOL_DIAGNOSTIC >&2
+exit 1
+""")
+            with self.subTest(tool=name):
+                result = self.run_script("db", {"FINANCE_DEV_RESTORE_OVERWRITE": "1"})
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("restore:", result.stderr)
+                self.assertEqual(Path(str(self.log) + ".scratch").read_text(), "")
+                self.assertEqual(list(self.scratch.iterdir()), [])
+            stub.write_text(original)
+
+    def test_successful_database_tools_do_not_forward_output(self):
+        for name in ("mariadb-install-db", "mariadbd", "mariadb", "mariadb-admin"):
+            stub = self.stubs / name
+            stub.write_text(STUB_RECORD.replace(
+                "#!/bin/sh\n",
+                "#!/bin/sh\necho RAW_TOOL_DIAGNOSTIC\necho RAW_TOOL_DIAGNOSTIC >&2\n",
+            ))
+        result = self.run_script("db")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_tar_diagnostics_are_suppressed(self):
+        import shutil
+
+        tar = self.stubs / "tar"
+        tar.write_text(
+            '#!/bin/sh\necho RAW_TOOL_DIAGNOSTIC >&2\nexec "'
+            + shutil.which("tar") + '" "$@"\n'
+        )
+        tar.chmod(0o755)
+        for mode in ("db", "files"):
+            with self.subTest(mode=mode):
+                result = self.run_script(mode)
+                self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_files_success_writes_site_and_attachments(self):
         result = self.run_script("files")
@@ -464,38 +552,32 @@ class ScriptTests(unittest.TestCase):
                 self.assertEqual(list(self.datadir.iterdir()), [])
 
     def test_member_checksum_mismatch_fails_before_any_write(self):
-        contents = members()
-        manifest = "\n".join(
-            (
-                f"{'c' * 64}  {name}"
-                if name.endswith("-files.tar")
-                else f"{sha256(data)}  {name}"
-            )
-            for name, data in contents.items()
-        )
-        self.write_bundle(contents, manifest_override=manifest + "\n")
-        result = self.run_script("files")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("does not match its checksum", result.stderr)
-        self.assertEqual(self.site_files(), [])
+        for bad_member in members():
+            with self.subTest(member=bad_member):
+                contents = members()
+                manifest = "\n".join(
+                    f"{'c' * 64 if name == bad_member else sha256(data)}  {name}"
+                    for name, data in contents.items()
+                )
+                self.write_bundle(contents, manifest_override=manifest + "\n")
+                result = self.run_script("files")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("does not match its checksum", result.stderr)
+                self.assertEqual(self.site_files(), [])
 
     def test_missing_member_fails(self):
-        contents = members()
-        ghost = f"{PREFIX}-private-files.tar"
-        manifest = "\n".join(
-            (
-                f"{'d' * 64}  {PREFIX}-ghost-private-files.tar"
-                if name == ghost
-                else f"{sha256(data)}  {name}"
-            )
-            for name, data in contents.items()
-        )
-        contents.pop(ghost)
-        self.write_bundle(contents, manifest_override=manifest + "\n")
-        result = self.run_script("db")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("missing from the archive", result.stderr)
-        self.assertEqual(list(self.datadir.iterdir()), [])
+        for missing in members():
+            with self.subTest(member=missing):
+                contents = members()
+                manifest = "\n".join(
+                    f"{sha256(data)}  {name}" for name, data in contents.items()
+                )
+                contents.pop(missing)
+                self.write_bundle(contents, manifest_override=manifest + "\n")
+                result = self.run_script("db")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("missing from the archive", result.stderr)
+                self.assertEqual(list(self.datadir.iterdir()), [])
 
     def test_decrypt_failure_is_reported(self):
         result = self.run_script("db", {"AGE_STUB_FAIL": "1"})

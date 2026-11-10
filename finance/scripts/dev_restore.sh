@@ -14,12 +14,15 @@
 # The backup's site configuration is checked like every member and then never read: it holds the source site's
 # encryption_key and database credentials, and none of them belongs on dev (handoff doc, section 3). The site
 # configuration written here is dev's own.
-set -euo pipefail
+set -Eeuo pipefail
+exec 3>&2 2>/dev/null
 
 die() {
-  echo "restore: $*" >&2
+  echo "restore: $*" >&3
   exit 1
 }
+
+trap 'die "operation failed"' ERR
 
 # A MariaDB started here is stopped on every exit, so a failed restore leaves no server behind.
 PID=
@@ -63,17 +66,17 @@ esac
 case "$(uname -m)" in
 x86_64 | amd64) AGE_SHA256=eb7dd1b518f0a307c99cd97782623c5321da049154b04acd2d98d21aa7bc9b2c ;;
 aarch64 | arm64) AGE_SHA256=41b072352f4561018949623c674d16ef704019b9108a9bbdbd21292efebfc94f ;;
-*) die "no pinned age binary for $(uname -m)" ;;
+*) die "no pinned age binary for this architecture" ;;
 esac
 AGE_SHA256=${DEV_RESTORE_AGE_SHA256:-$AGE_SHA256}
 
 [ -f "$CIPHERTEXT" ] && [ -f "$STAGING/finance-dev-backup.tar.age.sha256" ] ||
   die "staging has no finance-dev-backup.tar.age with its .sha256"
 [ -x "$AGE" ] || die "staging has no executable tools/age"
-[ -s "$IDENTITY" ] || die "no age identity at $IDENTITY"
+[ -s "$IDENTITY" ] || die "no age identity supplied"
 printf '%s  %s\n' "$AGE_SHA256" "$AGE" | sha256sum -c - >/dev/null ||
-  die "tools/age does not match the pinned age v1.3.2 hash for $(uname -m)"
-(cd "$STAGING" && sha256sum -c finance-dev-backup.tar.age.sha256) ||
+  die "tools/age does not match the pinned age v1.3.2 hash"
+(cd "$STAGING" && sha256sum -c finance-dev-backup.tar.age.sha256 >/dev/null) ||
   die "the ciphertext does not match finance-dev-backup.tar.age.sha256"
 
 # The decrypted archive on stdout; the plaintext exists only inside this pipe.
@@ -108,10 +111,10 @@ pick() {
   printf '%s\n' "$matches"
 }
 
-DB_LINE=$(pick database '$2 ~ /-database\.sql\.gz$/')
-CONF_LINE=$(pick site_config '$2 ~ /-site_config_backup\.json$/')
-FILES_LINE=$(pick public_files '$2 ~ /-files\.tar$/ && $2 !~ /-private-files\.tar$/')
-PRIV_LINE=$(pick private_files '$2 ~ /-private-files\.tar$/')
+DB_LINE=$(pick 'database dump' '$2 ~ /-database\.sql\.gz$/')
+CONF_LINE=$(pick 'site config' '$2 ~ /-site_config_backup\.json$/')
+FILES_LINE=$(pick 'public files archive' '$2 ~ /-files\.tar$/ && $2 !~ /-private-files\.tar$/')
+PRIV_LINE=$(pick 'private files archive' '$2 ~ /-private-files\.tar$/')
 read -r DB_HASH DB_MEMBER <<<"$DB_LINE"
 read -r CONF_HASH CONF_MEMBER <<<"$CONF_LINE"
 read -r FILES_HASH FILES_MEMBER <<<"$FILES_LINE"
@@ -119,16 +122,16 @@ read -r PRIV_HASH PRIV_MEMBER <<<"$PRIV_LINE"
 
 # Every member is checked before the first write: present in the archive, and of the checksum the manifest gives.
 check_member() {
-  listed "$2" || die "$2 is listed in SHA256SUMS but missing from the archive"
+  listed "$2" || die "$3 is listed in SHA256SUMS but missing from the archive"
   local got
-  got=$(member "$2" | sha256sum) || die "cannot read $2 from the archive"
-  [ "${got%% *}" = "$1" ] || die "$2 does not match its checksum in SHA256SUMS"
-  echo "restore: verified $2 sha256 ${got%% *}"
+  got=$(member "$2" | sha256sum) || die "cannot read $3 from the archive"
+  [ "${got%% *}" = "$1" ] || die "$3 does not match its checksum in SHA256SUMS"
+  echo "restore: verified $3 sha256 ${got%% *}"
 }
-check_member "$DB_HASH" "$DB_MEMBER"
-check_member "$CONF_HASH" "$CONF_MEMBER"
-check_member "$FILES_HASH" "$FILES_MEMBER"
-check_member "$PRIV_HASH" "$PRIV_MEMBER"
+check_member "$DB_HASH" "$DB_MEMBER" "database dump"
+check_member "$CONF_HASH" "$CONF_MEMBER" "site config"
+check_member "$FILES_HASH" "$FILES_MEMBER" "public files archive"
+check_member "$PRIV_HASH" "$PRIV_MEMBER" "private files archive"
 
 # Dev's own database credentials for the site. The two services share no writable volume, so the password cannot be
 # drawn at random in one and handed to the other: both derive it from the dev root password, which already opens
@@ -149,19 +152,16 @@ sql_string() {
 restore_db() {
   # Everything is validated before the datadir is touched: a refusal must leave the volume as it was.
   if [ -n "$(ls -A "$DATADIR")" ]; then
-    [ "$OVERWRITE" = 1 ] || die "$DATADIR is not empty: refusing to replace the database (FINANCE_DEV_RESTORE_OVERWRITE=1 replaces it)"
+    [ "$OVERWRITE" = 1 ] || die "database target is not empty: refusing to replace the database (FINANCE_DEV_RESTORE_OVERWRITE=1 replaces it)"
     find "$DATADIR" -mindepth 1 -delete
   fi
 
   SOCKDIR=$(mktemp -d)
   chmod 0777 "$SOCKDIR" # mariadbd runs as mysql and creates its socket here
   SOCKET=$SOCKDIR/mysqld.sock
-  mariadb-install-db --user=mysql --datadir="$DATADIR" --skip-test-db >"$SOCKDIR/install.log" 2>&1 ||
-    {
-      cat "$SOCKDIR/install.log" >&2
-      die "mariadb-install-db failed"
-    }
-  mariadbd --user=mysql --datadir="$DATADIR" --socket="$SOCKET" --skip-networking &
+  mariadb-install-db --user=mysql --datadir="$DATADIR" --skip-test-db >/dev/null ||
+    die "mariadb-install-db failed"
+  mariadbd --user=mysql --datadir="$DATADIR" --socket="$SOCKET" --skip-networking >/dev/null &
   PID=$!
   for _ in $(seq 60); do
     mariadb-admin --socket="$SOCKET" ping >/dev/null 2>&1 && break
@@ -170,16 +170,17 @@ restore_db() {
   mariadb-admin --socket="$SOCKET" ping >/dev/null 2>&1 || die "mariadbd did not answer on its socket"
 
   mariadb_root() {
-    mariadb --socket="$SOCKET" --user=root "$@"
+    mariadb --socket="$SOCKET" --user=root "$@" >/dev/null
   }
   {
     echo "CREATE DATABASE $DB_NAME CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
     echo "CREATE USER '$DB_NAME'@'%' IDENTIFIED BY '$DB_PASSWORD';"
     echo "GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_NAME'@'%';"
   } | mariadb_root || die "could not create the site database and its user"
-  # The client's errors can quote row values, so they go to a file and only their count is printed.
-  if ! member "$DB_MEMBER" | gzip -dc | mariadb_root --database="$DB_NAME" 2>"$SOCKDIR/import.err"; then
-    die "database import failed: $(grep -c . "$SOCKDIR/import.err" || true) error line(s), not shown"
+  local errors
+  if ! errors=$({ member "$DB_MEMBER" | gzip -dc | mariadb_root --database="$DB_NAME"; } 2>&1 |
+    awk 'NF { n++ } END { print n + 0 }'); then
+    die "database import failed: $errors error line(s), not shown"
   fi
   # The accounts the db service's entrypoint creates on a fresh volume, and skips on one that holds a database:
   # root with the dev root password, also from the network (MARIADB_ROOT_HOST defaults to %), and the healthcheck
@@ -204,15 +205,15 @@ restore_db() {
     printf '[mariadb-client]\nport=3306\nsocket=/run/mysqld/mysqld.sock\nuser=healthcheck\npassword=%s\n' \
       "$health_password" >"$DATADIR/.my-healthcheck.cnf"
   ) || die "cannot write .my-healthcheck.cnf"
-  MYSQL_PWD=$DB_ROOT_PASSWORD mariadb-admin --socket="$SOCKET" --user=root shutdown || die "mariadbd did not shut down"
+  MYSQL_PWD=$DB_ROOT_PASSWORD mariadb-admin --socket="$SOCKET" --user=root shutdown >/dev/null || die "mariadbd did not shut down"
   wait "$PID" || die "mariadbd exited with an error"
   PID=
-  echo "restore: database restored into $DATADIR"
+  echo "restore: database restored"
 }
 
 restore_files() {
   if [ -e "$SITES/$SITE" ] || [ -n "$(find "$SITES" -mindepth 2 -maxdepth 2 -name site_config.json)" ]; then
-    [ "$OVERWRITE" = 1 ] || die "$SITES already holds a site: refusing to replace it (FINANCE_DEV_RESTORE_OVERWRITE=1 replaces $SITE)"
+    [ "$OVERWRITE" = 1 ] || die "sites target already holds a site: refusing to replace it (FINANCE_DEV_RESTORE_OVERWRITE=1 replaces the dev site)"
     rm -rf -- "${SITES:?}/$SITE"
   fi
   SITE_DIR=$SITES/$SITE
@@ -232,7 +233,7 @@ restore_files() {
       "$DB_NAME" "$DB_PASSWORD" >"$SITE_DIR/site_config.json.partial"
   ) || die "cannot write site_config.json"
   mv "$SITE_DIR/site_config.json.partial" "$SITE_DIR/site_config.json"
-  echo "restore: site restored into $SITE_DIR"
+  echo "restore: site restored"
 }
 
 case "$MODE" in
