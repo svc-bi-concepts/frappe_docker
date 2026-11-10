@@ -77,6 +77,12 @@ stops with a message and leaves both volumes as they were. Plaintext never becom
 Refusals. The database restore refuses a non-empty `db-data`, and the site restore refuses a volume that already holds a
 site (the image's own seed files in `sites` do not count). Set `FINANCE_DEV_RESTORE_OVERWRITE=1` only to replace a
 restore that failed part-way, and then run both services again. It empties `db-data` and removes `sites/frontend`.
+The site restore writes `site_config.json` after both file archives, so a site that failed part-way has none and
+`dev-init` keeps the resource stopped.
+
+The `db` service's entrypoint initialises only an empty volume, so the database restore creates what that
+initialisation would have: `root` at `localhost` and `%` with `DB_ROOT_PASSWORD`, and the `healthcheck` users with a
+random password in `db-data/.my-healthcheck.cnf`. Without them the `db` healthcheck fails on a restored volume.
 
 The site configuration is dev's own, as section 3 requires. The restore checks the backup's
 `<prefix>-site_config_backup.json` like every member and then never reads it: no `encryption_key`, database credential,

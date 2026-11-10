@@ -308,6 +308,36 @@ class ScriptTests(unittest.TestCase):
         self.assertIn("ALTER USER 'root'@'localhost'", stdin_log)
         self.assertIn("mariadbd --user=mysql", self.stub_calls())
 
+    def test_db_sets_up_the_accounts_a_fresh_db_volume_has(self):
+        # The db service's entrypoint skips its init on a volume that holds a database, so without these its
+        # healthcheck.sh fails on every restored volume (probed in mariadb:11.8).
+        result = self.run_script("db")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        stdin_log = Path(str(self.log) + ".stdin").read_text()
+        self.assertIn(f"CREATE USER 'root'@'%' IDENTIFIED BY '{ROOT_PASSWORD}'", stdin_log)
+        self.assertIn("GRANT ALL ON *.* TO 'root'@'%' WITH GRANT OPTION", stdin_log)
+        for host in ("127.0.0.1", "::1", "localhost"):
+            with self.subTest(host=host):
+                self.assertIn(f"CREATE USER 'healthcheck'@'{host}'", stdin_log)
+        cnf = self.datadir / ".my-healthcheck.cnf"
+        self.assertEqual(cnf.stat().st_mode & 0o777, 0o600)
+        lines = cnf.read_text().splitlines()
+        self.assertEqual(lines[0], "[mariadb-client]")
+        self.assertIn("user=healthcheck", lines)
+        password = next(line for line in lines if line.startswith("password="))
+        self.assertIn(f"IDENTIFIED BY '{password[len('password='):]}'", stdin_log)
+        self.assertNotIn(password, result.stdout + result.stderr)
+
+    def test_failed_extraction_leaves_no_site_config(self):
+        # dev-init starts the resource once site_config.json exists: a half-restored site must not have one.
+        contents = members()
+        contents[f"{PREFIX}-private-files.tar"] = b"not a tar archive\n"
+        self.write_bundle(contents)
+        result = self.run_script("files")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cannot extract the private files", result.stderr)
+        self.assertNotIn("frontend/site_config.json", self.site_files())
+
     def test_files_success_writes_site_and_attachments(self):
         result = self.run_script("files")
         self.assertEqual(result.returncode, 0, result.stderr)

@@ -181,9 +181,29 @@ restore_db() {
   if ! member "$DB_MEMBER" | gzip -dc | mariadb_root --database="$DB_NAME" 2>"$SOCKDIR/import.err"; then
     die "database import failed: $(grep -c . "$SOCKDIR/import.err" || true) error line(s), not shown"
   fi
-  # The root account gets the dev root password here, as the db service would set it on a fresh volume.
-  printf "ALTER USER 'root'@'localhost' IDENTIFIED BY %s;\n" "$(sql_string "$DB_ROOT_PASSWORD")" | mariadb_root ||
-    die "could not set the root password"
+  # The accounts the db service's entrypoint creates on a fresh volume, and skips on one that holds a database:
+  # root with the dev root password, also from the network (MARIADB_ROOT_HOST defaults to %), and the healthcheck
+  # users with their .my-healthcheck.cnf. Without them the db service's healthcheck.sh fails on every restored volume.
+  # Port and socket are the image defaults, which the db service does not change.
+  local root_password health_password host
+  root_password=$(sql_string "$DB_ROOT_PASSWORD")
+  health_password=$(head -c 32 /dev/urandom | sha256sum)
+  health_password=${health_password%% *}
+  {
+    echo "CREATE USER 'root'@'%' IDENTIFIED BY $root_password;"
+    echo "GRANT ALL ON *.* TO 'root'@'%' WITH GRANT OPTION;"
+    echo "GRANT PROXY ON ''@'%' TO 'root'@'%' WITH GRANT OPTION;"
+    for host in 127.0.0.1 ::1 localhost; do
+      echo "CREATE USER 'healthcheck'@'$host' IDENTIFIED BY '$health_password';"
+      echo "GRANT USAGE ON *.* TO 'healthcheck'@'$host';"
+    done
+    echo "ALTER USER 'root'@'localhost' IDENTIFIED BY $root_password;"
+  } | mariadb_root || die "could not set up the root and healthcheck accounts"
+  (
+    umask 077
+    printf '[mariadb-client]\nport=3306\nsocket=/run/mysqld/mysqld.sock\nuser=healthcheck\npassword=%s\n' \
+      "$health_password" >"$DATADIR/.my-healthcheck.cnf"
+  ) || die "cannot write .my-healthcheck.cnf"
   MYSQL_PWD=$DB_ROOT_PASSWORD mariadb-admin --socket="$SOCKET" --user=root shutdown || die "mariadbd did not shut down"
   wait "$PID" || die "mariadbd exited with an error"
   PID=
@@ -199,6 +219,10 @@ restore_files() {
   mkdir -p "$SITE_DIR/public" "$SITE_DIR/private"
   # The archives hold sites/<site>/public/files and sites/<site>/private/files, as Frappe writes them; stripping two
   # levels puts them where bench restore extracts them (installer.py extract_files).
+  member "$FILES_MEMBER" | tar -xf - --strip-components=2 -C "$SITE_DIR" || die "cannot extract the public files"
+  member "$PRIV_MEMBER" | tar -xf - --strip-components=2 -C "$SITE_DIR" || die "cannot extract the private files"
+  # site_config.json comes last: dev-init starts the resource only when it exists, so a failed extraction above must
+  # leave none behind.
   # No key of the backup's configuration is carried over. Without an encryption_key Frappe draws a new one on first
   # use, so passwords stored in the restored database do not decrypt on dev, which is intended. host_name and
   # disable_scheduler are the dev values of the off-switch sequence (handoff doc, section 2), which still runs.
@@ -208,8 +232,6 @@ restore_files() {
       "$DB_NAME" "$DB_PASSWORD" >"$SITE_DIR/site_config.json.partial"
   ) || die "cannot write site_config.json"
   mv "$SITE_DIR/site_config.json.partial" "$SITE_DIR/site_config.json"
-  member "$FILES_MEMBER" | tar -xf - --strip-components=2 -C "$SITE_DIR" || die "cannot extract the public files"
-  member "$PRIV_MEMBER" | tar -xf - --strip-components=2 -C "$SITE_DIR" || die "cannot extract the private files"
   echo "restore: site restored into $SITE_DIR"
 }
 
