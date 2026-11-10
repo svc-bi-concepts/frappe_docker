@@ -12,22 +12,27 @@ Talks to Microsoft Graph as the yardr-finance app, with the client-credentials t
 certificate that finance/sharepoint/sp_read.py uses. Reads are GET under the mailbox. The
 writes are drafts only: a new draft (POST messages), a reply draft (createReply, then PATCH of
 that draft's own body), draft-update (PATCH subject/body), draft-delete (DELETE of a tracked
-draft), and the signature's inline images on a draft (POST attachments).
+draft), and attachments on a draft (POST attachments): the signature's inline images, and the
+local files a draft's JSON names.
 Every request goes through Graph._send, which allows those and the token POST, and nothing
 else: no send, no move, no delete except the tool's own drafts, no other mailbox.
 
     finance/mail/mail.py list [--folder inbox] [--top 10] [--from X] [--since 2026-10-01] [--search "..."]
     finance/mail/mail.py read <id> [--links | --json | --attachment NAME --out DIR]
     finance/mail/mail.py list [--before YYYY-MM-DD]
-    finance/mail/mail.py draft-new          < {"subject", "to", "cc"?, "body", "contentType"?}
+    finance/mail/mail.py draft-new          < {"subject", "to", "cc"?, "body", "contentType"?, "attachments"?}
     finance/mail/mail.py draft-reply <id> [--all]  < {"body", "contentType"?}
-    finance/mail/mail.py draft-update <id>       < {"subject"?, "body"?, "contentType"?}
+    finance/mail/mail.py draft-update <id>       < {"subject"?, "body"?, "contentType"?, "attachments"?}
     finance/mail/mail.py draft-delete <id>
     finance/mail/mail.py contacts
 
 draft-update replaces the whole body with our text and the current signature. A tracked reply
 allows subject changes only; delete it and make a new draft-reply to change its body. draft-delete
 requires a draft made by this tool. Both commands require the message to be in Drafts.
+"attachments" is a list of absolute paths of files under private/, each at most 3 MB (Graph's
+limit for one POST; no upload session). They are checked before any Graph call and attached as
+files after the signature; draft-update attaches only to a draft this tool made, and adds them
+next to what the draft already carries. The output gives their count, never their content.
 Draft ownership is kept in private/graph-cert/mail-drafts.json (mode 600, ids/kind/creation time
 only). An image failure leaves the draft tracked, so it can still be updated or deleted.
 
@@ -49,6 +54,7 @@ import fcntl
 import hashlib
 import html
 import json
+import mimetypes
 import os
 import re
 import stat
@@ -84,6 +90,8 @@ IMG_TYPE = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".
 CID = re.compile(r"cid:([^\s\"'<>]+)", re.I)
 CID_SAFE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._@-]{0,127}$")  # a cid becomes a file name
 MAX_IMG = 1024 * 1024
+# A file attachment goes up in one POST, and Graph takes those up to 3 MB; an upload session is not built.
+MAX_FILE = 3 * 1024 * 1024
 
 # The only writes: new/reply drafts, draft-update, draft-delete, and signature images.
 # Paths are relative to the mailbox. DELETE also requires a tracked draft. No send or move.
@@ -633,6 +641,52 @@ def attach_images(graph, did, images):
                             % (did, err), 1)
 
 
+def load_files(paths):
+    """[(name, bytes)] of the files a draft's JSON names: absolute paths that resolve under private/,
+    each a readable file of at most 3 MB. Checked before any Graph call, so a refusal leaves no draft.
+    A refusal names the file's place in the list, never its path or content."""
+    if paths is None:
+        return []
+    if not isinstance(paths, list) or not all(isinstance(p, str) and p for p in paths):
+        raise MailError("input: attachments needs a list of file paths", 2)
+    root = os.path.realpath(PRIVATE) + os.sep
+    files = []
+    for i, path in enumerate(paths):
+        # realpath first: a symlink or ../ that leaves private/ is refused like any other path.
+        if not os.path.isabs(path) or not os.path.realpath(path).startswith(root):
+            raise MailError("attachments[%d] is not a file under %s" % (i, PRIVATE), 2)
+        try:
+            if not os.path.isfile(path):
+                raise MailError("attachments[%d] is missing or not a file" % i, 2)
+            if os.path.getsize(path) > MAX_FILE:
+                raise MailError("attachments[%d] is over 3 MB: Graph takes no larger file in one POST" % i, 2)
+            with open(path, "rb") as f:
+                data = f.read(MAX_FILE + 1)
+        except OSError:
+            raise MailError("attachments[%d] cannot be read" % i, 2)
+        if len(data) > MAX_FILE:  # it grew after the size check
+            raise MailError("attachments[%d] is over 3 MB: Graph takes no larger file in one POST" % i, 2)
+        files.append((os.path.basename(path), data))
+    return files
+
+
+def file_attachment(name, data):
+    """A Graph fileAttachment, not inline: the file's base name, its type guessed from the extension."""
+    return {"@odata.type": "#microsoft.graph.fileAttachment", "name": name,
+            "contentType": mimetypes.guess_type(name)[0] or "application/octet-stream",
+            "contentBytes": base64.b64encode(data).decode()}
+
+
+def attach_files(graph, did, files):
+    for i, (name, data) in enumerate(files):
+        try:
+            graph.add_attachment(did, file_attachment(name, data))
+        except GraphError as err:
+            raise MailError("draft %s stands with %d of %d files attached (%s)"
+                            % (did, i, len(files), err), 1)
+    return len(files)
+
+
 def recipients(addrs):
     return [{"emailAddress": {"address": a}} for a in addrs]
 
@@ -683,12 +737,14 @@ def draft_ok(m, source=None):
 
 
 def draft_new(graph, draft):
-    """A new draft: our text, the signature, its inline images. Returns (draft id, webLink)."""
+    """A new draft: our text, the signature, its inline images, then the named files.
+    Returns (draft id, webLink, files attached)."""
     if not isinstance(draft, dict) or not isinstance(draft.get("subject"), str) or not draft.get("subject"):
         raise MailError("input: JSON needs subject", 2)
     to = valid_addresses("to", draft.get("to"))
     cc = valid_addresses("cc", draft["cc"]) if draft.get("cc") else None
     text, ctype = parse_body(draft)
+    files = load_files(draft.get("attachments"))
     sig, images = load_signature()
     message = {"subject": draft["subject"],
                "body": {"contentType": "HTML", "content": compose(body_html(text, ctype), sig)},
@@ -699,7 +755,8 @@ def draft_new(graph, draft):
     did = draft_ok(m)
     track_draft(graph, did, "new")
     attach_images(graph, did, images)
-    return did, m.get("webLink") or ""
+    attached = attach_files(graph, did, files)
+    return did, m.get("webLink") or "", attached
 
 
 def draft_reply(graph, source, reply_all, draft):
@@ -803,8 +860,8 @@ def cmd_read(graph, args, out):
 
 
 def cmd_draft_new(graph, args, out):
-    did, link = draft_new(graph, read_input())
-    out.write("draft: %s\nwebLink: %s\n" % (did, link))
+    did, link, attached = draft_new(graph, read_input())
+    out.write("draft: %s\nwebLink: %s\nattached: %d\n" % (did, link, attached))
 
 
 def cmd_draft_reply(graph, args, out):
@@ -813,7 +870,7 @@ def cmd_draft_reply(graph, args, out):
 
 
 def guard_draft(graph, did):
-    m = graph.message(did, "id,isDraft,parentFolderId")
+    m = graph.message(did, "id,isDraft,parentFolderId,webLink")
     folder = graph.call("GET", graph.url("mailFolders/drafts", {"$select": "id"}))
     if m.get("isDraft") is not True:
         raise MailError("refused: the message is not a draft", 2)
@@ -823,12 +880,16 @@ def guard_draft(graph, did):
 
 
 def draft_update(graph, did, draft):
-    if not isinstance(draft, dict) or not any(k in draft for k in ("subject", "body")):
-        raise MailError("input: JSON needs subject and/or body", 2)
+    """Returns (webLink, files attached)."""
+    if not isinstance(draft, dict) or not any(k in draft for k in ("subject", "body", "attachments")):
+        raise MailError("input: JSON needs subject, body and/or attachments", 2)
     if "subject" in draft and not isinstance(draft["subject"], str):
         raise MailError("input: subject must be text", 2)
+    files = load_files(draft.get("attachments"))
     record = next((d for d in load_drafts(graph.drafts_path) if d.get("id") == did), None)
-    guard_draft(graph, did)
+    if files and not record:
+        raise MailError("refused: files attach only to a draft this tool made", 2)
+    m = guard_draft(graph, did)
     if "body" in draft and record and record.get("kind") == "reply":
         raise MailError("refused: delete it and make a new draft-reply", 2)
     payload = {}
@@ -843,15 +904,17 @@ def draft_update(graph, did, draft):
             for a in graph.attachments(did, content_ids=True)
             if a.get("contentId")
         }
-    updated = graph.call("PATCH", graph.url("messages/%s" % quote_id(did)), payload)
+    # Files alone change nothing a PATCH would carry: the draft keeps its subject and body.
+    updated = graph.call("PATCH", graph.url("messages/%s" % quote_id(did)), payload) if payload else m
     if "body" in draft:
         attach_images(graph, did, [(cid, data) for cid, data in images if cid not in cids])
-    return updated.get("webLink") or ""
+    attached = attach_files(graph, did, files)
+    return updated.get("webLink") or "", attached
 
 
 def cmd_draft_update(graph, args, out):
-    link = draft_update(graph, args.id, read_input())
-    out.write("draft: %s\nwebLink: %s\n" % (args.id, link))
+    link, attached = draft_update(graph, args.id, read_input())
+    out.write("draft: %s\nwebLink: %s\nattached: %d\n" % (args.id, link, attached))
 
 
 def cmd_draft_delete(graph, args, out):

@@ -155,7 +155,7 @@ class DraftNewTest(unittest.TestCase):
         g, fake = graph_with(
             {"id": "draft-1", "isDraft": True, "webLink": "https://example.test/d1"}, {}
         )
-        did, link = mail.draft_new(
+        did, link, attached = mail.draft_new(
             g,
             {
                 "subject": "Invented subject",
@@ -163,7 +163,7 @@ class DraftNewTest(unittest.TestCase):
                 "body": "Hello <b>there</b>\nSecond line",
             },
         )
-        self.assertEqual((did, link), ("draft-1", "https://example.test/d1"))
+        self.assertEqual((did, link, attached), ("draft-1", "https://example.test/d1", 0))
         ((method, url, _, data),) = fake.sent("POST")[:1]
         self.assertEqual(url, PREFIX + "messages")
         msg = json.loads(data)
@@ -487,8 +487,8 @@ class DraftMutationTest(unittest.TestCase):
             {"id": "draft-x", "webLink": "https://example.test/d"},
         )
         self.state(g)
-        link = mail.draft_update(g, "draft-x", {"body": "Invented update"})
-        self.assertEqual(link, "https://example.test/d")
+        link, attached = mail.draft_update(g, "draft-x", {"body": "Invented update"})
+        self.assertEqual((link, attached), ("https://example.test/d", 0))
         self.assertEqual([c[0] for c in fake.calls], ["GET", "GET", "GET", "PATCH"])
         payload = json.loads(fake.sent("PATCH")[0][3])
         self.assertEqual(payload["body"]["contentType"], "HTML")
@@ -609,7 +609,8 @@ class DraftMutationTest(unittest.TestCase):
             mail.compose("<p>Invented HTML</p>", changed_sig),
         )
         self.assertEqual(
-            out.getvalue(), "draft: draft-x\nwebLink: https://example.test/updated\n"
+            out.getvalue(),
+            "draft: draft-x\nwebLink: https://example.test/updated\nattached: 0\n",
         )
 
     def test_subject_only_update_is_allowed_on_tracked_reply(self):
@@ -777,6 +778,213 @@ class DraftMutationTest(unittest.TestCase):
                 mail.load_drafts(g.drafts_path)
             with self.assertRaises(MailError):
                 mail.save_drafts([], g.drafts_path)
+
+
+class DraftFilesTest(unittest.TestCase):
+    """Local files named in a draft's JSON: only under private/, at most 3 MB, checked before any call."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp)
+        self.private = os.path.join(self.tmp, "private")
+        os.makedirs(os.path.join(self.private, "invoices"))
+        for name, value in (
+            ("SIGNATURE_DIR", signature_dir(self.tmp)),
+            ("PRIVATE", self.private),
+        ):
+            patch = unittest.mock.patch.object(mail, name, value)
+            patch.start()
+            self.addCleanup(patch.stop)
+        self.pdf = self.file("invoices/invented-invoice.pdf", b"%PDF-invented")
+        self.sheet = self.file("invoices/invented-timesheet.xlsx", b"PK-invented")
+
+    def file(self, rel, data, root=None):
+        path = os.path.join(root or self.private, rel)
+        with open(path, "wb") as f:
+            f.write(data)
+        return path
+
+    def new_draft(self, g, paths):
+        return mail.draft_new(
+            g,
+            {"subject": "S", "to": ["a@example.test"], "body": "x", "attachments": paths},
+        )
+
+    def test_two_files_are_posted_after_the_signature_image(self):
+        g, fake = graph_with({"id": "draft-1", "isDraft": True}, {}, {}, {})
+        _, _, attached = self.new_draft(g, [self.pdf, self.sheet])
+        self.assertEqual(attached, 2)
+        posts = fake.sent("POST")
+        self.assertEqual(len(posts), 4)
+        self.assertEqual(
+            {p[1] for p in posts[1:]}, {PREFIX + "messages/draft-1/attachments"}
+        )
+        self.assertTrue(json.loads(posts[1][3])["isInline"])
+        pdf, sheet = (json.loads(p[3]) for p in posts[2:])
+        self.assertEqual(pdf["@odata.type"], "#microsoft.graph.fileAttachment")
+        self.assertEqual(pdf["name"], "invented-invoice.pdf")
+        self.assertEqual(pdf["contentType"], "application/pdf")
+        self.assertEqual(base64.b64decode(pdf["contentBytes"]), b"%PDF-invented")
+        self.assertNotIn("isInline", pdf)
+        self.assertEqual(sheet["name"], "invented-timesheet.xlsx")
+        self.assertEqual(base64.b64decode(sheet["contentBytes"]), b"PK-invented")
+
+    def test_unknown_type_goes_up_as_octet_stream(self):
+        odd = self.file("invoices/invented.zzinvented", b"invented")
+        self.assertEqual(
+            mail.file_attachment("invented.zzinvented", b"x")["contentType"],
+            "application/octet-stream",
+        )
+        g, fake = graph_with({"id": "draft-1", "isDraft": True}, {}, {})
+        self.new_draft(g, [odd])
+        self.assertEqual(
+            json.loads(fake.sent("POST")[2][3])["contentType"], "application/octet-stream"
+        )
+
+    def test_command_prints_the_count_and_never_the_content(self):
+        g, _ = graph_with(
+            {"id": "draft-1", "isDraft": True, "webLink": "https://example.test/d1"},
+            {}, {}, {},
+        )
+        out = io.StringIO()
+        with unittest.mock.patch.object(
+            mail,
+            "read_input",
+            return_value={
+                "subject": "S",
+                "to": ["a@example.test"],
+                "body": "x",
+                "attachments": [self.pdf, self.sheet],
+            },
+        ):
+            args = mail.parser().parse_args(["draft-new"])
+            args.run(g, args, out)
+        self.assertEqual(
+            out.getvalue(), "draft: draft-1\nwebLink: https://example.test/d1\nattached: 2\n"
+        )
+
+    def assertRefusedBeforeAnyCall(self, paths, words):
+        g, fake = graph_with()
+        with self.assertRaises(MailError) as ctx:
+            self.new_draft(g, paths)
+        self.assertEqual(ctx.exception.code, 2)
+        self.assertIn(words, str(ctx.exception))
+        self.assertEqual(fake.calls, [])
+        self.assertEqual(mail.load_drafts(g.drafts_path), [])
+        return str(ctx.exception)
+
+    def test_file_outside_private_is_refused(self):
+        outside = self.file("outside.pdf", b"invented", root=self.tmp)
+        escape = os.path.join(self.private, "invoices", "..", "..", "outside.pdf")
+        link = os.path.join(self.private, "invoices", "link.pdf")
+        os.symlink(outside, link)
+        relative = os.path.relpath(self.pdf)
+        for path in (outside, escape, link, relative, self.private + "-twin/x.pdf"):
+            with self.subTest(path=path):
+                msg = self.assertRefusedBeforeAnyCall([self.pdf, path], "attachments[1]")
+                self.assertIn("not a file under", msg)
+                self.assertNotIn("outside", msg)
+
+    def test_file_over_3_mb_is_refused(self):
+        big = self.file("invoices/big.pdf", b"x" * (mail.MAX_FILE + 1))
+        self.assertRefusedBeforeAnyCall([big], "over 3 MB")
+        exact = self.file("invoices/exact.pdf", b"x" * mail.MAX_FILE)
+        g, _ = graph_with({"id": "draft-1", "isDraft": True}, {}, {})
+        self.assertEqual(self.new_draft(g, [exact])[2], 1)
+
+    def test_missing_file_or_directory_is_refused(self):
+        missing = os.path.join(self.private, "invoices", "missing.pdf")
+        self.assertRefusedBeforeAnyCall([missing], "missing or not a file")
+        self.assertRefusedBeforeAnyCall(
+            [os.path.join(self.private, "invoices")], "missing or not a file"
+        )
+
+    def test_unreadable_file_is_refused(self):
+        if os.geteuid() == 0:
+            self.skipTest("root reads any file")
+        os.chmod(self.pdf, 0)
+        self.assertRefusedBeforeAnyCall([self.pdf], "cannot be read")
+
+    def test_attachments_must_be_a_list_of_paths(self):
+        for value in (self.pdf, [None], [""], {"a": self.pdf}):
+            with self.subTest(value=value):
+                self.assertRefusedBeforeAnyCall(value, "list of file paths")
+
+    def test_failed_file_post_leaves_draft_tracked_and_counts_what_attached(self):
+        g, _ = graph_with(
+            {"id": "draft-1", "isDraft": True}, {}, {}, GraphError("POST", 413, "TooLarge")
+        )
+        with self.assertRaises(MailError) as ctx:
+            self.new_draft(g, [self.pdf, self.sheet])
+        self.assertIn("1 of 2 files attached", str(ctx.exception))
+        self.assertEqual(mail.load_drafts(g.drafts_path)[0]["id"], "draft-1")
+
+    def guarded(self, *rest):
+        g, fake = graph_with(
+            {"id": "draft-x", "isDraft": True, "parentFolderId": "folder-drafts",
+             "webLink": "https://example.test/x"},
+            {"id": "folder-drafts"},
+            *rest,
+        )
+        return g, fake
+
+    def track(self, g, kind="new"):
+        mail.save_drafts(
+            [{"id": "draft-x", "kind": kind, "created": "2042-03-04T00:00:00+00:00"}],
+            g.drafts_path,
+        )
+
+    def test_update_attaches_files_to_a_tracked_draft_without_a_patch(self):
+        for kind in ("new", "reply"):
+            with self.subTest(kind=kind):
+                g, fake = self.guarded({}, {})
+                self.track(g, kind)
+                link, attached = mail.draft_update(
+                    g, "draft-x", {"attachments": [self.pdf, self.sheet]}
+                )
+                self.assertEqual((link, attached), ("https://example.test/x", 2))
+                self.assertFalse(fake.sent("PATCH"))
+                self.assertEqual(
+                    [json.loads(p[3])["name"] for p in fake.sent("POST")],
+                    ["invented-invoice.pdf", "invented-timesheet.xlsx"],
+                )
+
+    def test_update_with_subject_patches_then_attaches(self):
+        g, fake = self.guarded({"webLink": "https://example.test/patched"}, {})
+        self.track(g)
+        link, attached = mail.draft_update(
+            g, "draft-x", {"subject": "Invented", "attachments": [self.pdf]}
+        )
+        self.assertEqual((link, attached), ("https://example.test/patched", 1))
+        self.assertEqual([c[0] for c in fake.calls], ["GET", "GET", "PATCH", "POST"])
+
+    def test_update_refuses_files_for_an_untracked_draft_before_any_call(self):
+        g, fake = self.guarded()
+        with self.assertRaises(MailError) as ctx:
+            mail.draft_update(g, "draft-x", {"attachments": [self.pdf]})
+        self.assertEqual(ctx.exception.code, 2)
+        self.assertEqual(fake.calls, [])
+
+    def test_update_refuses_a_bad_file_before_any_call(self):
+        g, fake = self.guarded()
+        self.track(g)
+        with self.assertRaises(MailError) as ctx:
+            mail.draft_update(
+                g, "draft-x", {"subject": "Invented", "attachments": ["/etc/hosts"]}
+            )
+        self.assertEqual(ctx.exception.code, 2)
+        self.assertEqual(fake.calls, [])
+
+    def test_allow_list_is_unchanged(self):
+        self.assertEqual(
+            [(m, r.pattern) for m, r in mail.DRAFT_WRITES],
+            [
+                ("POST", r"^messages$"),
+                ("POST", r"^messages/[^/]+/(createReply|createReplyAll|attachments)$"),
+                ("PATCH", r"^messages/[^/]+$"),
+                ("DELETE", r"^messages/[^/]+$"),
+            ],
+        )
 
 
 class RefusalTest(unittest.TestCase):
