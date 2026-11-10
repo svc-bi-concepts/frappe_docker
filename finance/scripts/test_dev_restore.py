@@ -20,23 +20,26 @@ COMPOSE = ROOT / "finance/deploy/finance-coolify.dev.yml"
 SCRIPT = ROOT / "finance/scripts/dev_restore.sh"
 IMAGE = "registry.example.test/finance@sha256:" + "a" * 64
 PREFIX = "20260101_000000-frontend"
-DB_NAME = "_fx1234abcd"
-DB_PASSWORD = "Fx7kQ2pL9mRz0aB3"
-MEMBERS = {
-    f"{PREFIX}-database.sql.gz": None,  # filled in below: gzip of an invented table
-    f"{PREFIX}-site_config_backup.json": json.dumps(
-        {"db_name": DB_NAME, "db_password": DB_PASSWORD, "encryption_key": "invented"},
-        indent=1,
-    ).encode(),
-    f"{PREFIX}-files.tar": None,
-    f"{PREFIX}-private-files.tar": None,
+ROOT_PASSWORD = "invented-root"
+# What the restore gives the dev site: a fixed name and a password derived from the dev root password.
+DB_NAME = "finance_dev"
+DB_PASSWORD = hashlib.sha256(
+    b"finance-dev site database user\n" + ROOT_PASSWORD.encode()
+).hexdigest()
+# The source site's configuration, all invented. None of its values may reach dev.
+SOURCE_CONFIG = {
+    "db_name": "_fx1234abcd",
+    "db_password": "Fx7kQ2pL9mRz0aB3",
+    "encryption_key": "Zx9InventedSourceKey0000000000000000000000=",
+    "host_name": "https://source.example.test",
+    "mail_password": "invented-mail-secret",
 }
 ENV = {
     "FINANCE_DEV_IMAGE": IMAGE,
     "FINANCE_MUTE_EMAILS": "1",
     "FINANCE_PAUSE_SCHEDULER": "1",
     "FINANCE_DISABLE_EXTERNAL_INTEGRATIONS": "1",
-    "DB_ROOT_PASSWORD": "invented-root",
+    "DB_ROOT_PASSWORD": ROOT_PASSWORD,
 }
 RESTORE = ("restore-db", "restore-files")
 
@@ -77,9 +80,9 @@ def members():
     private = tar_bytes({"sites/frontend/private/files/invented.txt": b"invented\n"})
     return {
         f"{PREFIX}-database.sql.gz": dump,
-        f"{PREFIX}-site_config_backup.json": MEMBERS[
-            f"{PREFIX}-site_config_backup.json"
-        ],
+        f"{PREFIX}-site_config_backup.json": json.dumps(
+            SOURCE_CONFIG, indent=1
+        ).encode(),
         f"{PREFIX}-files.tar": public,
         f"{PREFIX}-private-files.tar": private,
     }
@@ -266,7 +269,7 @@ class ScriptTests(unittest.TestCase):
             "PATH": f"{self.stubs}{os.pathsep}{os.environ.get('PATH', '')}",
             "HOME": str(self.tmp),
             "STUB_LOG": str(self.log),
-            "DB_ROOT_PASSWORD": "invented-root",
+            "DB_ROOT_PASSWORD": ROOT_PASSWORD,
             "DEV_RESTORE_STAGING": str(self.staging),
             "DEV_RESTORE_IDENTITY": str(self.identity),
             "DEV_RESTORE_DATADIR": str(self.datadir),
@@ -278,6 +281,8 @@ class ScriptTests(unittest.TestCase):
         return subprocess.run(
             ["bash", str(SCRIPT), mode],
             env=environment,
+            # The stubs read their stdin to the end: an open terminal or pipe of the caller would hold them forever.
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             timeout=120,
@@ -316,7 +321,62 @@ class ScriptTests(unittest.TestCase):
         )
         config = self.sites / "frontend" / "site_config.json"
         self.assertEqual(config.stat().st_mode & 0o777, 0o600)
-        self.assertEqual(json.loads(config.read_text())["db_name"], DB_NAME)
+        self.assertEqual(
+            json.loads(config.read_text()),
+            {
+                "db_name": DB_NAME,
+                "db_password": DB_PASSWORD,
+                "db_type": "mariadb",
+                "disable_scheduler": 1,
+                "host_name": "http://frontend:8080",
+            },
+        )
+
+    def test_nothing_of_the_source_site_config_reaches_dev(self):
+        # The source encryption_key would make the passwords stored in the restored database readable on dev, and
+        # the source database credentials are not dev's (handoff doc, section 3).
+        for mode in ("db", "files"):
+            result = self.run_script(mode)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            written = (self.sites / "frontend" / "site_config.json").read_text() if mode == "files" else ""
+            sent = Path(str(self.log) + ".stdin").read_text() + self.stub_calls()
+            for key, value in SOURCE_CONFIG.items():
+                with self.subTest(mode=mode, key=key):
+                    self.assertNotIn(value, written)
+                    self.assertNotIn(value, sent)
+                    self.assertNotIn(value, result.stdout + result.stderr)
+        self.assertNotIn(
+            "encryption_key",
+            json.loads((self.sites / "frontend" / "site_config.json").read_text()),
+        )
+
+    def test_both_services_agree_on_the_site_database_password(self):
+        self.assertEqual(self.run_script("db").returncode, 0)
+        self.assertEqual(self.run_script("files").returncode, 0)
+        config = json.loads((self.sites / "frontend" / "site_config.json").read_text())
+        self.assertIn(
+            f"CREATE USER '{config['db_name']}'@'%' IDENTIFIED BY '{config['db_password']}'",
+            Path(str(self.log) + ".stdin").read_text(),
+        )
+        # Dev's password follows dev's root password, never a value of the backup.
+        other = self.run_script(
+            "files",
+            {"DB_ROOT_PASSWORD": "invented-other", "FINANCE_DEV_RESTORE_OVERWRITE": "1"},
+        )
+        self.assertEqual(other.returncode, 0, other.stderr)
+        self.assertNotEqual(
+            json.loads((self.sites / "frontend" / "site_config.json").read_text())["db_password"],
+            config["db_password"],
+        )
+
+    def test_root_password_is_required_before_any_write(self):
+        for mode in ("db", "files"):
+            with self.subTest(mode=mode):
+                result = self.run_script(mode, {"DB_ROOT_PASSWORD": ""})
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("DB_ROOT_PASSWORD is not set", result.stderr)
+                self.assertEqual(self.stub_calls(), "")
+                self.assertEqual(self.site_files(), [])
 
     def test_files_refuses_existing_site_then_overwrites_on_request(self):
         (self.sites / "frontend").mkdir()
@@ -406,31 +466,6 @@ class ScriptTests(unittest.TestCase):
         result = self.run_script("db", use_pin=False)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("does not match the pinned", result.stderr)
-
-    def test_compact_site_config_is_read_too(self):
-        contents = members()
-        contents[f"{PREFIX}-site_config_backup.json"] = json.dumps(
-            {"db_name": DB_NAME, "db_password": DB_PASSWORD}
-        ).encode()
-        self.write_bundle(contents)
-        result = self.run_script("db")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn(
-            f"CREATE USER '{DB_NAME}'@'%' IDENTIFIED BY '{DB_PASSWORD}'",
-            Path(str(self.log) + ".stdin").read_text(),
-        )
-
-    def test_password_needing_an_escape_is_refused_before_any_write(self):
-        contents = members()
-        contents[f"{PREFIX}-site_config_backup.json"] = json.dumps(
-            {"db_name": DB_NAME, "db_password": "has\\backslash"}
-        ).encode()
-        self.write_bundle(contents)
-        result = self.run_script("db")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("no plain db_password", result.stderr)
-        self.assertEqual(list(self.datadir.iterdir()), [])
-        self.assertEqual(self.stub_calls(), "")
 
 
 if __name__ == "__main__":

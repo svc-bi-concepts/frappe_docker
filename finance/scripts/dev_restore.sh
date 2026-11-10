@@ -3,13 +3,17 @@
 # One-shot restore of the dev site from the encrypted backup set (finance/docs/hetzner-dev-handoff.md, section 3).
 # Two services in the Compose profile `restore` run it, never a plain `up`:
 #   db     loads the database into db-data, with a MariaDB that listens on its socket only (network_mode: none);
-#   files  writes sites/frontend: site_config.json and both file archives.
+#   files  writes sites/frontend: a dev site_config.json and both file archives.
 # restore-files depends on restore-db, so `run --rm restore-files` does both, in that order.
 # usage: dev-restore.sh db|files
 #
 # Nothing is written before every check has passed: the ciphertext's checksum, the pinned age binary, the manifest,
 # and the checksum of each of the four members. No plaintext reaches a file: each member is streamed from age into
 # tar and on into its consumer, so the archive is decrypted again for every read.
+#
+# The backup's site configuration is checked like every member and then never read: it holds the source site's
+# encryption_key and database credentials, and none of them belongs on dev (handoff doc, section 3). The site
+# configuration written here is dev's own.
 set -euo pipefail
 
 die() {
@@ -125,16 +129,14 @@ check_member "$DB_HASH" "$DB_MEMBER"
 check_member "$CONF_HASH" "$CONF_MEMBER"
 check_member "$FILES_HASH" "$FILES_MEMBER"
 check_member "$PRIV_HASH" "$PRIV_MEMBER"
-CONF=$(member "$CONF_MEMBER") || die "cannot read the site configuration"
 
-# A plain string value of site_config.json, whatever the layout of the file. Frappe writes names and passwords without
-# escapes, so a value that needs one (a quote or a backslash) is refused rather than read wrongly.
-json_value() {
-  local value
-  value=$(sed -n 's/.*"'"$1"'": "\([^"\\]*\)".*/\1/p' <<<"$CONF" | head -n 1)
-  [ -n "$value" ] || die "site_config.json has no plain $1"
-  printf '%s\n' "$value"
-}
+# Dev's own database credentials for the site. The two services share no writable volume, so the password cannot be
+# drawn at random in one and handed to the other: both derive it from the dev root password, which already opens
+# every database of this resource. The name is fixed; a dump made by bench names no database.
+[ -n "${DB_ROOT_PASSWORD:-}" ] || die "DB_ROOT_PASSWORD is not set"
+DB_NAME=finance_dev
+DB_PASSWORD=$(printf 'finance-dev site database user\n%s' "$DB_ROOT_PASSWORD" | sha256sum)
+DB_PASSWORD=${DB_PASSWORD%% *}
 
 # text as a single-quoted SQL literal: the server reads a backslash as an escape unless told otherwise
 sql_string() {
@@ -146,13 +148,6 @@ sql_string() {
 
 restore_db() {
   # Everything is validated before the datadir is touched: a refusal must leave the volume as it was.
-  [ -n "${DB_ROOT_PASSWORD:-}" ] || die "DB_ROOT_PASSWORD is not set"
-  DB_NAME=$(json_value db_name)
-  DB_PASSWORD=$(json_value db_password)
-  # Both are written into SQL unquoted (the name) or inside a literal (the password): only plain forms pass.
-  [[ "$DB_NAME" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || die "db_name is not a plain identifier"
-  [[ "$DB_PASSWORD" =~ ^[A-Za-z0-9_.+/=-]+$ ]] || die "db_password has characters this restore does not write"
-
   if [ -n "$(ls -A "$DATADIR")" ]; then
     [ "$OVERWRITE" = 1 ] || die "$DATADIR is not empty: refusing to replace the database (FINANCE_DEV_RESTORE_OVERWRITE=1 replaces it)"
     find "$DATADIR" -mindepth 1 -delete
@@ -204,9 +199,13 @@ restore_files() {
   mkdir -p "$SITE_DIR/public" "$SITE_DIR/private"
   # The archives hold sites/<site>/public/files and sites/<site>/private/files, as Frappe writes them; stripping two
   # levels puts them where bench restore extracts them (installer.py extract_files).
+  # No key of the backup's configuration is carried over. Without an encryption_key Frappe draws a new one on first
+  # use, so passwords stored in the restored database do not decrypt on dev, which is intended. host_name and
+  # disable_scheduler are the dev values of the off-switch sequence (handoff doc, section 2), which still runs.
   (
     umask 077
-    member "$CONF_MEMBER" >"$SITE_DIR/site_config.json.partial"
+    printf '{\n "db_name": "%s",\n "db_password": "%s",\n "db_type": "mariadb",\n "disable_scheduler": 1,\n "host_name": "http://frontend:8080"\n}\n' \
+      "$DB_NAME" "$DB_PASSWORD" >"$SITE_DIR/site_config.json.partial"
   ) || die "cannot write site_config.json"
   mv "$SITE_DIR/site_config.json.partial" "$SITE_DIR/site_config.json"
   member "$FILES_MEMBER" | tar -xf - --strip-components=2 -C "$SITE_DIR" || die "cannot extract the public files"

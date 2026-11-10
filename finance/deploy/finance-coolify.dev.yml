@@ -286,6 +286,8 @@ services:
       - /dev-restore.sh
       - files
     environment:
+      # Not to reach a database (there is no network): the site's own database password is derived from it, as in restore-db.
+      DB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?}
       FINANCE_DEV_RESTORE_OVERWRITE: ${FINANCE_DEV_RESTORE_OVERWRITE:-0}
     volumes:
       - sites:/home/frappe/frappe-bench/sites

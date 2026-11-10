@@ -78,15 +78,28 @@ Refusals. The database restore refuses a non-empty `db-data`, and the site resto
 site (the image's own seed files in `sites` do not count). Set `FINANCE_DEV_RESTORE_OVERWRITE=1` only to replace a
 restore that failed part-way, and then run both services again. It empties `db-data` and removes `sites/frontend`.
 
-The site configuration is written as the backup holds it, including `db_name` and `db_password`, which the restore
-uses to create the database user. The backup's `encryption_key` is in that file too. Section 3 warns against replacing
-a dev `site_config.json` with the source backup; this restore does so only on an empty volume, where no dev
-configuration exists yet. Whether the source `encryption_key` belongs on dev at all is Benchi's decision, and it is not
-settled by this change. The restore does not set `host_name` or `disable_scheduler`. The off-switch sequence of section 2
-does that after the restore.
+The site configuration is dev's own, as section 3 requires. The restore checks the backup's
+`<prefix>-site_config_backup.json` like every member and then never reads it: no `encryption_key`, database credential,
+`host_name` or other key of the source site reaches dev, and no variable switches that on. The written
+`sites/frontend/site_config.json` holds exactly:
+
+| Key                 | Value                                                                                                                                                                     |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `db_name`           | `finance_dev`, also the name of the database user the restore creates                                                                                                     |
+| `db_password`       | SHA-256 (hex) of the line `finance-dev site database user`, a newline, and `DB_ROOT_PASSWORD`. Both services derive it, so they agree without a shared writable volume.   |
+| `db_type`           | `mariadb`                                                                                                                                                                 |
+| `disable_scheduler` | `1`                                                                                                                                                                       |
+| `host_name`         | `http://frontend:8080`                                                                                                                                                    |
+
+Without an `encryption_key`, Frappe draws a new one on first use. Passwords stored in the restored database then do not
+decrypt on dev, which is intended; that is still not the isolation barrier (section 3). `dev-init` adds the three
+startup flags on the next deployment. `disable_scheduler` and `host_name` are written with the values of section 2, and
+the off-switch sequence there still runs in full after every restore. `DB_ROOT_PASSWORD` must be the same for both
+restore services, which one `run --rm restore-files` ensures.
 
 The restore was run by hand, on invented data only, in the `mariadb:11.8` and application images: the database,
 the site files and the root and site database logins were checked, and every refusal and failure above was exercised.
+That run predates the dev-own site configuration above, which the host tests cover with stand-ins for MariaDB and age.
 It has not been run on the dev host. The live restore is IT's, on `erpnext-dev` (yard-7epr, runbook yard-f1hw).
 
 ## 2. Off switches before first application start
