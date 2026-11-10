@@ -338,7 +338,11 @@ class ScriptTests(unittest.TestCase):
         for mode in ("db", "files"):
             result = self.run_script(mode)
             self.assertEqual(result.returncode, 0, result.stderr)
-            written = (self.sites / "frontend" / "site_config.json").read_text() if mode == "files" else ""
+            written = (
+                (self.sites / "frontend" / "site_config.json").read_text()
+                if mode == "files"
+                else ""
+            )
             sent = Path(str(self.log) + ".stdin").read_text() + self.stub_calls()
             for key, value in SOURCE_CONFIG.items():
                 with self.subTest(mode=mode, key=key):
@@ -361,11 +365,16 @@ class ScriptTests(unittest.TestCase):
         # Dev's password follows dev's root password, never a value of the backup.
         other = self.run_script(
             "files",
-            {"DB_ROOT_PASSWORD": "invented-other", "FINANCE_DEV_RESTORE_OVERWRITE": "1"},
+            {
+                "DB_ROOT_PASSWORD": "invented-other",
+                "FINANCE_DEV_RESTORE_OVERWRITE": "1",
+            },
         )
         self.assertEqual(other.returncode, 0, other.stderr)
         self.assertNotEqual(
-            json.loads((self.sites / "frontend" / "site_config.json").read_text())["db_password"],
+            json.loads((self.sites / "frontend" / "site_config.json").read_text())[
+                "db_password"
+            ],
             config["db_password"],
         )
 

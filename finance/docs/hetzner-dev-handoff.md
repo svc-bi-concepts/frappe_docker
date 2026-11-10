@@ -83,13 +83,13 @@ The site configuration is dev's own, as section 3 requires. The restore checks t
 `host_name` or other key of the source site reaches dev, and no variable switches that on. The written
 `sites/frontend/site_config.json` holds exactly:
 
-| Key                 | Value                                                                                                                                                                     |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `db_name`           | `finance_dev`, also the name of the database user the restore creates                                                                                                     |
-| `db_password`       | SHA-256 (hex) of the line `finance-dev site database user`, a newline, and `DB_ROOT_PASSWORD`. Both services derive it, so they agree without a shared writable volume.   |
-| `db_type`           | `mariadb`                                                                                                                                                                 |
-| `disable_scheduler` | `1`                                                                                                                                                                       |
-| `host_name`         | `http://frontend:8080`                                                                                                                                                    |
+| Key                 | Value                                                                                                                                                                   |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `db_name`           | `finance_dev`, also the name of the database user the restore creates                                                                                                   |
+| `db_password`       | SHA-256 (hex) of the line `finance-dev site database user`, a newline, and `DB_ROOT_PASSWORD`. Both services derive it, so they agree without a shared writable volume. |
+| `db_type`           | `mariadb`                                                                                                                                                               |
+| `disable_scheduler` | `1`                                                                                                                                                                     |
+| `host_name`         | `http://frontend:8080`                                                                                                                                                  |
 
 Without an `encryption_key`, Frappe draws a new one on first use. Passwords stored in the restored database then do not
 decrypt on dev, which is intended; that is still not the isolation barrier (section 3). `dev-init` adds the three
