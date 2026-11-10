@@ -26,13 +26,17 @@ else: no send, no move, no delete except the tool's own drafts, no other mailbox
     finance/mail/mail.py draft-delete <id>
     finance/mail/mail.py contacts
 
-draft-update replaces the whole body with our text and the current signature. A tracked reply
-allows subject changes only; delete it and make a new draft-reply to change its body. draft-delete
+When given a body, draft-update replaces the whole body with our text and the current signature.
+A tracked reply allows subject changes and added files; delete it and make a new draft-reply
+to change its body. draft-delete
 requires a draft made by this tool. Both commands require the message to be in Drafts.
 "attachments" is a list of absolute paths of files under private/, each at most 3 MB (Graph's
 limit for one POST; no upload session). They are checked before any Graph call and attached as
 files after the signature; draft-update attaches only to a draft this tool made, and adds them
-next to what the draft already carries. The output gives their count, never their content.
+next to what the draft already carries. Each file uses its base name and a guessed content type
+(application/octet-stream if unknown). Invalid or unreadable files are refused with exit code 2.
+The attached count covers files added by this invocation, excluding signature images; output
+never includes their content.
 Draft ownership is kept in private/graph-cert/mail-drafts.json (mode 600, ids/kind/creation time
 only). An image failure leaves the draft tracked, so it can still be updated or deleted.
 
