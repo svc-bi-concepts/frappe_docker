@@ -33,7 +33,7 @@ IT's separately reviewed private access mechanism is outside this file.
 
 ## 1a. First start on empty volumes (restore profile)
 
-A fresh resource has empty volumes, and `dev-init` needs `sites/frontend/site_config.json` before any service can start.
+A fresh resource has empty volumes, and `dev-init` needs `sites/frontend/site_config.json` before normal deployment services can start.
 The profile `restore` fills the two volumes once, from the backup set in section 3. It is never started by a plain
 `up`, and nothing depends on it except `restore-files`.
 
@@ -52,7 +52,7 @@ Order, once per resource:
    writes the site. Both exit non-zero on any failed check, and each writes nothing before every check has passed.
 
 3. Remove the two stopped one-shot containers: `docker compose -p <project> -f finance/deploy/finance-coolify.dev.yml --profile restore rm -f restore-db restore-files`.
-4. Run the normal deployment (`up -d`). `dev-init` runs first and writes the three startup flags, as in section 2.
+4. Run the normal deployment (`up -d --force-recreate`). `dev-init` runs first and writes the three startup flags, as in section 2.
 5. Before the application is opened, run the off-switch sequence of section 2 inside the dev bench. It still runs after
    every restore; the restore does not automate it.
 6. After a good restore, remove the restore inputs: IT empties and removes the staging volume and the identity mount,
@@ -69,10 +69,13 @@ Restore inputs (the contract with IT). Both are external, so an absent input fai
 `tools/age` must match the hash pinned in `finance/scripts/dev_restore.sh` for the host's architecture (x86_64 and
 aarch64 are pinned). The binary is not downloaded at run time. Its checksum is checked before it runs.
 
-What the restore checks, in order, before the first write: the ciphertext checksum; the pinned age binary; that the
+What each restore service checks before writing its target volume: the pinned age binary; the ciphertext checksum; that the
 archive decrypts with the identity; that the manifest (`SHA256SUMS`, inside the archive) lists exactly the four
 members; and each member's checksum against the manifest. A missing member, a checksum mismatch or a decrypt failure
-stops with a message and leaves both volumes as they were. Plaintext never becomes a file: each member is streamed from age into tar and on into MariaDB or the site folder.
+in these checks stops that service before it changes its target. The services are sequential, not transactional:
+if `restore-files` fails, `restore-db` may already have populated `db-data`. No decrypted staging files are written:
+each member is streamed from age into tar and on into MariaDB or the site folder. Tool diagnostics are suppressed;
+an import failure reports only an error-line count, without saving the diagnostics to a file.
 
 Refusals. The database restore refuses a non-empty `db-data`, and the site restore refuses a volume that already holds a
 site (the image's own seed files in `sites` do not count). Set `FINANCE_DEV_RESTORE_OVERWRITE=1` only to replace a
@@ -120,9 +123,9 @@ Set these runtime variables when creating the resource:
 | `FINANCE_DISABLE_EXTERNAL_INTEGRATIONS` | `1`                                            |
 | `DB_ROOT_PASSWORD`                      | dev database root password, supplied privately |
 
-This is a **restored-site** resource, not a new-site installer. With the resource
-stopped, Benchi/IT stages the approved restored DB and `sites/frontend` in its
-own fresh dev volumes. The script is supplied as a Compose config from
+This is a **restored-site** resource, not a new-site installer. Prepare its
+volumes using the restore profile in section 1a, with the resource stopped.
+The startup script is supplied as a Compose config from
 `finance/scripts/dev_site_init.py`; retain that file with the Compose checkout.
 The restored `site_config.json` must already contain the dev DB credentials;
 never attach live volumes. Missing, invalid or non-object JSON fails startup.
@@ -131,7 +134,7 @@ needed to apply the three startup flags.
 
 Startup order is `dev-init` alone, then DB/Redis/configurator, then
 backend/websocket after configurator, then frontend after backend/websocket.
-Workers are off by default (next paragraph). Every service directly depends on
+Workers are off by default (next paragraph). Every normal deployment service directly depends on
 successful init. Init validates all three variables are exactly `1` and validates the digest before
 writing anything. It atomically replaces `sites/frontend/site_config.json`,
 preserving existing keys while writing numeric `mute_emails=1`,
@@ -149,7 +152,7 @@ and `configurator`, so the fail-closed order holds.
 All services have automatic restart disabled so a host reboot cannot bypass
 the init ordering. After every restore or config change, stop the whole dev
 resource and use a full Compose deployment that **recreates `dev-init`** before
-starting consumers. Never use `--no-deps`, start a service individually, or
+starting consumers. Never use `--no-deps`, start a normal deployment service individually, or
 restore while applications run. A previously completed init is not evidence
 for a subsequently replaced config.
 
@@ -301,20 +304,15 @@ IT must provision age and the approved recipient file before the copy; no
 recipient, key or password value belongs here. Transfer only the ciphertext
 and its `.sha256`, over IT's approved authenticated channel, and verify the
 ciphertext checksum there. The checksum detects damage; authenticate its
-source as well. Decrypt inside protected dev staging with IT's identity file,
-extract and verify the inner `SHA256SUMS` before restoring. Keep any private
+source as well. For decryption, verification and restore, use the read-only inputs
+and streaming restore profile in section 1a. Keep any private
 manifest inside the encrypted bundle as well. The site's `encryption_key`
 decrypts stored application passwords; it does **not** encrypt the backup
 archive (`finance/docs/archiving.md:47-53`).
 
-Restore the DB plus both file archives as in `finance/scripts/copy-stack.sh:155-163`.
-Do not blindly replace dev `site_config.json` with the source backup: retain
-dev DB connection details, off switches and dev `host_name`. `bench restore`
-does not import the source `encryption_key` automatically
-(`finance/docs/archiving.md:50-53`). If an approved test needs it, Benchi/IT handles
-it privately under the same exception; it is not needed to prove disabled
-integrations. Restored credential decryptability must never be the isolation
-barrier.
+The restore profile's dev-only site configuration contract is in section 1a;
+it does not import source secrets. Restored credential decryptability must never
+be the isolation barrier.
 
 Before opening dev, verify only off-state flags and counts: scheduler status
 disabled, `disable_external_integrations=1`, both feed switches zero,

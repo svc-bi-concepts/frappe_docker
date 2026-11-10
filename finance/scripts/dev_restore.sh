@@ -8,7 +8,7 @@
 # usage: dev-restore.sh db|files
 #
 # Nothing is written before every check has passed: the ciphertext's checksum, the pinned age binary, the manifest,
-# and the checksum of each of the four members. No plaintext reaches a file: each member is streamed from age into
+# and the checksum of each of the four members. No decrypted staging files are written: each member is streamed from age into
 # tar and on into its consumer, so the archive is decrypted again for every read.
 #
 # The backup's site configuration is checked like every member and then never read: it holds the source site's
