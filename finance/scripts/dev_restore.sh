@@ -84,12 +84,22 @@ archive() {
   "$AGE" -d -i "$IDENTITY" "$CIPHERTEXT"
 }
 
-# One member of the decrypted archive on stdout.
-member() {
-  archive | tar -xOf - "$1"
+# Runs the reader "$@" on stdin, then reads stdin to its end, and returns the reader's status. tar stops at the
+# end-of-archive marker and leaves the record padding after it unread; the writer still sending that padding would die
+# of SIGPIPE, and pipefail would fail a good read at random (erp-2dr4).
+drained() {
+  local status=0
+  "$@" || status=$?
+  cat >/dev/null
+  return "$status"
 }
 
-LISTING=$(archive | tar -tf -) || die "cannot decrypt the archive: wrong identity, or a damaged file"
+# One member of the decrypted archive on stdout.
+member() {
+  archive | drained tar -xOf - "$1"
+}
+
+LISTING=$(archive | drained tar -tf -) || die "cannot decrypt the archive: wrong identity, or a damaged file"
 listed() {
   grep -qxF -- "$1" <<<"$LISTING"
 }
@@ -220,8 +230,8 @@ restore_files() {
   mkdir -p "$SITE_DIR/public" "$SITE_DIR/private"
   # The archives hold sites/<site>/public/files and sites/<site>/private/files, as Frappe writes them; stripping two
   # levels puts them where bench restore extracts them (installer.py extract_files).
-  member "$FILES_MEMBER" | tar -xf - --strip-components=2 -C "$SITE_DIR" || die "cannot extract the public files"
-  member "$PRIV_MEMBER" | tar -xf - --strip-components=2 -C "$SITE_DIR" || die "cannot extract the private files"
+  member "$FILES_MEMBER" | drained tar -xf - --strip-components=2 -C "$SITE_DIR" || die "cannot extract the public files"
+  member "$PRIV_MEMBER" | drained tar -xf - --strip-components=2 -C "$SITE_DIR" || die "cannot extract the private files"
   # site_config.json comes last: dev-init starts the resource only when it exists, so a failed extraction above must
   # leave none behind.
   # No key of the backup's configuration is carried over. Without an encryption_key Frappe draws a new one on first

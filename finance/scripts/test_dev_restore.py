@@ -266,7 +266,7 @@ class ScriptTests(unittest.TestCase):
 
         shutil.rmtree(self.tmp, ignore_errors=True)
 
-    def write_bundle(self, contents, manifest_override=None):
+    def write_bundle(self, contents, manifest_override=None, padding=0):
         lines = []
         for name, data in contents.items():
             lines.append(f"{sha256(data)}  {name}")
@@ -275,7 +275,9 @@ class ScriptTests(unittest.TestCase):
             if manifest_override is not None
             else "\n".join(lines) + "\n"
         )
-        bundle = tar_bytes({"SHA256SUMS": manifest.encode(), **contents})
+        bundle = tar_bytes({"SHA256SUMS": manifest.encode(), **contents}) + bytes(
+            padding
+        )
         (self.staging / "finance-dev-backup.tar.age").write_bytes(bundle)
         digest = sha256(bundle)
         (self.staging / "finance-dev-backup.tar.age.sha256").write_text(
@@ -463,6 +465,22 @@ exit 1
                 "host_name": "http://frontend:8080",
             },
         )
+
+    def test_zero_padding_after_the_end_of_archive_marker_is_read(self):
+        # tar stops reading at the end-of-archive marker. Padding behind it, far more than a pipe buffer holds, is
+        # still a valid archive; a writer left with it unread dies of SIGPIPE, which once failed restores at random
+        # with the wrong message (erp-2dr4).
+        padding = 1024 * 1024
+        contents = members()
+        for suffix in ("-files.tar", "-private-files.tar"):
+            contents[f"{PREFIX}{suffix}"] += bytes(padding)
+        self.write_bundle(contents, padding=padding)
+        for mode in ("db", "files"):
+            with self.subTest(mode=mode):
+                result = self.run_script(mode)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stderr, "")
+        self.assertIn("frontend/site_config.json", self.site_files())
 
     def test_nothing_of_the_source_site_config_reaches_dev(self):
         # The source encryption_key would make the passwords stored in the restored database readable on dev, and
