@@ -24,7 +24,7 @@ wise.__file__ = path
 exec(compile("\n".join(lines[start + 1 : end]) + "\n", path, "exec"), wise.__dict__)
 
 
-RECIPIENT_UUID = "7bd40d5c-0000-4000-8000-000000000001"
+RECIPIENT_UUID = "aaaaaaaa-0000-4000-8000-000000000001"
 
 
 class Response(io.BytesIO):
@@ -417,7 +417,7 @@ class WiseTest(unittest.TestCase):
             "abc",
             "42.0",
             "-42",
-            "7bd40d5c",
+            "aaaaaaaa",
             RECIPIENT_UUID + "0",
             "https://wise.com/recipients/" + RECIPIENT_UUID,
         ):
