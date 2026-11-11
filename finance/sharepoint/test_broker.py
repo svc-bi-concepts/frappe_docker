@@ -86,7 +86,8 @@ class BrokerTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def put(self, **body):
-        body.setdefault("src", self.local_file())
+        if "src" not in body:
+            body["src"] = self.local_file()
         body.setdefault("path", "report.csv")
         with mock.patch.object(broker, "graph", side_effect=self.client.request):
             return broker.do_put_file(body)
@@ -122,6 +123,19 @@ class BrokerTest(unittest.TestCase):
             ],
         )
         self.assertNotIn("out_recruiter", broker.AREAS)
+
+    def test_put_file_recruiter_dest_large_file_session_is_in_out_recruiter(self):
+        broker.RECRUITER = {"drive_id": "drive-rec", "item_id": "item-rec", "path": "/x"}
+        big = self.local_file("large.csv", b"x" * (broker.SIMPLE_MAX_FILE + 1))
+        self.put(src=big, path="large.csv", dest="recruiter")
+        posts = [u for m, u, _ in self.client.calls if m == "POST"]
+        self.assertEqual(
+            posts,
+            [
+                broker.GRAPH
+                + "/drives/drive-rec/items/item-rec:/large.csv:/createUploadSession"
+            ],
+        )
 
     def test_put_file_recruiter_without_config_fails_before_graph(self):
         with self.assertRaisesRegex(broker.Fail, "out_recruiter") as caught:
@@ -295,6 +309,7 @@ class BrokerTest(unittest.TestCase):
         for recruiter, ok in (
             ({"drive_id": "d", "item_id": "i"}, True),
             ({"drive_id": "d"}, False),
+            ({"drive_id": "", "item_id": "i"}, False),
             ("item-only", False),
         ):
             with open(path, "w") as f:

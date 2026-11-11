@@ -2,7 +2,8 @@
 
 The local broker on `127.0.0.1:8817` lets Yardr read the configured SharePoint
 folders and upload work output. Its Graph client holds the certificate key in
-memory and pins every Graph write to the configured output folder.
+memory and pins every Graph write to the configured output folders (`out` and,
+when configured, `out_recruiter`).
 
 | Area        | Folder                          | Access         |
 | ----------- | ------------------------------- | -------------- |

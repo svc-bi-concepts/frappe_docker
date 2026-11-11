@@ -53,7 +53,10 @@ def load_config(path=CONFIG):
     recruiter = config.get("out_recruiter")
     if recruiter is not None and not (
         isinstance(recruiter, dict)
-        and all(isinstance(recruiter.get(k), str) for k in ("drive_id", "item_id"))
+        and all(
+            isinstance(recruiter.get(k), str) and recruiter[k]
+            for k in ("drive_id", "item_id")
+        )
     ):
         raise ValueError("out_recruiter needs drive_id and item_id")
     return config
@@ -206,7 +209,7 @@ class Graph:
             )
             allowed = upload_url if method == "DELETE" else (output_url or upload_url)
             if not allowed:
-                raise Fail(403, "refused Graph write outside the output folder")
+                raise Fail(403, "refused Graph write outside the output folders")
         hdrs = {} if upload_url else {"Authorization": "Bearer " + self.access_token()}
         hdrs.update(headers or {})
         if json_body is not None:
