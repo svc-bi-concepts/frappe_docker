@@ -125,7 +125,11 @@ class BrokerTest(unittest.TestCase):
         self.assertNotIn("out_recruiter", broker.AREAS)
 
     def test_put_file_recruiter_dest_large_file_session_is_in_out_recruiter(self):
-        broker.RECRUITER = {"drive_id": "drive-rec", "item_id": "item-rec", "path": "/x"}
+        broker.RECRUITER = {
+            "drive_id": "drive-rec",
+            "item_id": "item-rec",
+            "path": "/x",
+        }
         big = self.local_file("large.csv", b"x" * (broker.SIMPLE_MAX_FILE + 1))
         self.put(src=big, path="large.csv", dest="recruiter")
         posts = [u for m, u, _ in self.client.calls if m == "POST"]
