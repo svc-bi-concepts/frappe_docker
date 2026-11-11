@@ -751,12 +751,11 @@ foreign-currency document against bexio's journal every hour, like every other d
   acting identity, `YARDR_ACTOR=Benchi`: launchd's `$USER` is no yard name, and yardr refuses a mail
   call from an unknown actor (erp-xwht). All three are overridable (`BEXIO_SYNC_YARDR`, `BEXIO_SYNC_ACTOR`;
   a `YARDR_HOME` the caller set wins), and the wrapper sets them itself, so a manual run behaves the same.
-- The colima VM may be asleep (IT's nightly idle-stop), so after taking the lock and before the first step the
-  run calls IT's shim `/Users/bsaladin/ws_yardr/integrations/bin/colima-wake --hold 15 --reason bexio-sync`
-  (`COLIMA_WAKE` overrides the path; the tests stub it). A missing shim is skipped silently; a failing wake
-  prints one line on stderr and exits 3 before any step, without a mail.
-- The monthly `delta.sh` takes `/Users/bsaladin/ws_yardr/integrations/bin/colima-wake --hold 120 --reason bexio-delta`
-  after its lock and before its first step, so the VM stays awake throughout the import chain.
+- After taking the lock and before the first step, the run asks the Docker daemon once
+  (`finance/scripts/docker-ready.sh`, plain `docker info` on the default context or `DOCKER_HOST`). A daemon that
+  does not answer prints one line naming the endpoint on stderr and exits 3 before any step, without a mail.
+  Nothing here starts or wakes a runtime: Colima on the mini is always on, and a silent daemon is IT's.
+- The monthly `delta.sh` asks the same way after its lock and before its first step (exit 3).
 - REST importers use port 8080, not the stack's published port 8082: IT's front door wakes the VM and refreshes
   its idle clock for each connection and while a connection stays open. Port 8082 remains right for checking the stack itself.
 - Every run keeps `private/bexio-sync/<stamp>/` (mode 700): the step logs, the two snapshots, `gate.txt` and

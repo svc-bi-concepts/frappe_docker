@@ -23,6 +23,10 @@ if [ "${GATE_ANY_PATH:-}" != 1 ]; then
     ;;
   esac
 fi
+# Every step below needs Docker. Ask the daemon once, before the first docker call, and stop with one line
+# naming the endpoint when it does not answer: the gate never skips its Docker steps, and it never starts or
+# wakes a runtime (erp-xfem; Colima on the mini is always on since IT's cutover).
+sh finance/scripts/docker-ready.sh
 # The host checks live in .yardr/check-host.sh so callers share one implementation.
 # This gate also runs the frappe-image tests and upstream's pre-commit lint.
 # CI ownership and current statuses: AGENTS.md.

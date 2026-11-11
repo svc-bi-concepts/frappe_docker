@@ -339,6 +339,8 @@ class GateCheckoutRunner(unittest.TestCase):
                 "echo finance-gate:fixture\n"
             )
             shutil.copy(SCRIPTS / "test_gate_check.py", root / "finance/scripts")
+            # the gate asks the daemon through it before its first docker call (erp-xfem)
+            shutil.copy(SCRIPTS / "docker-ready.sh", root / "finance/scripts")
             bin_dir = root / "bin"
             bin_dir.mkdir()
             calls = root / "calls"
@@ -359,7 +361,7 @@ class GateCheckoutRunner(unittest.TestCase):
                 text=True,
             )
             self.assertEqual(run.returncode, 0, run.stderr)
-            self.assertIn("Ran 8 tests", run.stderr)
+            self.assertIn("Ran 16 tests", run.stderr)
             args = calls.read_text().splitlines()
             self.assertEqual(args[:2], ["run", "--rm"])
             self.assertEqual(

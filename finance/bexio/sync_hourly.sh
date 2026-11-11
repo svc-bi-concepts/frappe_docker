@@ -30,12 +30,11 @@
 # exists, and until then api-agent@finance.local (.erpnext-api): the run exports
 # ERPNEXT_TOKEN_FILE to whichever it found, for every step.
 #
-# After the lock: the colima VM may be asleep (IT's colima idle-stop), and every docker call
-# in the run fails until it wakes. colima-wake (IT's shim) starts it and holds it up for the run;
-# COLIMA_WAKE overrides the path (the tests stub it), and a missing shim is skipped.
+# After the lock, the run asks the docker daemon once (finance/scripts/docker-ready.sh) and stops
+# with one line naming the endpoint when it does not answer; it never starts or wakes a runtime.
 #
 # Exit codes: 0 ok; 2 refused (usage, lock held, a monthly delta holds its lock);
-# 3 a step failed (mailed), or the colima wake failed (one line on stderr, not mailed);
+# 3 a step failed (mailed), or the docker daemon does not answer (one line on stderr, not mailed);
 # 4 a surprise in the counts (mailed).
 set -eu
 
@@ -182,15 +181,10 @@ acquire_lock() {
 }
 acquire_lock
 
-# ---- the colima VM: awake before the first docker call ---------------------------
+# ---- the docker daemon: answering before the first docker call --------------------
+# One line naming the endpoint when it does not; nothing here starts or wakes a runtime (erp-xfem).
 
-COLIMA_WAKE=${COLIMA_WAKE:-/Users/bsaladin/ws_yardr/integrations/bin/colima-wake}
-if [ -x "$COLIMA_WAKE" ]; then
-  if ! "$COLIMA_WAKE" --hold 15 --reason bexio-sync; then
-    echo "sync_hourly: colima-wake failed; the VM is not up, the run cannot work without it" >&2
-    exit 3
-  fi
-fi
+sh "$REPO/finance/scripts/docker-ready.sh" || exit 3
 
 # ---- the run directory -----------------------------------------------------------
 

@@ -17,30 +17,27 @@ SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bexio-drafts.
 
 
 class DraftsShell(unittest.TestCase):
-    """The wrapper must lease before docker, with a short lease for hourly draft/check mode."""
+    """The wrapper asks the docker daemon once before its docker call, and stops with one line when it does not answer."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.bin = os.path.join(self.tmp.name, "bin")
         os.makedirs(self.bin)
-        self.wake_log = os.path.join(self.tmp.name, "wake.log")
+        self.info_log = os.path.join(self.tmp.name, "info.log")
         self.docker_log = os.path.join(self.tmp.name, "docker.log")
         self.events = os.path.join(self.tmp.name, "events.log")
         self.plan = os.path.join(self.tmp.name, "plan.json")
         with open(self.plan, "w") as f:
             f.write('{"documents": []}')
-        self.write_stub(
-            "wake",
-            """#!/bin/sh
-echo "$*" >>"$WAKE_LOG"
-echo wake >>"$EVENT_LOG"
-exit ${WAKE_RC:-0}
-""",
-        )
+        # docker info (docker-ready.sh's question) has its own log; STUB_INFO_RC=1 is a daemon that does not answer.
         self.write_stub(
             "docker",
             """#!/bin/sh
+case "$1" in
+  info) echo info >>"$INFO_LOG"; echo info >>"$EVENT_LOG"; exit ${STUB_INFO_RC:-0} ;;
+  context) echo "unix:///invented/docker.sock"; exit 0 ;;
+esac
 echo "$*" >>"$DOCKER_LOG"
 echo docker >>"$EVENT_LOG"
 exit 0
@@ -58,8 +55,7 @@ exit 0
         env.update(
             {
                 "PATH": self.bin + os.pathsep + env.get("PATH", ""),
-                "COLIMA_WAKE": os.path.join(self.bin, "wake"),
-                "WAKE_LOG": self.wake_log,
+                "INFO_LOG": self.info_log,
                 "DOCKER_LOG": self.docker_log,
                 "EVENT_LOG": self.events,
             }
@@ -73,39 +69,26 @@ exit 0
             timeout=30,
         )
 
-    def test_modes_lease_once_before_docker(self):
-        for mode, hold in (
-            ("draft", 15),
-            ("check", 15),
-            ("submit", 60),
-            ("relink", 60),
-        ):
+    def test_modes_ask_the_daemon_once_before_docker(self):
+        for mode in ("draft", "check", "submit", "relink"):
             with self.subTest(mode=mode):
-                for path in (self.wake_log, self.docker_log, self.events):
+                for path in (self.info_log, self.docker_log, self.events):
                     if os.path.exists(path):
                         os.remove(path)
                 run = self.run_script(mode)
                 self.assertEqual(run.returncode, 0, run.stderr)
-                with open(self.wake_log) as f:
-                    self.assertEqual(
-                        f.read().splitlines(), [f"--hold {hold} --reason bexio-drafts"]
-                    )
                 with open(self.events) as f:
-                    self.assertEqual(f.read().splitlines(), ["wake", "docker"])
+                    self.assertEqual(f.read().splitlines(), ["info", "docker"])
 
-    def test_failing_wake_stops_before_docker(self):
-        run = self.run_script("submit", WAKE_RC="1")
-        self.assertNotEqual(run.returncode, 0)
-        self.assertIn("colima-wake failed", run.stderr)
-        self.assertFalse(os.path.exists(self.docker_log))
-
-    def test_missing_wake_is_skipped(self):
-        run = self.run_script(
-            "draft", COLIMA_WAKE=os.path.join(self.tmp.name, "missing-wake")
+    def test_daemon_down_stops_before_docker(self):
+        run = self.run_script("submit", STUB_INFO_RC="1")
+        self.assertEqual(run.returncode, 1)
+        self.assertEqual(
+            run.stderr.strip(),
+            "docker daemon not reachable at unix:///invented/docker.sock; "
+            "on the mini ask IT, don't start or stop runtimes",
         )
-        self.assertEqual(run.returncode, 0, run.stderr)
-        self.assertFalse(os.path.exists(self.wake_log))
-        self.assertTrue(os.path.exists(self.docker_log))
+        self.assertFalse(os.path.exists(self.docker_log))
 
 
 class FakeStore:

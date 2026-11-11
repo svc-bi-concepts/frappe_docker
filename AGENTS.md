@@ -2,9 +2,8 @@
 
 - **Docker runs on the default context.** If `docker info` does not answer, hold the bead
   with the error and tell the yardmaster; never start, stop or reconfigure the runtime.
-  **Temporary, until IT finishes the switch away from Colima:** run
-  `/Users/bsaladin/ws_yardr/integrations/bin/colima-wake --hold <min> --reason <what>`
-  (hold longer than the job), then `export DOCKER_HOST=unix:///Users/bsaladin/.colima/default/docker.sock`.
+  The gate and the finance scripts ask once through `finance/scripts/docker-ready.sh` and stop
+  with one line naming the endpoint; a `DOCKER_HOST` you set is honoured.
 - **CI is local; GitHub Actions is off on purpose.** IT's ci-bridge runs via launchd every 5 minutes.
   Its log is `/Users/bsaladin/ws_yardr/integrations/state/ci-bridge.log`.
   It posts `finance tests / host-tests` and `Lint / lint` commit statuses on main and open PRs.
