@@ -76,11 +76,92 @@ class BrokerTest(unittest.TestCase):
                 "path": "/Finance/sample",
             },
         }
+        self.old_recruiter = broker.RECRUITER
+        broker.RECRUITER = None
 
     def tearDown(self):
         broker.OUT_DIR, broker.INBOX_DIR = self.old_paths
         broker.GRAPH_CLIENT, broker.AREAS = self.old_client, self.old_areas
+        broker.RECRUITER = self.old_recruiter
         self.tmp.cleanup()
+
+    def put(self, **body):
+        if "src" not in body:
+            body["src"] = self.local_file()
+        body.setdefault("path", "report.csv")
+        with mock.patch.object(broker, "graph", side_effect=self.client.request):
+            return broker.do_put_file(body)
+
+    def test_put_file_default_dest_is_the_finance_out_folder(self):
+        for body in ({}, {"dest": "finance"}):
+            self.client.calls.clear()
+            with self.subTest(body=body):
+                self.put(**body)
+                self.assertTrue(self.client.calls)
+                for _, url, _ in self.client.calls:
+                    self.assertTrue(
+                        url.startswith(
+                            broker.GRAPH + "/drives/drive-out/items/item-out:/"
+                        )
+                    )
+
+    def test_put_file_recruiter_dest_writes_to_out_recruiter(self):
+        broker.RECRUITER = {
+            "drive_id": "drive-rec",
+            "item_id": "item-rec",
+            "path": "/the-recruiter/ws_finance",
+        }
+        self.put(dest="recruiter")
+        urls = [url for _, url, _ in self.client.calls]
+        self.assertEqual(
+            urls,
+            [
+                broker.GRAPH + "/drives/drive-rec/items/item-rec:/report.csv:",
+                broker.GRAPH
+                + "/drives/drive-rec/items/item-rec:/report.csv:/content"
+                + "?@microsoft.graph.conflictBehavior=fail",
+            ],
+        )
+        self.assertNotIn("out_recruiter", broker.AREAS)
+
+    def test_put_file_recruiter_dest_large_file_session_is_in_out_recruiter(self):
+        broker.RECRUITER = {
+            "drive_id": "drive-rec",
+            "item_id": "item-rec",
+            "path": "/x",
+        }
+        big = self.local_file("large.csv", b"x" * (broker.SIMPLE_MAX_FILE + 1))
+        self.put(src=big, path="large.csv", dest="recruiter")
+        posts = [u for m, u, _ in self.client.calls if m == "POST"]
+        self.assertEqual(
+            posts,
+            [
+                broker.GRAPH
+                + "/drives/drive-rec/items/item-rec:/large.csv:/createUploadSession"
+            ],
+        )
+
+    def test_put_file_recruiter_without_config_fails_before_graph(self):
+        with self.assertRaisesRegex(broker.Fail, "out_recruiter") as caught:
+            self.put(dest="recruiter")
+        self.assertEqual(caught.exception.code, 400)
+        self.assertEqual(self.client.calls, [])
+
+    def test_put_file_bad_dest_refused_before_graph(self):
+        broker.RECRUITER = {"drive_id": "d", "item_id": "i", "path": "/x"}
+        for dest in ("sample", "out", "Recruiter", "recruiter/../x"):
+            with self.subTest(dest=dest):
+                with self.assertRaises(broker.Fail) as caught:
+                    self.put(dest=dest)
+                self.assertEqual(caught.exception.code, 400)
+        self.assertEqual(self.client.calls, [])
+
+    def test_recruiter_folder_is_no_read_area(self):
+        broker.RECRUITER = {"drive_id": "d", "item_id": "i", "path": "/x"}
+        for area in ("recruiter", "out_recruiter"):
+            with self.assertRaises(broker.Fail):
+                broker.do_ls({"area": area})
+        self.assertEqual(broker.do_ping({})["out_recruiter"], "/x")
 
     def local_file(self, name="report.csv", data=b"data"):
         path = os.path.join(self.out, name)
@@ -227,6 +308,26 @@ class BrokerTest(unittest.TestCase):
             broker.area_url("unknown", "file")
         self.assertEqual(caught.exception.code, 400)
 
+    def test_config_out_recruiter_needs_both_ids(self):
+        path = os.path.join(self.tmp.name, "config.json")
+        for recruiter, ok in (
+            ({"drive_id": "d", "item_id": "i"}, True),
+            ({"drive_id": "d"}, False),
+            ({"drive_id": "", "item_id": "i"}, False),
+            ("item-only", False),
+        ):
+            with open(path, "w") as f:
+                json.dump({"folders": {}, "out": {}, "out_recruiter": recruiter}, f)
+            os.chmod(path, 0o600)
+            with self.subTest(recruiter=recruiter):
+                if ok:
+                    self.assertEqual(
+                        broker.load_config(path)["out_recruiter"], recruiter
+                    )
+                else:
+                    with self.assertRaisesRegex(ValueError, "out_recruiter"):
+                        broker.load_config(path)
+
     def test_config_must_be_private(self):
         path = os.path.join(self.tmp.name, "config.json")
         with open(path, "w") as f:
@@ -320,9 +421,56 @@ class GraphTest(unittest.TestCase):
             self.assertEqual(err.exception.code, 403)
         transport.assert_not_called()
 
+    def test_write_boundary_admits_out_recruiter_only_when_configured(self):
+        recruiter = broker.GRAPH + "/drives/drive-rec/items/item-rec:/a.pdf:/content"
+        transport = mock.Mock(return_value=Reply(201, {"size": 1}))
+        client = self.client(transport)
+        with mock.patch.object(client, "access_token", return_value="fake"):
+            with self.assertRaises(broker.Fail) as err:
+                client.request("PUT", recruiter)
+            self.assertEqual(err.exception.code, 403)
+            transport.assert_not_called()
+            client = broker.Graph(
+                dict(
+                    client.config,
+                    out_recruiter={"drive_id": "drive-rec", "item_id": "item-rec"},
+                ),
+                "invented-private-key",
+                transport=transport,
+            )
+        with mock.patch.object(client, "access_token", return_value="fake"):
+            client.request("PUT", recruiter)
+            for url in (
+                broker.GRAPH + "/drives/drive-rec/items/item-rec-other:/a:/content",
+                broker.GRAPH + "/drives/drive-rec/items/item-other:/a:/content",
+            ):
+                with self.assertRaises(broker.Fail):
+                    client.request("PUT", url)
+        self.assertEqual(transport.call_count, 1)
+
+    def test_resolve_recruiter_checks_the_folder(self):
+        client = mock.Mock()
+        client.request.return_value = Reply(
+            value={
+                "name": "ws_finance",
+                "folder": {},
+                "parentReference": {"path": "/drives/d/root:/the-recruiter"},
+            }
+        )
+        self.assertIsNone(broker.resolve_recruiter(client, {"out": {}}))
+        client.request.assert_not_called()
+        item = {"drive_id": "drive-rec", "item_id": "item-rec"}
+        self.assertEqual(
+            broker.resolve_recruiter(client, {"out_recruiter": item})["path"],
+            "/the-recruiter/ws_finance",
+        )
+        client.request.return_value = Reply(value={"name": "a.pdf", "file": {}})
+        with self.assertRaises(ValueError):
+            broker.resolve_recruiter(client, {"out_recruiter": item})
+
     def test_reserved_or_invalid_area_names_are_refused_before_resolution(self):
         client = self.client(mock.Mock())
-        for name in ("out", "../escape", "bad name"):
+        for name in ("out", "out_recruiter", "../escape", "bad name"):
             config = dict(client.config, folders={name: "item-invented"})
             with self.assertRaises(ValueError):
                 broker.resolve_areas(client, config)

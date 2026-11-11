@@ -48,7 +48,9 @@ calls:
     answer: { max: 262144 }
   put_file:
     kind: update
-    about: Upload one file from work/out into ws_finance (up to 250 MB)
+    about: >-
+      Upload one file from work/out (up to 250 MB) into ws_finance, or with
+      dest=recruiter into Shared Drive/the-recruiter/ws_finance
     params:
       src:
         {
@@ -60,10 +62,24 @@ calls:
       path:
         { type: string, pattern: '^[^\\:*?"<>|]{1,400}$', max: 400, log: true }
       replace: { type: enum, values: ["true", "false"], optional: true }
+      dest:
+        {
+          type: string,
+          pattern: "^(finance|recruiter)$",
+          max: 9,
+          optional: true,
+          log: true,
+        }
     request:
       {
         method: POST,
         path: /put_file,
-        body: { src: "{src}", path: "{path}", replace: "{replace}" },
+        body:
+          {
+            src: "{src}",
+            path: "{path}",
+            replace: "{replace}",
+            dest: "{dest}",
+          },
       }
     answer: { max: 262144 }

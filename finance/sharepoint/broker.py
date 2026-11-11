@@ -50,6 +50,15 @@ def load_config(path=CONFIG):
         config.get("out"), dict
     ):
         raise ValueError("SharePoint config needs folders and out entries")
+    recruiter = config.get("out_recruiter")
+    if recruiter is not None and not (
+        isinstance(recruiter, dict)
+        and all(
+            isinstance(recruiter.get(k), str) and recruiter[k]
+            for k in ("drive_id", "item_id")
+        )
+    ):
+        raise ValueError("out_recruiter needs drive_id and item_id")
     return config
 
 
@@ -107,7 +116,10 @@ class Graph:
         self.token_expires = 0
         self.token_lock = threading.Lock()
         self.token_url = "{}/{}/oauth2/v2.0/token".format(LOGIN, config["tenant_id"])
-        self.out = config["out"]
+        # Every output folder a put_file dest may name; writes stay inside them.
+        self.outs = [config["out"]] + (
+            [config["out_recruiter"]] if config.get("out_recruiter") else []
+        )
         self.upload_urls = set()
 
     @staticmethod
@@ -188,13 +200,16 @@ class Graph:
         if method == "GET" and not url.startswith(GRAPH + "/"):
             raise Fail(403, "refused Graph read outside Graph")
         if method in ("PUT", "POST", "DELETE"):
-            outbase = "{}/drives/{}/items/{}".format(
-                GRAPH, self.out["drive_id"], self.out["item_id"]
+            outbases = [
+                "{}/drives/{}/items/{}".format(GRAPH, o["drive_id"], o["item_id"])
+                for o in self.outs
+            ]
+            output_url = any(
+                url == base or url.startswith(base + ":/") for base in outbases
             )
-            output_url = url == outbase or url.startswith(outbase + ":/")
             allowed = upload_url if method == "DELETE" else (output_url or upload_url)
             if not allowed:
-                raise Fail(403, "refused Graph write outside the output folder")
+                raise Fail(403, "refused Graph write outside the output folders")
         hdrs = {} if upload_url else {"Authorization": "Bearer " + self.access_token()}
         hdrs.update(headers or {})
         if json_body is not None:
@@ -211,6 +226,9 @@ class Graph:
 
 
 AREAS = {}
+# put_file dest "recruiter": the optional out_recruiter folder, resolved at
+# startup. It is no area, so ls and get_file cannot reach it.
+RECRUITER = None
 TOKEN = ""
 GRAPH_CLIENT = None
 
@@ -228,15 +246,18 @@ def clean(path):
 def area_url(area, path=""):
     if area not in AREAS:
         raise Fail(400, "unknown area")
-    a = AREAS[area]
+    return item_url(AREAS[area], path)
+
+
+def item_url(a, path=""):
     base = "{}/drives/{}/items/{}".format(GRAPH, a["drive_id"], a["item_id"])
     p = clean(path)
     return base + (":/%s:" % urllib.parse.quote(p, safe="/")) if p else base
 
 
 def resolve_areas(client, config):
-    if "out" in config["folders"]:
-        raise ValueError("out is reserved for the output folder")
+    if "out" in config["folders"] or "out_recruiter" in config["folders"]:
+        raise ValueError("out and out_recruiter are reserved for output folders")
     if any(
         not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", name) for name in config["folders"]
     ):
@@ -249,20 +270,34 @@ def resolve_areas(client, config):
             for name, item_id in config["folders"].items()
         }
     )
-    resolved = {}
-    for name, item in areas.items():
-        url = "{}/drives/{}/items/{}".format(GRAPH, item["drive_id"], item["item_id"])
-        metadata = client.request("GET", url).json()
-        if "folder" not in metadata:
-            raise ValueError("configured area is not a folder")
-        parent = metadata.get("parentReference", {})
-        path = parent.get("path", "").split("root:", 1)[-1] + "/" + metadata["name"]
-        resolved[name] = {
-            "drive_id": item["drive_id"],
-            "item_id": item["item_id"],
-            "path": path,
-        }
-    return resolved
+    return {name: resolve_item(client, item) for name, item in areas.items()}
+
+
+def resolve_item(client, item):
+    url = "{}/drives/{}/items/{}".format(GRAPH, item["drive_id"], item["item_id"])
+    metadata = client.request("GET", url).json()
+    if "folder" not in metadata:
+        raise ValueError("configured area is not a folder")
+    parent = metadata.get("parentReference", {})
+    path = parent.get("path", "").split("root:", 1)[-1] + "/" + metadata["name"]
+    return {"drive_id": item["drive_id"], "item_id": item["item_id"], "path": path}
+
+
+def resolve_recruiter(client, config):
+    if not config.get("out_recruiter"):
+        return None
+    return resolve_item(client, config["out_recruiter"])
+
+
+def dest_url(dest, path):
+    # yardr sends an omitted optional param as an empty string.
+    if dest in (None, "", "finance"):
+        return area_url("out", path)
+    if dest != "recruiter":
+        raise Fail(400, "dest must be finance or recruiter")
+    if RECRUITER is None:
+        raise Fail(400, "dest recruiter is not configured (no out_recruiter)")
+    return item_url(RECRUITER, path)
 
 
 def graph(method, url, **kwargs):
@@ -270,7 +305,10 @@ def graph(method, url, **kwargs):
 
 
 def do_ping(_):
-    return {"ok": True, **{name: area["path"] for name, area in AREAS.items()}}
+    paths = {name: area["path"] for name, area in AREAS.items()}
+    if RECRUITER is not None:
+        paths["out_recruiter"] = RECRUITER["path"]
+    return {"ok": True, **paths}
 
 
 def do_ls(body):
@@ -361,11 +399,11 @@ def do_put_file(body):
     path = clean(body.get("path", ""))
     if not path:
         raise Fail(400, "path is required")
+    target = dest_url(body.get("dest"), path)
     size = os.path.getsize(src)
     if size > MAX_FILE:
         raise Fail(413, "file exceeds 250 MB")
     replace = str(body.get("replace", "false")).lower() == "true"
-    target = area_url("out", path)
     existing = graph("GET", target, missing_ok=True)
     if existing is not None:
         if "folder" in existing.json():
@@ -491,7 +529,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    global TOKEN, GRAPH_CLIENT, AREAS
+    global TOKEN, GRAPH_CLIENT, AREAS, RECRUITER
     TOKEN = os.environ.get("FINANCE_SP_BROKER_TOKEN", "")
     key = os.environ.get("FINANCE_SP_CERT_KEY", "")
     if not TOKEN or not key:
@@ -499,8 +537,11 @@ def main():
     config = load_config()
     GRAPH_CLIENT = Graph(config, key)
     AREAS = resolve_areas(GRAPH_CLIENT, config)
+    RECRUITER = resolve_recruiter(GRAPH_CLIENT, config)
     for name, area in AREAS.items():
         print("{}: {}".format(name, area["path"]), flush=True)
+    if RECRUITER is not None:
+        print("out_recruiter: {}".format(RECRUITER["path"]), flush=True)
     print("listening on http://%s:%d" % ADDR, flush=True)
     ThreadingHTTPServer(ADDR, Handler).serve_forever()
 
