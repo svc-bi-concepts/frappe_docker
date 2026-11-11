@@ -19,6 +19,7 @@ API_VERSION = "2026Q4"
 PRIVATE = os.environ.get("BEXIO_PRIVATE") or "/Users/bsaladin/ws_yardr_finance/private"
 REQUESTS = {
     ("GET", "/2026Q4/profiles"),
+    ("GET", "/2026Q4/accounts"),
     ("GET", "/2026Q4/accounts/{id}"),
     ("GET", "/2026Q4/transfers"),
     ("GET", "/2026Q4/transfers/{id}"),
@@ -136,7 +137,76 @@ def recipient_name(recipient):
     return str(value or "")
 
 
-def find_recipients(profile_id, token, name):
+def iter_account_rows(profile_id, token):
+    # The profile's account list holds recipients that were never paid too.
+    # It may answer as a plain list or as a page with a seek position.
+    query = {"profileId": profile_id, "size": 100}
+    seen = set()
+    while True:
+        page = _send("GET", "/{}/accounts".format(API_VERSION), token, query=query)
+        if isinstance(page, list):
+            yield from page
+            return
+        if not isinstance(page, dict) or not isinstance(page.get("content"), list):
+            raise SystemExit("Wise answered the account list without rows")
+        yield from page["content"]
+        following = page.get("seekPositionForNext")
+        if not page["content"] or following is None or str(following) in seen:
+            return
+        seen.add(str(following))
+        query = dict(query, seekPosition=following)
+
+
+def profile_accounts(profile_id, token):
+    accounts = {}
+    for row in iter_account_rows(profile_id, token):
+        if (isinstance(row, dict) and str(row.get("profileId")) == str(profile_id)
+                and re.fullmatch(r"[0-9]+", str(row.get("id")))):
+            accounts[int(row["id"])] = row
+    return accounts
+
+
+def normalized_iban(value):
+    return re.sub(r"\s+", "", str(value or "")).upper()
+
+
+def recipient_iban(recipient):
+    details = recipient.get("details")
+    return details.get("iban") if isinstance(details, dict) else None
+
+
+def holds_value(value, wanted):
+    if isinstance(value, dict):
+        return any(holds_value(item, wanted) for item in value.values())
+    if isinstance(value, list):
+        return any(holds_value(item, wanted) for item in value)
+    return isinstance(value, str) and value.strip().casefold() == wanted
+
+
+def resolve_recipient_uuid(profile_id, token, recipient_uuid):
+    # The web app shows a UUID in the recipient URL; transfers need the
+    # numeric account id. Only an exact match in this profile's list counts.
+    matches = [account_id for account_id, row in profile_accounts(profile_id, token).items()
+               if holds_value(row, recipient_uuid)]
+    if len(matches) != 1:
+        raise SystemExit("refused: recipient UUID {} matches {} accounts of the BUSINESS profile; "
+                         "use --find-recipient NAME or --find-iban IBAN for the numeric id".format(
+                             recipient_uuid, len(matches)))
+    print("recipient UUID {} is account id {}".format(recipient_uuid, matches[0]))
+    return matches[0]
+
+
+def recipient_id_value(raw):
+    raw = raw.strip()
+    if re.fullmatch(r"[0-9]+", raw):
+        return int(raw)
+    if re.fullmatch(r"[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}", raw):
+        return raw.casefold()
+    raise SystemExit("refused: --recipient-id must be the numeric account id or the recipient UUID "
+                     "from the Wise web app; use --find-recipient NAME or --find-iban IBAN")
+
+
+def find_recipients(profile_id, token, name=None, iban=None):
     completed = {}
     for row in iter_transfer_rows(profile_id, token):
         recipient_id = row.get("targetAccount")
@@ -145,19 +215,28 @@ def find_recipients(profile_id, token, name):
             recipient_id = int(recipient_id)
             completed[recipient_id] = completed.get(recipient_id, 0) + 1
 
-    matches, unreadable = [], 0
-    needle = normalized_name(name)
-    for recipient_id in sorted(completed):
+    accounts = profile_accounts(profile_id, token)
+    unreadable = 0
+    # A paid recipient missing from the list (an inactive one) is read by id.
+    for recipient_id in sorted(set(completed) - set(accounts)):
         try:
             recipient = _send("GET", "/{}/accounts/{}".format(API_VERSION, recipient_id), token)
         except SystemExit:
             unreadable += 1
             continue
-        if (isinstance(recipient, dict)
-                and str(recipient.get("profileId")) == str(profile_id)
-                and needle in normalized_name(recipient_name(recipient))):
-            matches.append((recipient, completed[recipient_id]))
-    return matches, len(completed), unreadable
+        if isinstance(recipient, dict) and str(recipient.get("profileId")) == str(profile_id):
+            accounts[recipient_id] = recipient
+
+    matches = []
+    for recipient_id in sorted(accounts):
+        recipient = accounts[recipient_id]
+        if name is not None and normalized_name(name) not in normalized_name(recipient_name(recipient)):
+            continue
+        if iban is not None and (not normalized_iban(recipient_iban(recipient))
+                                 or normalized_iban(recipient_iban(recipient)) != normalized_iban(iban)):
+            continue
+        matches.append((recipient, completed.get(recipient_id, 0)))
+    return matches, len(accounts), len(completed), unreadable
 
 
 def business_profile(token):
@@ -208,9 +287,10 @@ def validate_requirements(answer, details):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Find paid Wise recipients or prepare one unfunded transfer.")
+    parser = argparse.ArgumentParser(description="Find Wise recipients or prepare one unfunded transfer.")
     parser.add_argument("--find-recipient")
-    parser.add_argument("--recipient-id", type=int)
+    parser.add_argument("--find-iban")
+    parser.add_argument("--recipient-id")
     parser.add_argument("--invoice")
     parser.add_argument("--amount")
     parser.add_argument("--target-currency")
@@ -223,14 +303,17 @@ def main(argv=None):
     parser.add_argument("--attempt", type=int)
     parser.add_argument("--yes", action="store_true")
     args = parser.parse_args(argv)
-    if args.find_recipient is not None:
-        if not args.find_recipient.strip():
+    search = args.find_recipient is not None or args.find_iban is not None
+    if search:
+        if args.find_recipient is not None and not args.find_recipient.strip():
             raise SystemExit("refused: --find-recipient name must not be empty")
+        if args.find_iban is not None and not normalized_iban(args.find_iban):
+            raise SystemExit("refused: --find-iban IBAN must not be empty")
         if (args.recipient_id is not None or args.invoice is not None or args.amount is not None
                 or args.target_currency is not None or args.planned_date is not None
                 or args.source_currency is not None or args.first_payment or args.expect_iban is not None
                 or args.expect_name is not None or args.detail or args.attempt is not None or args.yes):
-            raise SystemExit("refused: --find-recipient cannot be combined with transfer arguments")
+            raise SystemExit("refused: --find-recipient and --find-iban cannot be combined with transfer arguments")
     else:
         for option in ("--recipient-id", "--invoice", "--amount", "--target-currency", "--planned-date"):
             if getattr(args, option[2:].replace("-", "_")) is None:
@@ -243,20 +326,24 @@ def main(argv=None):
                     raise SystemExit("refused: {} is required with --first-payment".format(option))
         elif args.expect_iban is not None or args.expect_name is not None:
             raise SystemExit("refused: --expect-iban and --expect-name require --first-payment")
+        args.recipient_id = recipient_id_value(args.recipient_id)
     token = os.environ.get("FINANCE_WISE_TRANSFER_TOKEN")
     if not token:
         raise SystemExit("FINANCE_WISE_TRANSFER_TOKEN is not set; run through av inject")
-    if args.find_recipient is not None:
+    if search:
         profile_id = business_profile(token)
-        matches, checked, unreadable = find_recipients(profile_id, token, args.find_recipient)
+        matches, checked, paid, unreadable = find_recipients(
+            profile_id, token, args.find_recipient, args.find_iban)
         for recipient, count in matches:
             active = "yes" if recipient.get("active") is True else "no"
-            print("id: {}; name: {}; currency: {}; active: {}; {}; completed transfers: {}".format(
-                recipient.get("id", ""), recipient_name(recipient), recipient.get("currency", ""),
-                active, recipient.get("longAccountSummary", ""), count))
+            print("id: {}; name: {}; iban: {}; currency: {}; active: {}; {}; completed transfers: {}".format(
+                recipient.get("id", ""), recipient_name(recipient), recipient_iban(recipient) or "none",
+                recipient.get("currency", ""), active, recipient.get("longAccountSummary", ""), count))
+            if count == 0:
+                print("  never paid: use --first-payment with --expect-iban and --expect-name")
         if not matches:
-            print("no paid recipient matches")
-        print("paid recipients checked: {}, unreadable: {}".format(checked, unreadable))
+            print("no recipient matches")
+        print("recipients checked: {} ({} with completed transfers), unreadable: {}".format(checked, paid, unreadable))
         if unreadable:
             print("unreadable recipients were not matched")
         return 0
@@ -281,6 +368,8 @@ def main(argv=None):
         detail.append((key, value))
     args.detail = detail
     profile_id = business_profile(token)
+    if isinstance(args.recipient_id, str):
+        args.recipient_id = resolve_recipient_uuid(profile_id, token, args.recipient_id)
     recipient = _send("GET", "/{}/accounts/{}".format(API_VERSION, args.recipient_id), token)
     if str(recipient.get("profileId")) != str(profile_id) or recipient.get("active") is not True or recipient.get("currency") != args.target_currency:
         raise SystemExit("refused: recipient must be active, belong to the BUSINESS profile and use the target currency; Benchi must add or change recipients in the Wise UI")
@@ -289,11 +378,9 @@ def main(argv=None):
         name = name.get("fullName", "")
     print("recipient: {} — {}".format(name, recipient.get("longAccountSummary", "")))
     if args.first_payment:
-        actual_iban = (recipient.get("details") or {}).get("iban") if isinstance(recipient.get("details"), dict) else None
-        expected_iban = re.sub(r"\s+", "", args.expect_iban).upper()
-        normalized_iban = re.sub(r"\s+", "", str(actual_iban or "")).upper()
+        actual_iban = recipient_iban(recipient)
         actual_name = recipient_name(recipient)
-        if (not normalized_iban or normalized_iban != expected_iban
+        if (not normalized_iban(actual_iban) or normalized_iban(actual_iban) != normalized_iban(args.expect_iban)
                 or not normalized_name(actual_name)
                 or normalized_name(actual_name) != normalized_name(args.expect_name)):
             raise SystemExit("refused: first-payment recipient identity mismatch; IBAN Wise={!r}, expected={!r}; name Wise={!r}, expected={!r}".format(

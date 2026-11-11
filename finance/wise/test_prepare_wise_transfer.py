@@ -24,6 +24,9 @@ wise.__file__ = path
 exec(compile("\n".join(lines[start + 1 : end]) + "\n", path, "exec"), wise.__dict__)
 
 
+RECIPIENT_UUID = "7bd40d5c-0000-4000-8000-000000000001"
+
+
 class Response(io.BytesIO):
     def __enter__(self):
         return self
@@ -73,6 +76,22 @@ class WiseTest(unittest.TestCase):
         )
         if path.endswith("/profiles"):
             result = [{"id": 7, "type": "BUSINESS"}]
+        elif path.startswith("/2026Q4/accounts?"):
+            result = {
+                "content": [
+                    {
+                        "id": 42,
+                        "profileId": 7,
+                        "active": True,
+                        "currency": "EUR",
+                        "name": {"fullName": "Example Ltd"},
+                        "details": {"iban": "ZZ00TEST0000000000001"},
+                        "longAccountSummary": "••1234",
+                        "uuid": RECIPIENT_UUID,
+                    }
+                ],
+                "seekPositionForNext": None,
+            }
         elif "/accounts/" in path:
             result = {
                 "id": int(path.rsplit("/", 1)[1]),
@@ -162,6 +181,7 @@ class WiseTest(unittest.TestCase):
         self.responses[("GET", "/2026Q4/transfers")] = lambda _row, req: (
             first if "offset=0" in req.full_url else second
         )
+        self.responses[("GET", "/2026Q4/accounts")] = []
         self.responses[("GET", "/2026Q4/accounts/9")] = {
             "id": 9,
             "profileId": 7,
@@ -180,10 +200,13 @@ class WiseTest(unittest.TestCase):
         }
         output = self.run_main(["--find-recipient", "eXAMPLE   ltd"])
         self.assertIn(
-            "id: 9; name:   Acme    Example  Ltd ; currency: EUR; active: no", output
+            "id: 9; name:   Acme    Example  Ltd ; iban: none; currency: EUR; active: no",
+            output,
         )
         self.assertIn("completed transfers: 2", output)
-        self.assertIn("paid recipients checked: 2, unreadable: 0", output)
+        self.assertIn(
+            "recipients checked: 1 (2 with completed transfers), unreadable: 0", output
+        )
         self.assertFalse(
             any(path.endswith("/accounts/8") for _, path, *_ in self.calls)
         )
@@ -198,7 +221,12 @@ class WiseTest(unittest.TestCase):
             [path.split("?")[0] for method, path, *_ in self.calls if method == "GET"][
                 1:
             ],
-            ["/2026Q4/transfers", "/2026Q4/transfers", *account_reads],
+            [
+                "/2026Q4/transfers",
+                "/2026Q4/transfers",
+                "/2026Q4/accounts",
+                *account_reads,
+            ],
         )
         self.assertFalse(
             os.path.exists(os.path.join(self.root, "wise", "last-result.txt"))
@@ -210,6 +238,7 @@ class WiseTest(unittest.TestCase):
             {"targetAccount": 3, "status": "outgoing_payment_sent"},
             {"targetAccount": 5, "status": "outgoing_payment_sent"},
         ]
+        self.responses[("GET", "/2026Q4/accounts")] = []
         self.responses[("GET", "/2026Q4/accounts/3")] = urllib.error.HTTPError(
             "https://api.wise.com/2026Q4/accounts/3",
             404,
@@ -224,19 +253,185 @@ class WiseTest(unittest.TestCase):
             "active": True,
         }
         output = self.run_main(["--find-recipient", "absent"])
-        self.assertIn("no paid recipient matches", output)
-        self.assertIn("paid recipients checked: 2, unreadable: 1", output)
+        self.assertIn("no recipient matches", output)
+        self.assertIn(
+            "recipients checked: 1 (2 with completed transfers), unreadable: 1", output
+        )
         self.assertIn("unreadable recipients were not matched", output)
         self.assertTrue(any(path.endswith("/accounts/5") for _, path, *_ in self.calls))
         output = self.run_main(["--find-recipient", "person"])
         self.assertIn("name: Other Person", output)
-        self.assertIn("paid recipients checked: 2, unreadable: 1", output)
+        self.assertIn(
+            "recipients checked: 1 (2 with completed transfers), unreadable: 1", output
+        )
+
+    def never_paid_account(self, **values):
+        account = {
+            "id": 51,
+            "profileId": 7,
+            "active": True,
+            "currency": "EUR",
+            "name": {"fullName": "New Supplier GmbH"},
+            "details": {"iban": "ZZ00TEST0000000000051"},
+            "longAccountSummary": "••0051",
+        }
+        account.update(values)
+        return account
+
+    def test_find_recipient_lists_never_paid_recipients_from_account_list(self):
+        self.responses[("GET", "/2026Q4/accounts")] = lambda page, req: dict(
+            page,
+            content=page["content"]
+            + [
+                self.never_paid_account(),
+                self.never_paid_account(id=52, profileId=8),
+                self.never_paid_account(id="bad"),
+            ],
+        )
+        output = self.run_main(["--find-recipient", "new  SUPPLIER"])
+        self.assertIn(
+            "id: 51; name: New Supplier GmbH; iban: ZZ00TEST0000000000051; "
+            "currency: EUR; active: yes; ••0051; completed transfers: 0",
+            output,
+        )
+        self.assertIn("never paid: use --first-payment", output)
+        self.assertNotIn("id: 52", output)
+        self.assertNotIn("id: bad", output)
+        self.assertIn(
+            "recipients checked: 2 (1 with completed transfers), unreadable: 0", output
+        )
+        listing = [c for c in self.calls if c[1].startswith("/2026Q4/accounts?")]
+        self.assertEqual(len(listing), 1)
+        self.assertIn("profileId=7", listing[0][1])
+        self.assertTrue(all(method == "GET" for method, *_ in self.calls))
+        self.assertFalse(
+            any(path.startswith("/2026Q4/accounts/") for _, path, *_ in self.calls)
+        )
+        self.assertEqual(os.listdir(self.root), [])
+
+    def test_find_iban_matches_normalized_iban_alone_or_with_name(self):
+        self.responses[("GET", "/2026Q4/accounts")] = lambda page, req: dict(
+            page,
+            content=page["content"]
+            + [
+                self.never_paid_account(),
+                self.never_paid_account(id=53, details={}),
+                self.never_paid_account(id=54, details=None),
+            ],
+        )
+        output = self.run_main(["--find-iban", " zz00 test 0000 0000 0005 1 "])
+        self.assertIn("id: 51; name: New Supplier GmbH", output)
+        self.assertNotIn("id: 42", output)
+        self.assertNotIn("id: 53", output)
+        output = self.run_main(
+            ["--find-recipient", "other", "--find-iban", "ZZ00TEST0000000000051"]
+        )
+        self.assertIn("no recipient matches", output)
+        output = self.run_main(
+            ["--find-recipient", "supplier", "--find-iban", "ZZ00TEST0000000000051"]
+        )
+        self.assertIn("id: 51", output)
+
+    def test_account_list_follows_seek_positions_and_stops_on_repeat(self):
+        def pages(page, req):
+            if "seekPosition=" not in req.full_url:
+                return dict(page, seekPositionForNext=60)
+            if "seekPosition=60" in req.full_url:
+                return {
+                    "content": [self.never_paid_account()],
+                    "seekPositionForNext": 60,
+                }
+            raise AssertionError(req.full_url)
+
+        self.responses[("GET", "/2026Q4/accounts")] = pages
+        output = self.run_main(["--find-recipient", "supplier"])
+        self.assertIn("id: 51", output)
+        listing = [c[1] for c in self.calls if c[1].startswith("/2026Q4/accounts?")]
+        self.assertEqual(len(listing), 2)
+        self.assertTrue(all("size=100" in path for path in listing))
+
+    def test_paid_recipient_missing_from_list_is_read_by_id(self):
+        self.responses[("GET", "/2026Q4/accounts")] = {"content": []}
+        output = self.run_main(["--find-recipient", "example"])
+        self.assertIn("id: 42; name: Example Ltd", output)
+        self.assertIn("completed transfers: 1", output)
+        self.assertTrue(
+            any(path == "/2026Q4/accounts/42" for _, path, *_ in self.calls)
+        )
+
+    def uuid_args(self, value=RECIPIENT_UUID):
+        args = list(self.args)
+        args[args.index("--recipient-id") + 1] = value
+        return args
+
+    def test_recipient_uuid_resolves_to_numeric_id_for_transfer(self):
+        output = self.run_main(self.uuid_args(RECIPIENT_UUID.upper()) + ["--yes"])
+        self.assertIn(f"recipient UUID {RECIPIENT_UUID} is account id 42", output)
+        self.assertIn("recipient: Example Ltd", output)
+        bodies = [c[2] for c in self.calls if c[0] == "POST"]
+        self.assertEqual(bodies[0]["targetAccount"], 42)
+        self.assertEqual(bodies[2]["targetAccount"], 42)
+        self.assertEqual(
+            bodies[2]["customerTransactionId"],
+            wise.transaction_id(42, "INV-TEST-1", 1),
+        )
+        self.assertIn(("GET", "/2026Q4/accounts/42"), [c[:2] for c in self.calls])
+
+    def test_recipient_uuid_first_payment_keeps_identity_check(self):
+        self.responses[("GET", "/2026Q4/transfers")] = []
+        args = self.uuid_args() + [
+            "--first-payment",
+            "--expect-iban",
+            "ZZ00TEST0000000000001",
+            "--expect-name",
+            "Example Ltd",
+        ]
+        self.assertIn("first payment", self.run_main(args))
+        self.change("GET", "accounts/42", details={"iban": "ZZ00TEST0000000000002"})
+        self.refuse("IBAN Wise", args + ["--yes"])
+        self.assertFalse(self.writes())
+
+    def test_recipient_uuid_unknown_or_ambiguous_refuses_with_search_hint(self):
+        for content in (
+            [],
+            [self.never_paid_account(uuid=RECIPIENT_UUID, profileId=8)],
+            [
+                self.never_paid_account(uuid=RECIPIENT_UUID),
+                self.never_paid_account(id=52, details={"ref": RECIPIENT_UUID}),
+            ],
+        ):
+            with self.subTest(content=content):
+                self.calls.clear()
+                self.responses[("GET", "/2026Q4/accounts")] = {"content": content}
+                self.refuse(
+                    "--find-recipient NAME or --find-iban IBAN", self.uuid_args()
+                )
+                self.assertFalse(self.writes())
+                self.assertFalse(
+                    any(c[1].startswith("/2026Q4/accounts/") for c in self.calls)
+                )
+
+    def test_recipient_id_rejects_other_forms_without_requests(self):
+        for value in (
+            "",
+            "abc",
+            "42.0",
+            "-42",
+            "7bd40d5c",
+            RECIPIENT_UUID + "0",
+            "https://wise.com/recipients/" + RECIPIENT_UUID,
+        ):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(SystemExit, "--find-recipient"):
+                    wise.main(self.uuid_args(value))
+                self.assertEqual(self.calls, [])
 
     def test_reviewed_request_set_is_unchanged(self):
         self.assertEqual(
             wise.REQUESTS,
             {
                 ("GET", "/2026Q4/profiles"),
+                ("GET", "/2026Q4/accounts"),
                 ("GET", "/2026Q4/accounts/{id}"),
                 ("GET", "/2026Q4/transfers"),
                 ("GET", "/2026Q4/transfers/{id}"),
@@ -258,12 +453,20 @@ class WiseTest(unittest.TestCase):
             ["--expect-iban", "ZZ00TEST0000000000001"],
             ["--expect-name", "Example Ltd"],
         ):
-            with self.subTest(extra=extra), self.assertRaises(SystemExit):
-                wise.main(["--find-recipient", "Example"] + extra)
+            for search in (["--find-recipient", "Example"], ["--find-iban", "ZZ00"]):
+                with (
+                    self.subTest(extra=extra, search=search),
+                    self.assertRaises(SystemExit),
+                ):
+                    wise.main(search + extra)
             self.assertEqual(self.calls, [])
         for name in ("", "  "):
-            with self.subTest(name=name), self.assertRaises(SystemExit):
-                wise.main(["--find-recipient", name])
+            for option in ("--find-recipient", "--find-iban"):
+                with (
+                    self.subTest(name=name, option=option),
+                    self.assertRaises(SystemExit),
+                ):
+                    wise.main([option, name])
         self.assertEqual(self.calls, [])
 
     def test_find_recipient_object_name_and_no_files(self):
@@ -274,7 +477,10 @@ class WiseTest(unittest.TestCase):
             mock.patch.object(wise, "record_result") as record,
         ):
             self.assertEqual(wise.main(["--find-recipient", "aMPle"]), 0)
-        self.assertIn("name: Example Ltd; currency: EUR; active: yes", out.getvalue())
+        self.assertIn(
+            "id: 42; name: Example Ltd; iban: ZZ00TEST0000000000001; currency: EUR; active: yes",
+            out.getvalue(),
+        )
         self.assertIn("••1234; completed transfers: 1", out.getvalue())
         self.assertNotIn("invented-token", out.getvalue() + err.getvalue())
         record.assert_not_called()
@@ -287,10 +493,11 @@ class WiseTest(unittest.TestCase):
         ]
         output = self.run_main(["--find-recipient", "example"])
         self.assertIn("completed transfers: 2", output)
-        self.assertIn("paid recipients checked: 1, unreadable: 0", output)
+        self.assertIn(
+            "recipients checked: 1 (1 with completed transfers), unreadable: 0", output
+        )
         self.assertEqual(
-            [path for _, path, *_ in self.calls if "/accounts/" in path],
-            ["/2026Q4/accounts/42"],
+            [path for _, path, *_ in self.calls if "/accounts/" in path], []
         )
 
     def test_find_recipient_profile_and_transfer_list_errors(self):
@@ -307,6 +514,13 @@ class WiseTest(unittest.TestCase):
         self.responses.clear()
         self.responses[("GET", "/2026Q4/transfers")] = {}
         self.refuse("without rows", ["--find-recipient", "Example"])
+        self.responses.clear()
+        for page in ({}, {"content": None}, "rows"):
+            with self.subTest(page=page):
+                self.responses[("GET", "/2026Q4/accounts")] = page
+                self.refuse(
+                    "account list without rows", ["--find-recipient", "Example"]
+                )
         self.assertEqual(os.listdir(self.root), [])
 
     def test_find_recipient_http_error_redacts_token_and_writes_no_file(self):
