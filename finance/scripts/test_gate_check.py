@@ -82,7 +82,8 @@ class GateSlotHeader(GateCheckGuard):
         with open(os.path.join(integrations, "gate-slot.sh"), "w") as f:
             f.write(
                 '#!/bin/sh\necho "$*" >> "%s"\n[ -z "${YARD_GATE_SLOT_HELD:-}" ] || exit 97\n'
-                'YARD_GATE_SLOT_HELD=1\nexport YARD_GATE_SLOT_HELD\nshift\nexec "$@"\n' % self.slot_calls
+                'YARD_GATE_SLOT_HELD=1\nexport YARD_GATE_SLOT_HELD\nshift\nexec "$@"\n'
+                % self.slot_calls
             )
 
     def slot_call_lines(self):
