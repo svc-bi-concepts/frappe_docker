@@ -42,6 +42,7 @@ class GateCheckGuard(unittest.TestCase):
             env=env,
             capture_output=True,
             text=True,
+            timeout=60,
         )
 
     def test_checkout_outside_home_stops_before_docker(self):
@@ -76,10 +77,12 @@ class GateSlotHeader(GateCheckGuard):
         self.slot_calls = os.path.join(self.tmp, "slot-calls")
         integrations = os.path.join(self.home, "ws_yardr", "integrations")
         os.makedirs(integrations)
+        # A header that ignores YARD_GATE_SLOT_HELD would re-enter the stub from inside its own slot and
+        # loop forever; the stub exits 97 there instead, so that mistake fails the test fast.
         with open(os.path.join(integrations, "gate-slot.sh"), "w") as f:
             f.write(
-                '#!/bin/sh\necho "$*" >> "%s"\nYARD_GATE_SLOT_HELD=1\nexport YARD_GATE_SLOT_HELD\n'
-                'shift\nexec "$@"\n' % self.slot_calls
+                '#!/bin/sh\necho "$*" >> "%s"\n[ -z "${YARD_GATE_SLOT_HELD:-}" ] || exit 97\n'
+                'YARD_GATE_SLOT_HELD=1\nexport YARD_GATE_SLOT_HELD\nshift\nexec "$@"\n' % self.slot_calls
             )
 
     def slot_call_lines(self):
