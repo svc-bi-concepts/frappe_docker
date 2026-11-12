@@ -47,8 +47,8 @@ its network and router constraints.
 ## Reaching it
 
 - http://127.0.0.1:8082, bound to loopback only (`finance-local.yml` replaces
-  the upstream port mapping with `127.0.0.1:8082:8080`). 8080 is the colima
-  front door's host port, so ERPNext moved to 8082 (container port unchanged).
+  the upstream port mapping with `127.0.0.1:8082:8080`). 8080 is the host
+  port of IT's front door, so ERPNext moved to 8082 (container port unchanged).
 - From the tailnet: `https://<machine>.<tailnet>.ts.net:8447` (tailnet only, not
   public). `tailscale serve` on the mini proxies it to the front door on 127.0.0.1:8080.
 - To check or recreate the mapping on the mini, use the Homebrew binary:
@@ -101,7 +101,7 @@ Until a key file exists, its consumer falls back: `sync_hourly.sh` to
 
 - Base URLs:
   - `https://<machine>.<tailnet>.ts.net:8447/api/` (tailnet)
-  - http://127.0.0.1:8080/api/ (on the mini; IT's front door wakes the VM and refreshes its idle clock)
+  - http://127.0.0.1:8080/api/ (on the mini; IT's front door forwards it to 8082)
 - Header: `Authorization: token <key>:<secret>`
 - Credentials: the key files above. Read them from there; never copy them into
   the repo, a commit or a note.
