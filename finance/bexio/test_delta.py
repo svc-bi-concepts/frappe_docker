@@ -40,16 +40,16 @@ if [ -f "${DELTA_OUT:-/nonexistent}" ]; then cat "$DELTA_OUT"; fi
 exit ${DELTA_RC:-0}
 """
 
+# docker info (docker-ready.sh's question) goes to INFO_LOG, not the docker log of the submits;
+# STUB_INFO_RC=1 is a daemon that does not answer.
 DOCKER_STUB = """#!/bin/sh
+case "$1" in
+  info) echo info >>"$INFO_LOG"; echo info >>"$EVENT_LOG"; exit ${STUB_INFO_RC:-0} ;;
+  context) echo "unix:///invented/docker.sock"; exit 0 ;;
+esac
 echo "docker $*" >>"$DELTA_DOCKER_LOG"
 echo docker >>"$EVENT_LOG"
 exit 0
-"""
-
-WAKE_STUB = """#!/bin/sh
-echo "$*" >>"$WAKE_LOG"
-echo wake >>"$EVENT_LOG"
-exit ${WAKE_RC:-0}
 """
 
 MASTER_TABLE = """doctype           created  updated unchanged  failed  skipped
@@ -120,7 +120,6 @@ class DeltaScript(unittest.TestCase):
         for name, body in (
             ("python3", PYTHON_STUB),
             ("docker", DOCKER_STUB),
-            ("wake", WAKE_STUB),
         ):
             path = os.path.join(bin_dir, name)
             with open(path, "w") as f:
@@ -134,7 +133,7 @@ class DeltaScript(unittest.TestCase):
                 f.write("{}")
         log = os.path.join(tmp.name, "python.log")
         dlog = os.path.join(tmp.name, "docker.log")
-        wlog = os.path.join(tmp.name, "wake.log")
+        ilog = os.path.join(tmp.name, "info.log")
         events = os.path.join(tmp.name, "events.log")
         env = dict(os.environ)
         env.update(
@@ -143,8 +142,7 @@ class DeltaScript(unittest.TestCase):
                 "PRIVATE": priv,
                 "DELTA_LOG": log,
                 "DELTA_DOCKER_LOG": dlog,
-                "COLIMA_WAKE": os.path.join(bin_dir, "wake"),
-                "WAKE_LOG": wlog,
+                "INFO_LOG": ilog,
                 "EVENT_LOG": events,
             }
         )
@@ -161,7 +159,7 @@ class DeltaScript(unittest.TestCase):
         run.exp = exp
         run.log = log
         run.dlog = dlog
-        run.wlog = wlog
+        run.ilog = ilog
         run.events = events
         return run
 
@@ -248,40 +246,35 @@ class DeltaScript(unittest.TestCase):
             os.path.exists(run.dlog) and open(run.dlog).read(),
             "the dry run submits nothing",
         )
-        with open(run.wlog) as f:
-            self.assertEqual(f.read().splitlines(), ["--hold 120 --reason bexio-delta"])
+        with open(run.ilog) as f:
+            self.assertEqual(f.read().splitlines(), ["info"])
         with open(run.events) as f:
             events = f.read().splitlines()
-        self.assertEqual(events[0:2], ["wake", "python"])
-        self.assertEqual(events.count("wake"), 1)
+        self.assertEqual(events[0:2], ["info", "python"])
+        self.assertEqual(events.count("info"), 1)
 
-    def test_apply_leases_once_before_steps_and_docker(self):
+    def test_apply_asks_the_daemon_before_steps_and_docker(self):
         run = self.run_delta(env_extra={"DELTA_APPLY": "1", "BACKUP_ID": "b1"})
         self.assertEqual(run.returncode, 0, run.stderr)
-        with open(run.wlog) as f:
-            self.assertEqual(
-                f.read().splitlines(),
-                ["--hold 120 --reason bexio-delta"]
-                + ["--hold 60 --reason bexio-drafts"] * 10,
-            )
+        with open(run.ilog) as f:
+            self.assertEqual(f.read().splitlines(), ["info"] * 11)
         with open(run.events) as f:
             events = f.read().splitlines()
-        self.assertEqual(events[0:2], ["wake", "python"])
+        self.assertEqual(events[0:2], ["info", "python"])
         self.assertIn("docker", events)
-        # Each submit wrapper also leases before its own Docker call.
-        self.assertEqual(events.count("wake"), events.count("docker") + 1)
+        # Each submit wrapper also asks the daemon before its own Docker call.
+        self.assertEqual(events.count("info"), events.count("docker") + 1)
 
-    def test_wake_failure_stops_before_any_step(self):
-        run = self.run_delta(env_extra={"WAKE_RC": "1"})
+    def test_daemon_down_stops_before_any_step(self):
+        run = self.run_delta(env_extra={"STUB_INFO_RC": "1"})
         self.assertEqual(run.returncode, 3)
-        self.assertEqual(run.stderr.count("colima-wake failed"), 1)
+        self.assertEqual(
+            run.stderr.strip(),
+            "docker daemon not reachable at unix:///invented/docker.sock; "
+            "on the mini ask IT, don't start or stop runtimes",
+        )
         self.assertFalse(os.path.exists(run.log))
         self.assertFalse(os.path.exists(run.dlog))
-
-    def test_missing_wake_is_skipped(self):
-        run = self.run_delta(env_extra={"COLIMA_WAKE": "/no/such/colima-wake"})
-        self.assertEqual(run.returncode, 0, run.stderr)
-        self.assertFalse(os.path.exists(run.wlog))
 
     def test_dry_run_refuses_moved_counts(self):
         seq = tempfile.mkdtemp()

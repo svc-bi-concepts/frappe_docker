@@ -105,11 +105,10 @@ refuse() {
   exit 1
 }
 
-wake_copy() {
-  COLIMA_WAKE=${COLIMA_WAKE:-/Users/bsaladin/ws_yardr/integrations/bin/colima-wake}
-  if [ -x "$COLIMA_WAKE" ] && ! "$COLIMA_WAKE" --hold 60 --reason copy-stack; then
-    refuse "colima-wake failed; the VM is not up, the copy cannot work without it"
-  fi
+# The daemon answers before the first docker call, or the copy stops with one line naming the endpoint.
+# Nothing here starts or wakes a runtime (erp-xfem).
+docker_ready() {
+  sh finance/scripts/docker-ready.sh || exit 1
 }
 
 require_image() {
@@ -198,7 +197,7 @@ set_admin_password() {
 }
 
 up() {
-  wake_copy
+  docker_ready
   require_image "$TAG"
   check_memory "$TAG"
   live_backup
@@ -224,7 +223,7 @@ up() {
 }
 
 refresh() {
-  wake_copy
+  docker_ready
   copy_running
   live_backup
   restore_copy

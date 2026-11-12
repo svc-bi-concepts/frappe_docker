@@ -38,7 +38,7 @@ DELTA_APPLY   1 runs the apply pass (each plan submitted, the GL written) betwee
               dry passes; without it, dry pass and trial balance check only
 BACKUP_ID     the id of the backup taken before the apply pass (bench --site frontend backup)
 
-Exit codes: 0 ok; 2 refused; 3 a step or colima wake failed; 4 the rerun inserted something;
+Exit codes: 0 ok; 2 refused; 3 a step failed or the docker daemon does not answer; 4 the rerun inserted something;
 5 the rerun moved the bexio-keyed document counts.
 EOF
 }
@@ -114,15 +114,10 @@ acquire_lock() {
 }
 acquire_lock
 
-# ---- the colima VM: awake before the first docker call ---------------------------
+# ---- the docker daemon: answering before the first docker call --------------------
+# One line naming the endpoint when it does not; nothing here starts or wakes a runtime (erp-xfem).
 
-COLIMA_WAKE=${COLIMA_WAKE:-/Users/bsaladin/ws_yardr/integrations/bin/colima-wake}
-if [ -x "$COLIMA_WAKE" ]; then
-  if ! "$COLIMA_WAKE" --hold 120 --reason bexio-delta; then
-    echo "delta.sh: colima-wake failed; the VM is not up, the run cannot work without it" >&2
-    exit 3
-  fi
-fi
+sh "$REPO/finance/scripts/docker-ready.sh" || exit 3
 
 # ---- the run directory -----------------------------------------------------------
 

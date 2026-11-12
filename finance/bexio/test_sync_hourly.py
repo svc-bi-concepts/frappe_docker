@@ -74,13 +74,20 @@ printf 'exporter %s\\n' "$*" >>"$SYNC_LOG"
 exit ${EXPORTER_RC:-0}
 """
 
-# colima-wake stands in for IT's shim: it logs its args to WAKE_LOG (not SYNC_LOG, so the
-# run's call order stays the run's own), notes if a step had already run (SYNC_LOG is
-# written by the first step), and exits WAKE_RC.
-WAKE_STUB = """#!/bin/sh
-printf '%s\\n' "$*" >>"$WAKE_LOG"
-[ -s "$SYNC_LOG" ] && printf 'after-steps\\n' >>"$WAKE_LOG"
-exit ${WAKE_RC:-0}
+# docker stands in for the daemon docker-ready.sh asks: docker info logs to INFO_LOG (not
+# SYNC_LOG, so the run's call order stays the run's own), notes if a step had already run
+# (SYNC_LOG is written by the first step), and exits STUB_INFO_RC. Any other docker call is
+# logged too, so a test sees one the run should not make.
+DOCKER_STUB = """#!/bin/sh
+case "$1" in
+  info)
+    printf 'info\\n' >>"$INFO_LOG"
+    [ -s "$SYNC_LOG" ] && printf 'after-steps\\n' >>"$INFO_LOG"
+    exit ${STUB_INFO_RC:-0} ;;
+  context) echo "unix:///invented/docker.sock"; exit 0 ;;
+esac
+printf 'docker %s\\n' "$*" >>"$INFO_LOG"
+exit 0
 """
 
 YARDR_STUB = """#!/bin/sh
@@ -104,7 +111,11 @@ class SyncHourlyTest(unittest.TestCase):
         self.stubdir = os.path.join(self.temp, "stubs")
         os.makedirs(self.home)
         os.makedirs(self.stubdir)
-        for name, body in (("python3", PYTHON_STUB), ("yardr", YARDR_STUB)):
+        for name, body in (
+            ("python3", PYTHON_STUB),
+            ("yardr", YARDR_STUB),
+            ("docker", DOCKER_STUB),
+        ):
             path = os.path.join(self.stubdir, name)
             with open(path, "w") as f:
                 f.write(body)
@@ -113,11 +124,7 @@ class SyncHourlyTest(unittest.TestCase):
         with open(self.exporter, "w") as f:
             f.write(EXPORTER_STUB)
         os.chmod(self.exporter, 0o755)
-        self.wake = os.path.join(self.stubdir, "colima-wake-stub")
-        with open(self.wake, "w") as f:
-            f.write(WAKE_STUB)
-        os.chmod(self.wake, 0o755)
-        self.wakelog = os.path.join(self.temp, "wake.log")
+        self.infolog = os.path.join(self.temp, "info.log")
         self.log = os.path.join(self.temp, "calls.log")
         self.maillog = os.path.join(self.temp, "mail.log")
         self.tokenlog = os.path.join(self.temp, "token.log")
@@ -143,9 +150,8 @@ class SyncHourlyTest(unittest.TestCase):
         env["COUNTS_SEQ_DIR"] = self.seqdir
         env["BEXIO_PRIVATE"] = self.private
         env["BEXIO_SYNC_EXPORTER"] = self.exporter
-        # Always a stub: the real colima-wake would start the VM on this machine.
-        env["COLIMA_WAKE"] = self.wake
-        env["WAKE_LOG"] = self.wakelog
+        # Always the stub: the run must not ask this machine's real daemon.
+        env["INFO_LOG"] = self.infolog
         env["BEXIO_SYNC_YARDR"] = os.path.join(self.stubdir, "yardr")
         env["YARDR_MAIL_LOG"] = self.maillog
         env["YARDR_ENV_LOG"] = self.envlog
@@ -475,46 +481,42 @@ class SyncHourlyTest(unittest.TestCase):
             self.yardr_envs(), ["/Users/bsaladin/ws_yardr_finance/.yardr"] * 2
         )
 
-    # ---- the colima VM (the wake before the run) -------------------------------------
+    # ---- the docker daemon (asked once before the run) -------------------------------
 
-    def wake_calls(self):
-        if not os.path.exists(self.wakelog):
+    def info_calls(self):
+        if not os.path.exists(self.infolog):
             return []
-        with open(self.wakelog) as f:
+        with open(self.infolog) as f:
             return f.read().splitlines()
 
-    def test_wake_runs_once_before_the_first_step(self):
-        """colima-wake --hold 15 --reason bexio-sync runs once, before the exporter (and so
-        before any docker call the loaders make)."""
+    def test_daemon_is_asked_once_before_the_first_step(self):
+        """docker info runs once, before the exporter (and so before any docker call the
+        loaders make)."""
         self.counts_seq(COUNTS_BEFORE, COUNTS_BEFORE)
         proc = self.run_script()
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-        # one call, with the args, and no step had run when it was made (no "after-steps")
-        self.assertEqual(self.wake_calls(), ["--hold 15 --reason bexio-sync"])
+        # one call, and no step had run when it was made (no "after-steps")
+        self.assertEqual(self.info_calls(), ["info"])
         self.assertTrue(self.calls()[0].startswith("exporter "))
 
-    def test_wake_failure_exits_before_any_step(self):
-        """A failing wake: exit 3, one line on stderr, no docker call, no run folder."""
+    def test_daemon_down_exits_before_any_step(self):
+        """A daemon that does not answer: exit 3, one line on stderr naming the endpoint, no
+        other docker call, no run folder, no mail."""
         self.counts_seq(COUNTS_BEFORE, COUNTS_BEFORE)
-        proc = self.run_script(WAKE_RC="1")
+        proc = self.run_script(STUB_INFO_RC="1")
         self.assertEqual(proc.returncode, 3, proc.stdout + proc.stderr)
-        self.assertIn("colima-wake failed", proc.stderr)
+        self.assertEqual(
+            proc.stderr.strip(),
+            "docker daemon not reachable at unix:///invented/docker.sock; "
+            "on the mini ask IT, don't start or stop runtimes",
+        )
         self.assertFalse(os.path.exists(self.log))  # no step ran, so no step logged
-        self.assertEqual(self.wake_calls(), ["--hold 15 --reason bexio-sync"])
+        self.assertEqual(self.info_calls(), ["info"])
         self.assertEqual([d for d in os.listdir(self.syncdir) if d[0].isdigit()], [])
         self.assertEqual(self.mails(), [])
 
-    def test_missing_wake_is_skipped(self):
-        """No shim on this machine (tests, other machines): the run goes on, silently."""
-        self.counts_seq(COUNTS_BEFORE, COUNTS_BEFORE)
-        proc = self.run_script(COLIMA_WAKE=os.path.join(self.temp, "no-such-wake"))
-        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-        self.assertNotIn("colima-wake", proc.stderr)
-        self.assertEqual(self.wake_calls(), [])
-        self.assertTrue(self.calls()[0].startswith("exporter "))
-
-    def test_wake_is_skipped_for_a_refused_run(self):
-        """A refused run (a live lock holder) does not wake the VM for nothing."""
+    def test_daemon_is_not_asked_for_a_refused_run(self):
+        """A refused run (a live lock holder) does not reach docker at all."""
         lock = os.path.join(self.private, ".bexio-sync.lock")
         os.makedirs(lock)
         self.addCleanup(shutil.rmtree, lock, True)
@@ -522,7 +524,7 @@ class SyncHourlyTest(unittest.TestCase):
             f.write(f"{os.getpid()} now\n")
         proc = self.run_script()
         self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
-        self.assertEqual(self.wake_calls(), [])
+        self.assertEqual(self.info_calls(), [])
 
     # ---- the locks -----------------------------------------------------------------
 
