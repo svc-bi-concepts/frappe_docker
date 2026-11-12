@@ -377,6 +377,21 @@ class WiseTest(unittest.TestCase):
         )
         self.assertIn(("GET", "/2026Q4/accounts/42"), [c[:2] for c in self.calls])
 
+    def test_recipient_uuid_matches_documented_top_level_keys_only(self):
+        for key in ("uuid", "publicId", "PUBLICID"):
+            with self.subTest(key=key):
+                self.calls.clear()
+                self.responses[("GET", "/2026Q4/accounts")] = {
+                    "content": [
+                        self.never_paid_account(id=52, details={"ref": RECIPIENT_UUID}),
+                        self.never_paid_account(id=42, **{key: RECIPIENT_UUID}),
+                    ]
+                }
+                self.assertIn(
+                    f"recipient UUID {RECIPIENT_UUID} is account id 42",
+                    self.run_main(self.uuid_args()),
+                )
+
     def test_recipient_uuid_first_payment_keeps_identity_check(self):
         self.responses[("GET", "/2026Q4/transfers")] = []
         args = self.uuid_args() + [
@@ -397,8 +412,10 @@ class WiseTest(unittest.TestCase):
             [self.never_paid_account(uuid=RECIPIENT_UUID, profileId=8)],
             [
                 self.never_paid_account(uuid=RECIPIENT_UUID),
-                self.never_paid_account(id=52, details={"ref": RECIPIENT_UUID}),
+                self.never_paid_account(id=52, publicId=RECIPIENT_UUID),
             ],
+            [self.never_paid_account(details={"ref": RECIPIENT_UUID})],
+            [self.never_paid_account(links=[{"uuid": RECIPIENT_UUID}])],
         ):
             with self.subTest(content=content):
                 self.calls.clear()

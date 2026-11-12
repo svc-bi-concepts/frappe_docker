@@ -11,7 +11,7 @@ finance/wise/prepare_wise_transfer.py --find-recipient "Example Ltd"
 finance/wise/prepare_wise_transfer.py --find-iban "ZZ00 TEST 0000 0000 0000 1"
 ```
 
-`--recipient-id` takes the numeric account id or the UUID from the recipient URL of the Wise web app (`wise.com/recipients/<UUID>`). A UUID is resolved through the profile's account list to the numeric id, which the script prints and uses; one that matches no account, or more than one, is refused with a pointer to `--find-recipient` and `--find-iban`.
+`--recipient-id` takes the numeric account id or the UUID from the recipient URL of the Wise web app (`wise.com/recipients/<UUID>`). A UUID is resolved through the profile's account list to the numeric id: only a top-level `uuid`, `publicId` or `id` field of an account counts, never a nested one, which the script prints and uses; one that matches no account, or more than one, is refused with a pointer to `--find-recipient` and `--find-iban`.
 
 Run a GET-only preview first:
 

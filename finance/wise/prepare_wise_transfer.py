@@ -175,19 +175,20 @@ def recipient_iban(recipient):
     return details.get("iban") if isinstance(details, dict) else None
 
 
-def holds_value(value, wanted):
-    if isinstance(value, dict):
-        return any(holds_value(item, wanted) for item in value.values())
-    if isinstance(value, list):
-        return any(holds_value(item, wanted) for item in value)
-    return isinstance(value, str) and value.strip().casefold() == wanted
+UUID_KEYS = ("uuid", "publicid", "id")
+
+
+def holds_uuid(row, wanted):
+    return any(str(key).casefold() in UUID_KEYS and isinstance(value, str)
+               and value.strip().casefold() == wanted for key, value in row.items())
 
 
 def resolve_recipient_uuid(profile_id, token, recipient_uuid):
     # The web app shows a UUID in the recipient URL; transfers need the
-    # numeric account id. Only an exact match in this profile's list counts.
+    # numeric account id. Only an exact match of a top-level uuid, publicId or
+    # id field in this profile's list counts.
     matches = [account_id for account_id, row in profile_accounts(profile_id, token).items()
-               if holds_value(row, recipient_uuid)]
+               if holds_uuid(row, recipient_uuid)]
     if len(matches) != 1:
         raise SystemExit("refused: recipient UUID {} matches {} accounts of the BUSINESS profile; "
                          "use --find-recipient NAME or --find-iban IBAN for the numeric id".format(
