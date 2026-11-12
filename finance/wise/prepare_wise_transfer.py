@@ -175,7 +175,7 @@ def recipient_iban(recipient):
     return details.get("iban") if isinstance(details, dict) else None
 
 
-UUID_KEYS = ("uuid", "publicid", "id")
+UUID_KEYS = ("uuid", "publicid")
 
 
 def holds_uuid(row, wanted):
@@ -185,8 +185,8 @@ def holds_uuid(row, wanted):
 
 def resolve_recipient_uuid(profile_id, token, recipient_uuid):
     # The web app shows a UUID in the recipient URL; transfers need the
-    # numeric account id. Only an exact match of a top-level uuid, publicId or
-    # id field in this profile's list counts.
+    # numeric account id. Only an exact match of a top-level uuid or publicId
+    # field in this profile's list counts.
     matches = [account_id for account_id, row in profile_accounts(profile_id, token).items()
                if holds_uuid(row, recipient_uuid)]
     if len(matches) != 1:
