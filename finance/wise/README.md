@@ -1,14 +1,17 @@
 # Wise transfer preparation
 
-`prepare_wise_transfer.py` lists paid recipients matching `--find-recipient NAME` or prepares one unfunded transfer to an existing, active recipient in the single business profile. Search lists paid recipients only; Benchi adds new recipients in the Wise UI. Transfer preparation refuses unknown recipients, a recipient without completed transfer history unless verified with `--first-payment`, duplicate invoice references, unsupported details, and, with `--yes`, dates outside the allowed window. It never funds, cancels, creates or changes recipients, or writes to bexio or ERPNext.
+`prepare_wise_transfer.py` lists recipients matching `--find-recipient NAME` and/or `--find-iban IBAN`, or prepares one unfunded transfer to an existing, active recipient in the single business profile. Search reads the profile's account list, so a recipient Benchi has just added in the Wise UI is found before its first payment; it prints the numeric id, name, IBAN and the count of completed transfers. Transfer preparation refuses unknown recipients, a recipient without completed transfer history unless verified with `--first-payment`, duplicate invoice references, unsupported details, and, with `--yes`, dates outside the allowed window. It never funds, cancels, creates or changes recipients, or writes to bexio or ERPNext.
 
 For a recipient with no transfer history, use `--first-payment` with `--expect-iban` and `--expect-name` copied from the invoice, plus `--source-currency`. The script compares the Wise account details with those invoice values and refuses any mismatch; this mode also refuses recipients that already have a completed transfer. Benchi adds the recipient in the Wise UI first. The usual preview and `--yes` safeguards still apply.
 
-Find an existing paid recipient with a partial name match (case and repeated whitespace are ignored):
+Find a recipient with a partial name match (case and repeated whitespace are ignored), or by its exact IBAN (spaces and case ignored); both options together must both match:
 
 ```sh
 finance/wise/prepare_wise_transfer.py --find-recipient "Example Ltd"
+finance/wise/prepare_wise_transfer.py --find-iban "ZZ00 TEST 0000 0000 0000 1"
 ```
+
+`--recipient-id` takes the numeric account id or the UUID from the recipient URL of the Wise web app (`wise.com/recipients/<UUID>`). A UUID is resolved through the profile's account list to the numeric id, which the script prints and uses. Only the top-level `uuid` and `publicId` fields of an account are matched, never a nested field. A UUID that matches no account, or more than one, is refused with a pointer to `--find-recipient` and `--find-iban`.
 
 Run a GET-only preview first:
 
