@@ -258,24 +258,30 @@ def _plan(order, position, positions, quantity, mode, taxes):
         raise SystemExit("refused: the position's tax is no active sales tax at --date")
     rate = _dec(tax.get("value", 0), "the tax rate")
     line = Decimal(quantity) * price
+    estimate = None
     if mode == "exempt":
-        net, vat = line, Decimal(0)
+        estimate = line, Decimal(0)
     elif mode == "gross":
         vat = line * rate / (100 + rate)
-        net = line - vat
-    else:
-        net, vat = line, line * rate / 100
+        estimate = line - vat, vat
+    elif mode == "net":
+        estimate = line, line * rate / 100
     cent = Decimal("0.01")
     print(
         "invoice: position {}, quantity {} of {} at {}; tax {} {}%".format(
             position.get("id"), quantity, ordered, price, tax.get("code"), rate
         )
     )
-    print(
-        "estimate (bexio computes the totals): net {}, tax {}".format(
-            net.quantize(cent), vat.quantize(cent)
+    if estimate is None:
+        # Only the modes create_sales_invoice writes are known; a guessed figure for
+        # another mwst_type would read as a checked one.
+        print(f"estimate: none for {mode}; bexio computes the totals")
+    else:
+        print(
+            "estimate (bexio computes the totals): net {}, tax {}".format(
+                estimate[0].quantize(cent), estimate[1].quantize(cent)
+            )
         )
-    )
     sent = []
     for p in positions:
         if p is position:

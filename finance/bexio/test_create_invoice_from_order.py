@@ -80,7 +80,7 @@ def day_position(ident=11, amount="60.000000", open_amount="60.000000"):
         "amount_open": open_amount,
         "unit_id": 5,
         "unit_name": "days",
-        "unit_price": "1000.000000",
+        "unit_price": "913.370000",
         "account_id": 30,
         "tax_id": 8,
     }
@@ -341,11 +341,26 @@ class RunTest(unittest.TestCase):
         self.assertIn("position 11 KbPositionCustom: Invented consulting days", out)
         self.assertIn("account 3400; tax VAT81", out)
         self.assertIn("quantity 20 of 60.000000", out)
-        self.assertIn("net 20000.00, tax 1620.00", out)
+        self.assertIn("net 18267.40, tax 1479.66", out)
         self.assertIn("dry run: nothing created", out)
         tax_req = next(req for _, path, req in self.calls if path == "/3.0/taxes")
         query = urllib.parse.parse_qs(urllib.parse.urlparse(tax_req.full_url).query)
         self.assertEqual(query["date"], ["2026-03-31"])
+
+    def test_estimate_follows_the_order_vat_mode(self):
+        for mwst_type, is_net, expected in (
+            (0, False, "net 16898.61, tax 1368.79"),
+            (2, True, "net 18267.40, tax 0.00"),
+            (1, True, "estimate: none for mwst_type 1"),
+        ):
+            with self.subTest(mwst_type=mwst_type, is_net=is_net):
+                the_order = order()
+                the_order.update(mwst_type=mwst_type, mwst_is_net=is_net)
+                self.fake, self.calls = fake_bexio(the_order)
+                self.output = io.StringIO()
+                self.run_tool(yes=False)
+                self.assertIn(expected, self.output.getvalue())
+                self.assertFalse(self.posts())
 
     def test_missing_quantity_shows_order_and_refuses(self):
         with self.assertRaises(SystemExit) as error:
