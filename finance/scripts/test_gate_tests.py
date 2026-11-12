@@ -359,7 +359,7 @@ class GateCheckoutRunner(unittest.TestCase):
                 text=True,
             )
             self.assertEqual(run.returncode, 0, run.stderr)
-            self.assertIn("Ran 3 tests", run.stderr)
+            self.assertIn("Ran 8 tests", run.stderr)
             args = calls.read_text().splitlines()
             self.assertEqual(args[:2], ["run", "--rm"])
             self.assertEqual(

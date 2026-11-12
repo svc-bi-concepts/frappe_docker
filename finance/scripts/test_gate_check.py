@@ -42,6 +42,7 @@ class GateCheckGuard(unittest.TestCase):
             env=env,
             capture_output=True,
             text=True,
+            timeout=60,
         )
 
     def test_checkout_outside_home_stops_before_docker(self):
@@ -63,6 +64,46 @@ class GateCheckGuard(unittest.TestCase):
         checkout = os.path.join(self.home, "work")
         result = self.run_check(checkout)
         self.assertNotIn("is not under $HOME", result.stderr)
+
+
+class GateSlotHeader(GateCheckGuard):
+    """The gate-slot header (yard-s2mw): a bare run re-runs the file through the shared gate-slot.sh
+    once, a run under a held slot goes straight on, and the gate's exit code comes through either way.
+    A stub gate-slot.sh under the invented $HOME records its calls; the checkout outside $HOME makes the
+    gate itself fail fast with exit 2."""
+
+    def setUp(self):
+        super().setUp()
+        self.slot_calls = os.path.join(self.tmp, "slot-calls")
+        integrations = os.path.join(self.home, "ws_yardr", "integrations")
+        os.makedirs(integrations)
+        # A header that ignores YARD_GATE_SLOT_HELD would re-enter the stub from inside its own slot and
+        # loop forever; the stub exits 97 there instead, so that mistake fails the test fast.
+        with open(os.path.join(integrations, "gate-slot.sh"), "w") as f:
+            f.write(
+                '#!/bin/sh\necho "$*" >> "%s"\n[ -z "${YARD_GATE_SLOT_HELD:-}" ] || exit 97\n'
+                'YARD_GATE_SLOT_HELD=1\nexport YARD_GATE_SLOT_HELD\nshift\nexec "$@"\n'
+                % self.slot_calls
+            )
+
+    def slot_call_lines(self):
+        if not os.path.exists(self.slot_calls):
+            return []
+        with open(self.slot_calls) as f:
+            return f.read().splitlines()
+
+    def test_bare_run_takes_one_slot_and_keeps_the_exit_code(self):
+        result = self.run_check(os.path.join(self.tmp, "elsewhere", "work"))
+        self.assertEqual(self.slot_call_lines(), ["-- sh .yardr/check"])
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("is not under $HOME", result.stderr)
+
+    def test_run_under_a_held_slot_goes_straight_on(self):
+        result = self.run_check(
+            os.path.join(self.tmp, "elsewhere", "work"), {"YARD_GATE_SLOT_HELD": "1"}
+        )
+        self.assertEqual(self.slot_call_lines(), [])
+        self.assertEqual(result.returncode, 2, result.stderr)
 
 
 if __name__ == "__main__":

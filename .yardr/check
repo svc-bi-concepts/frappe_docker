@@ -1,4 +1,9 @@
 #!/bin/sh
+gate_slot=$HOME/ws_yardr/integrations/gate-slot.sh
+if [ -z "${YARD_GATE_SLOT_HELD:-}" ] && [ -f "$gate_slot" ]; then exec sh "$gate_slot" -- sh "$0" "$@"; fi
+# The two lines above take one of the mini's shared gate slots, also for no-mistakes' Test step, which runs this
+# file outside every slot (yard-s2mw, integrations/gate-slot-header.md). Under a slot already held, or where
+# gate-slot.sh is absent (CI, another machine), they do nothing.
 # The merge gate of depot finance: yardr depot check runs it in a bead's worktree, and
 # a bead lands only when it exits 0. yardr reads this file from the base
 # branch (main), so an edit here counts once it has landed there.

@@ -143,6 +143,12 @@ under `$HOME`. Colima on the Mac mini mounts only the home folder, so an outside
 checkout would otherwise appear empty in the container. Set `GATE_ANY_PATH=1` to
 skip this guard on a host whose Docker can access other paths.
 
+On the Mac mini, `.yardr/check` first takes one of the machine's shared gate slots
+through `~/ws_yardr/integrations/gate-slot.sh`, also when no-mistakes' Test step runs
+it. When all slots are busy it prints `gate: waiting for a slot` and waits, then
+`gate: running in slot <k> of <n>`. Under a slot already held (`YARD_GATE_SLOT_HELD`
+set) or where `gate-slot.sh` is absent, it runs at once.
+
 Not covered here: backups and upgrades. Those come in later beads.
 
 ## Assistant (read part)
