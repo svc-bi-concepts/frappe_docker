@@ -116,7 +116,7 @@ refresh token ride along, so the blessed read script holds nothing write-capable
 `client.py` takes the read token for every GET where it is set. `export.py` injects only
 that name too: it reads everything with the read token (live finding of 2026-10-14, see
 above). The write-capable `BEXIO_TOKEN` is used by `upload_bill.py`,
-`create_contact_and_bill.py` and `create_sales_invoice.py`; repair in
+`create_contact_and_bill.py`, `create_sales_invoice.py` and `create_invoice_from_order.py`; repair in
 `create_contact_and_bill.py` also PUTs one reviewed individual bill endpoint.
 
 ## One run for everything (`--complete`)
@@ -821,6 +821,26 @@ Run without `--yes` to resolve and print the plan. After reviewing it, `--yes` c
 and checks it by reading it back. A failed POST is never retried; check bexio before another attempt.
 Position totals are checked against amount × unit price with a tolerance below 0.000001, matching
 bexio's six-decimal read-back while rejecting larger changes.
+
+A monthly invoice against a running order (the Axpo Solutions order, Benchi 2026-11-12) comes from
+the order itself, not from a copy of last month's file: `create_invoice_from_order.py` calls bexio's
+own order action (`POST /2.0/kb_order/{id}/invoice`), so the draft stays linked to the order and bexio
+counts the invoiced days off the order's open amount. Its writes are that one action and, when the
+draft's date is not `--date`, one edit of the draft it just created (both dates move, the payment term
+stays); it cannot issue, send, mail or delete. It refuses an order whose contact is not `--contact`,
+an order with more than one billable position unless `--position` names one, discount or sub
+positions, a quantity above the position's open amount, and an existing invoice with the same
+contact, title and date. `--quantity` has no default: without it the run prints the order and stops.
+
+```sh
+finance/bexio/create_invoice_from_order.py --order <id> --contact <id> --date 2026-03-31            # prints the order, asks for --quantity
+finance/bexio/create_invoice_from_order.py --order <id> --contact <id> --date 2026-03-31 --quantity 20  # dry run
+finance/bexio/create_invoice_from_order.py --order <id> --contact <id> --date 2026-03-31 --quantity 20 --yes
+```
+
+The read-back checks that the draft is status 7, holds the order's contact and position (text,
+account, tax, unit, unit price) at the asked quantity, and that the date edit changed nothing else;
+it prints the draft's id, document number, order, dates and totals.
 
 ```sh
 finance/bexio/prepare_bill_payment.py --bill <document-no> --payment <private-payment.json> --bank-account-id <id>  # dry run
