@@ -827,7 +827,7 @@ the order itself, not from a copy of last month's file: `create_invoice_from_ord
 own order action (`POST /2.0/kb_order/{id}/invoice`), so the draft stays linked to the order and bexio
 counts the invoiced days off the order's open amount. Its writes are that one action and, when the
 draft's date is not `--date`, one edit of the draft it just created (both dates move, the payment term
-stays); it cannot issue, send, mail or delete. It refuses an order whose contact is not `--contact`,
+stays); it cannot issue, send or mail, and deletes only a draft through `--delete-draft` below. It refuses an order whose contact is not `--contact`,
 an order with more than one billable position unless `--position` names one, discount or sub
 positions, a quantity above the position's open amount, and an existing invoice with the same
 contact, title and date. `--quantity` has no default: without it the run prints the order and stops.
@@ -841,6 +841,20 @@ finance/bexio/create_invoice_from_order.py --order <id> --contact <id> --date 20
 The read-back checks that the draft is status 7, holds the order's contact and position (text,
 account, tax, unit, unit price) at the asked quantity, and that the date edit changed nothing else;
 it prints the draft's id, document number, order, dates and totals.
+
+Two side modes of the same launcher serve that monthly run (Benchi, 2026-11-13). `--delete-draft`
+removes one sales invoice DRAFT (for example one made from a copied file instead of from the order):
+it refuses unless the invoice has status draft (7), belongs to `--contact` and carries exactly the
+`--document-nr` given; without `--yes` it only prints the draft, with `--yes` it sends one
+`DELETE /2.0/kb_invoice/{id}` and checks the draft is no longer listed. An issued invoice is never
+deleted. `--pdf` only reads: it saves an invoice of `--contact` (`GET /2.0/kb_invoice/{id}/pdf`) to a
+new `.pdf` file under `private/` and never writes over a file.
+
+```sh
+finance/bexio/create_invoice_from_order.py --delete-draft <id> --contact <id> --document-nr <nr>        # dry run
+finance/bexio/create_invoice_from_order.py --delete-draft <id> --contact <id> --document-nr <nr> --yes
+finance/bexio/create_invoice_from_order.py --pdf <id> --contact <id> --out <private/...>.pdf
+```
 
 `prepare_bill_payment.py` takes a bill's document number, a private payment file and a bank account:
 
