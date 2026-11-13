@@ -756,8 +756,8 @@ foreign-currency document against bexio's journal every hour, like every other d
   does not answer prints one line naming the endpoint on stderr and exits 3 before any step, without a mail.
   Nothing here starts or wakes a runtime: Colima on the mini is always on, and a silent daemon is IT's.
 - The monthly `delta.sh` asks the same way after its lock and before its first step (exit 3).
-- REST importers use port 8080, not the stack's published port 8082: IT's front door wakes the VM and refreshes
-  its idle clock for each connection and while a connection stays open. Port 8082 remains right for checking the stack itself.
+- REST importers use port 8080, not the stack's published port 8082: IT's front door forwards it to 8082 and holds a
+  connection up to 180 s while the stack restarts. Port 8082 remains right for checking the stack itself.
 - Every run keeps `private/bexio-sync/<stamp>/` (mode 700): the step logs, the two snapshots, `gate.txt` and
   `summary.txt`. The last 48 run folders stay (`BEXIO_SYNC_KEEP`); launchd's own output lands in
   `private/bexio-sync/launchd.log`.

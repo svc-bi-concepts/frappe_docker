@@ -96,7 +96,7 @@ esac
 cd "$(dirname "$0")/../.."
 
 PROJECT=frappe-finance
-# Port 8080 is IT's front door: it wakes the VM and keeps it up during API calls.
+# Port 8080 is IT's front door: it forwards to the stack's 8082 (Colima is always on, nothing to wake).
 API_URL=http://127.0.0.1:8080/api/
 OUT="$HOME/ws_yardr_finance/$KEYS_NAME"
 

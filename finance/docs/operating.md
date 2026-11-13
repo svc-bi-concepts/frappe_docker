@@ -222,19 +222,17 @@ ledgerdemain`: a minor move, not this procedure; it is a decision bead. erpnexts
 
    Wait for the build window command to return before step 6.
 
-   A lease keeps the VM awake; a compose stack does not. A foreground `docker exec`, `docker cp`, `docker run`,
-   `docker compose exec` or `docker compose run` on the host counts as use while it runs; `docker exec -d` is not
-   seen and needs a lease. The build window refuses with exit 70 and changes nothing while such a job, an image build
-   or a CI job runs on any yard, or while another window is open. Wait for it and run the command again. So open the
-   window before starting exec jobs. A build window with a command closes when that command ends, regardless of what
-   else is running. A window opened without a command is closed by idle-stop once its time and every other lease have
-   expired. Closing a window restarts the VM, and therefore kills a running exec, only when opening it had to raise
-   memory: the VM has 4 GiB today, so opening and closing do not restart it; below 3 GiB both do. Never start a
-   backup, migrate or loader inside a build window.
+   Docker runs on the default context; Colima on the mini is always on, so no step here wakes the VM or takes
+   a lease. If `docker info` does not answer, stop and ask IT; never start, stop or reconfigure the runtime.
+   The build window refuses with exit 70 and changes nothing while an image build, a CI job or a host Docker job
+   runs on any yard, or while another window is open. Wait for it and run the command again. It closes when its
+   command ends. The VM has 4 GiB today, above the window's 3 GiB, so opening and closing it do not restart the VM.
+   Never start a backup, migrate or loader inside a build window.
 
-6. **Backup** (yardmaster, before the switch, no other session writing). First take a lease covering steps 6 to 11; take it again if they run longer:
+6. **Backup** (yardmaster, before the switch, no other session writing). First check that Docker answers
+   (one line naming the endpoint if not; then ask IT):
 
-       /Users/bsaladin/ws_yardr/integrations/bin/colima-wake --hold 90 --reason d4-update
+       sh finance/scripts/docker-ready.sh
 
    Note the BACKUP_ID, the timestamp prefix of
    the new set in `sites/frontend/private/backups`:
