@@ -830,7 +830,8 @@ draft's date is not `--date`, one edit of the draft it just created (both dates 
 stays); it cannot issue, send or mail, and deletes only a draft through `--delete-draft` below. It refuses an order whose contact is not `--contact`,
 an order with more than one billable position unless `--position` names one, discount or sub
 positions, a quantity above the position's open amount, and an existing invoice with the same
-contact, title and date. `--quantity` has no default: without it the run prints the order and stops.
+contact, title and date. A pending order (status 5) that was never invoiced from shows open 0 and
+completed 0 on its position (bexio has not started counting yet); there the ordered amount is the limit. `--quantity` has no default: without it the run prints the order and stops.
 
 ```sh
 finance/bexio/create_invoice_from_order.py --order <id> --contact <id> --date 2026-03-31            # prints the order, asks for --quantity
