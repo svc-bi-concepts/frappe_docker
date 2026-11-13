@@ -403,13 +403,24 @@ def delete_draft(ident, contact, document_nr, yes, token):
         return
     _deletable.add(ident)
     _send("DELETE", "/2.0/kb_invoice/" + str(ident), token)
-    record = f"sales invoice draft id {ident} document_nr {document_nr} deleted"
-    if any(r.get("id") == ident for r in _paged("/2.0/kb_invoice", token)):
-        raise SystemExit(f"draft id {ident} is still listed after the delete; check bexio")
+    record = f"sales invoice draft id {ident} document_nr {document_nr}"
+    # Record the sent delete before the list check, as the create path records its
+    # draft before the read-back: a failing list request must not lose the trace.
     try:
-        record_result(record)
+        record_result(record + " delete sent, list check pending")
     except OSError:
-        raise SystemExit(f"draft id {ident} deleted; could not record result")
+        raise SystemExit(f"delete of draft id {ident} sent; could not record result")
+    try:
+        listed = any(r.get("id") == ident for r in _paged("/2.0/kb_invoice", token))
+    except (RefusedRequest, SystemExit, AttributeError) as err:
+        record_result(record + " list check failed")
+        raise SystemExit(
+            f"delete of draft id {ident} sent; list check failed: {err}; check bexio"
+        )
+    if listed:
+        record_result(record + " still listed after the delete")
+        raise SystemExit(f"draft id {ident} is still listed after the delete; check bexio")
+    record_result(record + " deleted, no longer listed")
     print(f"deleted draft id {ident} ({document_nr}); no longer listed")
 
 
