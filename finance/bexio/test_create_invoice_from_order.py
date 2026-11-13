@@ -738,7 +738,9 @@ class SideModeTest(unittest.TestCase):
 
         with self.assertRaises(SystemExit) as error:
             self.run_tool(list_fails, *self.delete_args())
-        self.assertIn("delete of draft id 905 sent; list check failed", str(error.exception))
+        self.assertIn(
+            "delete of draft id 905 sent; list check failed", str(error.exception)
+        )
         self.assertIn("delete sent, list check pending", self.result())
         self.assertIn("list check failed", self.result())
         self.assertEqual([m for m, _ in calls], ["GET", "DELETE"])
