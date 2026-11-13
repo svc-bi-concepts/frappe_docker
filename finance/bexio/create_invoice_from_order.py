@@ -274,7 +274,8 @@ def _plan(order, position, positions, quantity, mode, taxes):
     if (
         order.get("kb_item_status_id") == ORDER_PENDING
         and limit == 0
-        and _dec(position.get("amount_completed") or 0, "the completed amount") == 0
+        and position.get("amount_completed") is not None
+        and _dec(position["amount_completed"], "the completed amount") == 0
     ):
         limit = ordered
     if Decimal(quantity) > limit:

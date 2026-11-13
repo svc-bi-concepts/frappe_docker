@@ -491,7 +491,11 @@ class RunTest(unittest.TestCase):
         counted["amount_completed"] = counted["amount"]
         invoiced = order([counted])
         invoiced["kb_item_status_id"] = 5
-        for the_order in (not_pending, invoiced):
+        unknown = day_position(open_amount="0.000000")
+        unknown.pop("amount_completed", None)
+        uncounted_unknown = order([unknown])
+        uncounted_unknown["kb_item_status_id"] = 5
+        for the_order in (not_pending, invoiced, uncounted_unknown):
             self.fake, self.calls = fake_bexio(the_order)
             with self.assertRaises(SystemExit) as error:
                 self.run_tool()
