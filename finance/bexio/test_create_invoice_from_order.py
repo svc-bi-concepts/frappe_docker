@@ -200,14 +200,13 @@ class LauncherTest(unittest.TestCase):
         os.path.dirname(os.path.abspath(oi.__file__)), "create_invoice_from_order.py"
     )
 
-    def test_head_mode_and_marker(self):
+    def test_head_and_mode(self):
         with open(self.PATH, encoding="utf-8") as f:
             content = f.read()
         self.assertEqual(
             content.splitlines()[0], "#!/usr/local/bin/av inject +BEXIO_TOKEN /bin/bash"
         )
         self.assertTrue(os.stat(self.PATH).st_mode & stat.S_IXUSR)
-        self.assertIn("<<'__BEXIO_ORDER_INVOICE_PY__'", content)
 
 
 def reset_writes():

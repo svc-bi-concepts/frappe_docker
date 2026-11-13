@@ -842,6 +842,8 @@ The read-back checks that the draft is status 7, holds the order's contact and p
 account, tax, unit, unit price) at the asked quantity, and that the date edit changed nothing else;
 it prints the draft's id, document number, order, dates and totals.
 
+`prepare_bill_payment.py` takes a bill's document number, a private payment file and a bank account:
+
 ```sh
 finance/bexio/prepare_bill_payment.py --bill <document-no> --payment <private-payment.json> --bank-account-id <id>  # dry run
 finance/bexio/prepare_bill_payment.py --bill <document-no> --payment <private-payment.json> --bank-account-id <id> --yes
