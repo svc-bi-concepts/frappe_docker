@@ -37,6 +37,10 @@ PRIVATE = os.environ.get("BEXIO_PRIVATE") or "/Users/bsaladin/ws_yardr_finance/p
 RESULT = "bexio-upload/last-result.txt"
 PAGE_SIZE = 500
 DRAFT = 7
+# A pending order (kb_order status 5) has never been invoiced from, and bexio leaves a
+# custom position's amount_open and amount_completed both at 0 until it is: there 0 open
+# means "not counted yet", not "all invoiced" (live export 2026-11-03, erp-4vjt).
+ORDER_PENDING = 5
 GETS = {"/2.0/kb_invoice", "/2.0/accounts", "/3.0/taxes"}
 GET_ONE = re.compile(r"/2\.0/(kb_order|contact|kb_invoice)/[0-9]+\Z")
 INVOICE_PDF = re.compile(r"/2\.0/kb_invoice/[0-9]+/pdf\Z")
@@ -267,6 +271,12 @@ def _plan(order, position, positions, quantity, mode, taxes):
     ordered = _dec(position.get("amount"), "the position amount")
     open_amount = position.get("amount_open")
     limit = ordered if open_amount is None else _dec(open_amount, "the open amount")
+    if (
+        order.get("kb_item_status_id") == ORDER_PENDING
+        and limit == 0
+        and _dec(position.get("amount_completed") or 0, "the completed amount") == 0
+    ):
+        limit = ordered
     if Decimal(quantity) > limit:
         raise SystemExit(
             f"refused: quantity {quantity} is more than the position's open {limit}"

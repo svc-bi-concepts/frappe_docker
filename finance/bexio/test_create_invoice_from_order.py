@@ -469,6 +469,35 @@ class RunTest(unittest.TestCase):
         self.assertIn("more than the position's open 10", str(error.exception))
         self.assertFalse(self.posts())
 
+    def test_pending_order_with_uncounted_position_uses_the_ordered_amount(self):
+        # erp-4vjt: a pending order never invoiced from has open 0 and completed 0.
+        position = day_position(open_amount="0.000000")
+        position["amount_completed"] = "0.000000"
+        pending = order([position])
+        pending["kb_item_status_id"] = 5
+        self.fake, self.calls = fake_bexio(pending)
+        self.run_tool(yes=False)
+        out = self.output.getvalue()
+        self.assertIn("quantity 20 of " + position["amount"], out)
+        self.assertIn("dry run: nothing created", out)
+        self.assertFalse(self.posts())
+
+    def test_open_zero_is_refused_unless_the_order_is_pending_and_uncounted(self):
+        done = day_position(open_amount="0.000000")
+        done["amount_completed"] = "0.000000"
+        not_pending = order([done])
+        not_pending["kb_item_status_id"] = 6
+        counted = day_position(open_amount="0.000000")
+        counted["amount_completed"] = counted["amount"]
+        invoiced = order([counted])
+        invoiced["kb_item_status_id"] = 5
+        for the_order in (not_pending, invoiced):
+            self.fake, self.calls = fake_bexio(the_order)
+            with self.assertRaises(SystemExit) as error:
+                self.run_tool()
+            self.assertIn("more than the position's open 0", str(error.exception))
+            self.assertFalse(self.posts())
+
     def test_existing_invoice_same_title_and_date_is_refused(self):
         self.fake.responses["/2.0/kb_invoice"] = [
             {
