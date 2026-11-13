@@ -1,5 +1,6 @@
 """Offline boundary tests for the draft invoice from an existing bexio order."""
 
+import base64
 import contextlib
 import copy
 import io
@@ -212,6 +213,7 @@ class LauncherTest(unittest.TestCase):
 def reset_writes():
     oi._sent_order_invoice.clear()
     oi._created.clear()
+    oi._deletable.clear()
 
 
 class RequestBoundaryTest(unittest.TestCase):
@@ -239,6 +241,22 @@ class RequestBoundaryTest(unittest.TestCase):
                 oi.RefusedRequest
             ):
                 oi._send(method, path, "invented")
+
+    def test_delete_only_of_checked_draft_and_only_once(self):
+        self.assertFalse(oi._allowed("DELETE", "/2.0/kb_invoice/905"))
+        oi._deletable.add(905)
+        self.assertTrue(oi._allowed("DELETE", "/2.0/kb_invoice/905"))
+        self.assertFalse(oi._allowed("DELETE", "/2.0/kb_invoice/906"))
+        self.assertFalse(oi._allowed("DELETE", "/2.0/kb_order/905"))
+        self.assertFalse(oi._allowed("POST", "/2.0/kb_invoice/905"))
+        self.assertTrue(oi._allowed("GET", "/2.0/kb_invoice/905/pdf"))
+        self.assertFalse(oi._allowed("POST", "/2.0/kb_invoice/905/pdf"))
+        with mock.patch.object(
+            oi.urllib.request, "urlopen", return_value=_Response({"success": True})
+        ):
+            oi._send("DELETE", "/2.0/kb_invoice/905", "invented")
+        with self.assertRaises(oi.RefusedRequest):
+            oi._send("DELETE", "/2.0/kb_invoice/905", "invented")
 
     def test_order_action_once_and_edit_only_of_created_draft(self):
         self.assertTrue(oi._allowed("POST", "/2.0/kb_order/300/invoice"))
@@ -571,6 +589,217 @@ class RunTest(unittest.TestCase):
             self.run_tool()
         self.assertIn("header changed by the date edit", str(error.exception))
         self.assertIn("read-back failed", self.result())
+
+
+INVENTED_PDF = b"%PDF-1.4 invented invoice\n%%EOF\n"
+
+
+def draft(**changes):
+    invoice = {
+        "id": 905,
+        "document_nr": "INVENTED-00905",
+        "kb_item_status_id": 7,
+        "title": "Invented framework order",
+        "contact_id": 42,
+        "is_valid_from": "2026-03-31",
+    }
+    invoice.update(changes)
+    return invoice
+
+
+def fake_invoices(invoice):
+    """bexio for one invoice: read, PDF, list, and a DELETE that removes a draft."""
+    calls, listed = [], {invoice["id"]: invoice}
+
+    def urlopen(req, timeout=None):
+        parsed = urllib.parse.urlparse(req.full_url)
+        method, path = req.get_method(), parsed.path
+        calls.append((method, path))
+        one = "/2.0/kb_invoice/{}".format(invoice["id"])
+        if method == "GET" and path == one:
+            return _Response(listed[invoice["id"]])
+        if method == "GET" and path == one + "/pdf":
+            return _Response(
+                {
+                    "name": "invented.pdf",
+                    "size": len(INVENTED_PDF),
+                    "mime": "application/pdf",
+                    "content": base64.b64encode(INVENTED_PDF).decode(),
+                }
+            )
+        if method == "GET" and path == "/2.0/kb_invoice":
+            return _Response(list(listed.values()))
+        if method == "DELETE" and path == one:
+            if listed[invoice["id"]]["kb_item_status_id"] != 7:
+                raise http_error(req, 422)
+            del listed[invoice["id"]]
+            return _Response({"success": True})
+        raise AssertionError(f"unexpected {method} {path}")
+
+    return urlopen, calls
+
+
+class SideModeTest(unittest.TestCase):
+    def setUp(self):
+        reset_writes()
+        self.addCleanup(reset_writes)
+        self.temp = tempfile.TemporaryDirectory(prefix="order-invoice-test-")
+        self.addCleanup(self.temp.cleanup)
+        patch = mock.patch.object(oi, "PRIVATE", self.temp.name)
+        patch.start()
+        self.addCleanup(patch.stop)
+        self.output = io.StringIO()
+
+    def run_tool(self, fake, *args):
+        with mock.patch.dict(
+            os.environ, {"BEXIO_TOKEN": "invented-token"}
+        ), mock.patch.object(
+            oi.urllib.request, "urlopen", side_effect=fake
+        ), contextlib.redirect_stdout(
+            self.output
+        ):
+            oi.main(["--contact", "42"] + list(args))
+
+    def result(self):
+        with open(os.path.join(self.temp.name, oi.RESULT), encoding="utf-8") as f:
+            return f.read()
+
+    def delete_args(self, nr="INVENTED-00905", yes=True):
+        args = ["--delete-draft", "905", "--document-nr", nr]
+        return args + (["--yes"] if yes else [])
+
+    def test_delete_dry_run_sends_no_delete(self):
+        fake, calls = fake_invoices(draft())
+        self.run_tool(fake, *self.delete_args(yes=False))
+        self.assertEqual(calls, [("GET", "/2.0/kb_invoice/905")])
+        self.assertIn("dry run: nothing deleted", self.output.getvalue())
+        self.assertEqual(os.listdir(self.temp.name), [])
+
+    def test_delete_removes_matching_draft_and_checks_the_list(self):
+        fake, calls = fake_invoices(draft())
+        self.run_tool(fake, *self.delete_args())
+        self.assertEqual(
+            calls,
+            [
+                ("GET", "/2.0/kb_invoice/905"),
+                ("DELETE", "/2.0/kb_invoice/905"),
+                ("GET", "/2.0/kb_invoice"),
+            ],
+        )
+        self.assertIn("deleted draft id 905", self.output.getvalue())
+        with open(os.path.join(self.temp.name, oi.RESULT), encoding="utf-8") as f:
+            self.assertEqual(
+                f.read().splitlines(),
+                [
+                    "sales invoice draft id 905 document_nr INVENTED-00905"
+                    " delete sent, list check pending",
+                    "sales invoice draft id 905 document_nr INVENTED-00905"
+                    " deleted, no longer listed",
+                ],
+            )
+        self.assertFalse(oi._deletable)
+
+    def test_delete_refuses_issued_other_contact_or_other_number(self):
+        for invoice, nr, expected in (
+            (draft(kb_item_status_id=8), "INVENTED-00905", "status 8, not draft"),
+            (draft(contact_id=43), "INVENTED-00905", "contact 43, not 42"),
+            (draft(), "INVENTED-00904", "is INVENTED-00905, not INVENTED-00904"),
+        ):
+            with self.subTest(expected=expected):
+                fake, calls = fake_invoices(invoice)
+                with self.assertRaises(SystemExit) as error:
+                    self.run_tool(fake, *self.delete_args(nr=nr))
+                self.assertIn(expected, str(error.exception))
+                self.assertEqual([m for m, _ in calls], ["GET"])
+                self.assertFalse(oi._deletable)
+
+    def test_delete_still_listed_is_reported(self):
+        fake, calls = fake_invoices(draft())
+
+        def keeps(req, timeout=None):
+            if req.get_method() == "DELETE":
+                calls.append(("DELETE", urllib.parse.urlparse(req.full_url).path))
+                return _Response({"success": True})
+            return fake(req, timeout)
+
+        with self.assertRaises(SystemExit) as error:
+            self.run_tool(keeps, *self.delete_args())
+        self.assertIn("still listed", str(error.exception))
+        self.assertIn("still listed after the delete", self.result())
+
+    def test_delete_sent_is_recorded_when_the_list_check_fails(self):
+        fake, calls = fake_invoices(draft())
+
+        def list_fails(req, timeout=None):
+            path = urllib.parse.urlparse(req.full_url).path
+            if req.get_method() == "GET" and path == "/2.0/kb_invoice":
+                raise http_error(req, 502)
+            return fake(req, timeout)
+
+        with self.assertRaises(SystemExit) as error:
+            self.run_tool(list_fails, *self.delete_args())
+        self.assertIn(
+            "delete of draft id 905 sent; list check failed", str(error.exception)
+        )
+        self.assertIn("delete sent, list check pending", self.result())
+        self.assertIn("list check failed", self.result())
+        self.assertEqual([m for m, _ in calls], ["GET", "DELETE"])
+
+    def test_pdf_saved_under_private_never_over_a_file(self):
+        fake, calls = fake_invoices(draft())
+        out = os.path.join(self.temp.name, "customer", "invented-invoice.pdf")
+        self.run_tool(fake, "--pdf", "905", "--out", out)
+        with open(out, "rb") as f:
+            self.assertEqual(f.read(), INVENTED_PDF)
+        self.assertEqual(stat.S_IMODE(os.stat(out).st_mode), 0o600)
+        self.assertEqual(
+            calls, [("GET", "/2.0/kb_invoice/905"), ("GET", "/2.0/kb_invoice/905/pdf")]
+        )
+        self.assertIn("as invented-invoice.pdf", self.output.getvalue())
+        with self.assertRaises(SystemExit) as error:
+            self.run_tool(fake, "--pdf", "905", "--out", out)
+        self.assertIn("never overwrites", str(error.exception))
+
+    def test_pdf_refuses_outside_private_other_contact_or_no_pdf(self):
+        fake, calls = fake_invoices(draft())
+        with tempfile.TemporaryDirectory() as elsewhere:
+            with self.assertRaises(SystemExit) as error:
+                self.run_tool(fake, "--pdf", "905", "--out", elsewhere + "/x.pdf")
+        self.assertIn("under", str(error.exception))
+        self.assertEqual(calls, [])
+        fake, calls = fake_invoices(draft(contact_id=43))
+        with self.assertRaises(SystemExit):
+            self.run_tool(fake, "--pdf", "905", "--out", self.temp.name + "/x.pdf")
+        self.assertEqual(calls, [("GET", "/2.0/kb_invoice/905")])
+        original, calls = fake_invoices(draft())
+
+        def not_pdf(req, timeout=None):
+            if req.full_url.endswith("/pdf"):
+                return _Response({"content": base64.b64encode(b"<html>").decode()})
+            return original(req, timeout)
+
+        with self.assertRaises(SystemExit) as error:
+            self.run_tool(not_pdf, "--pdf", "905", "--out", self.temp.name + "/y.pdf")
+        self.assertIn("without a PDF", str(error.exception))
+        self.assertFalse(os.path.exists(self.temp.name + "/y.pdf"))
+
+    def test_mode_arguments_are_checked_before_network(self):
+        for args in (
+            ["--delete-draft", "905"],
+            ["--pdf", "905"],
+            ["--pdf", "905", "--out", "/x.pdf", "--yes"],
+            ["--order", "300"],
+            ["--order", "300", "--date", "2026-03-31", "--pdf", "1", "--out", "/x.pdf"],
+            ["--delete-draft", "905", "--document-nr", "A", "--quantity", "2"],
+            ["--delete-draft", "905", "--document-nr", "A B"],
+            ["--order", "300", "--date", "2026-03-31", "--document-nr", "A"],
+        ):
+            with self.subTest(args=args), mock.patch.object(
+                oi.urllib.request, "urlopen"
+            ) as send, contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit):
+                    oi.main(["--contact", "42"] + args)
+                send.assert_not_called()
 
 
 if __name__ == "__main__":

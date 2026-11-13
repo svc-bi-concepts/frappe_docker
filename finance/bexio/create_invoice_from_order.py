@@ -7,9 +7,15 @@ bexio's own order action (POST /2.0/kb_order/{id}/invoice) makes the invoice, so
 stays linked to the order and bexio counts the invoiced quantity off the order's open
 amount. The only other write is one edit of the draft this run created, to set its
 date. Accepted fields follow the published API docs and are not proven live.
+
+Two side modes serve the same monthly run (Benchi, 2026-11-13): --delete-draft removes
+one sales invoice DRAFT that a run made the wrong way, after its status, contact and
+document number match what the caller names; --pdf saves an invoice's PDF under
+private/ for the mail to the customer. Neither touches an issued invoice.
 """
 
 import argparse
+import base64
 import datetime
 import json
 import os
@@ -33,6 +39,7 @@ PAGE_SIZE = 500
 DRAFT = 7
 GETS = {"/2.0/kb_invoice", "/2.0/accounts", "/3.0/taxes"}
 GET_ONE = re.compile(r"/2\.0/(kb_order|contact|kb_invoice)/[0-9]+\Z")
+INVOICE_PDF = re.compile(r"/2\.0/kb_invoice/[0-9]+/pdf\Z")
 ORDER_INVOICE = re.compile(r"/2\.0/kb_order/([0-9]+)/invoice\Z")
 INVOICE_EDIT = re.compile(r"/2\.0/kb_invoice/([0-9]+)\Z")
 BILLABLE = {"KbPositionCustom", "KbPositionArticle"}
@@ -59,9 +66,11 @@ KEPT = (
 )
 SAME_POSITION = ("type", "text", "account_id", "tax_id", "unit_id", "unit_price")
 
-# Writes this run may still send: one order action, then edits of its own draft only.
+# Writes this run may still send: one order action, then edits of its own draft only;
+# or, in --delete-draft, one DELETE of the draft the checks passed.
 _sent_order_invoice = []
 _created = set()
+_deletable = set()
 
 
 class RefusedRequest(Exception):
@@ -70,7 +79,14 @@ class RefusedRequest(Exception):
 
 def _allowed(method, path):
     if method == "GET":
-        return path in GETS or bool(GET_ONE.fullmatch(path))
+        return (
+            path in GETS
+            or bool(GET_ONE.fullmatch(path))
+            or bool(INVOICE_PDF.fullmatch(path))
+        )
+    if method == "DELETE":
+        edit = INVOICE_EDIT.fullmatch(path)
+        return bool(edit) and int(edit.group(1)) in _deletable
     if method != "POST":
         return False
     if ORDER_INVOICE.fullmatch(path):
@@ -84,6 +100,9 @@ def _send(method, path, token, body=None, query=None):
         raise RefusedRequest(f"refused {method} {path}: this script does not send it")
     if method == "POST" and ORDER_INVOICE.fullmatch(path):
         _sent_order_invoice.append(path)
+    if method == "DELETE":
+        # One DELETE per checked draft, never a second one.
+        _deletable.discard(int(INVOICE_EDIT.fullmatch(path).group(1)))
     url = client.BASE_URL + path
     if query:
         url += "?" + urllib.parse.urlencode(query)
@@ -100,7 +119,7 @@ def _send(method, path, token, body=None, query=None):
     except urllib.error.HTTPError as err:
         permission = (
             "; token lacks kb_invoice_edit; no fallback was tried"
-            if method == "POST" and err.code == 403
+            if method in ("POST", "DELETE") and err.code == 403
             else ""
         )
         raise SystemExit(
@@ -114,7 +133,7 @@ def _send(method, path, token, body=None, query=None):
     except (urllib.error.URLError, OSError, ValueError):
         advice = (
             "; the write may have happened; check bexio before running again"
-            if method == "POST"
+            if method in ("POST", "DELETE")
             else ""
         )
         raise SystemExit(
@@ -335,17 +354,142 @@ def _edit_body(invoice, date):
     return body
 
 
+def _document_nr(value):
+    if not re.fullmatch(r"[A-Za-z0-9_.-]{1,40}", value or ""):
+        raise argparse.ArgumentTypeError("must be a bexio document number")
+    return value
+
+
+def _invoice_of(ident, contact, token):
+    """The invoice with this id, refused unless it belongs to the contact."""
+    invoice = _send("GET", "/2.0/kb_invoice/" + str(ident), token)
+    if not isinstance(invoice, dict) or invoice.get("id") != ident:
+        raise SystemExit("bexio invoice lookup returned no invoice")
+    if invoice.get("contact_id") != contact:
+        raise SystemExit(
+            "refused: invoice {} belongs to contact {}, not {}".format(
+                ident, invoice.get("contact_id"), contact
+            )
+        )
+    return invoice
+
+
+def delete_draft(ident, contact, document_nr, yes, token):
+    """Delete one sales invoice DRAFT, only when status, contact and number match."""
+    invoice = _invoice_of(ident, contact, token)
+    if invoice.get("kb_item_status_id") != DRAFT:
+        raise SystemExit(
+            "refused: invoice {} has status {}, not draft (7)".format(
+                ident, invoice.get("kb_item_status_id")
+            )
+        )
+    if invoice.get("document_nr") != document_nr:
+        raise SystemExit(
+            "refused: invoice {} is {}, not {}".format(
+                ident, invoice.get("document_nr"), document_nr
+            )
+        )
+    print(
+        "draft {} ({}): {}; contact {}; date {}".format(
+            ident,
+            document_nr,
+            invoice.get("title"),
+            contact,
+            str(invoice.get("is_valid_from"))[:10],
+        )
+    )
+    if not yes:
+        print("dry run: nothing deleted; add --yes to delete this draft")
+        return
+    _deletable.add(ident)
+    _send("DELETE", "/2.0/kb_invoice/" + str(ident), token)
+    record = f"sales invoice draft id {ident} document_nr {document_nr}"
+    # Record the sent delete before the list check, as the create path records its
+    # draft before the read-back: a failing list request must not lose the trace.
+    try:
+        record_result(record + " delete sent, list check pending")
+    except OSError:
+        raise SystemExit(f"delete of draft id {ident} sent; could not record result")
+    try:
+        listed = any(r.get("id") == ident for r in _paged("/2.0/kb_invoice", token))
+    except (RefusedRequest, SystemExit, AttributeError) as err:
+        record_result(record + " list check failed")
+        raise SystemExit(
+            f"delete of draft id {ident} sent; list check failed: {err}; check bexio"
+        )
+    if listed:
+        record_result(record + " still listed after the delete")
+        raise SystemExit(f"draft id {ident} is still listed after the delete; check bexio")
+    record_result(record + " deleted, no longer listed")
+    print(f"deleted draft id {ident} ({document_nr}); no longer listed")
+
+
+def save_pdf(ident, contact, out, token):
+    """Write the invoice's PDF to a new file under private/, never over another."""
+    target = os.path.realpath(out)
+    root = os.path.realpath(PRIVATE)
+    if not target.startswith(root + os.sep) or not target.endswith(".pdf"):
+        raise SystemExit(f"refused: --out must be a .pdf file under {PRIVATE}")
+    if os.path.lexists(target):
+        raise SystemExit("refused: --out exists; this tool never overwrites a file")
+    invoice = _invoice_of(ident, contact, token)
+    answer = _send("GET", "/2.0/kb_invoice/{}/pdf".format(ident), token)
+    try:
+        data = base64.b64decode(answer["content"], validate=True)
+    except (TypeError, KeyError, ValueError):
+        raise SystemExit("bexio answered the PDF request without a PDF")
+    if not data.startswith(b"%PDF-"):
+        raise SystemExit("bexio answered the PDF request without a PDF")
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    try:
+        fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        raise SystemExit("refused: --out exists; this tool never overwrites a file")
+    with os.fdopen(fd, "wb") as f:
+        f.write(data)
+    print(
+        "saved invoice {} ({}, status {}) as {} ({} bytes; bexio named it {})".format(
+            ident,
+            invoice.get("document_nr"),
+            invoice.get("kb_item_status_id"),
+            os.path.basename(target),
+            len(data),
+            answer.get("name"),
+        )
+    )
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Create one bexio sales invoice draft from an existing order"
     )
-    parser.add_argument("--order", required=True, type=_id, help="bexio order id")
-    parser.add_argument(
-        "--contact", required=True, type=_id, help="the contact id the order must have"
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--order", type=_id, help="bexio order id")
+    mode.add_argument(
+        "--delete-draft",
+        type=_id,
+        metavar="INVOICE_ID",
+        help="delete this sales invoice draft (needs --document-nr)",
+    )
+    mode.add_argument(
+        "--pdf",
+        type=_id,
+        metavar="INVOICE_ID",
+        help="save this invoice's PDF to --out",
     )
     parser.add_argument(
-        "--date", required=True, type=_date, help="invoice date, YYYY-MM-DD"
+        "--contact",
+        required=True,
+        type=_id,
+        help="the contact id the order or invoice must have",
     )
+    parser.add_argument("--date", type=_date, help="invoice date, YYYY-MM-DD")
+    parser.add_argument(
+        "--document-nr",
+        type=_document_nr,
+        help="the document number the draft to delete must have",
+    )
+    parser.add_argument("--out", help="with --pdf: a new .pdf path under private/")
     parser.add_argument(
         "--quantity",
         type=_quantity,
@@ -360,9 +504,29 @@ def main(argv=None):
         "--yes", action="store_true", help="create the draft after the dry-run plan"
     )
     args = parser.parse_args(argv)
+    if args.order is not None and args.date is None:
+        parser.error("--order needs --date")
+    if args.delete_draft is not None and args.document_nr is None:
+        parser.error("--delete-draft needs --document-nr")
+    if args.pdf is not None and not args.out:
+        parser.error("--pdf needs --out")
+    if args.order is None and (args.date or args.quantity or args.position):
+        parser.error("--date, --quantity and --position go with --order")
+    if args.document_nr is not None and args.delete_draft is None:
+        parser.error("--document-nr goes with --delete-draft")
+    if args.out is not None and args.pdf is None:
+        parser.error("--out goes with --pdf")
+    if args.pdf is not None and args.yes:
+        parser.error("--pdf only reads; it takes no --yes")
     token = os.environ.get("BEXIO_TOKEN")
     if not token:
         raise SystemExit("BEXIO_TOKEN is required")
+    if args.delete_draft is not None:
+        delete_draft(args.delete_draft, args.contact, args.document_nr, args.yes, token)
+        return
+    if args.pdf is not None:
+        save_pdf(args.pdf, args.contact, args.out, token)
+        return
 
     order = _send("GET", "/2.0/kb_order/" + str(args.order), token)
     if not isinstance(order, dict) or order.get("id") != args.order:
