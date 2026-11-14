@@ -1,6 +1,6 @@
 ## What this does and why
 
-<!-- What the PR does and why, in plain words, with the full URL, starting with the scheme, of what it answers (issue, earlier PR, decision). One commit per concern, and say so. -->
+<!-- What the PR does and why, in plain words, with the full URL, starting with the scheme, of what it answers (issue, earlier PR, decision); when the work started from a yard bead and nothing else, name that bead instead (`bead yard-s0e7`), never a PR or issue linked only to fill this line. One commit per concern, and say so. -->
 
 ## Out of scope and unchanged
 
